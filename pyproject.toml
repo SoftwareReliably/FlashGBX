@@ -44,3 +44,9 @@ include = ["FlashGBX*"]
 
 [tool.setuptools.package-data]
 FlashGBX = ["res/**/*", "locale/**/*"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "ruff>=0.16.4",
+]
