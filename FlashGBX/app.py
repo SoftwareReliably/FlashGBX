@@ -74,12 +74,12 @@ class AppInfo:
 			return platform.platform()
 
 class AppContext:
-	DEBUG = False
-	APP_PATH = ""
-	CONFIG_PATH = ""
-	LAUNCH_TIMESTAMP = 0
-	DEBUG_LOG: list = []
-	PRINT_LOG: list = []
+	DEBUG: bool = False
+	APP_PATH: str = ""
+	CONFIG_PATH: str = ""
+	LAUNCH_TIMESTAMP: float = 0.0
+	DEBUG_LOG: list[str] = []
+	PRINT_LOG: list[str] = []
 
 def generate_filename(mode, header, settings=None):
 	from .Mapper import get_mbc_name
