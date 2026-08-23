@@ -3,7 +3,7 @@ name = "FlashGBX"
 version = "5.0.1"
 description = "Reads and writes Game Boy and Game Boy Advance cartridge data"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.7,<3.14"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 
