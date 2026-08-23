@@ -56,3 +56,5 @@ Desktop.ini
 
 #config folder
 FlashGBX/config/
+fc*.txt
+db_DMG_bl.json
