@@ -1,12 +1,14 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import traceback
+
 from serial import SerialException
+
 from . import pyside
-from .Logging import dprint
 from .i18n import __
+from .Logging import dprint
+
 
 class DataTransfer(pyside.QtCore.QThread):
 	CONFIG = None
@@ -64,7 +66,7 @@ class DataTransfer(pyside.QtCore.QThread):
 				"info_type": "msgbox_critical",
 				"fatal": True,
 				"info_msg": __("An unresolvable error has occured. See the debug log file for more information. Reconnect the device, restart the software and try again.")
-					+ "\n\n{:s}: {:s}".format(type(error).__name__, str(error)),
+					+ f"\n\n{type(error).__name__:s}: {error!s:s}",
 				"abortable":False
 			})
 			self.FINISHED = True
