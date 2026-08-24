@@ -1,14 +1,19 @@
-# -*- coding: utf-8 -*-
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import platform, importlib, re, sys
+import importlib
+import platform
+import re
+import sys
+from typing import ClassVar
+
 from loguru import logger
+
 
 class AppInfo:
 	NAME = "FlashGBX"
 	VERSION_PEP440 = "5.0.1"
-	VERSION = "v{:s}".format(VERSION_PEP440)
+	VERSION = f"v{VERSION_PEP440:s}"
 	VERSION_TIMESTAMP = 1780697375
 
 	@classmethod
@@ -51,11 +56,11 @@ class AppInfo:
 						logger.exception("Failed to read the Windows product name")
 					try:
 						display_version = winreg.QueryValueEx(key, "DisplayVersion")[0]
-					except:
+					except Exception as e:
 						try:
 							display_version = winreg.QueryValueEx(key, "ReleaseId")[0]
 						except Exception:
-							logger.exception("Failed to read the Windows release ID")
+							logger.exception("Failed to read the Windows release ID: {}", e)
 					try:
 						ubr = int(winreg.QueryValueEx(key, "UBR")[0])
 					except Exception:
@@ -67,7 +72,8 @@ class AppInfo:
 			if display_version:
 				return f"{name} (Version {display_version}, Build {build_str})"
 			return f"{name} (Build {build_str})"
-		except:
+		except Exception as e:
+			logger.exception("Failed to determine Windows version: {}", e)
 			release = platform.release()
 			version = platform.version()
 			if release:
@@ -79,8 +85,8 @@ class AppContext:
 	APP_PATH: str = ""
 	CONFIG_PATH: str = ""
 	LAUNCH_TIMESTAMP: float = 0.0
-	DEBUG_LOG: list[str] = []
-	PRINT_LOG: list[str] = []
+	DEBUG_LOG: ClassVar[list[str]] = []
+	PRINT_LOG: ClassVar[list[str]] = []
 
 def generate_filename(mode, header, settings=None):
 	from .Mapper import get_mbc_name
@@ -116,20 +122,22 @@ def generate_filename(mode, header, settings=None):
 		else:
 			path_extension = "gb"
 		if path_title == "":
-			path = "ROM.{:s}".format(path_extension)
+			path = f"ROM.{path_extension:s}"
 		else:
 			path = path.replace("%TITLE%", path_title.strip())
 			path = path.replace("%CODE%", path_code.strip())
 			path = path.replace("%REVISION%", path_revision)
 			path = path.replace("%MAPPER%", get_mbc_name(header["mapper_raw"]))
 			path = re.sub(r"[<>:\"/\\|\?\*]", "_", path)
-			if get_mbc_name(header["mapper_raw"]) == "G-MMC1":
-				if "gbmem_parsed" in header and "cart_id" in header["gbmem_parsed"]	and header["gbmem_parsed"]["cart_id"] is not None:
+			if (get_mbc_name(header["mapper_raw"]) == "G-MMC1"
+					and "gbmem_parsed" in header
+					and "cart_id" in header["gbmem_parsed"]
+					and header["gbmem_parsed"]["cart_id"] is not None):
 					if (isinstance(header["gbmem_parsed"], list)):
 						path += "_{:s}".format(header["gbmem_parsed"][0]["cart_id"])
 					else:
 						path += "_{:s}".format(header["gbmem_parsed"]["cart_id"])
-			path += ".{:s}".format(path_extension)
+			path += f".{path_extension:s}"
 	elif mode == "AGB":
 		path = "%TITLE%_%CODE%-%REVISION%"
 		if settings is not None:
