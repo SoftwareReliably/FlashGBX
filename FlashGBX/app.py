@@ -47,21 +47,21 @@ class AppInfo:
 							parts = product_name.split(" ")
 							if len(parts) >= 2:
 								name = " ".join(parts[:2])
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to read the Windows product name")
 					try:
 						display_version = winreg.QueryValueEx(key, "DisplayVersion")[0]
 					except:
 						try:
 							display_version = winreg.QueryValueEx(key, "ReleaseId")[0]
-						except:
-							pass
+						except Exception:
+							logger.exception("Failed to read the Windows release ID")
 					try:
 						ubr = int(winreg.QueryValueEx(key, "UBR")[0])
-					except:
-						pass
-			except:
-				pass
+					except Exception:
+						logger.exception("Failed to read the Windows update build revision")
+			except Exception:
+				logger.exception("Failed to read Windows version details from the registry")
 
 			build_str = f"{w.build}.{ubr}" if ubr is not None else f"{w.build}"
 			if display_version:
@@ -165,5 +165,5 @@ for _name in HW_DEVICE_MODULES:
 	try:
 		_hw_devices.append(importlib.import_module(f"{__package__}.{_name}"))
 	except Exception:
-		pass
+		logger.exception("Failed to load hardware backend: {}", _name)
 HW_DEVICES = _hw_devices

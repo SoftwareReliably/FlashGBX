@@ -194,8 +194,8 @@ class GbxDevice(LK_Device):
 					self.DEVICE.reset_output_buffer()
 					self.DEVICE.close()
 				self.DEVICE = None
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to close GBxCart RW after an initialization error")
 			return False
 
 	def ChangeBaudRate(self, baudrate):
@@ -236,8 +236,8 @@ class GbxDevice(LK_Device):
 					self.DEVICE.reset_output_buffer()
 					self.DEVICE.close()
 				self.DEVICE = None
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to close GBxCart RW after a connection error")
 			return False
 
 	def GetFirmwareVersion(self, more=False):

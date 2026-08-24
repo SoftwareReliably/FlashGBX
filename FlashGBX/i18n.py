@@ -210,7 +210,7 @@ def loadQtTranslation(app=None, language=None):
 	try:
 		QtCore.QLocale.setDefault(qt_locale)
 	except Exception:
-		pass
+		logger.exception("Failed to set the default Qt locale")
 	set_locale(qt_locale.name())
 
 	try:
@@ -314,7 +314,7 @@ if not OS_LANGUAGE and platform.system() == "Darwin":
 		if apple_languages:
 			OS_LANGUAGE = apple_languages[0]
 	except Exception:
-		pass
+		logger.exception("Failed to read the preferred macOS language")
 
 if not OS_LANGUAGE:
 	for env_name in ("LC_ALL", "LC_MESSAGES", "LANG"):

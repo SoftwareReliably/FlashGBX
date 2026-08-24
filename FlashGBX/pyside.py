@@ -264,7 +264,7 @@ def IsDarkMode():
 		if scheme == QtCore.Qt.ColorScheme.Dark:
 			return True
 	except Exception:
-		pass
+		logger.exception("Failed to determine the Qt color scheme")
 	return False
 
 def bitmap2pixmap(data, scale_factor=4):
