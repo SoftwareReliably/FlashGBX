@@ -1,23 +1,22 @@
-# -*- coding: utf-8 -*-
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 #
 # PySide abstraction layer, partly contributed by J-Fox
 
-import os, platform
+import os
+import platform
+
 from .Logging import dprint, logger
 
 try:
-	from PySide6 import QtCore
-	from PySide6 import QtWidgets
-	from PySide6 import QtGui
+	from PySide6 import QtCore, QtGui, QtWidgets
 	from PySide6.QtWidgets import QApplication
 	psversion = 6
 
 except ModuleNotFoundError:
 	try:
-		import PySide2 # pyright: ignore[reportMissingImports]
 		import PIL
+		import PySide2  # pyright: ignore[reportMissingImports]
 		# PySide2>=5.14 is required
 		major, minor, *_ = PySide2.__version_info__
 		if (major, minor) < (5, 14):
@@ -28,10 +27,14 @@ except ModuleNotFoundError:
 			raise ImportError('Requires Pillow<10.0.0 if using PySide2', name=PIL.__package__, path=PIL.__path__)
 
 		dprint("PySide6 cannot be loaded. Using PySide2 code path.")
-		from PySide2 import QtCore # pyright: ignore[reportMissingImports]
-		from PySide2 import QtWidgets # pyright: ignore[reportMissingImports]
-		from PySide2 import QtGui # pyright: ignore[reportMissingImports]
-		from PySide2.QtWidgets import QApplication # pyright: ignore[reportMissingImports]
+		from PySide2 import (
+			QtCore,  # pyright: ignore[reportMissingImports]
+			QtGui,  # pyright: ignore[reportMissingImports]
+			QtWidgets,  # pyright: ignore[reportMissingImports]
+		)
+		from PySide2.QtWidgets import (
+			QApplication,  # pyright: ignore[reportMissingImports]
+		)
 		psversion = 2
 
 		os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
@@ -39,13 +42,13 @@ except ModuleNotFoundError:
 		QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
 		QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 
-	except ImportError as err2:
+	except ImportError:
 		dprint("GUI cannot be loaded.")
-		raise err2
+		raise
 
-	except ModuleNotFoundError as err3:
+	except ModuleNotFoundError:
 		dprint("GUI cannot be loaded.")
-		raise err3
+		raise
 
 # exec
 try:
@@ -57,7 +60,7 @@ except (AttributeError, TypeError):
 	pass
 
 # QDesktopWidget
-class QDesktopWidget(object):
+class QDesktopWidget:
 	def screenGeometry(self, widget):
 		if psversion == 2:
 			return QtWidgets.QDesktopWidget().screenGeometry()
@@ -74,12 +77,24 @@ else:
 if platform.system() == "Windows":
 	if psversion == 2:
 		try:
-			from PySide2 import QtWinExtras # pyright: ignore[reportMissingImports]
+			from PySide2 import QtWinExtras  # pyright: ignore[reportMissingImports]
 		except ImportError:
 			pass
 	else:
-		import ctypes, types
-		from ctypes import POINTER, WINFUNCTYPE, byref, c_int, c_long, c_ulonglong, c_ubyte, c_void_p, c_wchar_p, wintypes
+		import ctypes
+		import types
+		from ctypes import (
+			POINTER,
+			WINFUNCTYPE,
+			byref,
+			c_int,
+			c_long,
+			c_ubyte,
+			c_ulonglong,
+			c_void_p,
+			c_wchar_p,
+			wintypes,
+		)
 
 		class _QWinTaskbarProgress:
 			def __init__(self):
@@ -149,7 +164,7 @@ elif platform.system() == "Linux":
 
 	try:
 		if psversion == 2:
-			from PySide2 import QtDBus # pyright: ignore[reportMissingImports]
+			from PySide2 import QtDBus  # pyright: ignore[reportMissingImports]
 		else:
 			from PySide6 import QtDBus
 	except ImportError:
@@ -179,7 +194,7 @@ elif platform.system() == "Linux":
 				desktop_file = os.path.basename(app_name)
 				if not desktop_file.endswith(".desktop"):
 					desktop_file += ".desktop"
-				self._app_uri = "application://{:s}".format(desktop_file) if desktop_file else ""
+				self._app_uri = f"application://{desktop_file:s}" if desktop_file else ""
 				self._last_payload = None
 				self._bus = QtDBus.QDBusConnection.sessionBus()
 				self._available = bool(self._app_uri) and bool(self._bus.isConnected())
@@ -213,7 +228,7 @@ elif platform.system() == "Linux":
 					if not sent:
 						dprint("Unity Launcher progress disabled: launcher API not available in this desktop environment.")
 				except Exception as err:
-					dprint("Unity Launcher progress update failed: {:s}".format(str(err)))
+					dprint(f"Unity Launcher progress update failed: {err!s:s}")
 
 			def setRange(self, minimum, maximum):
 				self._min, self._max = int(minimum), int(maximum)
@@ -251,7 +266,7 @@ elif platform.system() == "Linux":
 		QtWinExtras.QtWin = _QtWin
 
 
-__all__ = ['QtCore', 'QtWidgets', 'QtGui', 'QApplication', 'QDesktopWidget', 'QActionGroup']
+__all__ = ['QActionGroup', 'QApplication', 'QDesktopWidget', 'QtCore', 'QtGui', 'QtWidgets']
 
 def GetQtVersion():
 	return tuple(map(int, QtCore.qVersion().split(".")))
@@ -269,8 +284,8 @@ def IsDarkMode():
 
 def bitmap2pixmap(data, scale_factor=4):
 	try:
-		from PIL.ImageQt import ImageQt
 		from PIL import Image
+		from PIL.ImageQt import ImageQt
 		data_converted = data.convert("RGBA")
 		pixmap = QtGui.QPixmap.fromImage(ImageQt(data_converted.resize(
 			(data_converted.width * scale_factor, data_converted.height * scale_factor),
