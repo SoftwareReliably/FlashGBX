@@ -1,12 +1,17 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
+
+import email.utils
+import hashlib
+import io
+import math
+import os
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
-import os, hashlib, io, math
-import email.utils
+
 from .app import AppInfo
+
 
 class PocketCamera:
 	DATA = None
@@ -45,7 +50,7 @@ class PocketCamera:
 		order = [None] * 30
 		deleted = []
 		seen_indicies = []
-		for i in range(0, 30):
+		for i in range(30):
 			if order_raw[i] == 0xFF or order_raw[i] in seen_indicies:
 				deleted.append(i)
 			else:
@@ -57,7 +62,7 @@ class PocketCamera:
 		self.ORDER = order
 		self.IMAGES_DELETED = deleted
 
-		for i in range(0, 30):
+		for i in range(30):
 			self.IMAGES[i] = self.ExtractPicture(i)
 		self.IMAGES[30] = self.ExtractGameFace()
 		self.IMAGES[31] = self.ExtractLastSeen()
@@ -66,7 +71,7 @@ class PocketCamera:
 	def SetPalette(self, palette):
 		if isinstance(palette, int):
 			palette = self.PALETTES[palette]
-		for p in range (0, len(self.IMAGES)):
+		for p in range (len(self.IMAGES)):
 			self.IMAGES[p].putpalette(palette)
 		self.PALETTE = palette
 
@@ -133,7 +138,7 @@ class PocketCamera:
 			pnginfo.add_text("Title", "Last Seen Image")
 		else:
 			pic = self.GetPicture(index)
-			pnginfo.add_text("Title", "Photo {:02d}".format(index + 1))
+			pnginfo.add_text("Title", f"Photo {index + 1:02d}")
 
 		if frame is not False:
 			frame = Image.open(io.BytesIO(frame)).convert("RGB")
