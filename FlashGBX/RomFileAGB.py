@@ -4,14 +4,14 @@
 
 import hashlib, re, zlib, string, os, json, copy, struct
 from .i18n import __
-from .Logging import dprint
+from .Logging import dprint, logger
 from .app import AppContext
 
 try:
 	Image = None
 	from PIL import Image
-except:
-	pass
+except Exception:
+	logger.exception("Pillow image support is unavailable for Game Boy Advance ROMs")
 
 class RomFileAGB:
 	ROMFILE_PATH = None

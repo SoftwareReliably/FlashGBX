@@ -11,7 +11,7 @@ from .RomFileDMG import RomFileDMG
 from .RomFileAGB import RomFileAGB
 from .Mapper import DMG_Mapper, AGB_GPIO
 from .Flashcart import Flashcart, Flashcart_DMG_MMSA, Flashcart_AGB_GBAMP, Flashcart_DMG_BUNG_16M, CFI
-from .Logging import ANSI, dprint
+from .Logging import ANSI, dprint, logger
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 from .app import AppContext, AppInfo
 from .Formatter import Formatter
@@ -270,8 +270,8 @@ class LK_Device(ABC):
 					self.DEVICE.reset_output_buffer()
 					self.DEVICE.close()
 				self.DEVICE = None
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to close the device after a connection error")
 			return False
 
 	def IsSupportedMbc(self, mbc):
@@ -397,8 +397,8 @@ class LK_Device(ABC):
 				if e.args[0].startswith("ClearCommError failed"):
 					self.DEVICE.close()
 					return False
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to inspect or close the device after a serial error")
 			print(str(e))
 			return False
 
@@ -543,8 +543,8 @@ class LK_Device(ABC):
 			if len(data) < 32:
 				try:
 					cmd = "[{:s}] ".format((list(self.DEVICE_CMD.keys())[list(self.DEVICE_CMD.values()).index(data[0])]))
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to identify the outgoing device command")
 			dprint("[{:02X}] {:s}{:s}".format(int(len(dstr)/3) + 1, cmd, dstr[:96]))
 
 		self.DEVICE.write(data)
@@ -2767,8 +2767,8 @@ class LK_Device(ABC):
 							"set_we_pin_audio":self._set_we_pin_audio,
 						}
 						flashcart = Flashcart(config=cart_type, fncptr=fc_fncptr)
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to initialize the selected flash-cart profile")
 
 		# Firmware check L8
 		if self.FW["fw_ver"] < 8 and flashcart and "enable_pullups" in cart_type:
@@ -3010,8 +3010,8 @@ class LK_Device(ABC):
 					self.SetProgress(cancel_args)
 					try:
 						if file is not None: file.close()
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to close the canceled ROM-read output file")
 					if self.CanPowerCycleCart(): self.CartPowerCycle()
 					return
 
@@ -4064,8 +4064,8 @@ class LK_Device(ABC):
 			if i == args["cart_type"]:
 				try:
 					cart_type["_index"] = cart_type["names"].index(list(self.SUPPORTED_CARTS[self.MODE].keys())[i])
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to resolve the selected flash-cart profile index")
 
 		fc_fncptr = {
 			"cart_write_fncptr":self._cart_write,

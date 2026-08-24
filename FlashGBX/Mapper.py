@@ -5,7 +5,7 @@
 import time, datetime, struct, math, hashlib
 from dateutil.relativedelta import relativedelta
 from .RomFileDMG import RomFileDMG
-from .Logging import dprint, ANSI
+from .Logging import dprint, ANSI, logger
 from .i18n import __, c__, ___, c___
 
 class BCD:
@@ -601,8 +601,8 @@ class DMG_MBC3(DMG_Mapper):
 		if rtc_h > 24 or rtc_m > 60 or rtc_s > 60:
 			try:
 				dprint("Invalid RTC state: {:d} days, {:02d}:{:02d}:{:02d}".format(rtc_d, rtc_h, rtc_m, rtc_s))
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to format an invalid RTC state")
 			s = __("Invalid RTC state")
 			d["rtc_valid"] = False
 		elif rtc_h == 0 and rtc_m == 0 and rtc_s == 0 and rtc_d == 0 and rtc_carry == 0:

@@ -9,6 +9,7 @@ from .app import AppInfo
 from .LK_Device import *
 from .i18n import __, c__, format_decimal
 from .IniSettings import IniSettings
+from .Logging import logger
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "GBxCart RW"

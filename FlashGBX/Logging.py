@@ -5,6 +5,7 @@
 # Terminal output, debug logging, and Python exception hook.
 
 import sys, os, re, time, datetime, traceback, platform
+from loguru import logger
 from .app import AppInfo, AppContext
 from . import i18n
 from .i18n import __
@@ -41,14 +42,7 @@ class Logger:
 		sys.__stdout__.flush()
 
 	@classmethod
-	def dprint(cls, *args, **kwargs):
-		stack = traceback.extract_stack()
-		stack = stack[len(stack) - 2]
-		msg = "[{:s}] [{:s}:{:d}] {:s}(): {:s}".format(
-			str(datetime.datetime.now().astimezone()),
-			os.path.split(stack.filename)[1], stack.lineno, stack.name,
-			" ".join(map(str, args)), **kwargs,
-		)
+	def _write_debug_message(cls, msg):
 		AppContext.DEBUG_LOG.append(msg)
 		if len(AppContext.DEBUG_LOG) > 64 * 1024: AppContext.DEBUG_LOG.pop(0)
 		if AppContext.DEBUG:
@@ -58,6 +52,17 @@ class Logger:
 				sys.stdout = sys.__stdout__
 				print(msg)
 				sys.stdout = temp
+
+	@classmethod
+	def dprint(cls, *args, **kwargs):
+		stack = traceback.extract_stack()
+		stack = stack[len(stack) - 2]
+		msg = "[{:s}] [{:s}:{:d}] {:s}(): {:s}".format(
+			str(datetime.datetime.now().astimezone()),
+			os.path.split(stack.filename)[1], stack.lineno, stack.name,
+			" ".join(map(str, args)), **kwargs,
+		)
+		cls._write_debug_message(msg)
 
 	@classmethod
 	def write_debug_log(cls, device=False):
@@ -120,3 +125,14 @@ class Logger:
 
 # Top-level alias kept because dprint is the most-used helper in the codebase.
 dprint = Logger.dprint
+
+def _loguru_sink(message):
+	Logger._write_debug_message(str(message).rstrip())
+
+logger.remove()
+logger.add(
+	_loguru_sink,
+	format="[{time:YYYY-MM-DDTHH:mm:ss.SSSZZ}] [{file.name}:{line}] {function}(): {level}: {message}",
+	backtrace=True,
+	diagnose=False,
+)

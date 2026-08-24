@@ -3,7 +3,7 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import time, copy, math, struct, os
-from .Logging import dprint
+from .Logging import dprint, logger
 from .app import AppContext
 from .i18n import __, c__, format_decimal
 
@@ -544,8 +544,8 @@ class CFI:
 				print(__("Warning: No information about the voltage range found in CFI data."))
 				try:
 					with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f: f.write(buffer)
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to write CFI diagnostics")
 				return False
 
 			pri_address = (buffer[0x2A] | (buffer[0x2C] << 8)) * 2
@@ -615,8 +615,8 @@ class CFI:
 			print(__("Error: Trying to parse CFI data resulted in an error."))
 			try:
 				with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f: f.write(buffer)
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to write CFI diagnostics")
 			return False
 
 		s = ""

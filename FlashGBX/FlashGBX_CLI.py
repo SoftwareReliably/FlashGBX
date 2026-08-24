@@ -5,13 +5,14 @@
 import sys
 import datetime, shutil, platform, os, math, traceback, re, time, serial, zipfile
 from .i18n import __, c__, ___, format_decimal
+from .Logging import logger
 try:
 	# pylint: disable=import-error
 	import readline
 	readline.set_completer_delims('\t\n=')
 	readline.parse_and_bind("tab:complete")
-except:
-	pass
+except Exception:
+	logger.exception("Readline tab completion is unavailable")
 
 from .RomFileDMG import RomFileDMG
 from .RomFileAGB import RomFileAGB
@@ -107,7 +108,7 @@ class FlashGBX_CLI():
 				if dev.SupportsFirmwareUpdates() and action is not None:
 					menu_items.append((action, __("Firmware Update for {device_name}", device_name=cls.DEVICE_LABEL_SHORT)))
 			except Exception:
-				pass
+				logger.exception("Failed to add a firmware-update action to the CLI menu")
 
 		fwupdate_actions = set()
 		for hw_mod in HW_DEVICES:
@@ -118,7 +119,7 @@ class FlashGBX_CLI():
 					if action is not None:
 						fwupdate_actions.add(action)
 			except Exception:
-				pass
+				logger.exception("Failed to inspect a firmware-update action")
 
 		# Ask interactively if no args set
 		if args.action is None:
@@ -400,8 +401,8 @@ class FlashGBX_CLI():
 				except UnicodeEncodeError:
 					prog_bar = "#" * whole_width + " " * (prog_width - whole_width)
 					print(prog_str.replace("%PROG_BAR%", prog_bar), end="\r", flush=True)
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to render the CLI progress bar")
 
 	def FinishOperation(self):
 		time_elapsed = None
@@ -625,8 +626,8 @@ class FlashGBX_CLI():
 			self.CONN.SetAutoPowerOff(value=0)
 			self.CONN.Close(cartPowerOff=True)
 			print(__("Disconnected from {device_name}", device_name=devname))
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to disconnect the CLI device")
 		self.CONN = None
 
 	def ReadCartridge(self, data):

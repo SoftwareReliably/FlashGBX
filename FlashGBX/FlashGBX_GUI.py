@@ -15,7 +15,7 @@ from .Mapper import DMG_Mapper
 from .app import AppInfo, AppContext, generate_filename, HW_DEVICES
 from .CartridgeTypes import RomSizes, AgbSaveTypes, DmgSaveTypes
 from .i18n import LANGUAGES, CONFIGURED_LANGUAGE, __, c__, ___, loadQtTranslation, format_decimal, init_language
-from .Logging import Logger, dprint
+from .Logging import Logger, dprint, logger
 from .Progress import Progress
 from .Formatter import Formatter
 from .IniSettings import IniSettings
@@ -60,8 +60,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 					QtGui.QGuiApplication.styleHints().setColorScheme(QtCore.Qt.ColorScheme.Light)
 			if platform.system() == "Windows":
 				qt_app.setStyle("fusion" if IsDarkMode() else "windowsvista")
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to configure the Qt color scheme")
 
 		QtWidgets.QMainWindow.__init__(self)
 		AppContext.CONFIG_PATH = args['config_path']
@@ -1157,16 +1157,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 				subprocess.Popen(["xdg-open", url], env=self.GetHostLauncherEnv())
 			else:
 				webbrowser.open(url)
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to open URL: {}", url)
 
 	def DisconnectDevice(self):
 		try:
 			devname = self.CONN.GetFullNameExtended()
 			self.CONN.Close(cartPowerOff=True)
 			print(__("Disconnected from {device_name}", device_name=devname))
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to disconnect the GUI device")
 
 		self.DEVICES = {}
 		self.cmbDevice.clear()
@@ -1327,8 +1327,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 		device = False
 		try:
 			device = self.CONN.GetFullNameExtended(more=True)
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to read the connected device name for the debug log")
 
 		Logger.write_debug_log(device)
 		try:
@@ -1338,8 +1338,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 				self.lblWarning.setVisible(False)
 				if isinstance(sys.stdout, Logger) and sys.stdout.LOG_ERROR is True:
 					sys.stdout.LOG_ERROR = False
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to open the debug log")
 
 	def ConnectDevice(self):
 		if self.CONN is not None:
@@ -1496,8 +1496,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 					try:
 						text = dev.GetRegisterInformation()
 						QtWidgets.QMessageBox.critical(self, "{:s} {:s}".format(AppInfo.NAME, AppInfo.VERSION), text, QtWidgets.QMessageBox.Ok)
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to display device registration information")
 
 				if self.CONN is None:
 					return False
@@ -2802,8 +2802,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 							readback = save2
 						with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_1.bin", "wb") as f: f.write(towrite[:len(readback)])
 						with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_2.bin", "wb") as f: f.write(readback)
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to write cartridge stress-test diagnostics")
 					if test_ok > 0:
 						msg = __("Test {num} ({pattern}) failed!", num=test_ok+1, pattern=test_patterns_names[test_ok])
 						msg += msg_te
@@ -2904,8 +2904,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 				locs.append(detected["bl_offset"])
 			locs = list(set(locs))
 			locs.sort()
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to load saved batteryless SRAM locations")
 
 		intro_msg = ""
 		if detected is not False:
@@ -2929,16 +2929,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 						len_index = lens.index(preselect["bl_size"])
 						lay_index = preselect.get("bl_layout")
 						intro_msg2 = "The required parameters were pre-selected based on the ROM title “" + game_title_raw + "”. These may still be inaccurate, so you can adjust them below if necessary. Note that wrong values can corrupt your game when writing, so having a full ROM backup is recommended."
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to preselect batteryless SRAM parameters")
 
 			intro_msg += intro_msg2
 
 		try:
 			if loc_index is None:
 				loc_index = locs.index(int(self.SETTINGS.value("BatterylessSramLastLocation{:s}".format(mode))))
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to restore the last batteryless SRAM location")
 
 		bl_args = {}
 		if loc_index is None:
@@ -3300,8 +3300,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 			try:
 				if data != bytearray(data[0] * len(data)):
 					QtWidgets.QMessageBox.critical(self, "{:s} {:s}".format(AppInfo.NAME, AppInfo.VERSION), __("The cartridge connection is unstable!") + "\n" + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."), QtWidgets.QMessageBox.Ok)
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to check whether the cartridge response is stable")
 
 		if self.CONN.GetMode() == "DMG":
 			if self.cmbDMGHeaderMapperResult.count() == 0:
@@ -3413,8 +3413,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 					data["logo_sachen"].putpalette([ 255, 255, 255, 128, 128, 128 ])
 					try:
 						self.lblDMGHeaderBootlogoResult.setPixmap(bitmap2pixmap(data["logo_sachen"]))
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to display the Sachen boot logo")
 			else:
 				if "logo" in data:
 					if data['logo_correct']:
@@ -3425,8 +3425,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 						data["logo"].putpalette([ 255, 255, 255, 251, 0, 24 ])
 					try:
 						self.lblDMGHeaderBootlogoResult.setPixmap(bitmap2pixmap(data["logo"]))
-					except:
-						pass
+					except Exception:
+						logger.exception("Failed to display the Game Boy boot logo")
 
 			self.grpAGBCartridgeInfo.setVisible(False)
 			self.grpDMGCartridgeInfo.setVisible(True)
@@ -3549,8 +3549,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 					data["logo"].putpalette([ 255, 255, 255, 251, 0, 24 ])
 				try:
 					self.lblAGBHeaderBootlogoResult.setPixmap(bitmap2pixmap(data["logo"]))
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to display the Game Boy Advance boot logo")
 
 		if resetStatus:
 			self.lblStatus1aResult.setText("–")
@@ -3582,11 +3582,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 			self.SETTINGS.setValue("AutoPowerOff", "0")
 			try:
 				self.CONN.ChangeBaudRate(baudrate=1000000)
-			except:
-				try:
-					self.DisconnectDevice()
 				except:
-					pass
+					try:
+						self.DisconnectDevice()
+					except Exception:
+						logger.exception("Failed to disconnect after changing the baud rate")
 
 	def DetectCartridge(self, checkSaveType=True):
 		if not self.CheckDeviceAlive(): return
@@ -3634,8 +3634,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 							self.cmbDMGHeaderSaveTypeResult.setCurrentIndex(DmgSaveTypes(mbc=save_type).GetIndex())
 						elif self.CONN.GetMode() == "AGB":
 							self.cmbAGBSaveTypeResult.setCurrentIndex(save_type)
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to select the detected save type")
 
 			# Cart Type
 			try:
@@ -3672,8 +3672,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 							msg_cart_type += "- {:s}<br>".format(supp_cart_types[0][cart_types[i]])
 					msg_cart_type = msg_cart_type[:-4]
 
-			except:
-				pass
+			except Exception:
+				logger.exception("Failed to select the detected flash-cart type")
 
 			# Messages
 			# Header
@@ -3704,8 +3704,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 									temp += " ({:s})<br><b>" + __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM") + "</b> 0x{:X}–0x{:X} ({:s})".format(Formatter.file_size(save_size, as_int=True), header["batteryless_sram"]["bl_offset"], header["batteryless_sram"]["bl_offset"]+header["batteryless_sram"]["bl_size"]-1, Formatter.file_size(header["batteryless_sram"]["bl_size"], as_int=True))
 								else:
 									temp += " ({:s})<br><b>" + __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM") + "</b> 0x{:X}–0x{:X} ({:s})".format(Formatter.file_size(save_size, as_int=True), header["batteryless_sram"]["bl_offset"], header["batteryless_sram"]["bl_offset"]+header["batteryless_sram"]["bl_size"]-1, Formatter.file_size(header["batteryless_sram"]["bl_size"], as_int=True))
-						except:
-							pass
+					except Exception:
+						logger.exception("Failed to format batteryless SRAM details")
 
 				if save_type == 0:
 					if save_chip and "Unknown" not in save_chip:
@@ -4376,4 +4376,3 @@ if platform.system() == "Linux":
 else:
 	qt_app.setApplicationName(AppInfo.NAME)
 loadQtTranslation(qt_app)
-

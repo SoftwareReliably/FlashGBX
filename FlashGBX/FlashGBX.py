@@ -1,14 +1,26 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import sys, os, glob, re, json, zlib, argparse, zipfile, traceback, platform, datetime, copy, time
-from .i18n import __, c__, init_language
-from .app import AppInfo, AppContext, HW_DEVICES
-from .IniSettings import IniSettings
-from .CartridgeTypes import RomSizes, AgbSaveTypes, DmgSaveTypes
+import argparse
+import copy
+import datetime
+import glob
+import json
+import os
+import platform
+import re
+import sys
+import time
+import traceback
+import zipfile
+import zlib
+
+from .app import HW_DEVICES, AppContext, AppInfo
+from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
 from .Flashcart import empty_flashcarts_map
-from .Logging import ANSI
+from .i18n import __, c__, init_language
+from .IniSettings import IniSettings
+from .Logging import ANSI, logger
 from .PocketCamera import PocketCamera
 
 STATIC_ACTIONS = ["info", "backup-rom", "flash-rom", "backup-save",
@@ -23,7 +35,7 @@ for _d in HW_DEVICES:
 			if _action is not None:
 				FWUPDATE_ACTIONS.append(_action)
 	except Exception:
-		pass
+		logger.exception("Failed to inspect a hardware backend for firmware-update support")
 ALL_ACTIONS = STATIC_ACTIONS + FWUPDATE_ACTIONS
 
 def ReadConfigFiles(args):
@@ -79,7 +91,7 @@ def LoadConfig(args):
 
 			if rf_list != "":
 				ret.append([1, __("The application was recently updated and some flashcart profile files have been updated as well. You will find backup copies of them in your configuration directory.") + "\n\n" + __("Updated files:") + "\n" + rf_list[:-1]])
-			fc_files = glob.glob("{0:s}{1}fc_*.txt".format(glob.escape(config_path), os.sep))
+			fc_files = glob.glob(f"{glob.escape(config_path):s}{os.sep}fc_*.txt")
 		else:
 			print(__("Warning: {config_zip_file} not found. This is required to load new flashcart profile configurations after updating.", config_zip_file=app_path + os.sep + os.path.join("res", "config.zip")))
 
@@ -92,7 +104,7 @@ def LoadConfig(args):
 				try:
 					specs = json.loads(specs_int)
 				except:
-					ret.append([2, "The flashchip type file “{:s}” could not be parsed and needs to be fixed before it can be used.".format(os.path.basename(file))])
+					ret.append([2, f"The flashchip type file “{os.path.basename(file):s}” could not be parsed and needs to be fixed before it can be used."])
 					continue
 				if "names" not in specs: continue
 				for name in specs["names"]:
@@ -168,8 +180,8 @@ def main(portableMode=False):
 	try:
 		# pylint: disable=protected-access
 		parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")
-	except:
-		pass
+	except Exception:
+		logger.exception("Failed to customize the argparse action-group title")
 	parser.add_argument("--cli", help=c__("Command Line Help", "force command line interface mode"), action="store_true")
 	parser.add_argument("--reset", help=c__("Command Line Help", "clears all settings such as last used directory information"), action="store_true")
 	parser.add_argument("--debug", help=c__("Command Line Help", "enable debug messages used for development"), action="store_true")
@@ -234,7 +246,7 @@ def main(portableMode=False):
 		try:
 			if not os.path.exists(config_path):
 				os.mkdir(config_path)
-			tf = "{:s}/settings.ini".format(config_path)
+			tf = f"{config_path:s}/settings.ini"
 			f = open(tf, "ab")
 			f.close()
 			break
@@ -272,7 +284,7 @@ def main(portableMode=False):
 			from . import FlashGBX_CLI
 			if args["argparsed"].action is None:
 				parser.print_help()
-				print("\n\n{:s}" + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.") + "\n      " + __("Optional command line switches are explained above.") + "{:s}\n".format(ANSI.RED, ANSI.RESET))
+				print("\n\n{:s}" + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.") + "\n      " + __("Optional command line switches are explained above.") + f"{ANSI.RED:s}\n")
 				if exc is not None: print(ANSI.YELLOW + str(exc) + ANSI.RESET)
 
 			print(__("Falling back to CLI mode.") + "\n")

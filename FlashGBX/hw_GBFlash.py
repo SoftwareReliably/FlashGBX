@@ -8,6 +8,7 @@ from .app import AppInfo
 from .LK_Device import *
 from .i18n import __, c__
 from .IniSettings import IniSettings
+from .Logging import logger
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "GBFlash"

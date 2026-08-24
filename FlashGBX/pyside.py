@@ -5,7 +5,7 @@
 # PySide abstraction layer, partly contributed by J-Fox
 
 import os, platform
-from .Logging import dprint
+from .Logging import dprint, logger
 
 try:
 	from PySide6 import QtCore

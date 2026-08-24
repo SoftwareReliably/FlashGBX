@@ -3,6 +3,7 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import platform, importlib, re, sys
+from loguru import logger
 
 class AppInfo:
 	NAME = "FlashGBX"

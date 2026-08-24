@@ -5,6 +5,7 @@
 # pylint: disable=wildcard-import, unused-wildcard-import
 from .LK_Device import *
 from .i18n import __
+from .Logging import logger
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "Game Bub"

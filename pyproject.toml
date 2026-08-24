@@ -18,6 +18,7 @@ dependencies = [
     "python-dateutil",
     "packaging",
     "pyside6>=6.11.2",
+    "loguru>=0.7.3",
 ]
 
 # Classifiers **hier unter project**, nicht scripts**

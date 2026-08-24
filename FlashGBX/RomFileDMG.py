@@ -5,14 +5,14 @@
 import hashlib, re, string, struct, os, json, copy
 from .i18n import __
 from .CartridgeTypes import RomSizes, DmgSaveTypes
-from .Logging import dprint, ANSI
+from .Logging import dprint, ANSI, logger
 from .app import AppContext
 
 try:
 	Image = None
 	from PIL import Image
-except:
-	pass
+except Exception:
+	logger.exception("Pillow image support is unavailable for Game Boy ROMs")
 
 class RomFileDMG:
 	ROMFILE_PATH = None
@@ -242,8 +242,8 @@ class RomFileDMG:
 					game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
 					game_title = ''.join(filter(lambda x: x in set(string.printable), game_title))
 					data["game_title"] = game_title
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to parse the unlicensed mapper ROM title")
 				data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(buffer[0xD8], buffer[0xD9], buffer[0xDA], buffer[0xD7], buffer[0xD0], buffer[0xD1], buffer[0xD2], buffer[0xD3], buffer[0xD4], struct.unpack("<H", buffer[0xD5:0xD7])[0]).replace("\x00", "")
 
 			# Unlicensed Datel Orbit V2 Mapper
@@ -258,8 +258,8 @@ class RomFileDMG:
 					game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
 					game_title = ''.join(filter(lambda x: x in set(string.printable), game_title))
 					data["game_title"] = game_title
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to parse the Datel Orbit V2 ROM title")
 
 			# Unlicensed Datel Orbit V2 Mapper (older firmware)
 			elif (
@@ -275,8 +275,8 @@ class RomFileDMG:
 					game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
 					game_title = ''.join(filter(lambda x: x in set(string.printable), game_title))
 					data["game_title"] = game_title
-				except:
-					pass
+				except Exception:
+					logger.exception("Failed to parse the legacy Datel Orbit V2 ROM title")
 
 			# Unlicensed Sachen MMC1/MMC2
 			elif len(buffer) >= 0x280:

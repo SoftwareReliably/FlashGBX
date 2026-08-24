@@ -6,6 +6,7 @@ from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
 from .i18n import __, c__
 from .InteractiveConsole import InteractiveConsole
 from .app import AppInfo
+from .Logging import logger
 
 class InteractiveConsoleWindow(QtWidgets.QDialog):
 	APP = None
@@ -81,8 +82,8 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
 	def hideEvent(self, event):
 		try:
 			self.APP.SetAutoPowerOff()
-		except:
-			pass
+		except Exception:
+			logger.exception("Failed to restore automatic power-off settings")
 		self.APP.activateWindow()
 
 	def eventFilter(self, obj, event):

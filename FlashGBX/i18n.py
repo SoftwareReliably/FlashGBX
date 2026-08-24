@@ -3,6 +3,7 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import sys, os, io, ast, struct, array, locale, gettext, platform, re, subprocess, glob
+from loguru import logger
 
 OS_LANGUAGE = "en"
 CONFIGURED_LANGUAGE = None
