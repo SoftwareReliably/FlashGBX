@@ -1,17 +1,18 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import os, platform
+import os
+import platform
+
 
 class DumpReport:
 	@classmethod
 	def generate(cls, di, device) -> str:
-		from .Mapper import DMG_Mapper, ConvertMapperToMapperType
-		from .CartridgeTypes import RomSizes, DmgSaveTypes, AgbSaveTypes
-		from .Formatter import Formatter
-		from .app import AppInfo
 		from . import i18n
+		from .app import AppInfo
+		from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
+		from .Formatter import Formatter
+		from .Mapper import ConvertMapperToMapperType, DMG_Mapper
 
 		def _fields_to_lines(fields, col=19):
 			return [f"* {label + ':':<{col}}{value}" for label, value in fields]
