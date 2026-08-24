@@ -3582,11 +3582,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 			self.SETTINGS.setValue("AutoPowerOff", "0")
 			try:
 				self.CONN.ChangeBaudRate(baudrate=1000000)
-				except:
-					try:
-						self.DisconnectDevice()
-					except Exception:
-						logger.exception("Failed to disconnect after changing the baud rate")
+			except Exception:
+				logger.exception("Failed to change the device baud rate")
+				try:
+					self.DisconnectDevice()
+				except Exception:
+					logger.exception("Failed to disconnect after changing the baud rate")
 
 	def DetectCartridge(self, checkSaveType=True):
 		if not self.CheckDeviceAlive(): return
@@ -3704,8 +3705,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 									temp += " ({:s})<br><b>" + __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM") + "</b> 0x{:X}–0x{:X} ({:s})".format(Formatter.file_size(save_size, as_int=True), header["batteryless_sram"]["bl_offset"], header["batteryless_sram"]["bl_offset"]+header["batteryless_sram"]["bl_size"]-1, Formatter.file_size(header["batteryless_sram"]["bl_size"], as_int=True))
 								else:
 									temp += " ({:s})<br><b>" + __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM") + "</b> 0x{:X}–0x{:X} ({:s})".format(Formatter.file_size(save_size, as_int=True), header["batteryless_sram"]["bl_offset"], header["batteryless_sram"]["bl_offset"]+header["batteryless_sram"]["bl_size"]-1, Formatter.file_size(header["batteryless_sram"]["bl_size"], as_int=True))
-					except Exception:
-						logger.exception("Failed to format batteryless SRAM details")
+						except Exception:
+							logger.exception("Failed to format batteryless SRAM details")
 
 				if save_type == 0:
 					if save_chip and "Unknown" not in save_chip:
