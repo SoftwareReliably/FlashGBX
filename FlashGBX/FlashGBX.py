@@ -139,7 +139,7 @@ def main(portableMode=False):
 
 	try:
 		from .pyside import QtCore
-		cp = { "subdir":os.path.join(app_path, "config"), "appdata":os.path.join(QtCore.QDir.toNativeSeparators(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)), "FlashGBX") }
+		cp = { "subdir":os.path.join(app_path, "config"), "appdata":os.path.join(QtCore.QDir.toNativeSeparators(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)), "FlashGBX") } # type: ignore
 	except Exception as e:
 		logger.exception(f"Failed to import PySide: {e}")
 		cp = { "subdir":os.path.join(app_path, "config"), "appdata":os.path.join(os.path.expanduser('~'), "FlashGBX") }
