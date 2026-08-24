@@ -1,15 +1,21 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import functools, os, json, shutil, urllib.parse
-from .i18n import __, c__
-from PIL.ImageQt import ImageQt
+import functools
+import json
+import os
+import shutil
+import urllib.parse
+
 from PIL import Image, ImageDraw
-from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
-from .PocketCamera import PocketCamera
-from .UserInputDialog import UserInputDialog
+from PIL.ImageQt import ImageQt
+
 from .app import AppInfo
+from .i18n import __, c__
+from .PocketCamera import PocketCamera
+from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
+from .UserInputDialog import UserInputDialog
+
 
 class PocketCameraWindow(QtWidgets.QDialog):
 	CUR_PIC = None
@@ -137,10 +143,10 @@ class PocketCameraWindow(QtWidgets.QDialog):
 		self.grpPhotoThumbsLayout.setContentsMargins(-1, 3, -1, -1)
 		self.lblPhoto = []
 		rowsPhotos = []
-		for row in range(0, 5):
+		for row in range(5):
 			rowsPhotos.append(QtWidgets.QHBoxLayout())
 			rowsPhotos[row].setSpacing(2)
-			for _ in range(0, 6):
+			for _ in range(6):
 				self.lblPhoto.append(QtWidgets.QLabel(self))
 				self.lblPhoto[len(self.lblPhoto)-1].setMinimumSize(49, 43)
 				self.lblPhoto[len(self.lblPhoto)-1].setMaximumSize(49, 43)
@@ -191,7 +197,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 			self.cmbColor.setCurrentIndex(3)
 		palette_found = False
 		if palette is not None:
-			for i in range(0, len(self.PALETTES)):
+			for i in range(len(self.PALETTES)):
 				if palette == self.PALETTES[i]:
 					self.cmbColor.setCurrentIndex(i)
 					self.CUR_PALETTE = i
@@ -200,10 +206,9 @@ class PocketCameraWindow(QtWidgets.QDialog):
 			self.PALETTES.append(palette)
 			self.CUR_PALETTE = len(self.PALETTES) - 1
 
-		if self.CUR_FILE is not None:
-			if self.OpenFile(self.CUR_FILE) is False:
-				self.FORCE_EXIT = True
-				return
+		if self.CUR_FILE is not None and self.OpenFile(self.CUR_FILE) is False:
+			self.FORCE_EXIT = True
+			return
 
 		self.CUR_EXPORT_PATH = self.APP.SETTINGS.value("LastDirPocketCamera")
 		if self.CUR_EXPORT_PATH is None:
@@ -240,7 +245,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 				"title":"Photo!",
 				"intro":__("A “Photo!” save file was detected. Please select the roll of pictures that you would like to load."),
 				"params": [
-					[ "index", "cmb", __("Film roll:"), [ __("Current Save Data") ] + [ __("“{flash_directory}” Slot {number}", flash_directory="Flash Directory", number="{:d}".format(l)) for l in range(1, 8) ], 0 ],
+					[ "index", "cmb", __("Film roll:"), [ __("Current Save Data") ] + [ __("“{flash_directory}” Slot {number}", flash_directory="Flash Directory", number=f"{l:d}") for l in range(1, 8) ], 0 ],
 				]
 			}
 			dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
@@ -305,8 +310,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
 		if path == "": return
 		self.CUR_EXPORT_PATH = os.path.dirname(path)
 
-		for i in range(0, 32):
-			file = os.path.splitext(path)[0] + "{:02d}".format(i) + os.path.splitext(path)[1]
+		for i in range(32):
+			file = os.path.splitext(path)[0] + f"{i:02d}" + os.path.splitext(path)[1]
 			if os.path.exists(file):
 				answer = QtWidgets.QMessageBox.warning(self, AppInfo.NAME, __("There are already pictures that use the same file names. If you continue, these files will be overwritten."), QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
 				if answer == QtWidgets.QMessageBox.Ok:
@@ -314,8 +319,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
 				elif answer == QtWidgets.QMessageBox.Cancel:
 					return
 
-		for i in range(0, 32):
-			file = os.path.splitext(path)[0] + "{:02d}".format(i+1) + os.path.splitext(path)[1]
+		for i in range(32):
+			file = os.path.splitext(path)[0] + f"{i+1:02d}" + os.path.splitext(path)[1]
 			self.SavePicture(i, path=file)
 
 	def btnSavePhoto_Clicked(self, event):
@@ -336,7 +341,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 	def BuildPhotoList(self):
 		cam = self.CUR_PC
 		self.CUR_THUMBS = [None] * 30
-		for i in range(0, 30):
+		for i in range(30):
 			pic = cam.GetPicture(i).convert("RGBA")
 			self.lblPhoto[i].setToolTip("")
 			if cam.IsEmpty(i):
@@ -359,7 +364,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 		cam = self.CUR_PC
 		if cam is None: return
 
-		for i in range(0, 30):
+		for i in range(30):
 			self.lblPhoto[i].setStyleSheet("border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;")
 
 		self.CUR_PIC = ImageQt(cam.GetPicture(index).resize((int(256 * scale_factor), int(224 * scale_factor)), resampler))
@@ -372,7 +377,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
 	def SavePicture(self, index, path=""):
 		if path == "":
-			path = self.CUR_EXPORT_PATH + os.sep + "IMG_PC{:02d}.png".format(index+1)
+			path = self.CUR_EXPORT_PATH + os.sep + f"IMG_PC{index+1:02d}.png"
 			path = QtWidgets.QFileDialog.getSaveFileName(self, __("Save Photo"), path, __("PNG files") + " (*.png);;" + __("BMP files") + " (*.bmp);;" + __("GIF files") + " (*.gif);;" + __("JPEG files") + " (*.jpg);;" + __("All files") + " (*.*)")[0]
 			if path != "": self.CUR_EXPORT_PATH = os.path.dirname(path)
 		if path == "": return
