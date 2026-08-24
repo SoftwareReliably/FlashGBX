@@ -1,10 +1,13 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import time, threading, statistics, random
+import random
+import statistics
+import threading
+import time
 
-class Progress():
+
+class Progress:
 	MUTEX = threading.Lock()
 	PROGRESS = {}
 	UPDATER = None
@@ -20,10 +23,7 @@ class Progress():
 		std_deviation = (sum((x - mean) ** 2 for x in speeds) / len(speeds)) ** 0.5
 		lower_bound = mean - threshold * std_deviation
 		upper_bound = mean + threshold * std_deviation
-		if new_number < lower_bound or new_number > upper_bound:
-			return True
-		else:
-			return False
+		return bool(new_number < lower_bound or new_number > upper_bound)
 
 	def SetProgress(self, args):
 		self.MUTEX.acquire(1)
@@ -90,9 +90,7 @@ class Progress():
 				return
 
 			elif args["action"] in ("READ", "WRITE", "UPDATE_POS"):
-				if "method" not in self.PROGRESS: return
-				elif args["action"] == "READ" and self.PROGRESS["method"] in ("SAVE_WRITE", "ROM_WRITE"): return
-				elif args["action"] == "WRITE" and self.PROGRESS["method"] in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY"): return
+				if "method" not in self.PROGRESS or args["action"] == "READ" and self.PROGRESS["method"] in ("SAVE_WRITE", "ROM_WRITE") or args["action"] == "WRITE" and self.PROGRESS["method"] in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY"): return
 				if self.PROGRESS["pos"] > self.PROGRESS["size"]: return
 				skip_speed = False
 				self.PROGRESS["action"] = "PROGRESS"
@@ -168,8 +166,7 @@ class Progress():
 				if "verified" in args:
 					self.PROGRESS["verified"] = (args["verified"] == True)
 
-				if self.PROGRESS["speed"] > self.PROGRESS["size"] / 1024:
-					self.PROGRESS["speed"] = self.PROGRESS["size"] / 1024
+				self.PROGRESS["speed"] = min(self.PROGRESS["speed"], self.PROGRESS["size"] / 1024)
 
 				self.UPDATER(self.PROGRESS)
 				del(self.PROGRESS["method"])
