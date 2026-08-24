@@ -34,8 +34,8 @@ for _d in HW_DEVICES:
 			_action = _dev.FirmwareUpdateAction()
 			if _action is not None:
 				FWUPDATE_ACTIONS.append(_action)
-	except Exception:
-		logger.exception("Failed to inspect a hardware backend for firmware-update support")
+	except Exception as e:
+		logger.exception(f"Failed to inspect a hardware backend for firmware-update support: {e}")
 ALL_ACTIONS = STATIC_ACTIONS + FWUPDATE_ACTIONS
 
 def ReadConfigFiles(args):
@@ -47,7 +47,7 @@ def ReadConfigFiles(args):
 	if config_version is not None and len(fc_files) == 0:
 		print(__("No flashcart profile files found in {config_path}. Resetting configuration...", config_path=args["config_path"]))
 		settings.clear()
-		os.rename(args["config_path"] + os.sep + "settings.ini", args["config_path"] + os.sep + "settings.ini_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".bak")
+		os.rename(args["config_path"] + os.sep + "settings.ini", args["config_path"] + os.sep + "settings.ini_" + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S") + ".bak")
 		config_version = False # extracts the config.zip again
 	elif reset:
 		settings.clear()
@@ -71,7 +71,7 @@ def LoadConfig(args):
 		deprecated_files = [ "fc_AGB_TEST.txt", "fc_DMG_TEST.txt", "fc_AGB_Nintendo_E201850.txt", "fc_AGB_Nintendo_E201868.txt", "config.ini", "fc_DMG_MX29LV320ABTC.txt", "fc_DMG_iG_4MB_MBC3_RTC.txt", "fc_AGB_Flash2Advance.txt", "fc_AGB_MX29LV640_AUDIO.txt", "fc_AGB_M36L0R7050T.txt", "fc_AGB_M36L0R8060B.txt", "fc_AGB_M36L0R8060T.txt", "fc_AGB_iG_32MB_S29GL512N.txt", "fc_DMG_SST39SF010_MBC1_AUDIO.txt", "fc_DMG_SST39SF040_MBC5_AUDIO.txt", "fc_DMG_AM29F010_MBC1_AUDIO.txt", "fc_DMG_AM29F040_MBC1_AUDIO.txt", "fc_DMG_AM29F040_MBC1_WR.txt", "fc_DMG_AM29F080_MBC1_AUDIO.txt", "fc_DMG_AM29F080_MBC1_WR.txt", "fc_DMG_SST39SF040_MBC1_AUDIO.txt", "fc_DMG_SST39SF020_MBC1_AUDIO.txt", "fc_DMG_29LV016T.txt", "fc_DMG_Retrostage.txt" ]
 		for file in deprecated_files:
 			if os.path.exists(config_path + os.sep + file):
-				os.rename(config_path + os.sep + file, config_path + os.sep + file + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".bak")
+				os.rename(config_path + os.sep + file, config_path + os.sep + file + "_" + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S") + ".bak")
 
 		rf_list = ""
 		if os.path.exists(app_path + os.sep + os.path.join("res", "config.zip")):
@@ -83,7 +83,7 @@ def LoadConfig(args):
 							with open(config_path + os.sep + zfile, "rb") as ofile: buffer = ofile.read()
 							ofile_crc = zlib.crc32(buffer) & 0xFFFFFFFF
 							if zfile_crc == ofile_crc: continue
-							os.rename(config_path + os.sep + zfile, config_path + os.sep + zfile + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".bak")
+							os.rename(config_path + os.sep + zfile, config_path + os.sep + zfile + "_" + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S") + ".bak")
 							rf_list += zfile + "\n"
 						zip.extract(zfile, config_path + os.sep)
 			except zipfile.BadZipFile:
@@ -103,8 +103,8 @@ def LoadConfig(args):
 				specs_int = re.sub("(0x[0-9A-F]+)", lambda m: str(int(m.group(1), 16)), data) # hex numbers to int numbers, otherwise not valid json
 				try:
 					specs = json.loads(specs_int)
-				except:
-					ret.append([2, f"The flashchip type file “{os.path.basename(file):s}” could not be parsed and needs to be fixed before it can be used."])
+				except Exception as e:
+					ret.append([2, f"The flashchip type file “{os.path.basename(file):s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {e}"])
 					continue
 				if "names" not in specs: continue
 				for name in specs["names"]:
@@ -140,7 +140,8 @@ def main(portableMode=False):
 	try:
 		from .pyside import QtCore
 		cp = { "subdir":os.path.join(app_path, "config"), "appdata":os.path.join(QtCore.QDir.toNativeSeparators(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)), "FlashGBX") }
-	except:
+	except Exception as e:
+		logger.exception(f"Failed to import PySide: {e}")
 		cp = { "subdir":os.path.join(app_path, "config"), "appdata":os.path.join(os.path.expanduser('~'), "FlashGBX") }
 
 	if portableMode:
@@ -180,8 +181,8 @@ def main(portableMode=False):
 	try:
 		# pylint: disable=protected-access
 		parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")
-	except Exception:
-		logger.exception("Failed to customize the argparse action-group title")
+	except Exception as e:
+		logger.exception(f"Failed to customize the argparse action-group title: {e}")
 	parser.add_argument("--cli", help=c__("Command Line Help", "force command line interface mode"), action="store_true")
 	parser.add_argument("--reset", help=c__("Command Line Help", "clears all settings such as last used directory information"), action="store_true")
 	parser.add_argument("--debug", help=c__("Command Line Help", "enable debug messages used for development"), action="store_true")
@@ -247,8 +248,8 @@ def main(portableMode=False):
 			if not os.path.exists(config_path):
 				os.mkdir(config_path)
 			tf = f"{config_path:s}/settings.ini"
-			f = open(tf, "ab")
-			f.close()
+			with open(tf, "ab"):
+				pass
 			break
 		except PermissionError:
 			print("\n" + ANSI.RED + __("Error: This program has no permission to use the configuration directory “{config_path}”!", config_path=config_path) + ANSI.RESET)
@@ -276,7 +277,8 @@ def main(portableMode=False):
 		except ModuleNotFoundError:
 			exc = traceback.format_exc()
 			app = None
-		except:
+		except Exception as e:
+			logger.exception(f"Failed to launch GUI: {e}")
 			exc = traceback.format_exc()
 			app = None
 
