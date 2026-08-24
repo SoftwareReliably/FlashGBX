@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 from .i18n import __, c__
+
 
 class RomSizes:
 	ROM_SIZES = [2**i for i in range(15, 30)] # 32 KiB to 512 MiB
@@ -190,19 +190,19 @@ class AgbSaveTypes:
 		if not savelib_string or savelib_string == "N/A":
 			return __("None") if localized else "None"
 		elif "SRAM_F_" in savelib_string:
-			return "256K SRAM/FRAM ({:s})".format(savelib_string)
+			return f"256K SRAM/FRAM ({savelib_string:s})"
 		elif "SRAM_" in savelib_string:
-			return "256K SRAM ({:s})".format(savelib_string)
+			return f"256K SRAM ({savelib_string:s})"
 		elif "EEPROM_V" in savelib_string:
-			return "4K or 64K EEPROM ({:s})".format(savelib_string)
+			return f"4K or 64K EEPROM ({savelib_string:s})"
 		elif "FLASH_V" in savelib_string or "FLASH512_V" in savelib_string:
-			return "512K FLASH ({:s})".format(savelib_string)
+			return f"512K FLASH ({savelib_string:s})"
 		elif "FLASH1M_V" in savelib_string:
-			return "1M FLASH ({:s})".format(savelib_string)
+			return f"1M FLASH ({savelib_string:s})"
 		elif "AGB_8MDACS_DL_V" in savelib_string:
-			return "8M DACS ({:s})".format(savelib_string)
+			return f"8M DACS ({savelib_string:s})"
 		else:
-			return c__("Save Type", "Unknown") + " ({:s})".format(savelib_string) if localized else "Unknown ({:s})".format(savelib_string)
+			return c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
 
 	def GetStringList(self):
 		return [self.GetString(index) for index in range(len(self.SAVE_TYPES))]
@@ -219,7 +219,7 @@ class AgbSaveTypes:
 		return self.AGB_FLASH_SAVE_CHIPS[chip_index][1]
 
 	def IsValidFlashChipIndex(self, chip_index):
-		return chip_index in self.AGB_FLASH_SAVE_CHIPS.keys()
+		return chip_index in self.AGB_FLASH_SAVE_CHIPS
 
 	@classmethod
 	def GetCLINames(cls, include_auto=True):
