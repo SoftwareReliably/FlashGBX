@@ -1,11 +1,16 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import time, copy, math, struct, os
-from .Logging import dprint, logger
+import copy
+import math
+import os
+import struct
+import time
+
 from .app import AppContext
 from .i18n import __, c__, format_decimal
+from .Logging import dprint, logger
+
 
 class Flashcart:
 	CONFIG = {}
@@ -174,9 +179,9 @@ class Flashcart:
 		self.CartRead(0) # dummy read
 		if "unlock_read" in self.CONFIG["commands"]:
 			for command in self.CONFIG["commands"]["unlock_read"]:
-				for _ in range(0, command[2]):
+				for _ in range(command[2]):
 					temp = self.CartRead(command[0], command[1])
-					dprint("Reading 0x{:X} bytes from cartridge at 0x{:X} = {:s}".format(command[1], command[0], str(temp)))
+					dprint(f"Reading 0x{command[1]:X} bytes from cartridge at 0x{command[0]:X} = {temp!s:s}")
 			time.sleep(0.001)
 		if "unlock" in self.CONFIG["commands"]:
 			self.CartWrite(self.CONFIG["commands"]["unlock"], fast_write=False)
@@ -190,7 +195,7 @@ class Flashcart:
 		elif full_reset and "reset_every" in self.CONFIG and "flash_size" in self.CONFIG:
 			for j in range(0, self.CONFIG["flash_size"], self.CONFIG["reset_every"]):
 				if j >= max_address: break
-				dprint("reset_every @ 0x{:X}".format(j))
+				dprint(f"reset_every @ 0x{j:X}")
 				for command in self.CONFIG["commands"]["reset"]:
 					self.CartWrite([[j + command[0], command[1]]])
 					#time.sleep(0.01)
@@ -225,7 +230,7 @@ class Flashcart:
 	def VerifyFlashID(self):
 		if "flash_ids_banks" in self.CONFIG:
 			cart_flash_ids = []
-			for i in range(0, len(self.CONFIG["flash_ids_banks"])):
+			for i in range(len(self.CONFIG["flash_ids_banks"])):
 				self.SelectBankROM(i)
 				config = copy.copy(self.CONFIG)
 				config["flash_ids"] = [ self.CONFIG["flash_ids_banks"][i] ]
@@ -277,7 +282,7 @@ class Flashcart:
 			for region in regions:
 				size = region[0]
 				count = region[1]
-				for _ in range(0, count):
+				for _ in range(count):
 					offsets.append([ pos, size ])
 					pos += size
 		else:
@@ -315,7 +320,7 @@ class Flashcart:
 		self.Reset(full_reset=True)
 		time_start = time.time()
 		if self.PROGRESS_FNCPTR is not None: self.PROGRESS_FNCPTR({"action":"ERASE", "time_start":time_start, "time_estimated": self.CONFIG["chip_erase_timeout"], "abortable":False})
-		for i in range(0, len(self.CONFIG["commands"]["chip_erase"])):
+		for i in range(len(self.CONFIG["commands"]["chip_erase"])):
 			addr = self.CONFIG["commands"]["chip_erase"][i][0]
 			data = self.CONFIG["commands"]["chip_erase"][i][1]
 			if len(self.CONFIG["commands"]["chip_erase"][i]) > 2:
@@ -323,7 +328,7 @@ class Flashcart:
 			else:
 				we = None
 
-			if not addr == None:
+			if addr != None:
 				if we == "WR":
 					self.SET_WE_PIN_WR()
 				elif we == "AUDIO":
@@ -342,8 +347,8 @@ class Flashcart:
 				timeout = self.CONFIG["chip_erase_timeout"]
 				while True:
 					if self.PROGRESS_FNCPTR is not None: self.PROGRESS_FNCPTR({"action":"ERASE", "time_start":time_start, "time_estimated": self.CONFIG["chip_erase_timeout"], "abortable":False})
-					if "wait_read_status_register" in self.CONFIG and self.CONFIG["wait_read_status_register"]:
-						for j in range(0, len(self.CONFIG["commands"]["read_status_register"])):
+					if self.CONFIG.get("wait_read_status_register"):
+						for j in range(len(self.CONFIG["commands"]["read_status_register"])):
 							sr_data = self.CONFIG["commands"]["read_status_register"][j][1]
 
 							if we == "WR":
@@ -374,7 +379,7 @@ class Flashcart:
 							"action": "ABORT",
 							"info_type": "msgbox_critical",
 							"info_msg":
-								__("Erasing the flash chip timed out. The last status register value was {value}.", value="0x{:X}".format(self.LAST_SR)) + "\n\n" +
+								__("Erasing the flash chip timed out. The last status register value was {value}.", value=f"0x{self.LAST_SR:X}") + "\n\n" +
 								__("Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."),
 							"abortable": False
 						})
@@ -386,7 +391,7 @@ class Flashcart:
 		if not skip:
 			self.Reset(full_reset=False)
 			if "sector_erase" not in self.CONFIG["commands"]: return False
-			for i in range(0, len(self.CONFIG["commands"]["sector_erase"])):
+			for i in range(len(self.CONFIG["commands"]["sector_erase"])):
 				addr = self.CONFIG["commands"]["sector_erase"][i][0]
 				data = self.CONFIG["commands"]["sector_erase"][i][1]
 				if len(self.CONFIG["commands"]["sector_erase"][i]) > 2:
@@ -401,7 +406,7 @@ class Flashcart:
 				if addr == "SA+28672": addr = pos + 0x7000
 				if addr == "SA+66": addr = pos + 0x42
 				if addr == "SA+132": addr = pos + 0x84
-				if not addr == None:
+				if addr != None:
 					if we == "WR":
 						self.SET_WE_PIN_WR()
 					elif we == "AUDIO":
@@ -427,7 +432,7 @@ class Flashcart:
 					timeout = 100
 					while True:
 						if "wait_read_status_register" in self.CONFIG and self.CONFIG["wait_read_status_register"] == True:
-							for j in range(0, len(self.CONFIG["commands"]["read_status_register"])):
+							for j in range(len(self.CONFIG["commands"]["read_status_register"])):
 								sr_addr = self.CONFIG["commands"]["read_status_register"][j][0]
 								sr_data = self.CONFIG["commands"]["read_status_register"][j][1]
 
@@ -474,8 +479,8 @@ class Flashcart:
 				self.SECTOR_POS += 1
 			try:
 				sector_size = self.CONFIG["sector_size"][self.SECTOR_POS][0]
-			except:
-				dprint("Warning: Sector map is smaller than expected.")
+			except Exception as e:
+				dprint(f"Warning: Sector map is smaller than expected: {e}")
 				self.SECTOR_POS -= 1
 			return sector_size
 		else:
@@ -520,7 +525,7 @@ class CFI:
 		if buffer is False or buffer == b'': return False
 		buffer = copy.copy(buffer)
 		info = {}
-		magic = "{:s}{:s}{:s}".format(chr(buffer[0x20]), chr(buffer[0x22]), chr(buffer[0x24]))
+		magic = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
 
 		info["d_swap"] = None
 		if magic == "QRY": # nothing swapped
@@ -533,12 +538,12 @@ class CFI:
 			return False
 
 		if info["d_swap"] is not None:
-			for j2 in range(0, len(info["d_swap"])):
-				for j in range(0, len(buffer)):
+			for j2 in range(len(info["d_swap"])):
+				for j in range(len(buffer)):
 					buffer[j] = CFI.swap_bits(buffer[j], info["d_swap"][j2])
 		try:
 			info["flash_id"] = buffer[0:8]
-			info["magic"] = "{:s}{:s}{:s}".format(chr(buffer[0x20]), chr(buffer[0x22]), chr(buffer[0x24]))
+			info["magic"] = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
 
 			if buffer[0x36] == 0xFF and buffer[0x48] == 0xFF:
 				print(__("Warning: No information about the voltage range found in CFI data."))
@@ -584,14 +589,14 @@ class CFI:
 
 			info["tb_boot_sector"] = False
 			info["tb_boot_sector_raw"] = 0
-			if "{:s}{:s}{:s}".format(chr(buffer[pri_address]), chr(buffer[pri_address+2]), chr(buffer[pri_address+4])) == "PRI":
+			if f"{chr(buffer[pri_address]):s}{chr(buffer[pri_address+2]):s}{chr(buffer[pri_address+4]):s}" == "PRI":
 				if buffer[pri_address + 0x1E] not in (0, 0xFF):
 					temp = { 0x02: 'As shown', 0x03: 'Reversed' }
 					info["tb_boot_sector_raw"] = buffer[pri_address + 0x1E]
 					try:
-						info["tb_boot_sector"] = "{:s} (0x{:02X})".format(temp[buffer[pri_address + 0x1E]], buffer[pri_address + 0x1E])
-					except:
-						info["tb_boot_sector"] = "0x{:02X}".format(buffer[pri_address + 0x1E])
+						info["tb_boot_sector"] = f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
+					except Exception:
+						info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
 
 			info["device_size"] = int(math.pow(2, buffer[0x4E]))
 			info["buffer_size"] = buffer[0x56] << 8 | buffer[0x54]
@@ -604,19 +609,19 @@ class CFI:
 			info["erase_sector_regions"] = buffer[0x58]
 			info["erase_sector_blocks"] = []
 			pos = 0
-			for i in range(0, min(4, info["erase_sector_regions"])):
+			for i in range(min(4, info["erase_sector_regions"])):
 				b = (buffer[0x5C+(i*8)] << 8 | buffer[0x5A+(i*8)]) + 1
 				t = (buffer[0x60+(i*8)] << 8 | buffer[0x5E+(i*8)]) * 256
 				size = b * t
 				pos += size
 				info["erase_sector_blocks"].append([ t, b, size ])	
 
-		except:
-			print(__("Error: Trying to parse CFI data resulted in an error."))
+		except Exception as err:
+			print(__("Error: Trying to parse CFI data resulted in an error: {err}", err=str(err)))
 			try:
 				with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f: f.write(buffer)
-			except Exception:
-				logger.exception("Failed to write CFI diagnostics")
+			except Exception as e:
+				logger.exception(f"Failed to write CFI diagnostics: {e}")
 			return False
 
 		s = ""
@@ -634,12 +639,12 @@ class CFI:
 		pos = 0
 		oversize = False
 		s = s[:-1]
-		for i in range(0, info['erase_sector_regions']):
+		for i in range(info['erase_sector_regions']):
 			esb = info['erase_sector_blocks'][i]
 			if oversize:
-				s += "\n" + __("Region {region}: {start}–{end} @ {size} × {count} (alternative)", region=str(i+1), start="0x{:07X}".format(pos), end="0x{:07X}".format(pos+esb[2]-1), size="0x{:X}".format(esb[0]) + __(" Bytes"), count=str(esb[1]))
+				s += "\n" + __("Region {region}: {start}–{end} @ {size} × {count} (alternative)", region=str(i+1), start=f"0x{pos:07X}", end=f"0x{pos+esb[2]-1:07X}", size=f"0x{esb[0]:X}" + __(" Bytes"), count=str(esb[1]))
 			else:
-				s += "\n" + __("Region {region}: {start}–{end} @ {size} × {count}", region=str(i+1), start="0x{:07X}".format(pos), end="0x{:07X}".format(pos+esb[2]-1), size="0x{:X}".format(esb[0]) + __(" Bytes"), count=str(esb[1]))
+				s += "\n" + __("Region {region}: {start}–{end} @ {size} × {count}", region=str(i+1), start=f"0x{pos:07X}", end=f"0x{pos+esb[2]-1:07X}", size=f"0x{esb[0]:X}" + __(" Bytes"), count=str(esb[1]))
 			pos += esb[2]
 			if pos >= info['device_size']:
 				pos = 0
@@ -650,7 +655,7 @@ class CFI:
 
 class Flashcart_AGB_GBAMP(Flashcart):
 	def SectorErase(self, pos=0, buffer_pos=0, skip=False):
-		for i in range(0, 4):
+		for i in range(4):
 			sector = pos >> 13 << 16 | (pos & 0x1FFF) + (i * 4)
 			ret = super().SectorErase(sector, buffer_pos, skip)
 			if ret is False: break
@@ -698,7 +703,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
 			raw = self.CartRead(0)
 			sr = raw[0] if raw else 0
 			self.LAST_SR = sr
-			dprint("Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(sr, 0x80, 0x80, str((sr & 0x80) == 0x80)))
+			dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
 			if (sr & 0x80) == 0x80: break
 			time.sleep(0.5)
 			lives -= 1
@@ -707,7 +712,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
 				"action": "ABORT",
 				"info_type": "msgbox_critical",
 				"info_msg":
-					__("Erasing the flash chip timed out. The last status register value was {value}.", value="0x{:X}".format(self.LAST_SR)) + "\n\n" +
+					__("Erasing the flash chip timed out. The last status register value was {value}.", value=f"0x{self.LAST_SR:X}") + "\n\n" +
 					__("Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."),
 				"abortable": False
 			})
@@ -811,7 +816,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 			raw = self.CartRead(0)
 			sr = raw[0] if raw else 0
 			self.LAST_SR = sr
-			dprint("Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(sr, 0x80, 0x80, str((sr & 0x80) == 0x80)))
+			dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
 			if (sr & 0x80) == 0x80: break
 			time.sleep(0.5)
 			lives -= 1
@@ -820,7 +825,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 				"action": "ABORT",
 				"info_type": "msgbox_critical",
 				"info_msg":
-					__("Erasing the hidden sector timed out. The last status register value was {value}.", value="0x{:X}".format(self.LAST_SR)) + "\n\n" +
+					__("Erasing the hidden sector timed out. The last status register value was {value}.", value=f"0x{self.LAST_SR:X}") + "\n\n" +
 					__("Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."),
 				"abortable": False
 			})
@@ -955,7 +960,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 			raw = self.CartRead(0)
 			sr = raw[0] if raw else 0
 			self.LAST_SR = sr
-			dprint("Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(sr, 0x80, 0x80, str((sr & 0x80) == 0x80)))
+			dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
 			if (sr & 0x80) == 0x80: break
 			time.sleep(0.5)
 			lives -= 1
@@ -964,7 +969,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 				"action": "ABORT",
 				"info_type": "msgbox_critical",
 				"info_msg":
-					__("Erasing the flash chip timed out. The last status register value was {value}.", value="0x{:X}".format(self.LAST_SR)) + "\n\n" +
+					__("Erasing the flash chip timed out. The last status register value was {value}.", value=f"0x{self.LAST_SR:X}") + "\n\n" +
 					__("Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."),
 				"abortable": False
 			})
@@ -1086,7 +1091,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 			raw = self.CartRead(0)
 			sr = raw[0] if raw else 0
 			self.LAST_SR = sr
-			dprint("Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(sr, 0x80, 0x80, str((sr & 0x80) == 0x80)))
+			dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
 			if (sr & 0x80) == 0x80: break
 			if self.PROGRESS_FNCPTR is not None: self.PROGRESS_FNCPTR({"action":"UNLOCK", "time_start":time_start, "abortable":False})
 			time.sleep(0.5)
@@ -1096,7 +1101,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 				"action": "ABORT",
 				"info_type": "msgbox_critical",
 				"info_msg":
-					__("Unlocking the hidden sector timed out. The last status register value was {value}.", value="0x{:X}".format(self.LAST_SR)) + "\n\n" +
+					__("Unlocking the hidden sector timed out. The last status register value was {value}.", value=f"0x{self.LAST_SR:X}") + "\n\n" +
 					__("Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."),
 				"abortable": False
 			})
