@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/lesserkuma)
 
 # pylint: disable=wildcard-import, unused-wildcard-import
-from .LK_Device import *
 from .i18n import __
+from .LK_Device import *
 from .Logging import logger
+
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "Game Bub"
@@ -38,12 +38,12 @@ class GbxDevice(LK_Device):
 			ports = [ port ]
 		else:
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x1209 and comports[i].pid == 0xB010:
 					ports.append(comports[i].device)
 			if len(ports) == 0: return False
 
-		for i in range(0, len(ports)):
+		for i in range(len(ports)):
 			if self.TryConnect(ports[i], max_baud):
 				self.BAUDRATE = max_baud
 				try:
@@ -110,12 +110,12 @@ class GbxDevice(LK_Device):
 
 				# Cartridge Power Control support, Switch Power support, and Switch Mode support
 				temp = self._read(1)
-				self.FW["cart_power_ctrl"] = True if temp & 1 == 1 else False
-				self.FW["cart_presence_switch"] = True if (temp >> 1) & 1 == 1 else False
-				self.FW["cart_mode_switch"] = True if (temp >> 2) & 1 == 1 else False
+				self.FW["cart_power_ctrl"] = temp & 1 == 1
+				self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
+				self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
 				# Reset to bootloader support
-				self.FW["bootloader_reset"] = True if self._read(1) == 1 else False
+				self.FW["bootloader_reset"] = self._read(1) == 1
 
 			return True
 
