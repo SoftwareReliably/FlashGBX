@@ -1,14 +1,19 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 # pylint: disable=wildcard-import, unused-wildcard-import
-import datetime, os, struct, time, zipfile
+import datetime
+import os
+import struct
+import time
+import zipfile
+
 from .app import AppInfo
-from .LK_Device import *
 from .i18n import __, c__
 from .IniSettings import IniSettings
+from .LK_Device import *
 from .Logging import logger
+
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "GBFlash"
@@ -33,12 +38,12 @@ class GbxDevice(LK_Device):
 			ports = [ port ]
 		else:
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
 					ports.append(comports[i].device)
 			if len(ports) == 0: return False
 
-		for i in range(0, len(ports)):
+		for i in range(len(ports)):
 			if self.TryConnect(ports[i], max_baud):
 				self.BAUDRATE = max_baud
 				dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1)
@@ -57,7 +62,7 @@ class GbxDevice(LK_Device):
 				if self.FW is not None:
 					conn_msg.append([0, __("Couldn’t communicate with the {device_name} on port {port}. Please disconnect and reconnect the device, then try again.", device_name=self.DEVICE_NAME, port=ports[i])])
 				continue
-			elif self.FW is None or self.FW["pcb_ver"] not in self.PCB_VERSIONS.keys() or "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L' or self.FW["fw_ver"] < self.DEVICE_MIN_FW: # Not a CFW by Lesserkuma
+			elif self.FW is None or self.FW["pcb_ver"] not in self.PCB_VERSIONS or "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L' or self.FW["fw_ver"] < self.DEVICE_MIN_FW: # Not a CFW by Lesserkuma
 				dprint("Incompatible firmware:", self.FW)
 				dev.close()
 				self.DEVICE = None
@@ -117,14 +122,14 @@ class GbxDevice(LK_Device):
 
 				# Cartridge Power Control support, Switch Power support, and Switch Mode support
 				temp = self._read(1)
-				self.FW["cart_power_ctrl"] = True if temp & 1 == 1 else False
-				self.FW["cart_presence_switch"] = True if (temp >> 1) & 1 == 1 else False
-				self.FW["cart_mode_switch"] = True if (temp >> 2) & 1 == 1 else False
+				self.FW["cart_power_ctrl"] = temp & 1 == 1
+				self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
+				self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
 				# Reset to bootloader support
 				temp = self._read(1)
-				self.FW["bootloader_reset"] = True if temp & 1 == 1 else False
-				self.FW["unregistered"] = True if temp >> 7 == 1 else False
+				self.FW["bootloader_reset"] = temp & 1 == 1
+				self.FW["unregistered"] = temp >> 7 == 1
 
 			return True
 
@@ -227,9 +232,9 @@ class GbxDevice(LK_Device):
 
 	def GetFullName(self):
 		if self.FW["pcb_ver"] < 13 and self.CanPowerCycleCart():
-			s = "{device_name} {pcb_version} + PLUGIN 01".format(device_name=self.GetName(), pcb_version=self.GetPCBVersion())
+			s = f"{self.GetName()} {self.GetPCBVersion()} + PLUGIN 01"
 		else:
-			s = "{:s} {:s}".format(self.GetName(), self.GetPCBVersion())
+			s = f"{self.GetName():s} {self.GetPCBVersion():s}"
 		if self.IsUnregistered():
 			s += " (" + __("unregistered") + ")"
 		return s
@@ -239,7 +244,7 @@ class GbxDevice(LK_Device):
 		return text
 
 
-class FirmwareUpdater():
+class FirmwareUpdater:
 	PORT = None
 	DEVICE = None
 
@@ -355,7 +360,7 @@ class FirmwareUpdater():
 		if self.PORT is None:
 			ports = []
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
 					ports.append(comports[i].device)
 			if len(ports) == 0:
@@ -463,7 +468,7 @@ class FirmwareUpdater():
 
 
 try:
-	from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
+	from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 
 	class FirmwareUpdaterWindow(QtWidgets.QDialog):
 		APP = None
@@ -590,7 +595,7 @@ try:
 				self.OFW_BUILDTS = self.INI.GetValue("fw_buildts")
 				self.OFW_TEXT = self.INI.GetValue("fw_text")
 
-			self.lblDeviceFWVer2Result.setText("{:s} ({:s})".format(self.OFW_VER, datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat()))
+			self.lblDeviceFWVer2Result.setText(f"{self.OFW_VER:s} ({datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat():s})")
 
 		def run(self):
 			try:
