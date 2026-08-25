@@ -4633,7 +4633,7 @@ class LK_Device(ABC):
 					ts_se_elapsed = time.time() - ts_se_start
 					if se_ret:
 						sector_size = se_ret
-						dprint("Next sector size: 0x{:X}".format(sector_size))
+						dprint(f"Next sector size: 0x{sector_size:X}")
 					buffer_pos += sector_size
 					continue
 				else:
@@ -4672,8 +4672,7 @@ class LK_Device(ABC):
 					if "start_addr" in flashcart.CONFIG and bank == 0: start_address = flashcart.CONFIG["start_addr"]
 					end_address = start_address + bank_size
 					start_address += (buffer_pos % rom_bank_size)
-					if end_address > start_address + sector[1]:
-						end_address = start_address + sector[1]
+					end_address = min(end_address, start_address + sector[1])
 
 				elif self.MODE == "AGB":
 					if "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0:
@@ -4688,7 +4687,7 @@ class LK_Device(ABC):
 
 				skip_init = False
 				pos = start_address
-				dprint("buffer_pos=0x{:X}, start_address=0x{:X}, end_address=0x{:X}".format(buffer_pos, start_address, end_address))
+				dprint(f"buffer_pos=0x{buffer_pos:X}, start_address=0x{start_address:X}, end_address=0x{end_address:X}")
 
 				while pos < end_address:
 					if self.CANCEL:
@@ -4708,7 +4707,7 @@ class LK_Device(ABC):
 					if chip_erase is False:
 						if sector_pos < len(sector_offsets) and buffer_pos == sector_offsets[sector_pos][0]:
 							ts_se_start = time.time()
-							dprint("Erasing sector #{:d} at position 0x{:X} (0x{:X})".format(sector_pos, buffer_pos, pos))
+							dprint(f"Erasing sector #{sector_pos:d} at position 0x{buffer_pos:X} (0x{pos:X})")
 							self.SetProgress({"action":"UPDATE_POS", "pos":buffer_pos, "force_update":True})
 							if self.CanPowerCycleCart(): self.CartPowerOn()
 
@@ -4717,7 +4716,7 @@ class LK_Device(ABC):
 							self.NO_PROG_UPDATE = True
 							se_ret = flashcart.SectorErase(pos=pos, buffer_pos=buffer_pos, skip=False)
 							self.NO_PROG_UPDATE = False
-							if "from_user" in self.CANCEL_ARGS and self.CANCEL_ARGS["from_user"]:
+							if self.CANCEL_ARGS.get("from_user"):
 								continue
 							if sector not in verify_sectors:
 								verify_sectors.append(sector)
@@ -4726,7 +4725,7 @@ class LK_Device(ABC):
 							if se_ret:
 								self.SetProgress({"action":"UPDATE_POS", "pos":buffer_pos, "sector_pos":sector_pos, "sector_erase_time":ts_se_elapsed, "force_update":True})
 								sector_size = se_ret
-								dprint("Next sector size: 0x{:X}".format(sector_size))
+								dprint(f"Next sector size: 0x{sector_size:X}")
 							skip_init = False
 					# ↑↑↑ Sector erase
 
@@ -4784,7 +4783,7 @@ class LK_Device(ABC):
 									sr = c__("Status Register", "Timeout")
 						dprint("Last status register value:", sr)
 
-						if "from_user" in self.CANCEL_ARGS and self.CANCEL_ARGS["from_user"]:
+						if self.CANCEL_ARGS.get("from_user"):
 							break
 						elif not self.DEVICE.is_open or self.DEVICE is None:
 							self.CANCEL_ARGS.update({
@@ -4816,7 +4815,7 @@ class LK_Device(ABC):
 										"info_msg": \
 											__(
 												"Unstable connection detected while writing {buffer_len} bytes in iteration {iteration} at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-												buffer_len="0x{:X}".format(buffer_len), iteration=self.ERROR_ARGS["iteration"], buffer_pos="0x{:X}".format(buffer_pos), file_size=Formatter.file_size(buffer_pos, as_int=False)
+												buffer_len=f"0x{buffer_len:X}", iteration=self.ERROR_ARGS["iteration"], buffer_pos=f"0x{buffer_pos:X}", file_size=Formatter.file_size(buffer_pos, as_int=False)
 											)
 											+ "\n\n"
 											+ __(
@@ -4861,9 +4860,9 @@ class LK_Device(ABC):
 							buffer_pos = rev_buffer_pos
 							bank = start_bank
 							sector_pos -= 1
-							err_text = __("Write error! Retrying from {address}...", address="0x{:X}".format(rev_buffer_pos))
+							err_text = __("Write error! Retrying from {address}...", address=f"0x{rev_buffer_pos:X}")
 							print(ANSI.YELLOW + err_text + ANSI.RESET)
-							dprint("Bank {:d} | HP: {:d}/100".format(bank, retry_hp))
+							dprint(f"Bank {bank:d} | HP: {retry_hp:d}/100")
 							pos = end_address
 							status = False
 
@@ -4878,15 +4877,15 @@ class LK_Device(ABC):
 							if self.DEVICE is None:
 								raise ConnectionAbortedError(__(
 									"A critical connection error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-									buffer_len="0x{:X}".format(buffer_len),
-									buffer_pos="0x{:X}".format(buffer_pos),
-									size="0x{:X}".format(buffer_len),
-									pos="0x{:X}".format(buffer_pos),
+									buffer_len=f"0x{buffer_len:X}",
+									buffer_pos=f"0x{buffer_pos:X}",
+									size=f"0x{buffer_len:X}",
+									pos=f"0x{buffer_pos:X}",
 									file_size=Formatter.file_size(buffer_pos, as_int=False)
 								))
 
 							self.ERROR = False
-							if "from_user" in self.CANCEL_ARGS and self.CANCEL_ARGS["from_user"]:
+							if self.CANCEL_ARGS.get("from_user"):
 								self.CANCEL_ARGS.update({
 									"info_type": "msgbox_warning",
 									"info_msg": __("The erroneous process has been stopped."),
@@ -5001,8 +5000,7 @@ class LK_Device(ABC):
 							if "start_addr" in flashcart.CONFIG and bank == 0: start_address = flashcart.CONFIG["start_addr"]
 							end_address = start_address + bank_size
 							start_address += (buffer_pos % rom_bank_size)
-							if end_address > start_address + sector[1]:
-								end_address = start_address + sector[1]
+							end_address = min(end_address, start_address + sector[1])
 							pos_from = (bank * start_address)
 
 						elif self.MODE == "AGB":
@@ -5024,11 +5022,11 @@ class LK_Device(ABC):
 						if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
 							verified = self.CompareCRC32(buffer=data_import, offset=pos_from, length=verify_len, address=start_address, flashcart=flashcart, reset=False, mbc=_mbc, bank=bank)
 							if verified is True:
-								dprint("CRC32 verification successful between 0x{:X} and 0x{:X}".format(pos_from, verify_len))
+								dprint(f"CRC32 verification successful between 0x{pos_from:X} and 0x{verify_len:X}")
 								self.SetProgress({"action":"UPDATE_POS", "pos":pos_from + verify_len})
 							elif verified is not True and len(verified) == 2:
 								crc32_errors += 1
-								dprint("Mismatch during CRC32 verification at 0x{:X}".format(pos_from), "Errors:", crc32_errors)
+								dprint(f"Mismatch during CRC32 verification at 0x{pos_from:X}", "Errors:", crc32_errors)
 								verified = False
 								break
 
@@ -5068,12 +5066,12 @@ class LK_Device(ABC):
 						if verified_size is None:
 							dprint("Verification failed! Sector: {sector}", sector=str(sector))
 						else:
-							dprint("Verification failed at {address}! Sector: {sector}", address="0x{:X}".format(sector[0]+verified_size), sector=str(sector))
+							dprint("Verification failed at {address}! Sector: {sector}", address=f"0x{sector[0]+verified_size:X}", sector=str(sector))
 						if sector not in broken_sectors:
 							broken_sectors.append(sector)
 						continue
 					else:
-						dprint("Verification between 0x{:X} and 0x{:X} successful by normal reading.".format(sector[0], sector[0]+sector[1]))
+						dprint(f"Verification between 0x{sector[0]:X} and 0x{sector[0]+sector[1]:X} successful by normal reading.")
 						verified = True
 
 			self.SetProgress({"action":"UPDATE_POS", "pos":len(data_import), "force_update":True, "skipping":self.POS < len(data_import)})
@@ -5141,8 +5139,7 @@ class LK_Device(ABC):
 				del(temp)
 				self.NO_PROG_UPDATE = False
 				if args['mode'] == 1: ret = self._BackupROM(args)
-				elif args['mode'] == 2: ret = self._BackupRestoreRAM(args)
-				elif args['mode'] == 3: ret = self._BackupRestoreRAM(args)
+				elif args['mode'] == 2 or args['mode'] == 3: ret = self._BackupRestoreRAM(args)
 				elif args['mode'] == 4:
 					voltage_fallback = args.get("voltage_fallback", False)
 					ask_voltage_fallback = args.get("ask_voltage_fallback", False)
