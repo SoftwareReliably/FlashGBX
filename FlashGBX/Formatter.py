@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import datetime
-from .i18n import __, c__, c___, ___, format_number, format_decimal
+
+from .i18n import __, ___, c__, c___, format_decimal, format_number
+
 
 class Formatter:
 	@classmethod
@@ -18,8 +19,8 @@ class Formatter:
 			if short: return c___("Bytes (short form)", "B", "B", n=1)
 			return _translate(" Byte").replace(" ", space)
 		elif size < 1024:
-			if short: return "{:d}".format(size) + c___("Bytes (short form)", "B", "B", n=size)
-			return "{:d}".format(size) + _translate(" Bytes").replace(" ", space)
+			if short: return f"{size:d}" + c___("Bytes (short form)", "B", "B", n=size)
+			return f"{size:d}" + _translate(" Bytes").replace(" ", space)
 		elif size < 1024 * 1024:
 			val = cls.round2(size / 1024)
 			precision = 0 if as_int else 1
@@ -36,7 +37,7 @@ class Formatter:
 		sec %= 3600
 		minute = sec // 60
 		sec %= 60
-		return "{:02d}:{:02d}:{:02d}".format(int(hr), int(minute), int(sec))
+		return f"{int(hr):02d}:{int(minute):02d}:{int(sec):02d}"
 
 	@classmethod
 	def progress_time(cls, seconds, as_float=False, localized=True):
@@ -47,8 +48,7 @@ class Formatter:
 			t___ = ___
 			tc__ = c__
 
-		if seconds < 0:
-			seconds = 0
+		seconds = max(seconds, 0)
 
 		days = int(seconds // 86400)
 		remaining = seconds % 86400
@@ -84,7 +84,7 @@ class Formatter:
 	@classmethod
 	def validate_datetime(cls, string, fmt):
 		try:
-			if string != datetime.datetime.strptime(string, fmt).strftime(fmt):
+			if string != datetime.datetime.strptime(string, fmt).replace(tzinfo=datetime.timezone.utc).strftime(fmt):
 				raise ValueError
 			return True
 		except ValueError:
