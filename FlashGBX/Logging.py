@@ -1,14 +1,22 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 #
 # Terminal output, debug logging, and Python exception hook.
 
-import sys, os, re, time, datetime, traceback, platform
+import datetime
+import os
+import platform
+import re
+import sys
+import time
+import traceback
+
 from loguru import logger
-from .app import AppInfo, AppContext
+
 from . import i18n
+from .app import AppContext, AppInfo
 from .i18n import __
+
 
 class ANSI:
 	BOLD = '\033[1m'
@@ -68,16 +76,14 @@ class Logger:
 	def write_debug_log(cls, device=False):
 		cls.dprint("Now writing debug log file")
 		msg = "\n\n\n---- Debug Log ----\n"
-		msg += "{:s} version: {:s} ({:d})\n".format(
-			AppInfo.NAME, AppInfo.VERSION_PEP440, AppInfo.VERSION_TIMESTAMP,
-		)
-		msg += "Language: {:s}\n".format(i18n.CONFIGURED_LANGUAGE)
+		msg += f"{AppInfo.NAME:s} version: {AppInfo.VERSION_PEP440:s} ({AppInfo.VERSION_TIMESTAMP:d})\n"
+		msg += f"Language: {i18n.CONFIGURED_LANGUAGE:s}\n"
 		msg += "Platform: {:s}\n".format(
 			AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.OS_LANGUAGE
 		)
 		if device is not False:
 			if device is not None:
-				msg += "Connected device: {:s}\n".format(device)
+				msg += f"Connected device: {device:s}\n"
 			else:
 				msg += "No device connected\n"
 
@@ -88,9 +94,9 @@ class Logger:
 			runtime.days, runtime.seconds // 3600,
 			(runtime.seconds % 3600) // 60, runtime.seconds % 60,
 		)
-		msg += "Launched: {:s}\n".format(launch_time.isoformat())
-		msg += "Log generated: {:s}\n".format(now.isoformat())
-		msg += "Runtime: {}d {}h {}m {}s\n\n".format(days, hours, minutes, seconds)
+		msg += f"Launched: {launch_time.isoformat():s}\n"
+		msg += f"Log generated: {now.isoformat():s}\n"
+		msg += f"Runtime: {days}d {hours}h {minutes}m {seconds}s\n\n"
 
 		try:
 			fn = AppContext.CONFIG_PATH + os.sep + "debug.log"
