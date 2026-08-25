@@ -1,15 +1,22 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 # pylint: disable=wildcard-import, unused-wildcard-import
-import datetime, os, platform, struct, time, zipfile
+import datetime
+import os
+import platform
+import struct
+import time
+import zipfile
+
 from serial import SerialException
+
 from .app import AppInfo
-from .LK_Device import *
 from .i18n import __, c__
 from .IniSettings import IniSettings
+from .LK_Device import *
 from .Logging import logger
+
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "Joey Jr"
@@ -36,12 +43,12 @@ class GbxDevice(LK_Device):
 			ports = [ port ]
 		else:
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x483 and comports[i].pid == 0x5740:
 					ports.append(comports[i].device)
 			if len(ports) == 0: return False
 
-		for i in range(0, len(ports)):
+		for i in range(len(ports)):
 			if self.TryConnect(ports[i], max_baud):
 				self.BAUDRATE = max_baud
 				dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1)
@@ -66,7 +73,7 @@ class GbxDevice(LK_Device):
 				continue
 			elif self.FW["cfw_id"] == "G": # Not a CFW by Lesserkuma
 				dprint("Device runs the JoeyGUI firmware")
-			elif self.FW["pcb_ver"] not in self.PCB_VERSIONS.keys() or "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L' or self.FW["fw_ver"] < self.DEVICE_MIN_FW: # Not a CFW by Lesserkuma
+			elif self.FW["pcb_ver"] not in self.PCB_VERSIONS or "cfw_id" not in self.FW or self.FW["cfw_id"] != 'L' or self.FW["fw_ver"] < self.DEVICE_MIN_FW: # Not a CFW by Lesserkuma
 				dprint("Incompatible firmware:", self.FW)
 				dev.close()
 				self.DEVICE = None
@@ -162,12 +169,12 @@ class GbxDevice(LK_Device):
 
 				# Cartridge Power Control support
 				temp = self._read(1)
-				self.FW["cart_power_ctrl"] = True if temp & 1 == 1 else False
-				self.FW["cart_presence_switch"] = True if (temp >> 1) & 1 == 1 else False
-				self.FW["cart_mode_switch"] = True if (temp >> 2) & 1 == 1 else False
+				self.FW["cart_power_ctrl"] = temp & 1 == 1
+				self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
+				self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
 				# Reset to bootloader support
-				self.FW["bootloader_reset"] = True if self._read(1) == 1 else False
+				self.FW["bootloader_reset"] = self._read(1) == 1
 			return True
 
 		except Exception as e:
@@ -217,8 +224,7 @@ class GbxDevice(LK_Device):
 		return ((self.FW["pcb_ver"] & 0x7F) == 1)
 
 	def CanSetVoltageByCode(self):
-		if ((self.FW["pcb_ver"] & 0x7F) == 1): return False
-		return True
+		return self.FW["pcb_ver"] & 127 != 1
 
 	def CanSetVoltageByAutoswitch(self):
 		return False
@@ -294,7 +300,7 @@ class GbxDevice(LK_Device):
 			self.MODE = None
 
 
-class FirmwareUpdater():
+class FirmwareUpdater:
 	PORT = None
 	DEVICE = None
 
@@ -395,7 +401,7 @@ class FirmwareUpdater():
 		if self.PORT is None:
 			ports = []
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x483 and comports[i].pid == 0x5740:
 					ports.append(comports[i].device)
 			if len(ports) == 0:
@@ -459,7 +465,7 @@ class FirmwareUpdater():
 				# print("Flashing...", hex(i), end="\r")
 				pass
 			elif counter + 64 < size:
-				fncSetStatus(text=__("Error! Bad response at {address}!", address="0x{address:X}".format(address=counter)), setProgress=percent)
+				fncSetStatus(text=__("Error! Bad response at {address}!", address=f"0x{counter:X}"), setProgress=percent)
 				return 2
 
 			counter += 64
@@ -473,7 +479,7 @@ class FirmwareUpdater():
 
 
 try:
-	from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
+	from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 
 	class FirmwareUpdaterWindow(QtWidgets.QDialog):
 		APP = None
@@ -539,12 +545,12 @@ try:
 					with zip.open("fw.ini") as f: ini_file = f.read()
 					ini_file = ini_file.decode(encoding="utf-8")
 					self.INI = IniSettings(ini=ini_file, main_section="Firmware")
-					self.FW_LK_VER = __("LK firmware version {version} by {author} (updated on {date})", version=self.INI.GetValue("fw_ver"), author="Lesserkuma", date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_buildts"))).strftime("%x"))
+					self.FW_LK_VER = __("LK firmware version {version} by {author} (updated on {date})", version=self.INI.GetValue("fw_ver"), author="Lesserkuma", date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_buildts") or "0"), tz=datetime.timezone.utc).strftime("%x"))
 					self.FW_LK_BUILDTS = self.INI.GetValue("fw_buildts")
 					self.FW_LK_TEXT = "<ul><li>" + __("For use with the FlashGBX software\nNo support by BennVenn").replace("\n", "</li><li>") + "</li></ul>"
-					self.FW_MSC_VER = __("BennVenn Drag’n’Drop firmware version {version} (updated on {date})", version=self.INI.GetValue("fw_msc_ver"), date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_msc_buildts"))).strftime("%x"))
+					self.FW_MSC_VER = __("BennVenn Drag’n’Drop firmware version {version} (updated on {date})", version=self.INI.GetValue("fw_msc_ver"), date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_msc_buildts") or "0"), tz=datetime.timezone.utc).strftime("%x"))
 					self.FW_MSC_TEXT = "<ul><li>" + __("For use with the Windows file explorer") + "</li></ul>"
-					self.FW_JOEYGUI_VER = __("BennVenn JoeyGUI firmware version {version} (updated on {date})", version=self.INI.GetValue("fw_joeygui_ver"), date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_joeygui_buildts"))).strftime("%x"))
+					self.FW_JOEYGUI_VER = __("BennVenn JoeyGUI firmware version {version} (updated on {date})", version=self.INI.GetValue("fw_joeygui_ver"), date=datetime.datetime.fromtimestamp(int(self.INI.GetValue("fw_joeygui_buildts") or "0"), tz=datetime.timezone.utc).strftime("%x"))
 					self.FW_JOEYGUI_TEXT = "<ul><li>" + __("For use with the JoeyGUI software") + "</li></ul>"
 			except (FileNotFoundError, zipfile.BadZipFile, KeyError, ValueError):
 				QtWidgets.QMessageBox.critical(self, __("Error"), __("The firmware update file is corrupted."))
@@ -556,16 +562,16 @@ try:
 			self.grpAvailableFwUpdatesLayout = QtWidgets.QVBoxLayout()
 			self.grpAvailableFwUpdatesLayout.setContentsMargins(-1, 3, -1, -1)
 
-			self.optFW_LK = QtWidgets.QRadioButton("{:s}".format(self.FW_LK_VER))
-			self.lblFW_LK_Info = QtWidgets.QLabel("{:s}".format(self.FW_LK_TEXT))
+			self.optFW_LK = QtWidgets.QRadioButton(f"{self.FW_LK_VER:s}")
+			self.lblFW_LK_Info = QtWidgets.QLabel(f"{self.FW_LK_TEXT:s}")
 			self.lblFW_LK_Info.setWordWrap(True)
 			self.lblFW_LK_Info.mousePressEvent = lambda x: [ self.optFW_LK.setChecked(True) ]
-			self.optFW_MSC = QtWidgets.QRadioButton("{:s}".format(self.FW_MSC_VER))
-			self.lblFW_MSC_Info = QtWidgets.QLabel("{:s}".format(self.FW_MSC_TEXT))
+			self.optFW_MSC = QtWidgets.QRadioButton(f"{self.FW_MSC_VER:s}")
+			self.lblFW_MSC_Info = QtWidgets.QLabel(f"{self.FW_MSC_TEXT:s}")
 			self.lblFW_MSC_Info.setWordWrap(True)
 			self.lblFW_MSC_Info.mousePressEvent = lambda x: [ self.optFW_MSC.setChecked(True) ]
-			self.optFW_JoeyGUI = QtWidgets.QRadioButton("{:s}".format(self.FW_JOEYGUI_VER))
-			self.lblFW_JoeyGUI_Info = QtWidgets.QLabel("{:s}".format(self.FW_JOEYGUI_TEXT))
+			self.optFW_JoeyGUI = QtWidgets.QRadioButton(f"{self.FW_JOEYGUI_VER:s}")
+			self.lblFW_JoeyGUI_Info = QtWidgets.QLabel(f"{self.FW_JOEYGUI_TEXT:s}")
 			self.lblFW_JoeyGUI_Info.setWordWrap(True)
 			self.lblFW_JoeyGUI_Info.mousePressEvent = lambda x: [ self.optFW_JoeyGUI.setChecked(True) ]
 			self.optExternal = QtWidgets.QRadioButton(__("External FIRMWARE.JR file"))
