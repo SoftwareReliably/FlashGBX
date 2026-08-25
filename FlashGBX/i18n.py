@@ -1,8 +1,19 @@
-# -*- coding: utf-8 -*-
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import sys, os, io, ast, struct, array, locale, gettext, platform, re, subprocess, glob
+import array
+import ast
+import gettext
+import glob
+import io
+import locale
+import os
+import platform
+import re
+import struct
+import subprocess
+import sys
+
 from loguru import logger
 
 OS_LANGUAGE = "en"
@@ -187,7 +198,7 @@ def format_number(n):
 
 def format_decimal(value, precision=2, grouping=False, localized=True):
 	if localized:
-		return locale.format_string("%.{}f".format(precision), value, grouping=grouping)
+		return locale.format_string(f"%.{precision}f", value, grouping=grouping)
 	else:
 		return "{:.{}f}".format(value, precision)
 
@@ -264,7 +275,7 @@ def init_language(config_path, override=None):
 		else:
 			lang_code = "en"
 
-	if lang_code not in LANGUAGES.keys():
+	if lang_code not in LANGUAGES:
 		CONFIGURED_LANGUAGE = lang_code = "en"
 
 	if lang_code and lang_code != "en":
