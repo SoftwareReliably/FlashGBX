@@ -1,13 +1,18 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import datetime, struct, copy, zlib, hashlib
-from .RomFileDMG import RomFileDMG
-from .CartridgeTypes import RomSizes, DmgSaveTypes
-from .Logging import dprint
+import copy
+import datetime
+import hashlib
+import struct
+import zlib
+
 from .app import AppInfo
+from .CartridgeTypes import DmgSaveTypes, RomSizes
 from .i18n import __
+from .Logging import dprint
+from .RomFileDMG import RomFileDMG
+
 
 class GBMemoryMap:
 	MAP_DATA = bytearray([0xFF] * 0x80)
@@ -22,7 +27,7 @@ class GBMemoryMap:
 				self.MAP_DATA[0x70:0x78] = oldmap[0x70:0x78] # keep existing cart id
 				write_count = struct.unpack("=H", oldmap[0x6E:0x70])[0]
 				write_count += 1
-				if write_count > 0xFFFF: write_count = 0xFFFF
+				write_count = min(write_count, 0xFFFF)
 				self.MAP_DATA[0x6E:0x70] = struct.pack("=H", write_count) # update write count
 
 	def ParseMapData(self, buffer_map, buffer_rom=None):
@@ -53,7 +58,7 @@ class GBMemoryMap:
 			data_list[0]["num_games"] = 0
 
 			if len(buffer_rom) < 0x100000: return data_list
-			for i in range(0, 8):
+			for i in range(8):
 				keys = ["menu_index", "f_offset", "b_offset", "f_size", "b_size", "game_code", "title", "title_gfx", "timestamp", "kiosk_id", "padding", "comment"]
 				if rom_header["game_title"] in ("NP M-MENU MENU", "GBMEM-MENU MMSA"):
 					values = struct.unpack("=BBBHH12s44s384s18s8s23s16s", buffer_rom[0x1C000+(i*0x200):0x1C200+(i*0x200)])
@@ -88,7 +93,7 @@ class GBMemoryMap:
 						temp["db_entry"] = rom_header_game["db"]
 					else:
 						temp["header"]["db"] = None
-				dprint("GB-Memory Game {:d}: {:s}".format(i, str(temp)))
+				dprint(f"GB-Memory Game {i:d}: {temp!s:s}")
 				data_list.append(temp)
 			data_list[0]["num_games"] = num_games
 			if len(data_list[0]["timestamp"]) == 0 and len(data_list) > 1:
@@ -179,8 +184,8 @@ class GBMemoryMap:
 			if "db" in info["rom_header"] and info["rom_header"]["db"] is not None:
 				info["menu"]["metadata"]["title"] = info["rom_header"]["db"]["gn"].encode("SHIFT-JIS" if not info["rom_header"]["game_title"] in ("GBMEM-MENU MMSA", "GBMEM-MENU 256M") else "UTF-8", "ignore").ljust(0x2C)[:0x2C]
 
-			info["menu"]["metadata"]["timestamp"] = datetime.datetime.now().strftime('%d/%m/%Y%H:%M:%S').encode("ASCII")
-			info["menu"]["metadata"]["kiosk_id"] = "{:s}".format(AppInfo.NAME).encode("ASCII").ljust(8, b'\xFF')
+			info["menu"]["metadata"]["timestamp"] = datetime.datetime.now(tz=datetime.timezone.utc).strftime('%d/%m/%Y%H:%M:%S').encode("ASCII")
+			info["menu"]["metadata"]["kiosk_id"] = f"{AppInfo.NAME:s}".encode("ASCII").ljust(8, b'\xFF')
 			info["menu"]["raw"] = bytearray(0x56)
 			data = info
 
@@ -216,7 +221,7 @@ class GBMemoryMap:
 			menu_items = []
 			rom_offset = 0
 			ram_offset = 0
-			for i in range(0, 8):
+			for i in range(8):
 				keys = ["menu_index", "f_offset", "b_offset", "f_size", "b_size", "game_code", "title", "title_gfx", "timestamp", "kiosk_id", "padding", "comment"]
 				if menu_ver == 0: # final
 					pos = 0x1C000 + (i * 0x200)
@@ -297,11 +302,11 @@ class GBMemoryMap:
 			self.MAP_DATA[0x00:0x7E] = bytearray([0xFF] * 0x7E)
 			self.MAP_DATA[0x6E:0x70] = bytearray([0x00] * 2)
 			self.MAP_DATA[0x7E:0x80] = bytearray([0x00] * 2)
-			for i in range(0, len(menu_items)):
+			for i in range(len(menu_items)):
 				pos = i * 3
 				self.MAP_DATA[pos:pos+3] = struct.pack(">I", menu_items[i]["map"]["raw"])[:3]
-			self.MAP_DATA[0x54:0x66] = struct.pack("=18s", datetime.datetime.now().strftime('%d/%m/%Y%H:%M:%S').encode("ASCII"))
-			self.MAP_DATA[0x66:0x6E] = struct.pack("=8s", "{:s}".format(AppInfo.NAME).encode("ASCII").ljust(8, b'\xFF'))
+			self.MAP_DATA[0x54:0x66] = struct.pack("=18s", datetime.datetime.now(tz=datetime.timezone.utc).strftime('%d/%m/%Y%H:%M:%S').encode("ASCII"))
+			self.MAP_DATA[0x66:0x6E] = struct.pack("=8s", f"{AppInfo.NAME:s}".encode("ASCII").ljust(8, b'\xFF'))
 
 	def MapperToMBCType(self, mbc):
 		if mbc == 0x00: # ROM only
@@ -316,16 +321,14 @@ class GBMemoryMap:
 			mbc_type = 5
 		else:
 			#mbc_type = False
-			print(__("Note: The ROM is using a mapper type that may be incompatible with the {gb_memory_cartridge}.", gb_memory_cartridge="GB Memory Cartridge") + " (0x{mbc:02X})".format(mbc=mbc))
+			print(__("Note: The ROM is using a mapper type that may be incompatible with the {gb_memory_cartridge}.", gb_memory_cartridge="GB Memory Cartridge") + f" (0x{mbc:02X})")
 			mbc_type = 5
 		return mbc_type
 
 	def GetBlockSizeBackup(self, b_size=None):
 		if b_size == 0:
 			b_size = 0
-		elif b_size == 1:
-			b_size = 1
-		elif b_size == 64:
+		elif b_size == 1 or b_size == 64:
 			b_size = 1
 		elif b_size == 256:
 			b_size = 4
