@@ -1,16 +1,16 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-from .pyside import QtCore, QtWidgets, QtGui
-from .i18n import __
 from .app import AppInfo
+from .i18n import __
+from .pyside import QtCore, QtGui, QtWidgets
+
 
 class UserInputDialog(QtWidgets.QDialog):
 	APP = None
 
 	def __init__(self, app, icon=None, args=None):
-		super(UserInputDialog, self).__init__(app)
+		super().__init__(app)
 		if icon is not None: self.setWindowIcon(QtGui.QIcon(icon))
 		self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
 		self.setWindowTitle(AppInfo.NAME + " – " + args["title"])
