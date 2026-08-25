@@ -56,7 +56,7 @@ def get_mbc_name(id):
 	return __("Unknown mapper type {id}", id=f"0x{id:02X}")
 
 def save_size_includes_rtc(mode, mbc, save_size, save_type):
-	from .CartridgeTypes import DmgSaveTypes, AgbSaveTypes
+	from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 	rtc_size = 0x10
 	if mode == "DMG":
 		save_type = DmgSaveTypes(mbc=save_type).GetIndex()
@@ -538,7 +538,8 @@ class DMG_MBC3(DMG_Mapper):
 		carry = ((buffer[0x10] & 0x80) != 0)
 		if advance:
 			try:
-				dt_now = datetime.datetime.fromtimestamp(time.time())
+				local_timezone = datetime.datetime.now().astimezone().tzinfo
+				dt_now = datetime.datetime.fromtimestamp(time.time(), local_timezone)
 				if buffer == bytearray([0x00] * len(buffer)): # Reset
 					seconds = 0
 					minutes = 0
@@ -738,7 +739,7 @@ class DMG_MBC6(DMG_Mapper):
 		self.CartWrite([[ 0x4000, 0x30 ]])
 		while True:
 			sr = self.CartRead(0x4000)
-			dprint(f"Status Register Check: 0x{sr:X} == 0x80? {str(sr == 0x80):s}")
+			dprint(f"Status Register Check: 0x{sr:X} == 0x80? {sr == 0x80!s:s}")
 			if sr == 0x80: break
 			time.sleep(0.01)
 
@@ -1197,7 +1198,7 @@ class DMG_HuC3(DMG_Mapper):
 					if timestamp_then < timestamp_now:
 						dt_then = datetime.datetime.fromtimestamp(timestamp_then)
 						dt_buffer1 = datetime.datetime.strptime(f"{1:04d}-{1:02d}-{1:02d} {0:02d}:{0:02d}:{0:02d}", "%Y-%m-%d %H:%M:%S")
-						dt_buffer2 = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(1, 1, 1, hours, minutes, 0), "%Y-%m-%d %H:%M:%S")
+						dt_buffer2 = datetime.datetime.strptime(f"{1:04d}-{1:02d}-{1:02d} {hours:02d}:{minutes:02d}:{0:02d}", "%Y-%m-%d %H:%M:%S")
 						dt_buffer2 += datetime.timedelta(days=days)
 						rd = relativedelta(dt_now, dt_then)
 						dt_new = dt_buffer2 + rd
@@ -2001,8 +2002,8 @@ class AGB_GPIO:
 				timestamp_then = struct.unpack("<Q", buffer[-8:])[0]
 				timestamp_now = int(time.time())
 				if timestamp_then < timestamp_now:
-					dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-					dt_buffer = datetime.datetime.strptime(f"{years + 2000:04d}-{months % 13:02d}-{days % 32:02d} {hours % 60:02d}:{minutes % 60:02d}:{seconds % 60:02d}", "%Y-%m-%d %H:%M:%S")
+					dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
+					dt_buffer = datetime.datetime.strptime(f"{years + 2000:04d}-{months % 13:02d}-{days % 32:02d} {hours % 60:02d}:{minutes % 60:02d}:{seconds % 60:02d}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=local_timezone)
 					rd = relativedelta(dt_now, dt_then)
 					dt_new = dt_buffer + rd
 					years = dt_new.year - 2000
