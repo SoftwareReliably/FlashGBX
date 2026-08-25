@@ -1,9 +1,12 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import os, re, shlex
+import os
+import re
+import shlex
+
 from .i18n import __
+
 
 class InteractiveConsole:
 	def __init__(self, conn, on_output, on_error=None):
@@ -45,9 +48,9 @@ class InteractiveConsole:
 			data = bytearray([data])
 		for offset in range(0, len(data), 16):
 			chunk = data[offset:offset + 16]
-			hex_part = " ".join("{:02x}".format(b) for b in chunk)
+			hex_part = " ".join(f"{b:02x}" for b in chunk)
 			ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
-			self.on_output("{:08x}: {:<47}  {:s}".format(base_addr + offset, hex_part, ascii_part))
+			self.on_output(f"{base_addr + offset:08x}: {hex_part:<47}  {ascii_part:s}")
 
 	def execute_line(self, line):
 		cmds = [c.strip() for c in line.split(",") if c.strip()]
@@ -89,7 +92,7 @@ class InteractiveConsole:
 			except ValueError:
 				self.on_output(__("Invalid input. Use hexadecimal or 8/16-bit binary for the value."))
 				return True
-			self.CONN._cart_write(address, value, sram=True if self.MODE == "DMG" and 0xA000 <= address < 0xC000 else False)
+			self.CONN._cart_write(address, value, sram=bool(self.MODE == "DMG" and 40960 <= address < 49152))
 			self.on_output(__("OK"))
 			return True
 
