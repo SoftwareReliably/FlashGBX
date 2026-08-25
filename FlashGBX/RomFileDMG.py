@@ -1,12 +1,18 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import hashlib, re, string, struct, os, json, copy
-from .i18n import __
-from .CartridgeTypes import RomSizes, DmgSaveTypes
-from .Logging import dprint, ANSI, logger
+import copy
+import hashlib
+import json
+import os
+import re
+import string
+import struct
+
 from .app import AppContext
+from .CartridgeTypes import DmgSaveTypes, RomSizes
+from .i18n import __
+from .Logging import ANSI, dprint, logger
 
 try:
 	Image = None
@@ -72,7 +78,7 @@ class RomFileDMG:
 		img.info["transparency"] = 0
 		pixels = img.load()
 
-		for y in range(0, 8):
+		for y in range(8):
 			i = int((y/2)%2) + int(y/4)*24
 			x = 0
 			ix = 0
@@ -181,15 +187,7 @@ class RomFileDMG:
 				data["mapper_raw"] += 0x100
 
 			# GB-Memory (DMG-MMSA-JPN)
-			if data["mapper_raw"] == 0x19 and data["game_title"] == "NP M-MENU MENU" and data["header_checksum"] == 0xD3:
-				data["rom_size_raw"] = 0x05
-				data["ram_size_raw"] = 0x04
-				data["mapper_raw"] = 0x105
-			elif data["mapper_raw"] == 0x01 and data["game_title"] == "DMG MULTI MENU " and data["header_checksum"] == 0x36:
-				data["rom_size_raw"] = 0x05
-				data["ram_size_raw"] = 0x04
-				data["mapper_raw"] = 0x105
-			elif data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01:
+			if data["mapper_raw"] == 0x19 and data["game_title"] == "NP M-MENU MENU" and data["header_checksum"] == 0xD3 or data["mapper_raw"] == 0x01 and data["game_title"] == "DMG MULTI MENU " and data["header_checksum"] == 0x36 or data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01:
 				data["rom_size_raw"] = 0x05
 				data["ram_size_raw"] = 0x04
 				data["mapper_raw"] = 0x105
@@ -207,11 +205,7 @@ class RomFileDMG:
 
 			# Unlicensed 256M Mapper
 			elif (data["game_title"].upper() == "GB HICOL" and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9)) or \
-			(data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48):
-				data["rom_size_raw"] = 0x0A
-				data["ram_size_raw"] = 0x201
-				data["mapper_raw"] = 0x201
-			elif buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder" or (data["mapper_raw"] in (0x19, 0x1B) and data["game_title"] == "GBMEM-MENU 256M" and data["version"] == 0x01):
+			(data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48) or buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder" or (data["mapper_raw"] in (0x19, 0x1B) and data["game_title"] == "GBMEM-MENU 256M" and data["version"] == 0x01):
 				data["rom_size_raw"] = 0x0A
 				data["ram_size_raw"] = 0x201
 				data["mapper_raw"] = 0x201
@@ -456,15 +450,15 @@ class RomFileDMG:
 	def GetDatabaseEntry(self):
 		data = self.DATA
 		db_entry = None
-		if os.path.exists("{0:s}/db_DMG.json".format(AppContext.CONFIG_PATH)):
-			with open("{0:s}/db_DMG.json".format(AppContext.CONFIG_PATH), encoding="UTF-8") as f:
+		if os.path.exists(f"{AppContext.CONFIG_PATH:s}/db_DMG.json"):
+			with open(f"{AppContext.CONFIG_PATH:s}/db_DMG.json", encoding="UTF-8") as f:
 				db = f.read()
 				try:
 					db = json.loads(db)
 				except (json.JSONDecodeError, ValueError) as e:
 					print(__("Error: Database for Game Boy titles is corrupted.") + "\n" + str(e))
 					return None
-				if data["header_sha1"] in db.keys():
+				if data["header_sha1"] in db:
 					db_entry = db[data["header_sha1"]]
 				else:
 					dprint(__("No database entry found for this title (Header SHA1: {sha1})", sha1=data["header_sha1"]))
@@ -501,7 +495,7 @@ class RomFileDMG:
 		titles = [
 			header["game_title_raw"],
 			header["game_title_raw"].replace("\x00", "").rstrip(),
-			header["game_title"] if "game_title" in header else ""
+			header.get("game_title", "")
 		]
 		for title in titles:
 			if title == "": continue
@@ -520,6 +514,7 @@ class RomFileDMG:
 def from_isx(buffer):
 	import io
 	import struct
+
 	from .i18n import __
 	data_input = io.BytesIO(buffer)
 	data_output = bytearray(8 * 1024 * 1024)
@@ -531,7 +526,7 @@ def from_isx(buffer):
 			if rec_type == 4:
 				break
 			elif rec_type != 1:
-				print(__("Warning: Unhandled ISX record type {type} found. Converted ROM may not be working correctly.", type="0x{:02X}".format(rec_type)))
+				print(__("Warning: Unhandled ISX record type {type} found. Converted ROM may not be working correctly.", type=f"0x{rec_type:02X}"))
 				continue
 			bank = struct.unpack('B', data_input.read(1))[0]
 			offset = struct.unpack('<H', data_input.read(2))[0] % 0x4000
