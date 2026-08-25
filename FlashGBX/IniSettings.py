@@ -1,14 +1,15 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import os, configparser
+import configparser
+import os
 from io import StringIO
 
 from .i18n import __
 from .Logging import dprint
 
-class IniSettings():
+
+class IniSettings:
 	FILENAME = ""
 	SETTINGS = None
 	MAIN_SECTION = "General"
@@ -60,7 +61,7 @@ class IniSettings():
 		return (self.SETTINGS[self.MAIN_SECTION][key])
 
 	def setValue(self, key, value, quiet=False):
-		if self.SETTINGS is None: return None
+		if self.SETTINGS is None: return
 		self.reload()
 		if value is None:
 			if key in self.SETTINGS[self.MAIN_SECTION]:
@@ -73,7 +74,7 @@ class IniSettings():
 				self.SETTINGS.write(f)
 
 	def clear(self):
-		if self.SETTINGS is None: return None
+		if self.SETTINGS is None: return
 		self.SETTINGS.clear()
 		if self.FILENAME is not False:
 			with open(self.FILENAME, "w", encoding="UTF-8") as f:
