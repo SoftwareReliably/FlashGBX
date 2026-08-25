@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
+from .app import AppInfo
 from .i18n import __, c__
 from .InteractiveConsole import InteractiveConsole
-from .app import AppInfo
 from .Logging import logger
+from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
+
 
 class InteractiveConsoleWindow(QtWidgets.QDialog):
 	APP = None
