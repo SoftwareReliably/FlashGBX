@@ -1,15 +1,25 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 # pylint: disable=wildcard-import, unused-wildcard-import
-import datetime, hashlib, math, os, random, re, struct, time, zipfile
+import datetime
+import hashlib
+import math
+import os
+import random
+import re
+import struct
+import time
+import zipfile
+
 from serial import SerialException
+
 from .app import AppInfo
-from .LK_Device import *
 from .i18n import __, c__, format_decimal
 from .IniSettings import IniSettings
+from .LK_Device import *
 from .Logging import logger
+
 
 class GbxDevice(LK_Device):
 	DEVICE_NAME = "GBxCart RW"
@@ -54,12 +64,12 @@ class GbxDevice(LK_Device):
 			ports = [ port ]
 		else:
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
 					ports.append(comports[i].device)
 			if len(ports) == 0: return False
 
-		for i in range(0, len(ports)):
+		for i in range(len(ports)):
 			for baudrate in (1000000, 1500000):
 				if max_baud < baudrate: continue
 				try:
@@ -177,12 +187,12 @@ class GbxDevice(LK_Device):
 
 				# Cartridge Power Control support
 				temp = self._read(1)
-				self.FW["cart_power_ctrl"] = True if temp & 1 == 1 else False
-				self.FW["cart_presence_switch"] = True if (temp >> 1) & 1 == 1 else False
-				self.FW["cart_mode_switch"] = True if (temp >> 2) & 1 == 1 else False
+				self.FW["cart_power_ctrl"] = temp & 1 == 1
+				self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
+				self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
 				# Reset to bootloader support
-				self.FW["bootloader_reset"] = True if self._read(1) == 1 else False
+				self.FW["bootloader_reset"] = self._read(1) == 1
 
 			return True
 
@@ -298,15 +308,14 @@ class GbxDevice(LK_Device):
 		if "ofw_ver" not in self.FW:
 			return self.FW["pcb_ver"] in (2, 4, 5, 6, 90, 100, 101)
 
-		if self.FW["ofw_ver"] == 30:
-			if self.DEVICE is not None:
-				self._write(self.DEVICE_CMD["OFW_LNL_QUERY"])
-				old_timeout = self.DEVICE.timeout
-				self.DEVICE.timeout = 0.15
-				is_lnl = self._read(1) == 0x31
-				self.DEVICE.timeout = old_timeout
-				dprint("LinkNLoad detected:", is_lnl)
-				if is_lnl: return False
+		if self.FW["ofw_ver"] == 30 and self.DEVICE is not None:
+			self._write(self.DEVICE_CMD["OFW_LNL_QUERY"])
+			old_timeout = self.DEVICE.timeout
+			self.DEVICE.timeout = 0.15
+			is_lnl = self._read(1) == 0x31
+			self.DEVICE.timeout = old_timeout
+			dprint("LinkNLoad detected:", is_lnl)
+			if is_lnl: return False
 		return self.FW["pcb_ver"] in (2, 4, 5, 6, 90, 100, 101)
 
 	def FirmwareUpdateAvailable(self):
@@ -362,12 +371,12 @@ class GbxDevice(LK_Device):
 		return super().Close(cartPowerOff)
 
 	def SetTimeout(self, seconds=1):
-		if seconds < 1: seconds = 1
+		seconds = max(seconds, 1)
 		self.DEVICE_TIMEOUT = seconds
 		self.DEVICE.timeout = self.DEVICE_TIMEOUT
 
 
-class FirmwareUpdater():
+class FirmwareUpdater:
 	PORT = ""
 
 	def __init__(self, app_path=".", port=None):
@@ -389,7 +398,7 @@ class FirmwareUpdater():
 		random.seed(struct.unpack("<I", buffer2[-0x18:-0x14])[0])
 		chk = buffer2[-0x14:]
 		buffer = bytearray()
-		for i in range(0, len(buffer2[0:-0x18])):
+		for i in range(len(buffer2[0:-0x18])):
 			r = int(random.random()*256) % 256
 			buffer.append(buffer2[0:-0x18][len(buffer2[0:-0x18]) - i - 1] ^ r ^ buffer1[len(buffer1) - i - 1])
 		if (chk != hashlib.sha1(buffer).digest()):
@@ -399,7 +408,7 @@ class FirmwareUpdater():
 		if self.PORT is None:
 			ports = []
 			comports = serial.tools.list_ports.comports()
-			for i in range(0, len(comports)):
+			for i in range(len(comports)):
 				if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
 					ports.append(comports[i].device)
 			if len(ports) == 0:
@@ -437,7 +446,7 @@ class FirmwareUpdater():
 				if counter == 0:
 					fncSetStatus(text=__("Update failed!"), enableUI=True)
 				else:
-					fncSetStatus(text=__("Update failed at offset {offset}!", offset="0x{:04X}".format(counter)), enableUI=True)
+					fncSetStatus(text=__("Update failed at offset {offset}!", offset=f"0x{counter:04X}"), enableUI=True)
 				return 2
 
 			counter += 1
@@ -452,7 +461,7 @@ class FirmwareUpdater():
 
 
 try:
-	from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
+	from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 
 	class FirmwareUpdaterWindow(QtWidgets.QDialog):
 		APP = None
@@ -602,7 +611,7 @@ try:
 				self.OFW_BUILDTS = self.INI.GetValue("fw_buildts")
 				self.OFW_TEXT = self.INI.GetValue("fw_text")
 
-			self.lblDeviceFWVer2Result.setText("{:s} ({:s})".format(self.OFW_VER, datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat()))
+			self.lblDeviceFWVer2Result.setText(f"{self.OFW_VER:s} ({datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat():s})")
 
 		def run(self):
 			try:
@@ -716,7 +725,7 @@ except ImportError:
 
 
 try:
-	from .pyside import QtCore, QtWidgets, QtGui, QDesktopWidget
+	from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 
 	class FirmwareUpdaterWindowV13(QtWidgets.QDialog):
 		APP = None
@@ -738,7 +747,7 @@ try:
 			self.setWindowTitle(AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"))
 			self.setWindowFlags((self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint)
 
-			with zipfile.ZipFile(self.APP_PATH + os.sep + os.path.join("res", "{:s}".format(self.FW_FILES[self.PCB_VER]))) as zip:
+			with zipfile.ZipFile(self.APP_PATH + os.sep + os.path.join("res", f"{self.FW_FILES[self.PCB_VER]:s}")) as zip:
 				with zip.open("fw.ini") as f: ini_file = f.read()
 				ini_file = ini_file.decode(encoding="utf-8")
 				self.INI = IniSettings(ini=ini_file, main_section="Firmware")
@@ -791,12 +800,12 @@ try:
 			self.grpAvailableFwUpdatesLayout = QtWidgets.QVBoxLayout()
 			self.grpAvailableFwUpdatesLayout.setContentsMargins(-1, 3, -1, -1)
 
-			self.optCFW = QtWidgets.QRadioButton("{:s}".format(self.CFW_VER))
-			self.lblCFW_Info = QtWidgets.QLabel("{:s}".format(self.CFW_TEXT))
+			self.optCFW = QtWidgets.QRadioButton(f"{self.CFW_VER:s}")
+			self.lblCFW_Info = QtWidgets.QLabel(f"{self.CFW_TEXT:s}")
 			self.lblCFW_Info.setWordWrap(True)
 			self.lblCFW_Info.mousePressEvent = lambda x: [ self.optCFW.setChecked(True) ]
-			self.optOFW = QtWidgets.QRadioButton("{:s}".format(self.OFW_VER))
-			self.lblOFW_Info = QtWidgets.QLabel("{:s}".format(self.OFW_TEXT))
+			self.optOFW = QtWidgets.QRadioButton(f"{self.OFW_VER:s}")
+			self.lblOFW_Info = QtWidgets.QLabel(f"{self.OFW_TEXT:s}")
 			self.lblOFW_Info.setWordWrap(True)
 			self.lblOFW_Info.mousePressEvent = lambda x: [ self.optOFW.setChecked(True) ]
 			self.optExternal = QtWidgets.QRadioButton(__("External firmware file"))
@@ -922,10 +931,10 @@ try:
 					answer = msgbox.exec()
 					return
 				self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
-				fw = "{:s}\n\n".format(path) + __("Please double check that this is a valid firmware file for your GBxCart RW. If it is invalid or an update for a different device, it may render your device unusable.")
+				fw = f"{path:s}\n\n" + __("Please double check that this is a valid firmware file for your GBxCart RW. If it is invalid or an update for a different device, it may render your device unusable.")
 				fn = None
 
-			text = __("The following firmware will now be written to your GBxCart RW device:") + "\n- {fw}".format(fw=fw)
+			text = __("The following firmware will now be written to your GBxCart RW device:") + f"\n- {fw}"
 			text += "\n\n" + __("Do you want to continue?")
 			msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Question, windowTitle=AppInfo.NAME, text=text, standardButtons=QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 			msgbox.setDefaultButton(QtWidgets.QMessageBox.Yes)
@@ -936,7 +945,7 @@ try:
 			self.grpAvailableFwUpdates.setEnabled(False)
 
 			if path == "":
-				with zipfile.ZipFile(self.APP_PATH + os.sep + os.path.join("res", "{:s}".format(self.FW_FILES[self.PCB_VER]))) as archive:
+				with zipfile.ZipFile(self.APP_PATH + os.sep + os.path.join("res", f"{self.FW_FILES[self.PCB_VER]:s}")) as archive:
 					with archive.open(fn) as f: ihex = f.read().decode("ascii")
 			else:
 				with open(path, "rb") as f: ihex = f.read().decode("ascii")
@@ -959,7 +968,7 @@ try:
 
 				# Calculate checksum
 				chk = 0
-				for i in range(0, len(data["raw"])):
+				for i in range(len(data["raw"])):
 					chk += data["raw"][i]
 				chk = chk & 0xFF
 				chk = (~chk + 1) & 0xFF
@@ -1137,7 +1146,7 @@ try:
 						return 3
 					return 2
 
-			for i in range(0, iterations):
+			for i in range(iterations):
 				self.APP.QT_APP.processEvents()
 				dev.write(b"!")
 				dev.write(fw_buffer[i*0x40:i*0x40+0x40])
