@@ -1,12 +1,18 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import time, datetime, struct, math, hashlib
+import datetime
+import hashlib
+import math
+import struct
+import time
+
 from dateutil.relativedelta import relativedelta
+
+from .i18n import __, ___, c__, c___
+from .Logging import ANSI, dprint, logger
 from .RomFileDMG import RomFileDMG
-from .Logging import dprint, ANSI, logger
-from .i18n import __, c__, ___, c___
+
 
 class BCD:
 	@classmethod
@@ -31,7 +37,7 @@ def ConvertMapperToMapperType(mapper_raw):
 
 def ConvertMapperTypeToMapper(mapper_type):
 	i = 0
-	for (_, (ids, _)) in DMG_Mapper.MAPPER_MAP.items():
+	for (ids, _) in DMG_Mapper.MAPPER_MAP.values():
 		if mapper_type == i:
 			return ids[0]
 		i += 1
@@ -251,14 +257,14 @@ class DMG_Mapper:
 		mapper_type = self.GetMapperType(self.MBC_ID)
 		if mapper_type != "Unknown":
 			return mapper_type
-		return "Unknown MBC {:d}".format(self.MBC_ID)
+		return f"Unknown MBC {self.MBC_ID:d}"
 
 	def GetFullName(self):
 		# Get the full mapper name with all features (e.g. "MBC1+SRAM+BATTERY")
 		full_name = self.GetMapperName(self.MBC_ID)
 		if full_name != "Unknown":
 			return full_name
-		return "Unknown MBC {:d}".format(self.MBC_ID)
+		return f"Unknown MBC {self.MBC_ID:d}"
 
 	def GetROMBank(self):
 		return self.CURRENT_ROM_BANK
@@ -485,7 +491,7 @@ class DMG_MBC3(DMG_Mapper):
 		buffer[3] = rtc_dict["rtc_d"] & 0xFF
 		buffer[4] = rtc_dict["rtc_d"] >> 8 & 1
 
-		dprint("New values: RTC_S=0x{:02X}, RTC_M=0x{:02X}, RTC_H=0x{:02X}, RTC_DL=0x{:02X}, RTC_DH=0x{:02X}".format(buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]))
+		dprint(f"New values: RTC_S=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_H=0x{buffer[2]:02X}, RTC_DL=0x{buffer[3]:02X}, RTC_DH=0x{buffer[4]:02X}")
 
 		# Unlock and latch RTC
 		self.CLK_TOGGLE_FNCPTR(50)
@@ -551,8 +557,8 @@ class DMG_MBC3(DMG_Mapper):
 					dprint(seconds, minutes, hours, days, carry)
 					if timestamp_then < timestamp_now:
 						dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-						dt_buffer1 = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(2000, 1, 1, 0, 0, 0), "%Y-%m-%d %H:%M:%S")
-						dt_buffer2 = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(2000, 1, 1, hours % 24, minutes % 60, seconds % 60), "%Y-%m-%d %H:%M:%S")
+						dt_buffer1 = datetime.datetime.strptime(f"{2000:04d}-{1:02d}-{1:02d} {0:02d}:{0:02d}:{0:02d}", "%Y-%m-%d %H:%M:%S")
+						dt_buffer2 = datetime.datetime.strptime(f"{2000:04d}-{1:02d}-{1:02d} {hours % 24:02d}:{minutes % 60:02d}:{seconds % 60:02d}", "%Y-%m-%d %H:%M:%S")
 						dt_buffer2 += datetime.timedelta(days=days)
 						rd = relativedelta(dt_now, dt_then)
 						dt_new = dt_buffer2 + rd
@@ -560,7 +566,8 @@ class DMG_MBC3(DMG_Mapper):
 						seconds = dt_new.second
 						minutes = dt_new.minute
 						hours = dt_new.hour
-						temp = datetime.date.fromtimestamp(timestamp_now) - datetime.date.fromtimestamp(timestamp_then)
+						temp = (datetime.datetime.fromtimestamp(timestamp_now, tz=datetime.timezone.utc).date()
+							- datetime.datetime.fromtimestamp(timestamp_then, tz=datetime.timezone.utc).date())
 						days = temp.days + days
 						if days >= 512:
 							carry = True
@@ -600,7 +607,7 @@ class DMG_MBC3(DMG_Mapper):
 		#if rtc_carry: rtc_d += 256
 		if rtc_h > 24 or rtc_m > 60 or rtc_s > 60:
 			try:
-				dprint("Invalid RTC state: {:d} days, {:02d}:{:02d}:{:02d}".format(rtc_d, rtc_h, rtc_m, rtc_s))
+				dprint(f"Invalid RTC state: {rtc_d:d} days, {rtc_h:02d}:{rtc_m:02d}:{rtc_s:02d}")
 			except Exception:
 				logger.exception("Failed to format an invalid RTC state")
 			s = __("Invalid RTC state")
@@ -609,7 +616,7 @@ class DMG_MBC3(DMG_Mapper):
 			s = __("Not available")
 			d["rtc_valid"] = False
 		else:
-			s = ___("{days} day, {hours}:{minutes}:{seconds}", "{days} days, {hours}:{minutes}:{seconds}", n=rtc_d, days=rtc_d, hours="{:02d}".format(rtc_h), minutes="{:02d}".format(rtc_m), seconds="{:02d}".format(rtc_s))
+			s = ___("{days} day, {hours}:{minutes}:{seconds}", "{days} days, {hours}:{minutes}:{seconds}", n=rtc_d, days=rtc_d, hours=f"{rtc_h:02d}", minutes=f"{rtc_m:02d}", seconds=f"{rtc_s:02d}")
 			d["rtc_valid"] = True
 
 		d["string"] = s
@@ -731,7 +738,7 @@ class DMG_MBC6(DMG_Mapper):
 		self.CartWrite([[ 0x4000, 0x30 ]])
 		while True:
 			sr = self.CartRead(0x4000)
-			dprint("Status Register Check: 0x{:X} == 0x80? {:s}".format(sr, str(sr == 0x80)))
+			dprint(f"Status Register Check: 0x{sr:X} == 0x80? {str(sr == 0x80):s}")
 			if sr == 0x80: break
 			time.sleep(0.01)
 
@@ -1078,7 +1085,7 @@ class DMG_HuC3(DMG_Mapper):
 		self.CartWrite(commands)
 
 		rtc = 0
-		for i in range(0, 6):
+		for i in range(6):
 			commands = [
 				[ 0x0000, 0x0B ],
 				[ 0xA000, 0x10 ],
@@ -1101,7 +1108,7 @@ class DMG_HuC3(DMG_Mapper):
 		buffer.extend(struct.pack("<Q", ts))
 
 		dstr = ' '.join(format(x, '02X') for x in buffer)
-		dprint("RTC: [{:02X}] {:s}".format(int(len(dstr)/3) + 1, dstr))
+		dprint(f"RTC: [{int(len(dstr)/3) + 1:02X}] {dstr:s}")
 
 		self.RTC_BUFFER = buffer
 		return buffer
@@ -1132,7 +1139,7 @@ class DMG_HuC3(DMG_Mapper):
 		]
 		self.CartWrite(commands, delay=0.01)
 
-		for i in range(0, 3):
+		for i in range(3):
 			commands = [
 				[ 0x0000, 0x0B ],
 				[ 0xA000, 0x30 | (buffer[i] & 0x0F) ],
@@ -1166,7 +1173,7 @@ class DMG_HuC3(DMG_Mapper):
 		]
 		self.CartWrite(commands, delay=0.03)
 		dstr = ' '.join(format(x, '02X') for x in buffer)
-		dprint("[{:02X}] {:s}".format(int(len(dstr)/3) + 1, dstr))
+		dprint(f"[{int(len(dstr)/3) + 1:02X}] {dstr:s}")
 		return True
 
 	def WriteRTC(self, buffer, advance=False):
@@ -1189,7 +1196,7 @@ class DMG_HuC3(DMG_Mapper):
 					dprint(hours, minutes, days)
 					if timestamp_then < timestamp_now:
 						dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-						dt_buffer1 = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(1, 1, 1, 0, 0, 0), "%Y-%m-%d %H:%M:%S")
+						dt_buffer1 = datetime.datetime.strptime(f"{1:04d}-{1:02d}-{1:02d} {0:02d}:{0:02d}:{0:02d}", "%Y-%m-%d %H:%M:%S")
 						dt_buffer2 = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(1, 1, 1, hours, minutes, 0), "%Y-%m-%d %H:%M:%S")
 						dt_buffer2 += datetime.timedelta(days=days)
 						rd = relativedelta(dt_now, dt_then)
@@ -1226,7 +1233,7 @@ class DMG_HuC3(DMG_Mapper):
 			"rtc_valid":True
 		}
 
-		d["string"] = ___("{days} day, {hours}:{minutes}", "{days} days, {hours}:{minutes}", n=rtc_d, days=rtc_d, hours="{:02d}".format(rtc_h), minutes="{:02d}".format(rtc_m))
+		d["string"] = ___("{days} day, {hours}:{minutes}", "{days} days, {hours}:{minutes}", n=rtc_d, days=rtc_d, hours=f"{rtc_h:02d}", minutes=f"{rtc_m:02d}")
 
 		return d
 
@@ -1244,7 +1251,7 @@ class DMG_TAMA5(DMG_Mapper):
 		tama5_check = self.CartRead(0xA000)
 		lives = 20
 		while (tama5_check & 3) != 1:
-			dprint("- Current value is 0x{:X}, now writing 0xA001=0x{:X}".format(tama5_check, 0x0A))
+			dprint(f"- Current value is 0x{tama5_check:X}, now writing 0xA001=0x{0x0A:X}")
 			self.CartWrite([[0xA001, 0x0A]], sram=True)
 			tama5_check = self.CartRead(0xA000)
 			lives -= 1
@@ -1275,9 +1282,9 @@ class DMG_TAMA5(DMG_Mapper):
 
 	def ReadRTC(self):
 		buffer = bytearray()
-		for page in range(0, 4):
+		for page in range(4):
 			page_buffer = bytearray(8)
-			for reg in range(0, 0x10):
+			for reg in range(0x10):
 				commands = [
 					# Select RTC
 					[ 0xA001, 0x06 ],
@@ -1331,7 +1338,7 @@ class DMG_TAMA5(DMG_Mapper):
 		buffer[0x06] = (BCD.encode(rtc_dict["rtc_y"]) >> 4)
 		buffer[0x0D] = rtc_dict["rtc_leap_year_state"] << 4 | 1 #24h flag
 
-		for page in range(0, 5):
+		for page in range(5):
 			if page == 0:
 				commands = [
 					# Select TAMA6
@@ -1356,7 +1363,7 @@ class DMG_TAMA5(DMG_Mapper):
 				self.CartWrite(commands, sram=True)
 
 			page_buffer = buffer[page*8:page*8+8]
-			for reg in range(0, 0x0D):
+			for reg in range(0x0D):
 				commands = [
 					# Select RTC
 					[ 0xA001, 0x06 ],
@@ -1390,7 +1397,7 @@ class DMG_TAMA5(DMG_Mapper):
 	def WriteRTC(self, buffer, advance=False):
 		if advance:
 			try:
-				dt_now = datetime.datetime.fromtimestamp(time.time())
+				dt_now = datetime.datetime.fromtimestamp(time.time(), tz=datetime.timezone.utc)
 				if buffer == bytearray([0x00] * len(buffer)): # Reset
 					seconds = 0
 					minutes = 0
@@ -1420,7 +1427,7 @@ class DMG_TAMA5(DMG_Mapper):
 					timestamp_now = int(time.time())
 					if timestamp_then < timestamp_now:
 						dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-						dt_buffer = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(2000 + leap_year_state, months, days, hours % 24, minutes % 60, seconds % 60), "%Y-%m-%d %H:%M:%S")
+						dt_buffer = datetime.datetime.strptime(f"{2000 + leap_year_state:04d}-{months:02d}-{days:02d} {hours % 24:02d}:{minutes % 60:02d}:{seconds % 60:02d}", "%Y-%m-%d %H:%M:%S")
 						rd = relativedelta(dt_now, dt_then)
 						dt_new = dt_buffer + rd
 
@@ -1467,9 +1474,9 @@ class DMG_TAMA5(DMG_Mapper):
 
 		# advance=False: write raw nibbles directly to preserve all bit fields
 		# (bypasses WriteRTCDict which hardcodes weekday=6 in BCD encode)
-		for page in range(0, 4):
+		for page in range(4):
 			page_buffer = buffer[page*8:page*8+8]
-			for reg in range(0, 0x0D):
+			for reg in range(0x0D):
 				commands = [
 					[ 0xA001, 0x06 ], [ 0xA000, 0x08 ],
 					[ 0xA001, 0x04 ], [ 0xA000, reg ],
@@ -1521,7 +1528,7 @@ class DMG_TAMA5(DMG_Mapper):
 			years_label = c___("ᴸ means leap year", "{years} yearᴸ", "{years} yearsᴸ", n=year_count, years=year_count)
 		else:
 			years_label = ___("{years} year", "{years} years", n=year_count, years=year_count)
-		d["string"] = __("{years_label}, {month}-{day}, {hours}:{minutes}:{seconds}", years_label=years_label, month=months, day=days, hours="{:02d}".format(hours), minutes="{:02d}".format(minutes), seconds="{:02d}".format(seconds))
+		d["string"] = __("{years_label}, {month}-{day}, {hours}:{minutes}:{seconds}", years_label=years_label, month=months, day=days, hours=f"{hours:02d}", minutes=f"{minutes:02d}", seconds=f"{seconds:02d}")
 		return d
 
 	def GetRTCString(self):
@@ -1789,7 +1796,7 @@ class AGB_GPIO:
 			if delay is not False: time.sleep(delay)
 
 	def RTCCommand(self, command):
-		for i in range(0, 8):
+		for i in range(8):
 			bit = (command >> (7 - i)) & 0x01
 			self.CartWrite([
 				[ self.GPIO_REG_DAT, 4 | (bit << 1) ],
@@ -1800,7 +1807,7 @@ class AGB_GPIO:
 
 	def RTCReadData(self):
 		data = 0
-		for _ in range(0, 8):
+		for _ in range(8):
 			self.CartWrite([
 				[ self.GPIO_REG_DAT, 4 ],
 				[ self.GPIO_REG_DAT, 4 ],
@@ -1816,7 +1823,7 @@ class AGB_GPIO:
 		return data
 
 	def RTCWriteData(self, data):
-		for i in range(0, 8):
+		for i in range(8):
 			bit = (data >> i) & 0x01
 			self.CartWrite([
 				[ self.GPIO_REG_DAT, 4 | (bit << 1) ],
@@ -1910,7 +1917,7 @@ class AGB_GPIO:
 				[ self.GPIO_REG_CNT, 5 ], # Read Enable
 			])
 			buffer = bytearray()
-			for _ in range(0, 7):
+			for _ in range(7):
 				buffer.append(self.RTCReadData())
 
 			self.CartWrite([
@@ -1945,7 +1952,7 @@ class AGB_GPIO:
 			if buffer[4] >= 12: buffer[4] |= 0x80
 			buffer[5] = BCD.encode(rtc_dict["rtc_i"])
 			buffer[6] = BCD.encode(rtc_dict["rtc_s"])
-			dprint("New values: RTC_Y=0x{:02X}, RTC_M=0x{:02X}, RTC_D=0x{:02X}, RTC_W=0x{:02X}, RTC_H=0x{:02X}, RTC_I=0x{:02X}, RTC_S=0x{:02X}".format(buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]))
+			dprint(f"New values: RTC_Y=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_D=0x{buffer[2]:02X}, RTC_W=0x{buffer[3]:02X}, RTC_H=0x{buffer[4]:02X}, RTC_I=0x{buffer[5]:02X}, RTC_S=0x{buffer[6]:02X}")
 		except ValueError as e:
 			print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
 
@@ -1956,7 +1963,7 @@ class AGB_GPIO:
 			[ self.GPIO_REG_CNT, 7 ], # Write Enable
 		])
 		self.RTCCommand(self.RTC_WRITE_DATE)
-		for i in range(0, 7):
+		for i in range(7):
 			self.RTCWriteData(buffer[i])
 
 		self.CartWrite([
@@ -1995,7 +2002,7 @@ class AGB_GPIO:
 				timestamp_now = int(time.time())
 				if timestamp_then < timestamp_now:
 					dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-					dt_buffer = datetime.datetime.strptime("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(years + 2000, months % 13, days % 32, hours % 60, minutes % 60, seconds % 60), "%Y-%m-%d %H:%M:%S")
+					dt_buffer = datetime.datetime.strptime(f"{years + 2000:04d}-{months % 13:02d}-{days % 32:02d} {hours % 60:02d}:{minutes % 60:02d}:{seconds % 60:02d}", "%Y-%m-%d %H:%M:%S")
 					rd = relativedelta(dt_now, dt_then)
 					dt_new = dt_buffer + rd
 					years = dt_new.year - 2000
@@ -2020,7 +2027,7 @@ class AGB_GPIO:
 				buffer[0x06] = BCD.encode(seconds)
 
 				dstr = ' '.join(format(x, '02X') for x in buffer)
-				dprint("[{:02X}] {:s}".format(int(len(dstr)/3) + 1, dstr))
+				dprint(f"[{int(len(dstr)/3) + 1:02X}] {dstr:s}")
 
 			except Exception as e:
 				print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
@@ -2077,7 +2084,7 @@ class AGB_GPIO:
 			d["string"] = __("Invalid RTC data")
 			d["rtc_valid"] = False
 		else:
-			d["string"] = __("20{year}-{month}-{day} {hours}:{minutes}:{seconds}", year="{:02d}".format(rtc_y), month="{:02d}".format(rtc_m), day="{:02d}".format(rtc_d), hours="{:02d}".format(rtc_h), minutes="{:02d}".format(rtc_i), seconds="{:02d}".format(rtc_s))
+			d["string"] = __("20{year}-{month}-{day} {hours}:{minutes}:{seconds}", year=f"{rtc_y:02d}", month=f"{rtc_m:02d}", day=f"{rtc_d:02d}", hours=f"{rtc_h:02d}", minutes=f"{rtc_i:02d}", seconds=f"{rtc_s:02d}")
 			d["rtc_valid"] = True
 
 		return d
