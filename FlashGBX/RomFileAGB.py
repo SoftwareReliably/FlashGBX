@@ -1,11 +1,18 @@
-# -*- coding: utf-8 -*-
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import hashlib, re, zlib, string, os, json, copy, struct
+import copy
+import hashlib
+import json
+import os
+import re
+import string
+import struct
+import zlib
+
+from .app import AppContext
 from .i18n import __
 from .Logging import dprint, logger
-from .app import AppContext
 
 try:
 	Image = None
@@ -109,10 +116,10 @@ class RomFileAGB:
 		img.putpalette([ 255, 255, 255, 0, 0, 0 ])
 		pixels = img.load()
 
-		for tile_row in range(0, 2):
-			for tile_w in range(0, 13):
-				for tile_h in range(0, 8):
-					for bit in range(0, 8):
+		for tile_row in range(2):
+			for tile_w in range(13):
+				for tile_h in range(8):
+					for bit in range(8):
 						pos = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
 						if pos >= len(data): break
 						pixel = (data[pos] >> bit) & 1
@@ -170,7 +177,7 @@ class RomFileAGB:
 		data["version"] = int(buffer[0xBC])
 		data["96h_correct"] = (buffer[0xB2] == 0x96)
 		data["rom_checksum_calc"] = self.CalcChecksumGlobal()
-		data["rom_size_calc"] = int(len(buffer))
+		data["rom_size_calc"] = len(buffer)
 		data["save_type"] = None
 		data["save_size"] = 0
 
@@ -207,15 +214,15 @@ class RomFileAGB:
 	def GetDatabaseEntry(self):
 		data = self.DATA
 		db_entry = None
-		if os.path.exists("{0:s}/db_AGB.json".format(AppContext.CONFIG_PATH)):
-			with open("{0:s}/db_AGB.json".format(AppContext.CONFIG_PATH), encoding="UTF-8") as f:
+		if os.path.exists(f"{AppContext.CONFIG_PATH:s}/db_AGB.json"):
+			with open(f"{AppContext.CONFIG_PATH:s}/db_AGB.json", encoding="UTF-8") as f:
 				db = f.read()
 				try:
 					db = json.loads(db)
 				except (json.JSONDecodeError, ValueError) as e:
 					print(__("Error: Database for Game Boy Advance titles is corrupted.") + "\n" + str(e))
 					return None
-				if data["header_sha1"] in db.keys():
+				if data["header_sha1"] in db:
 					db_entry = db[data["header_sha1"]]
 					if db_entry["gc"] in ("ZMAJ", "ZMBJ", "ZMDE"):
 						db_entry["gc"] = "AGS-{:s}".format(db_entry["gc"])
