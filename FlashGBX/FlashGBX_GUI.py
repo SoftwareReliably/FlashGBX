@@ -2185,11 +2185,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 					elif mbc2 != "None" and not (mbc1 in compatible_mbc and mbc2 in compatible_mbc):
 						if "mbc" in carts[cart_type] and carts[cart_type]["mbc"] == "manual":
 							msg_text = __("The ROM file you selected uses a different mapper type than your current selection. What mapper should be used when writing the ROM?") + "\n\n" + __("Selected mapper type:") + " " + mbc1 + "\n" + __("ROM mapper type:") + " " + mbc2
-							msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
+							msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Icon.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
 							if mbc == 0: mbc1 = "MBC5"
-							button_1 = msgbox.addButton(f"{mbc1:s}", QtWidgets.QMessageBox.ActionRole)
-							button_2 = msgbox.addButton(f"{mbc2:s}", QtWidgets.QMessageBox.ActionRole)
-							button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.RejectRole)
+							button_1 = msgbox.addButton(f"{mbc1:s}", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+							button_2 = msgbox.addButton(f"{mbc2:s}", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+							button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.ButtonRole.RejectRole)
 							msgbox.setDefaultButton(button_1)
 							msgbox.setEscapeButton(button_cancel)
 							msgbox.exec()
@@ -2200,7 +2200,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 						else:
 							if mbc1 == "None": mbc1 = c__("Mapper Type", c__("Mapper Type", "None/Unknown"))
 							msg_text = __("Warning: The ROM file you selected uses a different mapper type than your flashcart profile. The ROM file may be incompatible with your cartridge.") + "\n\n" + __("Selected mapper type:") + " " + mbc1 + "\n" + __("ROM mapper type:") + " " + mbc2
-							answer = QtWidgets.QMessageBox.warning(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", msg_text, QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel, QtWidgets.QMessageBox.Cancel)
+							answer = QtWidgets.QMessageBox.warning(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", msg_text, QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel, QtWidgets.QMessageBox.StandardButton.Cancel)
 							if answer == QtWidgets.QMessageBox.Cancel: return
 			elif self.CONN.GetMode() == "AGB":
 				hdr = RomFileAGB(buffer).GetHeader()
@@ -2217,10 +2217,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 						with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin", "rb") as f:
 							bootlogo = bytearray(f.read(0x9C))
 				if bootlogo is not None:
-					msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
-					button_1 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"), QtWidgets.QMessageBox.ActionRole)
-					button_2 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"), QtWidgets.QMessageBox.ActionRole)
-					button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.RejectRole)
+					msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Icon.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
+					button_1 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"), QtWidgets.QMessageBox.ButtonRole.ActionRole)
+					button_2 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"), QtWidgets.QMessageBox.ButtonRole.ActionRole)
+					button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.ButtonRole.RejectRole)
 					msgbox.setDefaultButton(button_1)
 					msgbox.setEscapeButton(button_cancel)
 					msgbox.exec()
@@ -2232,9 +2232,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 						pass
 				else:
 					dprint("Couldn’t find boot logo file in configuration folder")
-					msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
-					msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&OK"), QtWidgets.QMessageBox.ActionRole)
-					button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.RejectRole)
+					msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Icon.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
+					msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&OK"), QtWidgets.QMessageBox.ButtonRole.ActionRole)
+					button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.ButtonRole.RejectRole)
 					msgbox.setDefaultButton(button_cancel)
 					msgbox.setEscapeButton(button_cancel)
 					retval = msgbox.exec()
@@ -2245,10 +2245,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
 			if not hdr["header_checksum_correct"] and (self.CONN.GetMode() == "AGB" or (self.CONN.GetMode() == "DMG" and mbc not in (0x203, 0x205))):
 				msg_text = __("Warning: The ROM file you selected will not boot on actual hardware due to an invalid header checksum (expected {calc} instead of {actual}).", calc=f"0x{hdr['header_checksum_calc']:02X}", actual=f"0x{hdr['header_checksum']:02X}")
-				msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
-				button_1 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"), QtWidgets.QMessageBox.ActionRole)
-				button_2 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"), QtWidgets.QMessageBox.ActionRole)
-				button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.RejectRole)
+				msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Icon.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg_text)
+				button_1 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"), QtWidgets.QMessageBox.ButtonRole.ActionRole)
+				button_2 = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"), QtWidgets.QMessageBox.ButtonRole.ActionRole)
+				button_cancel = msgbox.addButton(c__("Button (& = Keyboard Shortcut)", "&Cancel"), QtWidgets.QMessageBox.ButtonRole.RejectRole)
 				msgbox.setDefaultButton(button_1)
 				msgbox.setEscapeButton(button_cancel)
 				msgbox.exec()
@@ -2763,10 +2763,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 				with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_1.bin", "wb") as f: f.write(save1)
 				with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_2.bin", "wb") as f: f.write(save2)
 				msg = __("Test {num} ({pattern}) failed!", num=test_ok+1, pattern=test_patterns_names[test_ok]) + "\n" + __("Note: SRAM requires a working battery to retain save data.") + "\n\n" + __("Continue anyway?")
-				msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg, standardButtons=QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-				msgbox.setDefaultButton(QtWidgets.QMessageBox.Yes)
+				msgbox = QtWidgets.QMessageBox(parent=self, icon=QtWidgets.QMessageBox.Icon.Warning, windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", text=msg, standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+				msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
 				answer = msgbox.exec()
-				if answer == QtWidgets.QMessageBox.No:
+				if answer == QtWidgets.QMessageBox.StandardButton.No:
 					stop = True
 
 			if not stop and save1 is not None:
