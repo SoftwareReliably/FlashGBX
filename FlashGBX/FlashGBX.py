@@ -167,7 +167,7 @@ def main(portableMode=False):
 
 	init_language(config_path, override=language_choice)
 
-	print("FlashGBX {version}\n© 2020–{year} Lesserkuma".format(version=AppInfo.VERSION, year=time.strftime("%Y")))
+	print(f"FlashGBX {AppInfo.VERSION}\n© 2020–{time.strftime('%Y')} Lesserkuma")
 	print("https://github.com/Lesserkuma/FlashGBX")
 
 	examples = "\n" + __("Examples") + ":\n" + \
