@@ -1648,7 +1648,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
 			self.btnConnect.setEnabled(False)
 		elif len(self.DEVICES) == 1 or (connectToFirst and len(self.DEVICES) > 1):
-			self.lblDevice.setText(list(self.DEVICES.keys())[0])
+			self.lblDevice.setText(next(iter(self.DEVICES.keys())))
 			self.lblDevice.setStyleSheet("")
 			self.ConnectDevice()
 			self.cmbDevice.clear()
@@ -3289,7 +3289,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 			msg = __("Failed to turn on the cartridge power.") + "\n" + __("The “{setting}” setting has therefore been disabled.", setting=__("Automatic cartridge &power off").replace("&", "")) + "\n\n" + __("Workaround advice:\n1. Eject the cartridge.\n2. Re-connect the USB cable.\n3. Click “{button_connect}” and select Platform mode.\n4. Insert the cartridge and click “{button_refresh}”.", button_connect=__("&Connect").replace("&", ""), button_refresh=__("&Refresh").replace("&", ""))
 			self.mnuConfig.actions()[8].setChecked(False)
 			self.SETTINGS.setValue("AutoPowerOff", "0")
-			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", msg, QtWidgets.QMessageBox.Ok)
+			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", msg, QtWidgets.QMessageBox.StandardButton.Ok)
 			self.DisconnectDevice()
 			return False
 
@@ -3324,19 +3324,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 		except (BrokenPipeError, SerialException):
 			self.LimitBaudRateGBxCartRW()
 			self.DisconnectDevice()
-			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("The connection to the device was lost while trying to read the ROM header. This may happen if the inserted cartridge issues a short circuit or its peak power draw is too high.\n\nAs a potential workaround for the latter, you can try hotswapping the cartridge:\n1. Remove the cartridge from the device.\n2. Reconnect the device and select platform mode.\n3. Then insert the cartridge and click “{button}”.", button=self.btnHeaderRefresh.text().replace("&", "")), QtWidgets.QMessageBox.Ok)
+			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("The connection to the device was lost while trying to read the ROM header. This may happen if the inserted cartridge issues a short circuit or its peak power draw is too high.\n\nAs a potential workaround for the latter, you can try hotswapping the cartridge:\n1. Remove the cartridge from the device.\n2. Reconnect the device and select platform mode.\n3. Then insert the cartridge and click “{button}”.", button=self.btnHeaderRefresh.text().replace("&", "")), QtWidgets.QMessageBox.StandardButton.Ok)
 			return False
 
 		if data == False or len(data) == 0:
 			self.LimitBaudRateGBxCartRW()
 			self.DisconnectDevice()
-			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("Invalid response from the device. Please re-connect the USB cable."), QtWidgets.QMessageBox.Ok)
+			QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("Invalid response from the device. Please re-connect the USB cable."), QtWidgets.QMessageBox.StandardButton.Ok)
 			return False
 
 		if self.CONN.CheckROMStable() is False and resetStatus:
 			try:
 				if data != bytearray(data[0] * len(data)):
-					QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("The cartridge connection is unstable!") + "\n" + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."), QtWidgets.QMessageBox.Ok)
+					QtWidgets.QMessageBox.critical(self, f"{AppInfo.NAME:s} {AppInfo.VERSION:s}", __("The cartridge connection is unstable!") + "\n" + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."), QtWidgets.QMessageBox.StandardButton.Ok)
 			except Exception:
 				logger.exception("Failed to check whether the cartridge response is stable")
 
