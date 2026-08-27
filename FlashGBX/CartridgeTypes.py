@@ -1,12 +1,14 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from typing import ClassVar
+
 from .i18n import __, c__
 
 
 class RomSizes:
-    ROM_SIZES = [2**i for i in range(15, 30)]  # 32 KiB to 512 MiB
-    ROM_SIZES_DMG = [2**i for i in range(15, 28)]  # 32 KiB to 128 MiB
+    ROM_SIZES: ClassVar[list[int]] = [2**i for i in range(15, 30)]  # 32 KiB to 512 MiB
+    ROM_SIZES_DMG: ClassVar[list[int]] = [2**i for i in range(15, 28)]  # 32 KiB to 128 MiB
 
     def __init__(self, size=None, index=None):
         if index is not None:
@@ -97,7 +99,7 @@ class RomSizes:
 
 
 class AgbSaveTypes:
-    SAVE_TYPES = [
+    SAVE_TYPES: ClassVar[list[tuple[int, str]]] = [
         (0, ""),
         (512, "4K EEPROM"),
         (8192, "64K EEPROM"),
@@ -111,7 +113,7 @@ class AgbSaveTypes:
     ]
 
     # CLI shorthand for each SAVE_TYPES entry. None means the entry has no CLI alias.
-    CLI_NAMES = [
+    CLI_NAMES: ClassVar[list[str | None]] = [
         None,  # 0
         "eeprom4k",  # 1
         "eeprom64k",  # 2
@@ -124,7 +126,7 @@ class AgbSaveTypes:
         "batteryless",  # 9
     ]
 
-    AGB_FLASH_SAVE_CHIPS = {
+    AGB_FLASH_SAVE_CHIPS: ClassVar[dict[int, tuple[str, int]]] = {
         0xBFD4: ("SST 39VF512", 0x10000),
         0x1F3D: ("Atmel AT29LV512", 0x10000),
         0xC21C: ("Macronix MX29L512", 0x10000),
@@ -169,7 +171,7 @@ class AgbSaveTypes:
             name = c__("Save Type", "None") if localized else "None"
         bytes_val = self.GetSize(index)
 
-        if bytes_val == 0:
+        if bytes_val is None or bytes_val == 0:
             return name
 
         bytes = __(" Bytes") if localized else " Bytes"
@@ -246,7 +248,7 @@ class AgbSaveTypes:
 
 
 class DmgSaveTypes:
-    RAM_TYPES = [
+    RAM_TYPES: ClassVar[list[tuple[int, int, str]]] = [
         (0x00, 0, __("None")),
         (0x100, 0x200, "4K SRAM"),
         (0x01, 0x800, "16K SRAM"),
@@ -266,7 +268,7 @@ class DmgSaveTypes:
 
     # CLI shorthand → mbc id. The 0x00 "None" entry deliberately has no shorthand
     # (argparse "auto" covers that case).
-    CLI_NAMES = {
+    CLI_NAMES: ClassVar[dict[int, str]] = {
         0x100: "4k",
         0x01: "16k",
         0x02: "64k",
