@@ -6,6 +6,7 @@ import math
 import os
 import struct
 import time
+from typing import ClassVar
 
 from .app import AppContext
 from .i18n import __, c__, format_decimal
@@ -51,7 +52,7 @@ class Flashcart:
         if "write_pin" in config:
             self.DEFAULT_WE = config["write_pin"]
 
-    def CartRead(self, address, length=0):
+    def CartRead(self, address, length: int=0):
         if self.CONFIG["type"].upper() == "AGB":
             if length % 2 == 1:
                 length += 1
