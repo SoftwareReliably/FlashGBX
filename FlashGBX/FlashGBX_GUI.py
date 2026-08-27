@@ -113,7 +113,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
         self.setWindowTitle(f"{AppInfo.NAME:s} {AppInfo.VERSION:s}")
         # self.setContentsMargins(0, 0, 0, 0)
-        self.TEXT_COLOR = QtGui.QPalette().color(QtGui.QPalette.Text).toTuple()
+        self.TEXT_COLOR = QtGui.QPalette().color(QtGui.QPalette.ColorRole.Text).toTuple()
 
         # Create the QtWidgets.QVBoxLayout that lays out the whole form
         self.layout = QtWidgets.QGridLayout()
@@ -1514,7 +1514,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 __(
                     "General precautions:\n- Due to voltage differences, do not insert a Game Boy Advance cartridge while the platform mode is set to “Game Boy”.\n- Always keep the cartridge contacts as clean as possible to ensure a stable connection."
                 ).replace("\n", "<br>"),
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
 
         if update_check and update_check.lower() == "enabled":
@@ -1717,7 +1717,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         from . import i18n
 
         msg = "This software is being developed by Lesserkuma as a hobby project. There is no affiliation with Nintendo or any other company. This software is provided as-is and the developer is not responsible for any damage that is caused by the use of it. Use at your own risk!<br><br>"
-        msg += f"© 2020–{datetime.datetime.now().year} Lesserkuma<br>"
+        msg += f"© 2020–{datetime.datetime.now(tz=datetime.timezone.utc).year} Lesserkuma<br>"
         msg += '<a href="https://github.com/Lesserkuma/FlashGBX">https://github.com/Lesserkuma/FlashGBX</a><br>'
         msg += "<br>"
         if (
@@ -2184,7 +2184,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         self,
                         f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                         text,
-                        QtWidgets.QMessageBox.Ok,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
                     )
 
                 if dev.IsUnregistered():
@@ -2194,7 +2194,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             self,
                             f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                             text,
-                            QtWidgets.QMessageBox.Ok,
+                            QtWidgets.QMessageBox.StandardButton.Ok,
                         )
                     except Exception:
                         logger.exception(
@@ -2278,7 +2278,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     msg[:-2],
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
             elif not firstRun:
                 compatible_devices = []
@@ -3122,8 +3122,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self,
                 f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 text,
-                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
             if answer == QtWidgets.QMessageBox.Cancel:
                 if "detected_cart_type" in self.STATUS:
@@ -3172,7 +3172,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("A compatible flashcart profile could not be auto-detected."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
 
@@ -3243,7 +3243,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("The selected ROM file is empty."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             if (
@@ -3256,7 +3256,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         "ROM files bigger than 512{mib} are not supported.",
                         mib=__(" MiB"),
                     ),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
 
@@ -3282,7 +3282,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         self,
                         f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                         msg,
-                        QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+                        QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
                         QtWidgets.QMessageBox.Cancel,
                     )
                     if answer == QtWidgets.QMessageBox.Cancel:
@@ -3672,7 +3672,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Critical,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 return
@@ -3710,7 +3710,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         __(
                             "A compatible flashcart profile could not be auto-detected."
                         ),
-                        QtWidgets.QMessageBox.Ok,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
                     )
                     return
                 if self.CONN.GetMode() == "AGB":
@@ -3737,7 +3737,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("No save type was selected."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
@@ -3756,7 +3756,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("No save type was selected."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
@@ -3776,7 +3776,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             if len(path) > 0 and add_date_time and add_date_time.lower() == "enabled":
                 path += "_{:s}".format(
-                    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    datetime.datetime.now(tz=datetime.timezone.utc).strftime(
+                        "%Y-%m-%d_%H-%M-%S"
+                    )
                 )
 
             path += ".sav"
@@ -3946,7 +3948,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Critical,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 return
@@ -3987,7 +3989,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         __(
                             "A compatible flashcart profile could not be auto-detected."
                         ),
-                        QtWidgets.QMessageBox.Ok,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
                     )
                     return
                 if mode == "AGB":
@@ -4013,7 +4015,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("No save type was selected."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
@@ -4032,7 +4034,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("No save type was selected."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
@@ -4055,8 +4057,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text,
-                    QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 if answer == QtWidgets.QMessageBox.Cancel:
                     return
@@ -4068,7 +4070,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("The save data on your cartridge will now be erased."),
-                    QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
                     QtWidgets.QMessageBox.Cancel,
                 )
                 if answer == QtWidgets.QMessageBox.Cancel:
@@ -4081,7 +4083,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Critical,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 return
@@ -4135,7 +4137,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("Stress test is not supported for this save type."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
             msg = __(
@@ -4157,8 +4159,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self,
                 f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 msg,
-                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
             if answer == QtWidgets.QMessageBox.Cancel:
                 return
@@ -4194,7 +4196,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("The size of this file is not supported."),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
 
@@ -4210,7 +4212,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Critical,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("This cartridge is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 return
@@ -4312,7 +4314,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Critical,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("This cartridge is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 return
@@ -4600,7 +4602,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     text=__(
                         "An error occured. Please ensure you selected the correct save type."
                     ),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 save1 = None
@@ -4763,7 +4765,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         icon=QtWidgets.QMessageBox.Information,
                         windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                         text=__("All tests completed successfully!") + msg_te,
-                        standardButtons=QtWidgets.QMessageBox.Ok,
+                        standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                     )
                     msgbox.exec()
                 else:
@@ -4797,7 +4799,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             icon=QtWidgets.QMessageBox.Warning,
                             windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                             text=msg,
-                            standardButtons=QtWidgets.QMessageBox.Ok,
+                            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                         )
                         msgbox.exec()
             else:
@@ -4806,7 +4808,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     icon=QtWidgets.QMessageBox.Information,
                     windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text=__("The stress test process was cancelled."),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
 
@@ -5186,7 +5188,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         elif isinstance(value, QtWidgets.QCheckBox):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now() + datetime.timedelta(seconds=1)
+                        dt = datetime.datetime.now(
+                            tz=datetime.timezone.utc
+                        ).astimezone() + datetime.timedelta(seconds=1)
                         rtc_dict.update(
                             {
                                 "rtc_h": dt.hour,
@@ -5256,7 +5260,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         elif isinstance(value, QtWidgets.QCheckBox):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now()
+                        dt = datetime.datetime.now(tz=datetime.timezone.utc).astimezone()
                         rtc_dict.update({"rtc_h": dt.hour, "rtc_m": dt.minute})
                     mbc = ConvertMapperTypeToMapper(
                         self.cmbDMGHeaderMapperResult.currentIndex()
@@ -5348,7 +5352,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         elif isinstance(value, QtWidgets.QCheckBox):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now() + datetime.timedelta(seconds=2)
+                        dt = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(seconds=2)
                         rtc_dict.update(
                             {
                                 "rtc_m": dt.month,
@@ -5452,7 +5456,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     elif isinstance(value, QtWidgets.QComboBox):
                         rtc_dict[key] = value.currentIndex()
                 if result["current"].isChecked():
-                    dt = datetime.datetime.now() + datetime.timedelta(seconds=1)
+                    dt = datetime.datetime.now(
+                        tz=datetime.timezone.utc
+                    ) + datetime.timedelta(seconds=1)
                     rtc_dict.update(
                         {
                             "rtc_y": dt.year,
@@ -5480,7 +5486,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self,
                 f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 __("The Real Time Clock register values have been updated."),
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
             return True
         else:
@@ -5490,7 +5496,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 __(
                     "An error occured while updating the Real Time Clock register values."
                 ),
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
             return False
 
@@ -5599,9 +5605,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 icon=QtWidgets.QMessageBox.Warning,
                 windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 text=msg,
-                standardButtons=QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
             )
-            msgbox.setDefaultButton(QtWidgets.QMessageBox.Ok)
+            msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Ok)
             if self.CONN.CanSetVoltageByCode() or self.CONN.CanSetVoltageByAutoswitch():
                 msgbox.setCheckBox(cb)
             answer = msgbox.exec()
@@ -5834,7 +5840,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.lblDMGGameNameResult.setStyleSheet(self.DEFAULT_STYLESHEET)
 
                 # if data['logo_correct'] and not self.CONN.IsSupportedMbc(data["mapper_raw"]) and resetStatus:
-                # 	QtWidgets.QMessageBox.warning(self, "{:s} {:s}".format(AppInfo.NAME, AppInfo.VERSION), __("This cartridge uses a mapper that may not be completely supported by FlashGBX using your {device_name}.", device_name=self.CONN.GetFullName()), QtWidgets.QMessageBox.Ok)
+                # 	QtWidgets.QMessageBox.warning(self, "{:s} {:s}".format(AppInfo.NAME, AppInfo.VERSION), __("This cartridge uses a mapper that may not be completely supported by FlashGBX using your {device_name}.", device_name=self.CONN.GetFullName()), QtWidgets.QMessageBox.StandardButton.Ok)
                 if data["logo_correct"] and data["game_title"] in (
                     "NP M-MENU MENU",
                     "DMG MULTI MENU ",
@@ -6090,7 +6096,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         "This cartridge uses a mapper that may not be completely supported by the firmware of the {device_name}. Check for firmware updates.",
                         device_name=self.CONN.GetFullName(),
                     ),
-                    QtWidgets.QMessageBox.Ok,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
                 )
 
             if "logo" in data:
@@ -6140,7 +6146,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 __(
                     "This cartridge may be protected against reading or writing a ROM. If you don’t want to risk this cartridge to render itself unusable, please do not try to write a new ROM to it."
                 ),
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
 
     def LimitBaudRateGBxCartRW(self):
@@ -6246,7 +6252,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 + __(
                     "This cartridge may not be auto-detectable, please select the flashcart profile manually."
                 ),
-                QtWidgets.QMessageBox.Ok,
+                QtWidgets.QMessageBox.StandardButton.Ok,
             )
             self.LimitBaudRateGBxCartRW()
             self.DisconnectDevice()
@@ -6298,7 +6304,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     text=__("An unknown error occured. Please try again.")
                     + "\n\n"
                     + str(e),
-                    standardButtons=QtWidgets.QMessageBox.Ok,
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
                 self.LimitBaudRateGBxCartRW()
@@ -7015,7 +7021,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 icon=QtWidgets.QMessageBox.Critical,
                 windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 text=str(args["error"]),
-                standardButtons=QtWidgets.QMessageBox.Ok,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
             )
             if not "\n" in str(args["error"]):
                 msgbox.setTextFormat(QtCore.Qt.RichText)
@@ -7168,7 +7174,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             icon=QtWidgets.QMessageBox.Critical,
                             windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                             text=args["info_msg"],
-                            standardButtons=QtWidgets.QMessageBox.Ok,
+                            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                         )
                         dprint(
                             "Queueing Message Box {:s}:\n----\n{:s} {:s}\n----\n{:s}\n----".format(
@@ -7191,7 +7197,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             icon=QtWidgets.QMessageBox.Information,
                             windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                             text=args["info_msg"],
-                            standardButtons=QtWidgets.QMessageBox.Ok,
+                            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                         )
                         dprint(
                             "Queueing Message Box {:s}:\n----\n{:s} {:s}\n----\n{:s}\n----".format(
