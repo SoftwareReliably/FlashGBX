@@ -26,7 +26,6 @@ class BCD:
 
 def ConvertMapperToMapperType(mapper_raw):
     i = 0
-    retval = None
     for mapper_type, (ids, _) in DMG_Mapper.MAPPER_MAP.items():
         if i == 0:
             retval = (mapper_type, ids, i)

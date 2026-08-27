@@ -87,7 +87,7 @@ class DumpReport:
             ("ROM Size", rom_size_str),
         ]
         if mode == "DMG":
-            mapper_int = di["mapper_type"]
+            mapper_int: int = di["mapper_type"]
             if mapper_int in DMG_Mapper().GetAllMapperIds():
                 mapper_str = ConvertMapperToMapperType(mapper_int)[0]
             else:
