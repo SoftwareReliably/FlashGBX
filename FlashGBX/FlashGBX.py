@@ -252,7 +252,7 @@ def main(portableMode=False):
             "appdata": os.path.join(
                 QtCore.QDir.toNativeSeparators(
                     QtCore.QStandardPaths.writableLocation(
-                        QtCore.QStandardPaths.AppConfigLocation
+                        QtCore.QStandardPaths.StandardLocation.AppConfigLocation
                     )
                 ),
                 "FlashGBX",
