@@ -15,19 +15,19 @@ from .i18n import __
 from .Logging import ANSI, dprint, logger
 
 try:
-    Image = None
     from PIL import Image
 except Exception:
+    Image = None  # type: ignore[assignment]
     logger.exception("Pillow image support is unavailable for Game Boy ROMs")
 
 
 class RomFileDMG:
-    ROMFILE_PATH = None
+    ROMFILE_PATH: str | None = None
     ROMFILE = bytearray()
-    DATA = None
     BATTERYLESS_SRAM_DB = None
 
     def __init__(self, file=None):
+        self.DATA: dict = {}
         if isinstance(file, str):
             self.Open(file)
         elif isinstance(file, bytearray):
@@ -38,6 +38,8 @@ class RomFileDMG:
         self.Load()
 
     def Load(self):
+        if self.ROMFILE_PATH is None:
+            return
         with open(self.ROMFILE_PATH, "rb") as f:
             self.ROMFILE = bytearray(f.read(0x1000))
 
@@ -80,6 +82,8 @@ class RomFileDMG:
             img.putpalette([255, 255, 255, 255, 0, 0])
         img.info["transparency"] = 0
         pixels = img.load()
+        if pixels is None:
+            return False
 
         for y in range(8):
             i = int((y / 2) % 2) + int(y / 4) * 24
@@ -152,27 +156,29 @@ class RomFileDMG:
         ).replace("\x00", "_")
         game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
         data["game_code"] = ""
-        if data["cgb"] in (0x80, 0xC0):
-            if len(data["game_title_raw"].rstrip("\x00")) == 15:
-                if data["game_title_raw"][-4:][0] in ("A", "B", "H", "K", "V") and data[
-                    "game_title_raw"
-                ][-4:][3] in (
-                    "A",
-                    "B",
-                    "D",
-                    "E",
-                    "F",
-                    "I",
-                    "J",
-                    "K",
-                    "P",
-                    "S",
-                    "U",
-                    "X",
-                    "Y",
-                ):
-                    data["game_code"] = game_title[-4:]
-                    game_title = game_title[:-4].rstrip("_")
+        if (
+            data["cgb"] in (0x80, 0xC0)
+            and len(data["game_title_raw"].rstrip("\x00")) == 15
+            and data["game_title_raw"][-4:][0] in ("A", "B", "H", "K", "V")
+            and data["game_title_raw"][-4:][3]
+            in (
+                "A",
+                "B",
+                "D",
+                "E",
+                "F",
+                "I",
+                "J",
+                "K",
+                "P",
+                "S",
+                "U",
+                "X",
+                "Y",
+            )
+        ):
+            data["game_code"] = game_title[-4:]
+            game_title = game_title[:-4].rstrip("_")
         data["game_title"] = game_title
 
         data["maker_code"] = format(int(buffer[0x14B]), "02X")
@@ -1277,14 +1283,14 @@ class RomFileDMG:
             data["game_code"] = data["db"]["gc"][4:]
         return data
 
-    def GetDatabaseEntry(self):
+    def GetDatabaseEntry(self) -> dict | None:
         data = self.DATA
         db_entry = None
         if os.path.exists(f"{AppContext.CONFIG_PATH:s}/db_DMG.json"):
             with open(f"{AppContext.CONFIG_PATH:s}/db_DMG.json", encoding="UTF-8") as f:
-                db = f.read()
+                db_raw = f.read()
                 try:
-                    db = json.loads(db)
+                    db: dict = json.loads(db_raw)
                 except (json.JSONDecodeError, ValueError) as e:
                     print(
                         __("Error: Database for Game Boy titles is corrupted.")
@@ -1399,7 +1405,7 @@ def from_isx(buffer):
             temp = 32 * 1024
             while temp < rom_size:
                 temp *= 2
-        except:
+        except Exception:
             print(__("Error: Couldn’t convert ISX file correctly."))
             break
     return data_output[:temp]
