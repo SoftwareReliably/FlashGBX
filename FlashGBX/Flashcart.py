@@ -6,7 +6,6 @@ import math
 import os
 import struct
 import time
-from typing import ClassVar
 
 from .app import AppContext
 from .i18n import __, c__, format_decimal
