@@ -1850,7 +1850,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         from . import i18n
 
         msg = "This software is being developed by Lesserkuma as a hobby project. There is no affiliation with Nintendo or any other company. This software is provided as-is and the developer is not responsible for any damage that is caused by the use of it. Use at your own risk!<br><br>"
-        msg += f"© 2020–{datetime.datetime.now(tz=datetime.timezone.utc).year} Lesserkuma<br>"
+        msg += f"© 2020–{datetime.datetime.now(tz=datetime.UTC).year} Lesserkuma<br>"
         msg += '<a href="https://github.com/Lesserkuma/FlashGBX">https://github.com/Lesserkuma/FlashGBX</a><br>'
         msg += "<br>"
         if (
@@ -3987,7 +3987,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             if len(path) > 0 and add_date_time and add_date_time.lower() == "enabled":
                 path += "_{:s}".format(
-                    datetime.datetime.now(tz=datetime.timezone.utc).strftime(
+                    datetime.datetime.now(tz=datetime.UTC).strftime(
                         "%Y-%m-%d_%H-%M-%S"
                     )
                 )
@@ -5447,7 +5447,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
                         dt = datetime.datetime.now(
-                            tz=datetime.timezone.utc
+                            tz=datetime.UTC
                         ).astimezone() + datetime.timedelta(seconds=1)
                         rtc_dict.update(
                             {
@@ -5519,7 +5519,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
                         dt = datetime.datetime.now(
-                            tz=datetime.timezone.utc
+                            tz=datetime.UTC
                         ).astimezone()
                         rtc_dict.update({"rtc_h": dt.hour, "rtc_m": dt.minute})
                     mbc = ConvertMapperTypeToMapper(
@@ -5613,7 +5613,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
                         dt = datetime.datetime.now(
-                            tz=datetime.timezone.utc
+                            tz=datetime.UTC
                         ) + datetime.timedelta(seconds=2)
                         rtc_dict.update(
                             {
@@ -5719,7 +5719,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         rtc_dict[key] = value.currentIndex()
                 if result["current"].isChecked():
                     dt = datetime.datetime.now(
-                        tz=datetime.timezone.utc
+                        tz=datetime.UTC
                     ) + datetime.timedelta(seconds=1)
                     rtc_dict.update(
                         {

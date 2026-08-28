@@ -439,9 +439,8 @@ class FirmwareUpdater:
 
     def WriteFirmware(self, zipfn, fncSetStatus):
         try:
-            with zipfile.ZipFile(zipfn) as archive:
-                with archive.open("fw.bin") as f:
-                    fw_data = bytearray(f.read())
+            with zipfile.ZipFile(zipfn) as archive, archive.open("fw.bin") as f:
+                fw_data = bytearray(f.read())
         except (zipfile.BadZipFile, KeyError):
             fncSetStatus(__("The firmware update file is corrupted."))
             return 2

@@ -603,10 +603,10 @@ class DMG_MBC3(DMG_Mapper):
                         hours = dt_new.hour
                         temp = (
                             datetime.datetime.fromtimestamp(
-                                timestamp_now, tz=datetime.timezone.utc
+                                timestamp_now, tz=datetime.UTC
                             ).date()
                             - datetime.datetime.fromtimestamp(
-                                timestamp_then, tz=datetime.timezone.utc
+                                timestamp_then, tz=datetime.UTC
                             ).date()
                         )
                         days = temp.days + days
@@ -1504,7 +1504,7 @@ class DMG_TAMA5(DMG_Mapper):
         if advance:
             try:
                 dt_now = datetime.datetime.fromtimestamp(
-                    time.time(), tz=datetime.timezone.utc
+                    time.time(), tz=datetime.UTC
                 )
                 if buffer == bytearray([0x00] * len(buffer)):  # Reset
                     seconds = 0

@@ -309,7 +309,7 @@ class GBMemoryMap:
                 )
 
             info["menu"]["metadata"]["timestamp"] = (
-                datetime.datetime.now(tz=datetime.timezone.utc)
+                datetime.datetime.now(tz=datetime.UTC)
                 .strftime("%d/%m/%Y%H:%M:%S")
                 .encode("ASCII")
             )
@@ -481,7 +481,7 @@ class GBMemoryMap:
                 )[:3]
             self.MAP_DATA[0x54:0x66] = struct.pack(
                 "=18s",
-                datetime.datetime.now(tz=datetime.timezone.utc)
+                datetime.datetime.now(tz=datetime.UTC)
                 .strftime("%d/%m/%Y%H:%M:%S")
                 .encode("ASCII"),
             )

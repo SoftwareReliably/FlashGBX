@@ -665,7 +665,7 @@ try:
                         author="Lesserkuma",
                         date=datetime.datetime.fromtimestamp(
                             int(self.INI.GetValue("fw_buildts") or "0"),
-                            tz=datetime.timezone.utc,
+                            tz=datetime.UTC,
                         ).strftime("%x"),
                     )
                     self.FW_LK_BUILDTS = self.INI.GetValue("fw_buildts")
@@ -681,7 +681,7 @@ try:
                         version=self.INI.GetValue("fw_msc_ver"),
                         date=datetime.datetime.fromtimestamp(
                             int(self.INI.GetValue("fw_msc_buildts") or "0"),
-                            tz=datetime.timezone.utc,
+                            tz=datetime.UTC,
                         ).strftime("%x"),
                     )
                     self.FW_MSC_TEXT = (
@@ -694,7 +694,7 @@ try:
                         version=self.INI.GetValue("fw_joeygui_ver"),
                         date=datetime.datetime.fromtimestamp(
                             int(self.INI.GetValue("fw_joeygui_buildts") or "0"),
-                            tz=datetime.timezone.utc,
+                            tz=datetime.UTC,
                         ).strftime("%x"),
                     )
                     self.FW_JOEYGUI_TEXT = (

@@ -121,7 +121,7 @@ class Formatter:
     def validate_datetime(cls, string, fmt):
         try:
             if string != datetime.datetime.strptime(string, fmt).replace(
-                tzinfo=datetime.timezone.utc
+                tzinfo=datetime.UTC
             ).strftime(fmt):
                 raise ValueError
             return True

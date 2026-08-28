@@ -52,6 +52,14 @@ dev = [
     "ruff>=0.16.4",
 ]
 
+[tool.pyright]
+include = ["FlashGBX"]
+typeCheckingMode = "standard"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 121
+
 [tool.ruff.lint]
 # Add rule codes you want to ignore
 ignore = [
