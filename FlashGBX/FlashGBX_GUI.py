@@ -259,13 +259,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnHeaderRefresh = QtWidgets.QPushButton()
         self.btnHeaderRefresh.setMinimumHeight(25)
         self.btnHeaderRefresh.setMinimumWidth(140)
-        self.btnHeaderRefresh.clicked.connect(self.ReadCartridge)
+        self.btnHeaderRefresh.clicked.connect(
+            lambda _checked=False: self.ReadCartridge()
+        )
         rowActionsGeneral1.addWidget(self.btnHeaderRefresh)
 
         self.btnDetectCartridge = QtWidgets.QPushButton()
         self.btnDetectCartridge.setMinimumHeight(25)
         self.btnDetectCartridge.setMinimumWidth(140)
-        self.btnDetectCartridge.clicked.connect(self.DetectCartridge)
+        self.btnDetectCartridge.clicked.connect(
+            lambda _checked=False: self.DetectCartridge()
+        )
         rowActionsGeneral1.addWidget(self.btnDetectCartridge)
 
         rowActionsGeneral2 = QtWidgets.QHBoxLayout()
@@ -277,7 +281,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnBackupRAM = QtWidgets.QPushButton()
         self.btnBackupRAM.setMinimumHeight(25)
         self.btnBackupRAM.setMinimumWidth(140)
-        self.btnBackupRAM.clicked.connect(self.BackupRAM)
+        self.btnBackupRAM.clicked.connect(lambda _checked=False: self.BackupRAM())
         rowActionsGeneral2.addWidget(self.btnBackupRAM)
 
         self.cmbDMGCartridgeTypeResult.currentIndexChanged.connect(
@@ -291,11 +295,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnFlashROM = QtWidgets.QPushButton()
         self.btnFlashROM.setMinimumHeight(25)
         self.btnFlashROM.setMinimumWidth(140)
-        self.btnFlashROM.clicked.connect(self.FlashROM)
+        self.btnFlashROM.clicked.connect(lambda _checked=False: self.FlashROM())
         rowActionsGeneral3.addWidget(self.btnFlashROM)
         self.btnRestoreRAM = QtWidgets.QPushButton()
         self.mnuRestoreRAM = QtWidgets.QMenu()
-        self.mnuRestoreRAM.addAction("", self.WriteRAM)
+        self.mnuRestoreRAM.addAction("", lambda _checked=False: self.WriteRAM())
         self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(erase=True))
         self.mnuRestoreRAM.addSeparator()
         self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(test=True))
@@ -666,7 +670,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuMainMenu.addMenu(self.mnuLanguage)
         self.mnuMainMenu.addSeparator()
         self.mnuMainMenu.addSeparator()
-        self.mnuMainMenu.addAction("", self.OpenPath)
+        self.mnuMainMenu.addAction("", lambda _checked=False: self.OpenPath())
         self.mnuMainMenu.addSeparator()
         self.mnuMainMenu.addMenu(self.mnuThirdParty)
         self.mnuMainMenu.addAction("", self.AboutFlashGBX)
