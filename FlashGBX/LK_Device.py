@@ -28,6 +28,7 @@ from .Flashcart import (
     Flashcart_AGB_GBAMP,
     Flashcart_DMG_BUNG_16M,
     Flashcart_DMG_MMSA,
+    FlashcartCallbacks,
 )
 from .Formatter import Formatter
 from .GBMemory import GBMemoryMap
@@ -3027,7 +3028,7 @@ class LK_Device(ABC):
 
     def DetectFlash(self, limitVoltage=False):
         supported_carts = list(self.SUPPORTED_CARTS[self.MODE].values())
-        fc_fncptr = {
+        fc_fncptr: FlashcartCallbacks = {
             "cart_write_fncptr": self._cart_write,
             "cart_write_fast_fncptr": self._cart_write_flash,
             "cart_read_fncptr": self.ReadROM,
@@ -3344,6 +3345,8 @@ class LK_Device(ABC):
 
         for f in range(1, len(supported_carts)):
             cart_type = supported_carts[f]
+            if not isinstance(cart_type, dict):
+                continue
             flashcart = Flashcart(config=cart_type, fncptr=fc_fncptr)
             if "flash_ids" not in cart_type or len(cart_type["flash_ids"]) == 0:
                 continue
@@ -3659,7 +3662,7 @@ class LK_Device(ABC):
                             list(self.SUPPORTED_CARTS[self.MODE].keys())[i]
                         )
 
-                        fc_fncptr = {
+                        fc_fncptr: FlashcartCallbacks = {
                             "cart_write_fncptr": self._cart_write,
                             "cart_write_fast_fncptr": self._cart_write_flash,
                             "cart_read_fncptr": self.ReadROM,
@@ -5732,7 +5735,7 @@ class LK_Device(ABC):
                         "Failed to resolve the selected flash-cart profile index"
                     )
 
-        fc_fncptr = {
+        fc_fncptr: FlashcartCallbacks = {
             "cart_write_fncptr": self._cart_write,
             "cart_write_fast_fncptr": self._cart_write_flash,
             "cart_read_fncptr": self.ReadROM,
