@@ -1,24 +1,39 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from typing import Any, TypedDict
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .app import AppInfo
 from .i18n import __
 
 
-class UserInputDialog(QtWidgets.QDialog):
-    APP = None
+class DialogArgs(TypedDict):
+    title: str
+    intro: str
+    params: list[list[Any]]
 
-    def __init__(self, app, icon=None, args=None):
+
+class UserInputDialog(QtWidgets.QDialog):
+    APP: QtWidgets.QWidget | None = None
+
+    def __init__(
+        self,
+        app: QtWidgets.QWidget | None,
+        icon: QtGui.QIcon | None = None,
+        args: DialogArgs | None = None,
+    ):
         super().__init__(app)
+        if args is None:
+            args = {"title": "", "intro": "", "params": []}
         if icon is not None:
             self.setWindowIcon(QtGui.QIcon(icon))
         self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
         self.setWindowTitle(AppInfo.NAME + " – " + args["title"])
         self.setWindowFlags(
-            (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint)
-            & ~QtCore.Qt.WindowContextHelpButtonHint
+            (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
+            & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint
         )
 
         self.APP = app
@@ -45,7 +60,9 @@ class UserInputDialog(QtWidgets.QDialog):
                     cmb.setEditable(True)
                 elif len(param[3]) == 1:
                     cmb.setEnabled(False)
-                cmb.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+                cmb.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
                 self.paramWidgets[param[0]] = cmb
                 grid_layout.addWidget(lbl, grid_rows, 0, 1, 1)
                 grid_layout.addWidget(cmb, grid_rows, 1, 1, 1)
@@ -74,8 +91,12 @@ class UserInputDialog(QtWidgets.QDialog):
 
         grpButtonsLayout = QtWidgets.QHBoxLayout()
         grpButtonsLayout.addStretch(30)
-        grpButtonsLayout.addWidget(self.btnOK, grid_rows, QtCore.Qt.AlignRight)
-        grpButtonsLayout.addWidget(self.btnCancel, grid_rows, QtCore.Qt.AlignRight)
+        grpButtonsLayout.addWidget(
+            self.btnOK, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight
+        )
+        grpButtonsLayout.addWidget(
+            self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight
+        )
 
         grid_layout.addLayout(grpButtonsLayout, grid_rows, 0, 1, 2)
         self.setLayout(grid_layout)
@@ -87,4 +108,5 @@ class UserInputDialog(QtWidgets.QDialog):
         return self.paramWidgets
 
     def hideEvent(self, event):
-        self.APP.activateWindow()
+        if self.APP is not None:
+            self.APP.activateWindow()
