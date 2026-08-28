@@ -3,21 +3,21 @@
 
 import traceback
 
+from PySide6 import QtCore
 from serial import SerialException
 
-from . import pyside
 from .i18n import __
 from .Logging import dprint
 
 
-class DataTransfer(pyside.QtCore.QThread):
+class DataTransfer(QtCore.QThread):
     CONFIG = None
     FINISHED = False
 
-    updateProgress = pyside.QtCore.Signal(object)
+    updateProgress = QtCore.Signal(object)
 
     def __init__(self, config=None):
-        pyside.QtCore.QThread.__init__(self)
+        QtCore.QThread.__init__(self)
         if config is not None:
             self.CONFIG = config
         self.FINISHED = False

@@ -9,11 +9,11 @@ import urllib.parse
 
 from PIL import Image, ImageDraw
 from PIL.ImageQt import ImageQt
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .app import AppInfo
 from .i18n import __, c__
 from .PocketCamera import PocketCamera
-from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 from .UserInputDialog import UserInputDialog
 
 
@@ -289,7 +289,9 @@ class PocketCameraWindow(QtWidgets.QDialog):
             return
         self.layout.update()
         self.layout.activate()
-        screenGeometry = QDesktopWidget().screenGeometry(self)
+        screenGeometry = (
+            self.screen() or QtGui.QGuiApplication.primaryScreen()
+        ).geometry()
         x = (screenGeometry.width() - self.width()) / 2
         y = (screenGeometry.height() - self.height()) / 2
         self.move(x, y)
@@ -334,7 +336,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 ],
             }
             dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-            if dlg.exec_() == 1:
+            if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 result = dlg.GetResult()
                 index = result["index"].currentIndex()
                 if isinstance(file, str):

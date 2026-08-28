@@ -1,9 +1,10 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from PySide6 import QtCore, QtGui, QtWidgets
+
 from .app import AppInfo
 from .i18n import __
-from .pyside import QtCore, QtGui, QtWidgets
 
 
 class UserInputDialog(QtWidgets.QDialog):

@@ -308,7 +308,7 @@ In the GitHub [Releases](https://github.com/Lesserkuma/FlashGBX/releases) sectio
 - x64 Setup package: Adds the application to the start menu and optionally creates a desktop icon, also includes device drivers.
 
 > [!NOTE]
-> These builds require the 64-bit version of Windows 11 or Windows 10.<br>*(Users of Windows 8 and Windows 7 can install the very old [Python 3.8](https://www.python.org/downloads/release/python-3810/) and run `pip install FlashGBX[qt5]` + `python -m FlashGBX`.)*
+> These builds require the 64-bit version of Windows 11 or Windows 10.
 
 ### **Linux**
 - x86-64/arm64 (.AppImage file): A portable standalone package. Just add execute permissions via `chmod +x /path/to/FlashGBX-*_Linux-*.AppImage`.
@@ -334,7 +334,7 @@ In the GitHub [Releases](https://github.com/Lesserkuma/FlashGBX/releases) sectio
 
 ## Run via Python
 
-FlashGBX can also be run in a local Python environment like so:
+FlashGBX can also be run in a local Python environment like so. PySide6 is installed as a required dependency; PySide2 and Qt 5 are not supported.
 
 1. Download and install [Python](https://www.python.org/downloads/)
 2. Open a Terminal or Command Prompt window
@@ -343,7 +343,7 @@ FlashGBX can also be run in a local Python environment like so:
 `source FlashGBX/bin/activate`<br>
 `wget https://bootstrap.pypa.io/get-pip.py`<br>
 `python3 get-pip.py`<br>
-`python3 -m pip install "FlashGBX[qt6]"` (or `[qt5]` if it fails)<br>
+`python3 -m pip install FlashGBX`<br>
 `deactivate`<br>
 4. FlashGBX launch commands:<br>
 `source FlashGBX/bin/activate`<br>

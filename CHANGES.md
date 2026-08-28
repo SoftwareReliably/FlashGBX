@@ -1,4 +1,7 @@
 # Release notes
+### Unreleased
+- The GUI now uses PySide6 exclusively; PySide2 and Qt 5 are no longer supported
+
 ### v5.0/v5.0.1 (released 2026-06-06)
 - Added support for the [Game Bub](https://gamebub.net/) hardware device *(thanks Eli)*
 - Added a new launcher for the Windows pre-built package that hides the terminal window

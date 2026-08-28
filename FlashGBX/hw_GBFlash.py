@@ -564,7 +564,7 @@ class FirmwareUpdater:
 
 
 try:
-    from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets
 
     class FirmwareUpdaterWindow(QtWidgets.QDialog):
         APP = None
@@ -651,11 +651,7 @@ try:
             self.btnUpdate = QtWidgets.QPushButton(__("Install Firmware Update"))
             self.btnUpdate.setMinimumWidth(200)
             self.btnUpdate.setContentsMargins(20, 20, 20, 20)
-            self.connect(
-                self.btnUpdate,
-                QtCore.SIGNAL("clicked()"),
-                lambda: [self.UpdateFirmware()],
-            )
+            self.btnUpdate.clicked.connect(self.UpdateFirmware)
             self.rowUpdate.addStretch()
             self.rowUpdate.addWidget(self.btnUpdate)
             self.rowUpdate.addStretch()
@@ -684,9 +680,7 @@ try:
             self.btnClose = QtWidgets.QPushButton(
                 c__("Button (& = Keyboard Shortcut)", "&Close")
             )
-            self.connect(
-                self.btnClose, QtCore.SIGNAL("clicked()"), lambda: [self.reject()]
-            )
+            self.btnClose.clicked.connect(self.reject)
             self.grpFooterLayout.addStretch()
             self.grpFooterLayout.addWidget(self.btnClose)
             self.layout_device.addItem(self.grpFooterLayout)
@@ -720,7 +714,9 @@ try:
             try:
                 self.layout.update()
                 self.layout.activate()
-                screenGeometry = QDesktopWidget().screenGeometry(self)
+                screenGeometry = (
+                    self.screen() or QtGui.QGuiApplication.primaryScreen()
+                ).geometry()
                 x = (screenGeometry.width() - self.width()) / 2
                 y = (screenGeometry.height() - self.height()) / 2
                 self.move(x, y)

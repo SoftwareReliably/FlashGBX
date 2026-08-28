@@ -401,7 +401,7 @@ def format_decimal(value, precision=2, grouping=False, localized=True):
 def loadQtTranslation(app=None, language=None):
     global _qt_translator
     try:
-        from .pyside import QtCore
+        from PySide6 import QtCore
     except Exception:
         return False
 

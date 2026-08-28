@@ -1,212 +1,127 @@
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 #
-# PySide abstraction layer, partly contributed by J-Fox
+# PySide6 helpers, partly contributed by J-Fox
 
 import os
 import platform
 
+from PySide6 import QtCore, QtGui, QtWidgets
+
 from .Logging import dprint, logger
-
-try:
-    from PySide6 import QtCore, QtGui, QtWidgets
-    from PySide6.QtWidgets import QApplication
-
-    psversion = 6
-
-except ModuleNotFoundError:
-    try:
-        import PIL
-        import PySide2  # pyright: ignore[reportMissingImports]
-
-        # PySide2>=5.14 is required
-        major, minor, *_ = PySide2.__version_info__
-        if (major, minor) < (5, 14):
-            raise ImportError(
-                "Requires PySide2>=5.14",
-                name=PySide2.__package__,
-                path=PySide2.__path__,
-            )
-        # Pillow<10.0.0 is required
-        major, minor = map(int, PIL.__version__.split(".")[:2])
-        if (major, minor) >= (10, 0):
-            raise ImportError(
-                "Requires Pillow<10.0.0 if using PySide2",
-                name=PIL.__package__,
-                path=PIL.__path__,
-            )
-
-        dprint("PySide6 cannot be loaded. Using PySide2 code path.")
-        from PySide2 import (
-            QtCore,  # pyright: ignore[reportMissingImports]
-            QtGui,  # pyright: ignore[reportMissingImports]
-            QtWidgets,  # pyright: ignore[reportMissingImports]
-        )
-        from PySide2.QtWidgets import (
-            QApplication,  # pyright: ignore[reportMissingImports]
-        )
-
-        psversion = 2
-
-        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
-        QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
-
-    except ImportError:
-        dprint("GUI cannot be loaded.")
-        raise
-
-    except ModuleNotFoundError:
-        dprint("GUI cannot be loaded.")
-        raise
-
-# exec
-try:
-    if not callable(getattr(QApplication, "exec", None)):
-        QApplication.exec = QApplication.exec_
-    if not callable(getattr(QApplication, "exec_", None)):
-        QApplication.exec_ = QApplication.exec
-except (AttributeError, TypeError):
-    pass
-
-
-# QDesktopWidget
-class QDesktopWidget:
-    def screenGeometry(self, widget):
-        if psversion == 2:
-            return QtWidgets.QDesktopWidget().screenGeometry()
-        else:
-            return widget.screen().geometry()
-
-
-# QActionGroup
-if psversion == 2:
-    QActionGroup = QtWidgets.QActionGroup
-else:
-    QActionGroup = QtGui.QActionGroup
 
 # Taskbar Progress
 if platform.system() == "Windows":
-    if psversion == 2:
-        try:
-            from PySide2 import QtWinExtras  # pyright: ignore[reportMissingImports]
-        except ImportError:
-            pass
-    else:
-        import ctypes
-        import types
-        from ctypes import (
-            POINTER,
-            WINFUNCTYPE,
-            byref,
-            c_int,
-            c_long,
-            c_ubyte,
-            c_ulonglong,
-            c_void_p,
-            c_wchar_p,
-            wintypes,
-        )
+    import ctypes
+    import types
+    from ctypes import (
+        POINTER,
+        WINFUNCTYPE,
+        byref,
+        c_int,
+        c_long,
+        c_ubyte,
+        c_ulonglong,
+        c_void_p,
+        c_wchar_p,
+        wintypes,
+    )
 
-        class _QWinTaskbarProgress:
-            def __init__(self):
-                self._tb = None
-                self._hwnd = None
-                self._min, self._max, self._value = 0, 100, 0
-                self._visible, self._paused = False, False
+    class _QWinTaskbarProgress:
+        def __init__(self):
+            self._tb = None
+            self._hwnd = None
+            self._min, self._max, self._value = 0, 100, 0
+            self._visible, self._paused = False, False
 
-            def _bind(self, hwnd):
-                self._hwnd = wintypes.HWND(int(hwnd))
-                self._tb = c_void_p()
-                ole = ctypes.windll.ole32
-                ole.CoInitialize(None)
-                clsid, iid = (c_ubyte * 16)(), (c_ubyte * 16)()
-                ole.CLSIDFromString(
-                    c_wchar_p("{56FDF344-FD6D-11D0-958A-006097C9A090}"), clsid
-                )
-                ole.CLSIDFromString(
-                    c_wchar_p("{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}"), iid
-                )
-                ole.CoCreateInstance(clsid, None, 1, iid, byref(self._tb))
-                self._call(3, WINFUNCTYPE(c_long, c_void_p))  # HrInit
+        def _bind(self, hwnd):
+            self._hwnd = wintypes.HWND(int(hwnd))
+            self._tb = c_void_p()
+            ole = ctypes.windll.ole32
+            ole.CoInitialize(None)
+            clsid, iid = (c_ubyte * 16)(), (c_ubyte * 16)()
+            ole.CLSIDFromString(
+                c_wchar_p("{56FDF344-FD6D-11D0-958A-006097C9A090}"), clsid
+            )
+            ole.CLSIDFromString(
+                c_wchar_p("{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}"), iid
+            )
+            ole.CoCreateInstance(clsid, None, 1, iid, byref(self._tb))
+            self._call(3, WINFUNCTYPE(c_long, c_void_p))  # HrInit
 
-            def _call(self, idx, proto, *args):
-                return proto(ctypes.cast(self._tb, POINTER(POINTER(c_void_p)))[0][idx])(
-                    self._tb, *args
-                )
+        def _call(self, idx, proto, *args):
+            return proto(ctypes.cast(self._tb, POINTER(POINTER(c_void_p)))[0][idx])(
+                self._tb, *args
+            )
 
-            def _apply(self):
-                if self._tb is None:
-                    return
-                if not self._visible:
-                    state = 0  # TBPF_NOPROGRESS
-                elif self._max - self._min <= 0:
-                    state = 1  # TBPF_INDETERMINATE
-                else:
-                    state = 8 if self._paused else 2  # TBPF_PAUSED / TBPF_NORMAL
+        def _apply(self):
+            if self._tb is None:
+                return
+            if not self._visible:
+                state = 0  # TBPF_NOPROGRESS
+            elif self._max - self._min <= 0:
+                state = 1  # TBPF_INDETERMINATE
+            else:
+                state = 8 if self._paused else 2  # TBPF_PAUSED / TBPF_NORMAL
+            self._call(
+                10,
+                WINFUNCTYPE(c_long, c_void_p, wintypes.HWND, c_int),
+                self._hwnd,
+                state,
+            )
+            if state in (2, 8):
+                span = self._max - self._min
                 self._call(
-                    10,
-                    WINFUNCTYPE(c_long, c_void_p, wintypes.HWND, c_int),
+                    9,
+                    WINFUNCTYPE(
+                        c_long, c_void_p, wintypes.HWND, c_ulonglong, c_ulonglong
+                    ),
                     self._hwnd,
-                    state,
-                )
-                if state in (2, 8):
-                    span = self._max - self._min
-                    self._call(
-                        9,
-                        WINFUNCTYPE(
-                            c_long, c_void_p, wintypes.HWND, c_ulonglong, c_ulonglong
-                        ),
-                        self._hwnd,
-                        c_ulonglong(max(0, min(span, self._value - self._min))),
-                        c_ulonglong(span),
-                    )
-
-            def setRange(self, minimum, maximum):
-                self._min, self._max = int(minimum), int(maximum)
-                self._apply()
-
-            def setValue(self, value):
-                self._value = int(value)
-                self._apply()
-
-            def setVisible(self, visible):
-                self._visible = bool(visible)
-                self._apply()
-
-            def setPaused(self, paused):
-                self._paused = bool(paused)
-                self._apply()
-
-        class _QWinTaskbarButton:
-            def __init__(self):
-                self._progress = _QWinTaskbarProgress()
-
-            def progress(self):
-                return self._progress
-
-            def setWindow(self, window):
-                self._progress._bind(int(window.winId()))
-
-        class _QtWin:
-            @staticmethod
-            def setCurrentProcessExplicitAppUserModelID(app_id):
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                    c_wchar_p(app_id)
+                    c_ulonglong(max(0, min(span, self._value - self._min))),
+                    c_ulonglong(span),
                 )
 
-        QtWinExtras = types.ModuleType("QtWinExtras")
-        QtWinExtras.QWinTaskbarButton = _QWinTaskbarButton
-        QtWinExtras.QtWin = _QtWin
+        def setRange(self, minimum, maximum):
+            self._min, self._max = int(minimum), int(maximum)
+            self._apply()
+
+        def setValue(self, value):
+            self._value = int(value)
+            self._apply()
+
+        def setVisible(self, visible):
+            self._visible = bool(visible)
+            self._apply()
+
+        def setPaused(self, paused):
+            self._paused = bool(paused)
+            self._apply()
+
+    class _QWinTaskbarButton:
+        def __init__(self):
+            self._progress = _QWinTaskbarProgress()
+
+        def progress(self):
+            return self._progress
+
+        def setWindow(self, window):
+            self._progress._bind(int(window.winId()))
+
+    class _QtWin:
+        @staticmethod
+        def setCurrentProcessExplicitAppUserModelID(app_id):
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                c_wchar_p(app_id)
+            )
+
+    QtWinExtras = types.ModuleType("QtWinExtras")
+    QtWinExtras.QWinTaskbarButton = _QWinTaskbarButton
+    QtWinExtras.QtWin = _QtWin
 elif platform.system() == "Linux":
     import types
 
     try:
-        if psversion == 2:
-            from PySide2 import QtDBus  # pyright: ignore[reportMissingImports]
-        else:
-            from PySide6 import QtDBus
+        from PySide6 import QtDBus
     except ImportError:
         pass
     else:
@@ -320,22 +235,12 @@ elif platform.system() == "Linux":
 
 
 __all__ = [
-    "QActionGroup",
-    "QApplication",
-    "QDesktopWidget",
-    "QtCore",
-    "QtGui",
-    "QtWidgets",
+    "IsDarkMode",
+    "bitmap2pixmap",
 ]
 
 
-def GetQtVersion():
-    return tuple(map(int, QtCore.qVersion().split(".")))
-
-
 def IsDarkMode():
-    if GetQtVersion() < (6, 5, 0):
-        return False
     try:
         scheme = QtGui.QGuiApplication.styleHints().colorScheme()
         if scheme == QtCore.Qt.ColorScheme.Dark:

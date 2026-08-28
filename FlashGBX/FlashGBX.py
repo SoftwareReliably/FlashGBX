@@ -245,7 +245,7 @@ def main(portableMode=False):
         app_path = os.path.dirname(os.path.abspath(__file__))
 
     try:
-        from .pyside import QtCore
+        from PySide6 import QtCore
 
         cp = {
             "subdir": os.path.join(app_path, "config"),

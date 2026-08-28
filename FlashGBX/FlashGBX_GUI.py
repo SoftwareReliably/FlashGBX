@@ -18,6 +18,7 @@ import webbrowser
 
 import requests
 from packaging import version
+from PySide6 import QtCore, QtGui, QtWidgets
 from serial import SerialException
 
 from .app import HW_DEVICES, AppContext, AppInfo, generate_filename
@@ -48,13 +49,7 @@ from .Mapper import (
 from .PocketCameraWindow import PocketCameraWindow
 from .Progress import Progress
 from .pyside import (
-    GetQtVersion,
     IsDarkMode,
-    QActionGroup,
-    QApplication,
-    QtCore,
-    QtGui,
-    QtWidgets,
     bitmap2pixmap,
 )
 from .RomFileAGB import RomFileAGB
@@ -93,14 +88,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.PROGRESS = Progress(self.UpdateProgress, self.WaitProgress)
 
         try:
-            if GetQtVersion() >= (6, 5, 0):
-                if (
-                    self.SETTINGS.value("AllowDarkMode", default="enabled")
-                    == "disabled"
-                ):
-                    QtGui.QGuiApplication.styleHints().setColorScheme(
-                        QtCore.Qt.ColorScheme.Light
-                    )
+            if self.SETTINGS.value("AllowDarkMode", default="enabled") == "disabled":
+                QtGui.QGuiApplication.styleHints().setColorScheme(
+                    QtCore.Qt.ColorScheme.Light
+                )
             if platform.system() == "Windows":
                 qt_app.setStyle("fusion" if IsDarkMode() else "windowsvista")
         except Exception:
@@ -113,7 +104,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
         self.setWindowTitle(f"{AppInfo.NAME:s} {AppInfo.VERSION:s}")
         # self.setContentsMargins(0, 0, 0, 0)
-        self.TEXT_COLOR = QtGui.QPalette().color(QtGui.QPalette.ColorRole.Text).toTuple()
+        self.TEXT_COLOR = (
+            QtGui.QPalette().color(QtGui.QPalette.ColorRole.Text).toTuple()
+        )
 
         # Create the QtWidgets.QVBoxLayout that lays out the whole form
         self.layout = QtWidgets.QGridLayout()
@@ -136,9 +129,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblMode = QtWidgets.QLabel()
         rowActionsMode.addWidget(self.lblMode)
         self.optDMG = QtWidgets.QRadioButton()
-        self.connect(self.optDMG, QtCore.SIGNAL("clicked()"), self.SetMode)
+        self.optDMG.clicked.connect(self.SetMode)
         self.optAGB = QtWidgets.QRadioButton()
-        self.connect(self.optAGB, QtCore.SIGNAL("clicked()"), self.SetMode)
+        self.optAGB.clicked.connect(self.SetMode)
         rowActionsMode.addWidget(self.optDMG)
         rowActionsMode.addWidget(self.optAGB)
 
@@ -146,29 +139,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnHeaderRefresh = QtWidgets.QPushButton()
         self.btnHeaderRefresh.setMinimumHeight(25)
         self.btnHeaderRefresh.setMinimumWidth(140)
-        self.connect(
-            self.btnHeaderRefresh, QtCore.SIGNAL("clicked()"), self.ReadCartridge
-        )
+        self.btnHeaderRefresh.clicked.connect(self.ReadCartridge)
         rowActionsGeneral1.addWidget(self.btnHeaderRefresh)
 
         self.btnDetectCartridge = QtWidgets.QPushButton()
         self.btnDetectCartridge.setMinimumHeight(25)
         self.btnDetectCartridge.setMinimumWidth(140)
-        self.connect(
-            self.btnDetectCartridge, QtCore.SIGNAL("clicked()"), self.DetectCartridge
-        )
+        self.btnDetectCartridge.clicked.connect(self.DetectCartridge)
         rowActionsGeneral1.addWidget(self.btnDetectCartridge)
 
         rowActionsGeneral2 = QtWidgets.QHBoxLayout()
         self.btnBackupROM = QtWidgets.QPushButton()
         self.btnBackupROM.setMinimumHeight(25)
         self.btnBackupROM.setMinimumWidth(140)
-        self.connect(self.btnBackupROM, QtCore.SIGNAL("clicked()"), self.BackupROM)
+        self.btnBackupROM.clicked.connect(self.BackupROM)
         rowActionsGeneral2.addWidget(self.btnBackupROM)
         self.btnBackupRAM = QtWidgets.QPushButton()
         self.btnBackupRAM.setMinimumHeight(25)
         self.btnBackupRAM.setMinimumWidth(140)
-        self.connect(self.btnBackupRAM, QtCore.SIGNAL("clicked()"), self.BackupRAM)
+        self.btnBackupRAM.clicked.connect(self.BackupRAM)
         rowActionsGeneral2.addWidget(self.btnBackupRAM)
 
         self.cmbDMGCartridgeTypeResult.currentIndexChanged.connect(
@@ -182,7 +171,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnFlashROM = QtWidgets.QPushButton()
         self.btnFlashROM.setMinimumHeight(25)
         self.btnFlashROM.setMinimumWidth(140)
-        self.connect(self.btnFlashROM, QtCore.SIGNAL("clicked()"), self.FlashROM)
+        self.btnFlashROM.clicked.connect(self.FlashROM)
         rowActionsGeneral3.addWidget(self.btnFlashROM)
         self.btnRestoreRAM = QtWidgets.QPushButton()
         self.mnuRestoreRAM = QtWidgets.QMenu()
@@ -246,7 +235,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowStatus2.addWidget(self.prgStatus)
         self.btnCancel = QtWidgets.QPushButton()
         self.btnCancel.setEnabled(False)
-        self.connect(self.btnCancel, QtCore.SIGNAL("clicked()"), self.AbortOperation)
+        self.btnCancel.clicked.connect(self.AbortOperation)
         rowStatus2.addWidget(self.btnCancel)
 
         grpStatusLayout.addLayout(rowStatus2)
@@ -515,7 +504,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
 
         self.mnuLanguage = QtWidgets.QMenu()
-        self.languageActionGroup = QActionGroup(self.mnuLanguage)
+        self.languageActionGroup = QtGui.QActionGroup(self.mnuLanguage)
         self.languageActionGroup.setExclusive(True)
         for code, names in sorted(LANGUAGES.items()):
             if isinstance(names, tuple):
@@ -563,7 +552,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnMainMenu.setMenu(self.mnuMainMenu)
 
         self.btnConnect = QtWidgets.QPushButton()
-        self.connect(self.btnConnect, QtCore.SIGNAL("clicked()"), self.ConnectDevice)
+        self.btnConnect.clicked.connect(self.ConnectDevice)
         self.layout_devices.addWidget(self.btnMainMenu)
         self.layout_devices.addWidget(self.btnConnect)
 
@@ -3282,7 +3271,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         self,
                         f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                         msg,
-                        QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                        QtWidgets.QMessageBox.StandardButton.Ok
+                        | QtWidgets.QMessageBox.Cancel,
                         QtWidgets.QMessageBox.Cancel,
                     )
                     if answer == QtWidgets.QMessageBox.Cancel:
@@ -4057,7 +4047,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     text,
-                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Ok
+                    | QtWidgets.QMessageBox.Cancel,
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 if answer == QtWidgets.QMessageBox.Cancel:
@@ -4070,7 +4061,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("The save data on your cartridge will now be erased."),
-                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Ok
+                    | QtWidgets.QMessageBox.Cancel,
                     QtWidgets.QMessageBox.Cancel,
                 )
                 if answer == QtWidgets.QMessageBox.Cancel:
@@ -5078,7 +5070,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
 
         dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-        if dlg.exec_() == 1:
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             result = dlg.GetResult()
             if result["loc"].currentText() not in [f"0x{l:X}" for l in locs]:
                 try:
@@ -5179,7 +5171,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ],
                 }
                 dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-                if dlg.exec_() == 1:
+                if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
                     for key, value in result.items():
@@ -5251,7 +5243,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ],
                 }
                 dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-                if dlg.exec_() == 1:
+                if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
                     for key, value in result.items():
@@ -5260,7 +5252,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         elif isinstance(value, QtWidgets.QCheckBox):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now(tz=datetime.timezone.utc).astimezone()
+                        dt = datetime.datetime.now(
+                            tz=datetime.timezone.utc
+                        ).astimezone()
                         rtc_dict.update({"rtc_h": dt.hour, "rtc_m": dt.minute})
                     mbc = ConvertMapperTypeToMapper(
                         self.cmbDMGHeaderMapperResult.currentIndex()
@@ -5343,7 +5337,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ],
                 }
                 dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-                if dlg.exec_() == 1:
+                if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
                     for key, value in result.items():
@@ -5352,7 +5346,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         elif isinstance(value, QtWidgets.QCheckBox):
                             rtc_dict[key] = value.isChecked()
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(seconds=2)
+                        dt = datetime.datetime.now(
+                            tz=datetime.timezone.utc
+                        ) + datetime.timedelta(seconds=2)
                         rtc_dict.update(
                             {
                                 "rtc_m": dt.month,
@@ -5447,7 +5443,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 ],
             }
             dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-            if dlg.exec_() == 1:
+            if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 result = dlg.GetResult()
                 rtc_dict = {}
                 for key, value in result.items():
@@ -5605,7 +5601,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 icon=QtWidgets.QMessageBox.Warning,
                 windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 text=msg,
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.Cancel,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok
+                | QtWidgets.QMessageBox.Cancel,
             )
             msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Ok)
             if self.CONN.CanSetVoltageByCode() or self.CONN.CanSetVoltageByAutoswitch():
@@ -7292,7 +7289,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ],
                 }
                 dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
-                if dlg.exec_() == 1:
+                if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     FirmwareUpdater = list(dev_types.values())[
                         result["dev_type"].currentIndex()
@@ -7508,7 +7505,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         sys.stdout = sys.__stdout__
 
 
-qt_app = QApplication(sys.argv)
+qt_app = QtWidgets.QApplication(sys.argv)
 if platform.system() == "Linux":
     try:
         desktop_id = AppInfo.NAME.lower()

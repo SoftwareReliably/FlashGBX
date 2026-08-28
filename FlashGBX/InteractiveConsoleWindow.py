@@ -1,11 +1,12 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from PySide6 import QtCore, QtGui, QtWidgets
+
 from .app import AppInfo
 from .i18n import __, c__
 from .InteractiveConsole import InteractiveConsole
 from .Logging import logger
-from .pyside import QDesktopWidget, QtCore, QtGui, QtWidgets
 
 
 class InteractiveConsoleWindow(QtWidgets.QDialog):
@@ -82,7 +83,9 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.txtInput.setFocus()
         self.layout.update()
         self.layout.activate()
-        screenGeometry = QDesktopWidget().screenGeometry(self)
+        screenGeometry = (
+            self.screen() or QtGui.QGuiApplication.primaryScreen()
+        ).geometry()
         x = (screenGeometry.width() - self.width()) / 2
         y = (screenGeometry.height() - self.height()) / 2
         self.move(x, y)
