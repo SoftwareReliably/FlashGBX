@@ -74,6 +74,7 @@ skip_covered = true
 [tool.pyright]
 include = ["FlashGBX"]
 typeCheckingMode = "standard"
+pythonVersion = "3.14"
 
 [tool.ruff]
 target-version = "py314"
