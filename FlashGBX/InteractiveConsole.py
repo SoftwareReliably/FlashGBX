@@ -54,10 +54,7 @@ class InteractiveConsole:
 
     def execute_line(self, line):
         cmds = [c.strip() for c in line.split(",") if c.strip()]
-        for cmdline in cmds:
-            if not self.execute_command(cmdline):
-                return False
-        return True
+        return all(self.execute_command(cmdline) for cmdline in cmds)
 
     def execute_command(self, cmdline):
         try:
@@ -85,10 +82,7 @@ class InteractiveConsole:
         if command == "w" and len(parts) == 3:
             try:
                 address = int(parts[1], 16)
-                if re.fullmatch(r"[01]{8}|[01]{16}", parts[2]):
-                    value = int(parts[2], 2)
-                else:
-                    value = int(parts[2], 16)
+                value = int(parts[2], 2) if re.fullmatch(r"[01]{8}|[01]{16}", parts[2]) else int(parts[2], 16)
             except ValueError:
                 self.on_output(__("Invalid input. Use hexadecimal or 8/16-bit binary for the value."))
                 return True
@@ -164,10 +158,7 @@ class InteractiveConsole:
             if command == "ws" and len(parts) == 3:
                 try:
                     address = int(parts[1], 16)
-                    if re.fullmatch(r"[01]{8}", parts[2]):
-                        value = int(parts[2], 2)
-                    else:
-                        value = int(parts[2], 16)
+                    value = int(parts[2], 2) if re.fullmatch(r"[01]{8}", parts[2]) else int(parts[2], 16)
                 except ValueError:
                     self.on_output(__("Invalid input. Use hexadecimal or 8-bit binary for the value."))
                     return True
