@@ -1,4 +1,4 @@
-# FlashGBX
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import base64
@@ -443,8 +443,6 @@ class LK_Device(ABC):
             return False
         self._write(self.DEVICE_CMD["GET_SWITCH_STATE"])
         state = self._read(1)
-        state_presence = state & 1
-        state_mode = (state >> 1) & 1
         return state
 
     def GetCartModeSwitchState(self):
@@ -479,7 +477,7 @@ class LK_Device(ABC):
             "DMG": {"Generic ROM Cartridge": "RETAIL"},
             "AGB": {"Generic ROM Cartridge": "RETAIL"},
         }
-        for mode in flashcarts.keys():
+        for mode in flashcarts:
             for key in sorted(flashcarts[mode].keys(), key=str.casefold):
                 self.SUPPORTED_CARTS[mode][key] = flashcarts[mode][key]
 
@@ -1236,7 +1234,7 @@ class LK_Device(ABC):
         # dprint(f"Setting automatic power off time value to {value}")
         self._set_fw_variable("AUTO_POWEROFF_TIME", value)
         self._set_fw_variable("AUTO_POWEROFF_ENABLED", 1 if value != 0 else 0)
-        self.SKIP_POWERCYCLE = False if value != 0 else True
+        self.SKIP_POWERCYCLE = value == 0
 
     def _thread_worker_auto_poweroff_enter(self):
         if self.FW is None or self.FW["fw_ver"] < 12:
@@ -1500,13 +1498,12 @@ class LK_Device(ABC):
 
         elif self.MODE == "AGB":
             # Unlock DACS carts on older firmware
-            if not self.CanPowerCycleCart() or self.FW["fw_ver"] == 1:
-                if header[0x04 : 0x04 + 0x9C] in (
-                    bytearray([0x00] * 0x9C),
-                    bytearray([0xFF] * 0x9C),
-                ):
-                    self.ReadROM(0x1FFFFE0, 20)
-                    header = self.ReadROM(0, 0x180)
+            if (not self.CanPowerCycleCart() or self.FW["fw_ver"] == 1) and header[0x04 : 0x04 + 0x9C] in (
+                bytearray([0x00] * 0x9C),
+                bytearray([0xFF] * 0x9C),
+            ):
+                self.ReadROM(0x1FFFFE0, 20)
+                header = self.ReadROM(0, 0x180)
 
             data = RomFileAGB(header).GetHeader()
             if data["logo_correct"] is False:  # workaround for strange bootlegs
@@ -1694,13 +1691,12 @@ class LK_Device(ABC):
 
         # Disable Auto Power Off
         _apoe = False
-        if self.FW["fw_ver"] >= 12 and self.SKIP_POWERCYCLE is False:
-            if self.CanPowerCycleCart():
-                self.CartPowerCycle()
-                _apoe = self._get_fw_variable("AUTO_POWEROFF_ENABLED") == 1
-                if _apoe is True:
-                    _apot = self._get_fw_variable("AUTO_POWEROFF_TIME")
-                    self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
+        if self.FW["fw_ver"] >= 12 and self.SKIP_POWERCYCLE is False and self.CanPowerCycleCart():
+            self.CartPowerCycle()
+            _apoe = self._get_fw_variable("AUTO_POWEROFF_ENABLED") == 1
+            if _apoe is True:
+                _apot = self._get_fw_variable("AUTO_POWEROFF_TIME")
+                self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
 
         # Detect Flash Cart
         if signal is not None:
@@ -3900,24 +3896,23 @@ class LK_Device(ABC):
                     self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
                     dprint("Pullups disabled")
 
-            if self.FW["fw_ver"] >= 12:
-                if self.MODE == "DMG":
-                    # Joey Jr bug workaround
-                    enable_pullup_wr = (
-                        2
-                        if (
-                            (
-                                "enable_pullup_wr" in cart_type
-                                and cart_type["enable_pullup_wr"] is True
-                            )
-                            or (
-                                "force_wr_pullup" in args
-                                and args["force_wr_pullup"] is True
-                            )
+            if self.FW["fw_ver"] >= 12 and self.MODE == "DMG":
+                # Joey Jr bug workaround
+                enable_pullup_wr = (
+                    2
+                    if (
+                        (
+                            "enable_pullup_wr" in cart_type
+                            and cart_type["enable_pullup_wr"] is True
                         )
-                        else 0
+                        or (
+                            "force_wr_pullup" in args
+                            and args["force_wr_pullup"] is True
+                        )
                     )
-                    self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
+                    else 0
+                )
+                self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
 
         buffer = bytearray(size)
         max_length = self.MAX_BUFFER_READ
@@ -4418,24 +4413,23 @@ class LK_Device(ABC):
             supported_carts = list(self.SUPPORTED_CARTS[self.MODE].values())
             cart_type = copy.deepcopy(supported_carts[args["cart_type"]])
 
-            if self.FW["fw_ver"] >= 12:
-                if self.MODE == "DMG":
-                    # Joey Jr bug workaround
-                    enable_pullup_wr = (
-                        2
-                        if (
-                            (
-                                "enable_pullup_wr" in cart_type
-                                and cart_type["enable_pullup_wr"] is True
-                            )
-                            or (
-                                "force_wr_pullup" in args
-                                and args["force_wr_pullup"] is True
-                            )
+            if self.FW["fw_ver"] >= 12 and self.MODE == "DMG":
+                # Joey Jr bug workaround
+                enable_pullup_wr = (
+                    2
+                    if (
+                        (
+                            "enable_pullup_wr" in cart_type
+                            and cart_type["enable_pullup_wr"] is True
                         )
-                        else 0
+                        or (
+                            "force_wr_pullup" in args
+                            and args["force_wr_pullup"] is True
+                        )
                     )
-                    self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
+                    else 0
+                )
+                self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
 
         self._set_fw_variable("STATUS_REGISTER_MASK", 0x80)
         self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
@@ -4492,7 +4486,7 @@ class LK_Device(ABC):
                 self._set_fw_variable("FLASH_METHOD", 0x04)  # FLASH_METHOD_DMG_MBC6
                 self._set_fw_variable("FLASH_WE_PIN", 0x01)  # WR
                 _mbc.EnableFlash(
-                    enable=True, enable_write=True if (args["mode"] == 3) else False
+                    enable=True, enable_write=(args["mode"] == 3)
                 )
             elif _mbc.GetName() == "Xploder GB":
                 empty_data_byte = 0xFF
@@ -5300,31 +5294,30 @@ class LK_Device(ABC):
                 and args["save_type"] == 0x204
                 and "cart_type" in args
                 and args["cart_type"] != -1
-            ):
-                if len(buffer) > 0x20000 and args["cart_type"] is not None:
-                    self._FlashROM(
-                        {
-                            "buffer": buffer[0x20000:0x100000],
-                            "path": "",
-                            "cart_type": args["cart_type"],
-                            "override_voltage": False,
-                            "prefer_chip_erase": False,
-                            "fast_read_mode": True,
-                            "verify_write": False,
-                            "fix_header": False,
-                            "fix_bootlogo": False,
-                            "mbc": 252,
-                            "bl_offset": 0x20000,
-                            "bl_size": 0xE0000,
-                            "bl_layout": 0,
-                            "bl_save": True,
-                            "flash_offset": 0x20000,
-                            "flash_size": 0xE0000,
-                            "mode": 4,
-                            "photo_mode": True,
-                        }
-                    )
-                    args["verify_write"] = False
+            ) and len(buffer) > 0x20000 and args["cart_type"] is not None:
+                self._FlashROM(
+                    {
+                        "buffer": buffer[0x20000:0x100000],
+                        "path": "",
+                        "cart_type": args["cart_type"],
+                        "override_voltage": False,
+                        "prefer_chip_erase": False,
+                        "fast_read_mode": True,
+                        "verify_write": False,
+                        "fix_header": False,
+                        "fix_bootlogo": False,
+                        "mbc": 252,
+                        "bl_offset": 0x20000,
+                        "bl_size": 0xE0000,
+                        "bl_layout": 0,
+                        "bl_save": True,
+                        "flash_offset": 0x20000,
+                        "flash_size": 0xE0000,
+                        "mode": 4,
+                        "photo_mode": True,
+                    }
+                )
+                args["verify_write"] = False
 
             self.SetProgress(
                 {"action": "UPDATE_POS", "pos": len(buffer), "force_update": True}
@@ -5809,14 +5802,13 @@ class LK_Device(ABC):
         # ↑↑↑ Pad data for full chip erase on sector erase mode
 
         # ↓↓↓ Flashcart configuration
-        if self.FW["fw_ver"] >= 8:
-            if "enable_pullups" in cart_type:
-                if cart_type["enable_pullups"] is True:
-                    self._write(self.DEVICE_CMD["ENABLE_PULLUPS"], wait=True)
-                    dprint("Pullups enabled")
-                else:
-                    self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
-                    dprint("Pullups disabled")
+        if self.FW["fw_ver"] >= 8 and "enable_pullups" in cart_type:
+            if cart_type["enable_pullups"] is True:
+                self._write(self.DEVICE_CMD["ENABLE_PULLUPS"], wait=True)
+                dprint("Pullups enabled")
+            else:
+                self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
+                dprint("Pullups disabled")
         if self.FW["fw_ver"] >= 12:
             if self.MODE == "DMG":
                 # Joey Jr bug workaround
@@ -6221,7 +6213,7 @@ class LK_Device(ABC):
         # ↓↓↓ Read Flash ID
         if "flash_ids" in cart_type:
             (verified, flash_id) = flashcart.VerifyFlashID()
-            if not verified and not command_set_type == "BLAZE_XPLODER":
+            if not verified and command_set_type != "BLAZE_XPLODER":
                 if self.VOLTAGE_FALLBACK_PENDING:
                     # Silent 3.3V trial: a Flash ID mismatch (typically all-0x00 when the chip
                     # isn't powered at this voltage) is a strong sign 3.3V is wrong for this PCB.
@@ -6500,19 +6492,18 @@ class LK_Device(ABC):
                             dprint("Resetting the MBC")
                             self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
                         (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                        if flashcart.PulseResetAfterWrite():
-                            if bank == 0:
-                                if (
-                                    self.FW["fw_ver"] < 2
-                                    and "OFW_GB_CART_MODE" in self.DEVICE_CMD
-                                ):
-                                    self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                                else:
-                                    self._write(
-                                        self.DEVICE_CMD["SET_MODE_DMG"],
-                                        wait=self.FW["fw_ver"] >= 12,
-                                    )
-                                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+                        if flashcart.PulseResetAfterWrite() and bank == 0:
+                            if (
+                                self.FW["fw_ver"] < 2
+                                and "OFW_GB_CART_MODE" in self.DEVICE_CMD
+                            ):
+                                self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
+                            else:
+                                self._write(
+                                    self.DEVICE_CMD["SET_MODE_DMG"],
+                                    wait=self.FW["fw_ver"] >= 12,
+                                )
+                            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
                         self._set_fw_variable("DMG_ROM_BANK", bank)
 
                         buffer_len = min(buffer_len, bank_size)
@@ -6526,16 +6517,15 @@ class LK_Device(ABC):
                         if (
                             "flash_bank_select_type" in cart_type
                             and cart_type["flash_bank_select_type"] > 0
-                        ):
-                            if bank != current_bank:
-                                flashcart.Reset(full_reset=True)
-                                flashcart.SelectBankROM(bank)
-                                temp = end_address - start_address
-                                start_address %= cart_type["flash_bank_size"]
-                                end_address = min(
-                                    cart_type["flash_bank_size"], start_address + temp
-                                )
-                                current_bank = bank
+                        ) and bank != current_bank:
+                            flashcart.Reset(full_reset=True)
+                            flashcart.SelectBankROM(bank)
+                            temp = end_address - start_address
+                            start_address %= cart_type["flash_bank_size"]
+                            end_address = min(
+                                cart_type["flash_bank_size"], start_address + temp
+                            )
+                            current_bank = bank
                     # ↑↑↑ Switch ROM bank
 
                     pos = start_address
@@ -6613,19 +6603,18 @@ class LK_Device(ABC):
                         dprint("Resetting the MBC")
                         self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
                     (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                    if flashcart.PulseResetAfterWrite():
-                        if bank == 0:
-                            if (
-                                self.FW["fw_ver"] < 2
-                                and "OFW_GB_CART_MODE" in self.DEVICE_CMD
-                            ):
-                                self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                            else:
-                                self._write(
-                                    self.DEVICE_CMD["SET_MODE_DMG"],
-                                    wait=self.FW["fw_ver"] >= 12,
-                                )
-                            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+                    if flashcart.PulseResetAfterWrite() and bank == 0:
+                        if (
+                            self.FW["fw_ver"] < 2
+                            and "OFW_GB_CART_MODE" in self.DEVICE_CMD
+                        ):
+                            self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
+                        else:
+                            self._write(
+                                self.DEVICE_CMD["SET_MODE_DMG"],
+                                wait=self.FW["fw_ver"] >= 12,
+                            )
+                        self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
                     self._set_fw_variable("DMG_ROM_BANK", bank)
 
                     buffer_len = min(buffer_len, bank_size)
@@ -6639,16 +6628,15 @@ class LK_Device(ABC):
                     if (
                         "flash_bank_select_type" in cart_type
                         and cart_type["flash_bank_select_type"] > 0
-                    ):
-                        if bank != current_bank:
-                            flashcart.Reset(full_reset=True)
-                            flashcart.SelectBankROM(bank)
-                            temp = end_address - start_address
-                            start_address %= cart_type["flash_bank_size"]
-                            end_address = min(
-                                cart_type["flash_bank_size"], start_address + temp
-                            )
-                            current_bank = bank
+                    ) and bank != current_bank:
+                        flashcart.Reset(full_reset=True)
+                        flashcart.SelectBankROM(bank)
+                        temp = end_address - start_address
+                        start_address %= cart_type["flash_bank_size"]
+                        end_address = min(
+                            cart_type["flash_bank_size"], start_address + temp
+                        )
+                        current_bank = bank
                 # ↑↑↑ Switch ROM bank
 
                 skip_init = False
@@ -6675,52 +6663,51 @@ class LK_Device(ABC):
 
                     # ↓↓↓ Sector erase
                     se_ret = None
-                    if chip_erase is False:
-                        if (
-                            sector_pos < len(sector_offsets)
-                            and buffer_pos == sector_offsets[sector_pos][0]
-                        ):
-                            ts_se_start = time.time()
-                            dprint(
-                                f"Erasing sector #{sector_pos:d} at position 0x{buffer_pos:X} (0x{pos:X})"
-                            )
+                    if chip_erase is False and (
+                        sector_pos < len(sector_offsets)
+                        and buffer_pos == sector_offsets[sector_pos][0]
+                    ):
+                        ts_se_start = time.time()
+                        dprint(
+                            f"Erasing sector #{sector_pos:d} at position 0x{buffer_pos:X} (0x{pos:X})"
+                        )
+                        self.SetProgress(
+                            {
+                                "action": "UPDATE_POS",
+                                "pos": buffer_pos,
+                                "force_update": True,
+                            }
+                        )
+                        if self.CanPowerCycleCart():
+                            self.CartPowerOn()
+
+                        sector_pos += 1
+                        if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
+                            _mbc.SelectBankROM(bank)
+                        self.NO_PROG_UPDATE = True
+                        se_ret = flashcart.SectorErase(
+                            pos=pos, buffer_pos=buffer_pos, skip=False
+                        )
+                        self.NO_PROG_UPDATE = False
+                        if self.CANCEL_ARGS.get("from_user"):
+                            continue
+                        if sector not in verify_sectors:
+                            verify_sectors.append(sector)
+
+                        ts_se_elapsed = time.time() - ts_se_start
+                        if se_ret:
                             self.SetProgress(
                                 {
                                     "action": "UPDATE_POS",
                                     "pos": buffer_pos,
+                                    "sector_pos": sector_pos,
+                                    "sector_erase_time": ts_se_elapsed,
                                     "force_update": True,
                                 }
                             )
-                            if self.CanPowerCycleCart():
-                                self.CartPowerOn()
-
-                            sector_pos += 1
-                            if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
-                                _mbc.SelectBankROM(bank)
-                            self.NO_PROG_UPDATE = True
-                            se_ret = flashcart.SectorErase(
-                                pos=pos, buffer_pos=buffer_pos, skip=False
-                            )
-                            self.NO_PROG_UPDATE = False
-                            if self.CANCEL_ARGS.get("from_user"):
-                                continue
-                            if sector not in verify_sectors:
-                                verify_sectors.append(sector)
-
-                            ts_se_elapsed = time.time() - ts_se_start
-                            if se_ret:
-                                self.SetProgress(
-                                    {
-                                        "action": "UPDATE_POS",
-                                        "pos": buffer_pos,
-                                        "sector_pos": sector_pos,
-                                        "sector_erase_time": ts_se_elapsed,
-                                        "force_update": True,
-                                    }
-                                )
-                                sector_size = se_ret
-                                dprint(f"Next sector size: 0x{sector_size:X}")
-                            skip_init = False
+                            sector_size = se_ret
+                            dprint(f"Next sector size: 0x{sector_size:X}")
+                        skip_init = False
                     # ↑↑↑ Sector erase
 
                     if se_ret is not False:
@@ -7135,21 +7122,20 @@ class LK_Device(ABC):
                                 self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
                             (start_address, bank_size) = _mbc.SelectBankROM(bank)
                             verify_len = bank_size
-                            if flashcart.PulseResetAfterWrite():
-                                if bank == 0:
-                                    if (
-                                        self.FW["fw_ver"] < 2
-                                        and "OFW_GB_CART_MODE" in self.DEVICE_CMD
-                                    ):
-                                        self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                                    else:
-                                        self._write(
-                                            self.DEVICE_CMD["SET_MODE_DMG"],
-                                            wait=self.FW["fw_ver"] >= 12,
-                                        )
+                            if flashcart.PulseResetAfterWrite() and bank == 0:
+                                if (
+                                    self.FW["fw_ver"] < 2
+                                    and "OFW_GB_CART_MODE" in self.DEVICE_CMD
+                                ):
+                                    self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
+                                else:
                                     self._write(
-                                        self.DEVICE_CMD["DMG_MBC_RESET"], wait=True
+                                        self.DEVICE_CMD["SET_MODE_DMG"],
+                                        wait=self.FW["fw_ver"] >= 12,
                                     )
+                                self._write(
+                                    self.DEVICE_CMD["DMG_MBC_RESET"], wait=True
+                                )
                             self._set_fw_variable("DMG_ROM_BANK", bank)
 
                             buffer_len = min(buffer_len, bank_size)
@@ -7164,17 +7150,16 @@ class LK_Device(ABC):
                             if (
                                 "flash_bank_select_type" in cart_type
                                 and cart_type["flash_bank_select_type"] > 0
-                            ):
-                                if bank != current_bank:
-                                    flashcart.Reset(full_reset=True)
-                                    flashcart.SelectBankROM(bank)
-                                    temp = end_address - start_address
-                                    start_address %= cart_type["flash_bank_size"]
-                                    end_address = min(
-                                        cart_type["flash_bank_size"],
-                                        start_address + temp,
-                                    )
-                                    current_bank = bank
+                            ) and bank != current_bank:
+                                flashcart.Reset(full_reset=True)
+                                flashcart.SelectBankROM(bank)
+                                temp = end_address - start_address
+                                start_address %= cart_type["flash_bank_size"]
+                                end_address = min(
+                                    cart_type["flash_bank_size"],
+                                    start_address + temp,
+                                )
+                                current_bank = bank
                             verify_len = sector[1]
                             pos_from = sector[0]
                         # ↑↑↑ Switch ROM bank
