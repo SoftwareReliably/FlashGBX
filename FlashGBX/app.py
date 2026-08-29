@@ -75,7 +75,7 @@ class AppInfo:
             build_str = f"{w.build}.{ubr}" if ubr is not None else f"{w.build}"
             if display_version:
                 return f"{name} (Version {display_version}, Build {build_str})"
-            return f"{name} (Build {build_str})"
+            return f"{name} (Build {build_str})"  # noqa: TRY300
         except Exception as e:
             logger.exception("Failed to determine Windows version: {}", e)
             release = platform.release()

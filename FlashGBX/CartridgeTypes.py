@@ -32,7 +32,7 @@ class RomSizes:
         if size is None:
             size = 0
 
-        bytes = __(" Bytes") if localized else " Bytes"
+        formatted_bytes = __(" Bytes") if localized else " Bytes"
         kib = __(" KiB") if localized else " KiB"
         mib = __(" MiB") if localized else " MiB"
 
@@ -42,7 +42,7 @@ class RomSizes:
         if size >= 1024:
             value = size // 1024
             return f"{value}{kib}"
-        return f"{size}{bytes}"
+        return f"{size}{formatted_bytes}"
 
     def GetNextLarger(self, size):
         for valid_size in self.ROM_SIZES:
@@ -171,7 +171,7 @@ class AgbSaveTypes:
         if bytes_val is None or bytes_val == 0:
             return name
 
-        bytes = __(" Bytes") if localized else " Bytes"
+        bytes_label = __(" Bytes") if localized else " Bytes"
         kib = __(" KiB") if localized else " KiB"
         mib = __(" MiB") if localized else " MiB"
 
@@ -179,7 +179,7 @@ class AgbSaveTypes:
             return f"{name} ({bytes_val >> 20}{mib})"
         if bytes_val >= 1024:
             return f"{name} ({bytes_val >> 10}{kib})"
-        return f"{name} ({bytes_val}{bytes})"
+        return f"{name} ({bytes_val}{bytes_label})"
 
     def GetIndexFromSize(self, size):
         for idx, (bytes_val, _) in enumerate(self.SAVE_TYPES):
@@ -323,7 +323,7 @@ class DmgSaveTypes:
         if size == 0:
             return name
 
-        bytes = __(" Bytes") if localized else " Bytes"
+        byte_label = __(" Bytes") if localized else " Bytes"
         kib = __(" KiB") if localized else " KiB"
         mib = __(" MiB") if localized else " MiB"
 
@@ -333,7 +333,7 @@ class DmgSaveTypes:
             return f"{name} ({size // (1024 * 1024)}{mib})"
         if size >= 1024:
             return f"{name} ({size // 1024}{kib})"
-        return f"{name} ({size}{bytes})"
+        return f"{name} ({size}{byte_label})"
 
     def GetStringList(self):
         return [self.GetString(index=index) for index in range(len(self.RAM_TYPES))]
