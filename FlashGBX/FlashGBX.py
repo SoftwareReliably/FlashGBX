@@ -131,11 +131,11 @@ def LoadConfig(args):
         config_zip_path = app_path / "res" / "config.zip"
         if config_zip_path.exists():
             try:
-                with zipfile.ZipFile(config_zip_path) as zip:
-                    for zfile in zip.namelist():
+                with zipfile.ZipFile(config_zip_path) as zips:
+                    for zfile in zips.namelist():
                         extracted_path = config_path / zfile
                         if extracted_path.exists():
-                            zfile_crc = zip.getinfo(zfile).CRC
+                            zfile_crc = zips.getinfo(zfile).CRC
                             with extracted_path.open("rb") as ofile:
                                 buffer = ofile.read()
                             ofile_crc = zlib.crc32(buffer) & 0xFFFFFFFF
@@ -150,7 +150,7 @@ def LoadConfig(args):
                                 ),
                             )
                             rf_list += zfile + "\n"
-                        zip.extract(zfile, config_path)
+                        zips.extract(zfile, config_path)
             except zipfile.BadZipFile:
                 print(__("Warning: config.zip is corrupted and could not be read."))
 
@@ -247,7 +247,7 @@ def main(portableMode=False):
                 )
                 / "FlashGBX",
             ),
-        }  # type: ignore
+        }
     except Exception as e:
         logger.exception(f"Failed to import PySide: {e}")
         cp = {
@@ -255,10 +255,7 @@ def main(portableMode=False):
             "appdata": str(Path.home() / "FlashGBX"),
         }
 
-    if portableMode:
-        cfgdir_default = "subdir"
-    else:
-        cfgdir_default = "appdata"
+    cfgdir_default = "subdir" if portableMode else "appdata"
 
     config_path = None
     language_choice = None
@@ -271,10 +268,7 @@ def main(portableMode=False):
             language_choice = sys.argv[i + 1].lower()
 
     if config_path is None:
-        if cfgdir_default in cp:
-            config_path = cp[cfgdir_default]
-        else:
-            config_path = cp["subdir"]
+        config_path = cp[cfgdir_default] if cfgdir_default in cp else cp["subdir"]
 
     init_language(config_path, override=language_choice)
 
@@ -589,7 +583,7 @@ def main(portableMode=False):
     if args.mode is not None or args.action is not None:
         args.cli = True
 
-    if args.debug == True:
+    if args.debug:
         AppContext.DEBUG = True
 
     args = {"app_path": app_path, "config_path": config_path, "argparsed": args}
@@ -690,3 +684,4 @@ def main(portableMode=False):
         if args["argparsed"].wait:
             input("\n" + __("Press ENTER to exit.") + "\n")
         sys.exit(retval)
+    return None
