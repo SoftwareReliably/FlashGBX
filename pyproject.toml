@@ -48,9 +48,15 @@ FlashGBX = ["res/**/*", "locale/**/*"]
 
 [dependency-groups]
 dev = [
+    "pytest>=8.4",
     "pyright>=1.1.411",
     "ruff>=0.16.4",
+    "pytest-cov>=7.1.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
 
 [tool.pyright]
 include = ["FlashGBX"]

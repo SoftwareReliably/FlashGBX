@@ -394,6 +394,17 @@ FlashGBX can also be run in a local Python environment like so. PySide6 is insta
 
 * Translating FlashGBX to another language is possible using the free [Poedit software](https://poedit.com/). Load the `messages.pot` file and save your translation as a `<lang>.po` file. Contributions and pull requests are welcome.
 
+## Testing
+
+Install the development dependencies and run the pytest suite with:
+
+```shell
+uv sync --group dev
+uv run pytest
+```
+
+The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
+
 ## Contributors
 
 The author would like to thank the following very kind people for their help, contributions or documentation (in alphabetical order):
