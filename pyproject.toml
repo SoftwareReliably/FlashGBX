@@ -121,5 +121,5 @@ ignore = [
     "ANN206", #missing-return-type-class-method
     "PLR0913", #too-many-arguments
     "PLR0917", #too-many-positional-arguments
-    
+    "ANN401", #any-type
 ]

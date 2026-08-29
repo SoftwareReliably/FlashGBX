@@ -5,17 +5,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import os
 import platform
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PIL.Image import Image as PILImage
 
 
@@ -134,7 +136,8 @@ def _check_hresult(result: int, operation: str) -> None:
     """Raise a useful error when a Windows COM call returns a failure HRESULT."""
     unsigned_result = result & 0xFFFFFFFF
     if result < 0 or unsigned_result >= 0x80000000:
-        raise OSError(f"{operation} failed with HRESULT 0x{unsigned_result:08X}")
+        msg = f"{operation} failed with HRESULT 0x{unsigned_result:08X}"
+        raise OSError(msg)
 
 
 def _debug_print(*args: Any, **kwargs: Any) -> None:
@@ -214,12 +217,14 @@ if _IS_WINDOWS:
                 "CoCreateInstance",
             )
             if taskbar.value is None:
-                raise RuntimeError("CoCreateInstance returned an empty taskbar interface")
+                msg = "CoCreateInstance returned an empty taskbar interface"
+                raise RuntimeError(msg)
 
             self._taskbar = taskbar
             winfunctype = _WINFUNCTYPE
             if winfunctype is None:
-                raise RuntimeError("Windows function prototypes are unavailable")
+                msg_0 = "Windows function prototypes are unavailable"
+                raise RuntimeError(msg_0)
             _check_hresult(
                 int(self._call(3, winfunctype(ctypes.c_long, ctypes.c_void_p))),
                 "ITaskbarList3::HrInit",
@@ -323,10 +328,8 @@ if _IS_WINDOWS:
 
 _QT_DBUS: Any = None
 if _IS_LINUX:
-    try:
+    with contextlib.suppress(ImportError):
         from PySide6 import QtDBus as _QT_DBUS
-    except ImportError:
-        pass
 
 
 def _application_desktop_file() -> str:
@@ -451,10 +454,11 @@ def IsDarkMode() -> bool:
     """Return whether Qt reports that the current color scheme is dark."""
     try:
         scheme = QtGui.QGuiApplication.styleHints().colorScheme()
-        return scheme == QtCore.Qt.ColorScheme.Dark
     except Exception:
         _log_exception("Failed to determine the Qt color scheme")
         return False
+    else:
+        return scheme == QtCore.Qt.ColorScheme.Dark
 
 
 def bitmap2pixmap(
@@ -469,7 +473,8 @@ def bitmap2pixmap(
     """
     try:
         if scale_factor <= 0:
-            raise ValueError("scale_factor must be greater than zero")
+            msg = "scale_factor must be greater than zero"
+            raise ValueError(msg)
 
         from PIL import Image
         from PIL.ImageQt import ImageQt
@@ -484,7 +489,8 @@ def bitmap2pixmap(
         )
         pixmap = QtGui.QPixmap.fromImage(ImageQt(scaled_image))
         pixmap.setDevicePixelRatio(scale_factor)
-        return pixmap
     except Exception as err:
         _debug_print("Couldn’t convert bitmap to pixmap. Error: {error}", error=str(err))
         return False
+    else:
+        return pixmap
