@@ -20,7 +20,7 @@ class IniSettings:
             try:
                 settings_path.parent.mkdir(parents=True, exist_ok=True)
                 settings_path.touch(exist_ok=True)
-            except:
+            except Exception:
                 print(__("Can’t access the configuration directory or settings file."))
                 return
             self.FILENAME = settings_path
