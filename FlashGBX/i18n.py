@@ -3,6 +3,7 @@
 
 import array
 import ast
+import contextlib
 import gettext
 import io
 import locale
@@ -227,15 +228,17 @@ def set_locale(language=None):
     for candidate in candidates:
         try:
             locale.setlocale(locale.LC_ALL, candidate)
-            return True
         except locale.Error:
             continue
+        else:
+            return True
 
     try:
         locale.setlocale(locale.LC_ALL, "")
-        return True
     except locale.Error:
         return False
+    else:
+        return True
 
 
 def loadTranslation(language):
@@ -255,7 +258,8 @@ def loadTranslation(language):
 
     filename = app_path / "locale" / f"{language}.po"
     if not filename.exists():
-        raise FileNotFoundError(f"{filename} not found")
+        msg = f"{filename} not found"
+        raise FileNotFoundError(msg)
 
     with filename.open(encoding="utf-8") as f:
         lines = f.readlines()
@@ -298,13 +302,15 @@ def loadTranslation(language):
             section = "STR"
             if line.startswith("msgstr["):
                 if not is_plural:
-                    raise ValueError("Plural msgstr found without msgid_plural")
+                    msg = "Plural msgstr found without msgid_plural"
+                    raise ValueError(msg)
                 line = line.split("]", 1)[1].strip()
                 if msgstr:
                     msgstr += b"\0"
             else:
                 if is_plural:
-                    raise ValueError("Non-indexed msgstr found for plural")
+                    msg = "Non-indexed msgstr found for plural"
+                    raise ValueError(msg)
                 line = line[6:].strip()
 
         val = ast.literal_eval(line).encode("utf-8")
@@ -464,10 +470,7 @@ def init_language(config_path, override=None):
         lang_code = language_setting.split("_")[0].split("-")[0].lower()
     else:
         CONFIGURED_LANGUAGE = system_language
-        if system_language and system_language != "C":
-            lang_code = system_language
-        else:
-            lang_code = "en"
+        lang_code = system_language if system_language and system_language != "C" else "en"
 
     if lang_code not in LANGUAGES:
         CONFIGURED_LANGUAGE = lang_code = "en"
@@ -492,10 +495,8 @@ def init_language(config_path, override=None):
 
 ####
 
-try:
+with contextlib.suppress(locale.Error):
     locale.setlocale(locale.LC_ALL, "")
-except locale.Error:
-    pass
 
 lang_country = None
 try:
