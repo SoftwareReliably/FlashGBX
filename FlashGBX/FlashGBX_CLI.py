@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import datetime
 import math
 import os
@@ -16,7 +15,7 @@ import traceback
 import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from serial import SerialException  # pyright: ignore[reportMissingModuleSource]
@@ -45,6 +44,9 @@ from .PocketCamera import PocketCamera
 from .Progress import Progress
 from .RomFileAGB import RomFileAGB
 from .RomFileDMG import RomFileDMG, from_isx
+
+if TYPE_CHECKING:
+    import argparse
 
 type PlatformMode = Literal["DMG", "AGB"]
 type HeaderData = dict[str, Any]
@@ -144,7 +146,8 @@ class FlashGBX_CLI:
         """Return a required integer header field or reject malformed data."""
         value = header.get(key)
         if not isinstance(value, int) or isinstance(value, bool):
-            raise TypeError(f"Invalid cartridge header field: {key}")
+            msg = f"Invalid cartridge header field: {key}"
+            raise TypeError(msg)
         return value
 
     def run(self) -> int:
@@ -296,7 +299,7 @@ class FlashGBX_CLI:
                     return 0
 
             pc = PocketCamera()
-            if pc.LoadFile(args.path) != False:
+            if pc.LoadFile(args.path):
                 pc.SetPalette(PocketCamera.PALETTE_NAMES.index(args.gbcamera_palette))
                 destination = Path(args.path).with_suffix("")
                 file = destination / "IMG_PC00.png"
@@ -389,7 +392,7 @@ class FlashGBX_CLI:
                         print()
                         if answer == "1":
                             args.mode = "dmg"
-                        elif answer == "2" or answer == "":
+                        elif answer in {"2", ""}:
                             args.mode = "agb"
                         else:
                             print(__("Canceled."))
@@ -462,7 +465,7 @@ class FlashGBX_CLI:
                         return 0
                 self.BackupRestoreRAM(args, header)
 
-            elif args.action == "erase-save" or args.action == "debug-test-save":
+            elif args.action in {"erase-save", "debug-test-save"}:
                 self.BackupRestoreRAM(args, header)
 
             elif args.action == "flash-rom":
@@ -624,7 +627,7 @@ class FlashGBX_CLI:
 
         if self.CONN.INFO["last_action"] == 4:  # Flash ROM
             self.CONN.INFO["last_action"] = 0
-            if "verified" in self.PROGRESS.PROGRESS and self.PROGRESS.PROGRESS["verified"] == True:
+            if self.PROGRESS.PROGRESS.get("verified"):
                 print(ANSI.GREEN + __("The ROM was written and verified successfully!") + ANSI.RESET)
             elif "broken_sectors" in self.CONN.INFO:
                 s = ""
@@ -774,7 +777,7 @@ class FlashGBX_CLI:
                             with Path(self.CONN.INFO["last_path"]).open("rb") as f:
                                 f.seek(0x20000 * (roll - 1))
                                 roll_data = bytearray(f.read(0x20000))
-                            if pc.LoadFile(roll_data) != False:
+                            if pc.LoadFile(roll_data):
                                 for i in range(32):
                                     file = base / "IMG_P{:1d}{:02d}.{}".format(
                                         roll,
@@ -785,7 +788,7 @@ class FlashGBX_CLI:
                     else:
                         file = self.CONN.INFO["last_path"]
                         pc = PocketCamera()
-                        if pc.LoadFile(file) != False:
+                        if pc.LoadFile(file):
                             pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
                             destination = Path(self.CONN.INFO["last_path"]).with_suffix("")
                             file = destination / "IMG_PC00.png"
@@ -1423,7 +1426,8 @@ class FlashGBX_CLI:
                 try:
                     rom_size = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
                     if not isinstance(rom_size, int):
-                        raise TypeError("Invalid ROM size")
+                        msg = "Invalid ROM size"
+                        raise TypeError(msg)
                 except TypeError:
                     print(
                         ANSI.YELLOW
@@ -1445,10 +1449,7 @@ class FlashGBX_CLI:
                 rom_size = RomSizes.GetSizeFromCLIName(args.agb_romsize, mode="AGB")
 
         if args.path != "auto":
-            if Path(args.path).is_dir():
-                path = str(Path(args.path) / path)
-            else:
-                path = args.path
+            path = str(Path(args.path) / path) if Path(args.path).is_dir() else args.path
 
         if path == "":
             return
@@ -1965,7 +1966,7 @@ class FlashGBX_CLI:
                 save_type = AgbSaveTypes.GetIndexFromCLIName(args.agb_savetype)
 
             mbc = 0
-            if save_type == 0 or save_type == None:
+            if save_type in {0, None}:
                 print(
                     ANSI.RED
                     + __(
@@ -1980,10 +1981,7 @@ class FlashGBX_CLI:
             return
 
         if args.path != "auto":
-            if Path(args.path).is_dir():
-                path = str(Path(args.path) / path)
-            else:
-                path = args.path
+            path = str(Path(args.path) / path) if Path(args.path).is_dir() else args.path
 
         if path == "":
             return
@@ -2288,7 +2286,7 @@ class FlashGBX_CLI:
             else:
                 if found_offset == 0 and test2 != test3:  # Pokémon Crystal JPN
                     found_length = 0
-                    for found_length, (expected, actual) in enumerate(zip(test2, test3, strict=False)):
+                    for _, (expected, actual) in enumerate(zip(test2, test3, strict=False)):
                         if expected != actual:
                             break
                 else:
@@ -2633,7 +2631,8 @@ class FlashGBX_CLI:
         version = settings.GetValue("fw_ver")
         build_timestamp = settings.GetValue("fw_buildts")
         if not isinstance(version, str) or not isinstance(build_timestamp, str):
-            raise TypeError(f"Invalid firmware metadata in {file_name}")
+            msg = f"Invalid firmware metadata in {file_name}"
+            raise TypeError(msg)
         return version, int(build_timestamp)
 
     def UpdateFirmware_PrintText(
@@ -2699,9 +2698,7 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                for i in range(len(comports)):
-                    if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
-                        ports.append(comports[i].device)
+                ports.extend([comport.device for comport in comports if comport.vid == 0x1A86 and comport.pid == 0x7523])
                 if len(ports) == 0:
                     print(__("No devices found."))
                     return False
@@ -2782,9 +2779,7 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                for i in range(len(comports)):
-                    if comports[i].vid == 0x1A86 and comports[i].pid == 0x7523:
-                        ports.append(comports[i].device)
+                ports.extend([c.device for c in comports if c.vid == 0x1A86 and c.pid == 0x7523])
                 if len(ports) == 0:
                     print(__("No device found."))
                     return False
@@ -2867,9 +2862,7 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                for i in range(len(comports)):
-                    if comports[i].vid == 0x483 and comports[i].pid == 0x5740:
-                        ports.append(comports[i].device)
+                ports = [comports[i].device for i in range(len(comports)) if comports[i].vid == 0x483 and comports[i].pid == 0x5740]
                 if len(ports) == 0:
                     print(
                         __(
