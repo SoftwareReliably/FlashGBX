@@ -82,7 +82,7 @@ class RomSizes:
     def GetCLINames(cls, mode="AGB", include_auto=True):
         sizes = cls.ROM_SIZES_DMG if mode == "DMG" else cls.ROM_SIZES
         names = [cls._SizeToCLIName(s) for s in sizes]
-        return (["auto"] + names) if include_auto else names
+        return (["auto", *names]) if include_auto else names
 
     @classmethod
     def GetSizeFromCLIName(cls, name, mode="AGB"):
@@ -342,10 +342,7 @@ class DmgSaveTypes:
         return len(self.RAM_TYPES)
 
     def __contains__(self, item):
-        if isinstance(item, DmgSaveTypes):
-            mbc = item.GetMbc()
-        else:
-            mbc = item
+        mbc = item.GetMbc() if isinstance(item, DmgSaveTypes) else item
         return self._FindByMbc(mbc) is not None
 
     @classmethod

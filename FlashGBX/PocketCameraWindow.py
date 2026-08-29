@@ -319,7 +319,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         try:
             self.CUR_PC = PocketCamera()
-            if self.CUR_PC.LoadFile(file) == False:
+            if not self.CUR_PC.LoadFile(file):
                 self.CUR_PC = None
                 QtWidgets.QMessageBox.critical(
                     self,

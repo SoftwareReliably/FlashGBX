@@ -1738,7 +1738,7 @@ try:
             dev.write(b"f")
             dev.flush()
             time.sleep(0.00125)
-            for i in range(0, 0x1DC0, 0x40):
+            for _ in range(0, 0x1DC0, 0x40):
                 self.APP.QT_APP.processEvents()
                 dev.write(b"!")
                 dev.flush()
