@@ -61,3 +61,12 @@ class MockSerial:
 
     def reset_output_buffer(self) -> None:
         pass
+
+
+class EchoSerial(MockSerial):
+    """Serial double that echoes each write, as the firmware bootloader does."""
+
+    def write(self, data: bytes | bytearray) -> int:
+        written = super().write(data)
+        self._read_buffer.extend(data)
+        return written
