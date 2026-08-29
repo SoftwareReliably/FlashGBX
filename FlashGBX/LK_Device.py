@@ -1,4 +1,4 @@
-# FlashGBX  # noqa: N999
+# FlashGBX  # noqa: CPY001, D100, N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ class ProgressSignal(Protocol):
 ProgressCallback = Callable[[ProgressUpdate], object]
 
 
-class LK_Device(ABC):
+class LK_Device(ABC):  # noqa: N801
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
     DEVICE_MAX_FW: ClassVar[int] = 0
@@ -359,12 +359,14 @@ class LK_Device(ABC):
 
     def _firmware_info(self) -> FirmwareInfo:
         if not isinstance(self.FW, dict):
-            raise ConnectionError("Firmware information is not available")
+            msg = "Firmware information is not available"
+            raise ConnectionError(msg)
         return self.FW
 
     def _serial_device(self) -> serial.Serial:
         if self.DEVICE is None:
-            raise ConnectionError("The cartridge reader is not connected")
+            msg = "The cartridge reader is not connected"
+            raise ConnectionError(msg)
         return self.DEVICE
 
     def CheckActive(self) -> bool:
@@ -385,14 +387,16 @@ class LK_Device(ABC):
                 self._write(bytearray([self.DEVICE_CMD["PING"], challenge]))
                 response = self._read(1)
                 if response is False or response != ((~challenge) & 0xFF):
+                    msg = f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})"
                     raise ConnectionError(
-                        f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})",
+                        msg,
                     )
             else:
                 modes = self.GetSupprtedModes()
                 mode = self._get_fw_variable("CART_MODE")
                 if mode > len(modes):
-                    raise ConnectionError(f"Invalid firmware response (mode={mode - 1!s})")
+                    msg_0 = f"Invalid firmware response (mode={mode - 1!s})"
+                    raise ConnectionError(msg_0)
             self.LAST_CHECK_ACTIVE = time.time()
             return True
         except Exception as e:
@@ -1284,6 +1288,7 @@ class LK_Device(ABC):
         device.flush()
         if self.FW["fw_ver"] >= 15:
             return self.wait_for_ack()
+        return None
 
     def GetMode(self) -> DeviceMode | None:
         if time.time() < self.LAST_CHECK_ACTIVE + 1:
@@ -1314,7 +1319,8 @@ class LK_Device(ABC):
             return self.MODE
         selected_mode = modes[mode - 1]
         if selected_mode not in ("DMG", "AGB"):
-            raise ConnectionError(f"Invalid cartridge mode reported by firmware: {selected_mode!r}")
+            msg = f"Invalid cartridge mode reported by firmware: {selected_mode!r}"
+            raise ConnectionError(msg)
         self.MODE = selected_mode
         return self.MODE
 
@@ -1447,7 +1453,8 @@ class LK_Device(ABC):
 
     def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
         if not self.IsConnected():
-            raise ConnectionError("Couldn’t access the the device.")
+            msg = "Couldn’t access the the device."
+            raise ConnectionError(msg)
         data = {}
         self.SIGNAL = None
 
@@ -2398,7 +2405,8 @@ class LK_Device(ABC):
             if command is None:
                 command = self.DEVICE_CMD["AGB_CART_READ_SRAM"]
         else:
-            raise RuntimeError("Cartridge mode must be selected before reading RAM")
+            msg = "Cartridge mode must be selected before reading RAM"
+            raise RuntimeError(msg)
 
         for _ in range(num):
             self._write(command)
@@ -2500,7 +2508,8 @@ class LK_Device(ABC):
             if command is None:
                 command = self.DEVICE_CMD["AGB_CART_WRITE_SRAM"]
         else:
-            raise RuntimeError("Cartridge mode must be selected before writing RAM")
+            msg = "Cartridge mode must be selected before writing RAM"
+            raise RuntimeError(msg)
 
         for i in range(num):
             self._write(command)
@@ -2605,6 +2614,7 @@ class LK_Device(ABC):
                 self.SetProgress({"action": "WRITE", "bytes_added": length})
         self._cart_write(address - 1, 0xF0)
         self.SKIPPING = skip_write
+        return None
 
     def WriteEEPROM_MBC7(self, address: int, buffer: bytes | bytearray | memoryview) -> None:
         length = len(buffer)
@@ -2714,6 +2724,7 @@ class LK_Device(ABC):
                 self.SetProgress({"action": "WRITE", "bytes_added": length, "skipping": skip_write})
 
         self.SKIPPING = skip_write
+        return None
 
     def WriteROM_GBMEMORY(
         self,
@@ -2832,6 +2843,7 @@ class LK_Device(ABC):
 
         self._cart_write(address - 1, 0xF0)
         self.SKIPPING = skip_write
+        return None
 
     def WriteROM_DMG_MBC5_32M_FLASH(
         self,
@@ -2923,6 +2935,7 @@ class LK_Device(ABC):
 
         self._cart_write(address - 1, 0xFF)
         self.SKIPPING = skip_write
+        return None
 
     def WriteROM_DMG_DatelOrbitV2(
         self,
@@ -2951,10 +2964,7 @@ class LK_Device(ABC):
         eeprom_buffer_size: int = 0x80,
     ) -> bool | None:
         length = len(buffer)
-        if not self.CanPowerCycleCart() or self.BAUDRATE == 1000000:
-            max_length = 256
-        else:
-            max_length = 1024
+        max_length = 256 if not self.CanPowerCycleCart() or self.BAUDRATE == 1000000 else 1024
         num = math.ceil(length / max_length)
         length = min(length, max_length)
         dprint(f"Writing 0x{length:X} bytes to EEPROM in {num:d} iteration(s)")
@@ -2997,10 +3007,12 @@ class LK_Device(ABC):
         ]
         for command in commands:
             self._cart_write(command[0], command[1])
+        return None
 
     def CheckROMStable(self) -> bool:
         if not self.IsConnected():
-            raise ConnectionError("Couldn’t access the the device.")
+            msg = "Couldn’t access the the device."
+            raise ConnectionError(msg)
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
@@ -3041,10 +3053,7 @@ class LK_Device(ABC):
                 self._write(self.DEVICE_CMD["CALC_CRC32"])
                 self._write(bytearray(struct.pack(">I", chunk_len)))
                 temp = self._read(4)
-                if temp is False:
-                    crc32_calculated = False
-                else:
-                    crc32_calculated = struct.unpack(">I", temp)[0]
+                crc32_calculated = False if temp is False else struct.unpack(">I", temp)[0]
                 if crc32_expected != crc32_calculated:
                     if i == 0 and flashcart is not None:
                         flashcart.Reset(full_reset=True)
@@ -3064,7 +3073,8 @@ class LK_Device(ABC):
     def DetectFlash(self, limitVoltage: bool = False) -> tuple[Any, ...]:
         mode = self.MODE
         if mode is None:
-            raise RuntimeError("Cartridge mode must be selected before detecting flash")
+            msg = "Cartridge mode must be selected before detecting flash"
+            raise RuntimeError(msg)
         supported_carts: list[Any] = list(self.SUPPORTED_CARTS[mode].values())
         fc_fncptr: FlashcartCallbacks = {
             "cart_write_fncptr": self._cart_write,
@@ -3288,10 +3298,7 @@ class LK_Device(ABC):
 
         if len(flash_types) == 0:
             dprint("Trying to find the Flash ID")
-            if self.SupportsAudioAsWe():
-                wes = {"DMG": [1, 2], "AGB": [0]}
-            else:
-                wes = {"DMG": [1], "AGB": [0]}
+            wes = {"DMG": [1, 2], "AGB": [0]} if self.SupportsAudioAsWe() else {"DMG": [1], "AGB": [0]}
             for we in wes[mode]:
                 if self.MODE == "DMG":
                     self._set_fw_variable("FLASH_WE_PIN", we)
@@ -3393,10 +3400,7 @@ class LK_Device(ABC):
                 read_cfi_cmd = supported_carts[flash_types[0]]["commands"]["read_cfi"]
                 reset_cmd = supported_carts[flash_types[0]]["commands"]["reset"]
             else:
-                if len(read_cfi_cmds) == 0:
-                    read_cfi_cmd = [[0, 0x98]]
-                else:
-                    read_cfi_cmd = [read_cfi_cmds[0]]
+                read_cfi_cmd = [[0, 152]] if len(read_cfi_cmds) == 0 else [read_cfi_cmds[0]]
                 reset_cmd = flash_id_cmds[0]["reset"]
             self._cart_write_flash(read_cfi_cmd, flashcart=(self.MODE == "AGB"))
             cfi_buffer = self._cart_read(0, 0x400)
@@ -3851,10 +3855,7 @@ class LK_Device(ABC):
             size = len(args["verify_write"])
             buffer_len = min(buffer_len, size)
         else:
-            if "bl_offset" in args:
-                method = "SAVE_READ"
-            else:
-                method = "ROM_READ"
+            method = "SAVE_READ" if "bl_offset" in args else "ROM_READ"
             pos = 0
             self.SetProgress({"action": "INITIALIZE", "method": method, "size": size})
             self.INFO["action"] = self.ACTIONS[method]
@@ -3893,10 +3894,7 @@ class LK_Device(ABC):
         buffer = bytearray(size)
         max_length = self.MAX_BUFFER_READ
         dprint(f"Max buffer size: 0x{max_length:X}")
-        if is_3dmemory:
-            max_length = min(max_length, 0x1000)
-        else:
-            max_length = min(max_length, 0x2000)
+        max_length = min(max_length, 4096) if is_3dmemory else min(max_length, 8192)
         self.INFO["dump_info"]["transfer_size"] = max_length
         pos_total = 0
         start_address = 0
@@ -4383,10 +4381,7 @@ class LK_Device(ABC):
                     },
                 )
                 return False
-            if "save_size" in args:
-                save_size = args["save_size"]
-            else:
-                save_size = DmgSaveTypes(mbc=args["save_type"]).GetSize()
+            save_size = args["save_size"] if "save_size" in args else DmgSaveTypes(mbc=args["save_type"]).GetSize()
             if save_size is None:
                 return False
 
@@ -4469,20 +4464,14 @@ class LK_Device(ABC):
             self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
             self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
             buffer_len = 0x2000
-            if "save_size" in args:
-                save_size = args["save_size"]
-            else:
-                save_size = AgbSaveTypes().GetSize(args["save_type"])
+            save_size = args["save_size"] if "save_size" in args else AgbSaveTypes().GetSize(args["save_type"])
             if save_size is None:
                 return False
             ram_banks = math.ceil(save_size / 0x10000)
             agb_flash_chip = 0
 
             if args["save_type"] in (1, 2):  # EEPROM
-                if args["mode"] == 3:
-                    buffer_len = 0x40
-                else:
-                    buffer_len = 0x100
+                buffer_len = 64 if args["mode"] == 3 else 256
             elif args["save_type"] in (4, 5):  # FLASH
                 empty_data_byte = 0xFF
                 ret = self.ReadFlashSaveID()
@@ -4515,7 +4504,7 @@ class LK_Device(ABC):
                 if flash_id != bytearray([0xB0, 0x00, 0x9F, 0x00]):
                     dprint(
                         "Warning: Unknown DACS flash chip ID ({:s})".format(
-                            " ".join(format(x, "02X") for x in flash_id)
+                            " ".join(format(x, "02X") for x in flash_id),
                         ),
                     )
                     if not args.get("detect"):
@@ -4621,7 +4610,7 @@ class LK_Device(ABC):
         elif args["mode"] == 3:  # Restore
             action = "SAVE_WRITE"
             self.INFO["save_erase"] = args["erase"]
-            if args["erase"] == True:
+            if args["erase"]:
                 buffer = bytearray([empty_data_byte] * save_size)
                 if self.MODE == "DMG" and _mbc.GetName() == "Xploder GB":
                     buffer[0] = 0x00
@@ -4632,12 +4621,10 @@ class LK_Device(ABC):
                     buffer[0x11D7:0x11FC] = buffer[0x11B2:0x11D7]
             else:
                 if args["path"] is None:
-                    if "buffer" in args:
-                        source_buffer = args["buffer"]
-                    else:
-                        source_buffer = self.INFO["data"]
+                    source_buffer = args["buffer"] if "buffer" in args else self.INFO["data"]
                     if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
-                        raise TypeError("Save data must be a bytes-like object")
+                        msg_0 = "Save data must be a bytes-like object"
+                        raise TypeError(msg_0)
                     buffer = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
                 else:
                     with open(args["path"], "rb") as f:
@@ -4655,11 +4642,13 @@ class LK_Device(ABC):
                         buffer += bytearray(buffer)
 
         else:
-            raise ValueError(f"Unsupported save transfer mode: {args['mode']!r}")
+            msg_1 = f"Unsupported save transfer mode: {args['mode']!r}"
+            raise ValueError(msg_1)
 
         # Main loop
         if action is None:
-            raise RuntimeError("Save transfer action was not initialized")
+            msg_2 = "Save transfer action was not initialized"
+            raise RuntimeError(msg_2)
         if not (args["mode"] == 2 and "verify_write" in args and args["verify_write"]):
             self.INFO["action"] = self.ACTIONS[action]
             self.SetProgress(
@@ -5258,7 +5247,7 @@ class LK_Device(ABC):
                                 "The save data was written completely, but {count} bytes ({percent}%) didn’t pass the verification check.",
                                 n=count,
                                 count=count,
-                                percent="{:.2f}".format(count / len(verified_data) * 100),
+                                percent=f"{count / len(verified_data) * 100:.2f}",
                             )
                             + "\n\n"
                             + msg[:-1],
@@ -5310,7 +5299,8 @@ class LK_Device(ABC):
     def _FlashROM_Worker(self, args: dict[str, Any]):
         mode = self.MODE
         if mode is None:
-            raise RuntimeError("Cartridge mode must be selected before writing ROM")
+            msg = "Cartridge mode must be selected before writing ROM"
+            raise RuntimeError(msg)
         # Initialization
         self.FAST_READ = True
         temp: Any = None
@@ -5330,7 +5320,8 @@ class LK_Device(ABC):
         if "buffer" in args:
             source_buffer = args["buffer"]
             if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
-                raise TypeError("ROM data must be a bytes-like object")
+                msg_0 = "ROM data must be a bytes-like object"
+                raise TypeError(msg_0)
             data_import = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
         else:
             with open(args["path"], "rb") as file:
@@ -5716,10 +5707,7 @@ class LK_Device(ABC):
                 end_bank = math.ceil(len(data_import) / cart_type["flash_bank_size"])
             else:
                 end_bank = 1
-            if flashcart and "flash_bank_size" in cart_type:
-                rom_bank_size = cart_type["flash_bank_size"]
-            else:
-                rom_bank_size = 0x2000000
+            rom_bank_size = cart_type["flash_bank_size"] if flashcart and "flash_bank_size" in cart_type else 33554432
 
         flash_buffer_size = flashcart.GetBufferSize()
         # ↑↑↑ Flashcart configuration
@@ -6189,10 +6177,7 @@ class LK_Device(ABC):
         for sector in write_sectors:
             sector_size = sector[1]
             if chip_erase is False:
-                if not first_sector_written:
-                    retry_hp = 15
-                else:
-                    retry_hp = 100
+                retry_hp = 15 if not first_sector_written else 100
 
                 if self.MODE == "AGB":
                     dprint("Writing sector:", hex(sector[0]), hex(sector[1]))
@@ -6763,19 +6748,13 @@ class LK_Device(ABC):
                         buffer_pos = sector[0]
                         start_address = buffer_pos
                         end_address = sector[0] + sector[1]
-                        if not chip_erase:
-                            sector_pos = sector_offsets.index(sector[:2])
-                        else:
-                            sector_pos = 0
+                        sector_pos = sector_offsets.index(sector[:2]) if not chip_erase else 0
                         start_bank = math.floor(buffer_pos / rom_bank_size)
                         end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
                     elif self.MODE == "DMG":
                         dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
                         buffer_pos = sector[0]
-                        if not chip_erase:
-                            sector_pos = sector_offsets.index(sector[:2])
-                        else:
-                            sector_pos = 0
+                        sector_pos = sector_offsets.index(sector[:2]) if not chip_erase else 0
                         start_bank = math.floor(buffer_pos / rom_bank_size)
                         end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
 
@@ -7102,3 +7081,4 @@ class LK_Device(ABC):
                 return False
 
             return True
+        return None
