@@ -1,4 +1,4 @@
-# ruff: noqa: CPY001, N813
+# ruff: noqa: N813
 """Extended hardware-free tests for mapper and RTC protocols."""
 
 from __future__ import annotations

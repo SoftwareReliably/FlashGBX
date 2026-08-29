@@ -1,4 +1,4 @@
-# FlashGBX  # noqa: CPY001, D100
+# FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 # Note: This file runs FlashGBX in portable mode.

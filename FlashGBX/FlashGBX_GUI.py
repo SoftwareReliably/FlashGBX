@@ -1539,7 +1539,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     else:
                         print(
                             __(
-                                "Error: Update check failed due to missing version information in JSON data from GitHub."
+                                "Error: Update check failed due to missing version information in JSON data from GitHub.",
                             ),
                         )
                 except json.decoder.JSONDecodeError:

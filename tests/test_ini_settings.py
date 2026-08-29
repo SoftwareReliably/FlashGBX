@@ -11,6 +11,6 @@ def test_ini_settings_accepts_path_and_creates_parent(tmp_path: Path) -> None:
     settings = IniSettings(path=settings_path)
     settings.setValue("Theme", "dark")
 
-    assert settings.FILENAME == settings_path
+    assert settings_path == settings.FILENAME
     assert settings_path.is_file()
     assert IniSettings(path=settings_path).value("Theme") == "dark"
