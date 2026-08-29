@@ -166,8 +166,7 @@ class Flashcart:
     def GetMBC(self) -> int | str | Literal[False]:
         if (self._config["type"].upper() == "AGB") or ("mbc" not in self._config):
             return False
-        mbc = self._config["mbc"]
-        return mbc
+        return self._config["mbc"]
 
     def FlashCommandsOnBank1(self) -> bool:
         return "flash_commands_on_bank_1" in self._config and self._config["flash_commands_on_bank_1"] is True
@@ -205,10 +204,7 @@ class Flashcart:
     def IsF2A(self) -> bool:
         if "buffer_write" not in self._config["commands"]:
             return False
-        for cmd in self._config["commands"]["buffer_write"]:
-            if cmd[0] == "SA+2":
-                return True
-        return False
+        return any(cmd[0] == "SA+2" for cmd in self._config["commands"]["buffer_write"])
 
     def WEisWR(self) -> bool:
         if "write_pin" not in self._config:
@@ -439,7 +435,7 @@ class Flashcart:
             else:
                 we = None
 
-            if addr != None:
+            if addr is not None:
                 if we == "WR":
                     self._set_we_pin_wr()
                 elif we == "AUDIO":
@@ -452,7 +448,7 @@ class Flashcart:
                         self._set_we_pin_audio()
 
             time.sleep(0.1)
-            if self._config["commands"]["chip_erase_wait_for"][i][0] != None:
+            if self._config["commands"]["chip_erase_wait_for"][i][0] is not None:
                 addr = self._config["commands"]["chip_erase_wait_for"][i][0]
                 data = self._config["commands"]["chip_erase_wait_for"][i][1]
                 timeout = self._config["chip_erase_timeout"]
@@ -547,7 +543,7 @@ class Flashcart:
                     addr = pos + 0x42
                 if addr == "SA+132":
                     addr = pos + 0x84
-                if addr != None:
+                if addr is not None:
                     if we == "WR":
                         self._set_we_pin_wr()
                     elif we == "AUDIO":
@@ -559,7 +555,7 @@ class Flashcart:
                         elif self._default_we == "AUDIO":
                             self._set_we_pin_audio()
 
-                if self._config["commands"]["sector_erase_wait_for"][i][0] != None:
+                if self._config["commands"]["sector_erase_wait_for"][i][0] is not None:
                     addr = self._config["commands"]["sector_erase_wait_for"][i][0]
                     data = self._config["commands"]["sector_erase_wait_for"][i][1]
                     if addr == "SA":
@@ -579,10 +575,7 @@ class Flashcart:
                     time.sleep(0.05)
                     timeout = 100
                     while True:
-                        if (
-                            "wait_read_status_register" in self._config
-                            and self._config["wait_read_status_register"] == True
-                        ):
+                        if self._config.get("wait_read_status_register"):
                             for j in range(len(self._config["commands"]["read_status_register"])):
                                 sr_addr = self._config["commands"]["read_status_register"][j][0]
                                 sr_data = self._config["commands"]["read_status_register"][j][1]
