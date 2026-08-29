@@ -43,8 +43,10 @@ class Formatter:
     @classmethod
     def progress_time(cls, seconds, as_float=False, localized=True):
         if not localized:
-            t___ = lambda singular, plural, **kwargs: (singular if kwargs.get("n", 1) == 1 else plural).format(**kwargs)
-            tc__ = lambda _context, text, **kwargs: text.format(**kwargs)
+            def t___(singular, plural, **kwargs):
+                return (singular if kwargs.get("n", 1) == 1 else plural).format(**kwargs)
+            def tc__(_context, text, **kwargs):
+                return text.format(**kwargs)
         else:
             t___ = ___
             tc__ = c__
@@ -115,9 +117,10 @@ class Formatter:
         try:
             if string != datetime.datetime.strptime(string, fmt).replace(tzinfo=datetime.UTC).strftime(fmt):
                 raise ValueError
-            return True
         except ValueError:
             return False
+        else:
+            return True
 
     @classmethod
     def title(cls, title):
