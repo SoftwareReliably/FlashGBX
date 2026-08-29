@@ -99,7 +99,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
                     self.HistoryIndex -= 1
                     self.txtInput.setText(self.History[self.HistoryIndex])
                 return True
-            elif event.key() == QtCore.Qt.Key_Down:
+            if event.key() == QtCore.Qt.Key_Down:
                 if self.History and self.HistoryIndex < len(self.History) - 1:
                     self.HistoryIndex += 1
                     self.txtInput.setText(self.History[self.HistoryIndex])

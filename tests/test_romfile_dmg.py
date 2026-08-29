@@ -23,7 +23,6 @@ def make_header(
     cgb: int = 0,
 ) -> bytearray:
     """Return generated header metadata with no copyrighted ROM payload."""
-
     header = bytearray(base)
     header[0x134:0x144] = b"\x00" * 16
     title_size = 15 if cgb in (0x80, 0xC0) else 16

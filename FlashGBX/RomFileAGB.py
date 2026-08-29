@@ -102,7 +102,7 @@ class RomFileAGB:
                     0x0A,
                     0x05,
                     0x09,
-                ]
+                ],
             )
             data = bytes([0x20 | BITS]) + OUT_SIZE.to_bytes(3, "little") + bytes([len(TREE) // 2]) + TREE + data
             bits = data[0] & 15
@@ -201,8 +201,8 @@ class RomFileAGB:
                     0x11,
                     0x00,
                     0xDD,
-                ]
-            )
+                ],
+            ),
         )  # Method 0
         nocart_hashes.append(
             bytearray(
@@ -227,8 +227,8 @@ class RomFileAGB:
                     0xE0,
                     0xAC,
                     0x9F,
-                ]
-            )
+                ],
+            ),
         )  # Method 1
         nocart_hashes.append(
             bytearray(
@@ -253,8 +253,8 @@ class RomFileAGB:
                     0x4B,
                     0x3A,
                     0x50,
-                ]
-            )
+                ],
+            ),
         )  # Method 2
         data["empty_nocart"] = hash in nocart_hashes
         if not data["empty_nocart"]:
@@ -281,8 +281,8 @@ class RomFileAGB:
                         0x6A,
                         0x39,
                         0xBE,
-                    ]
-                )
+                    ],
+                ),
             )
             nocart_hashes.append(
                 bytearray(
@@ -307,8 +307,8 @@ class RomFileAGB:
                         0xC0,
                         0xA4,
                         0x45,
-                    ]
-                )
+                    ],
+                ),
             )
             data["empty_nocart"] = hashlib.sha1(buffer[0x10:0x50]).digest() in nocart_hashes
 
@@ -337,7 +337,7 @@ class RomFileAGB:
                 0x3B,
                 0x48,
                 0xEE,
-            ]
+            ],
         )
         temp = self.LogoToImage(buffer[0x04:0xA0], data["logo_correct"])
         if temp is not False and not data["empty"]:
@@ -395,7 +395,7 @@ class RomFileAGB:
                 0x00,
                 0x9F,
                 0xE5,
-            ]
+            ],
         ):  # Initialization code always present in Vast Fame carts
             data["vast_fame"] = True
 
@@ -454,13 +454,13 @@ class RomFileAGB:
                         __(
                             "No database entry found for this title (Header SHA1: {sha1})",
                             sha1=data["header_sha1"],
-                        )
+                        ),
                     )
         else:
             print(
                 __(
                     "Error: Database for Game Boy Advance titles not found at {path}",
                     path=AppContext.CONFIG_PATH + os.sep + "db_AGB.json",
-                )
+                ),
             )
         return db_entry

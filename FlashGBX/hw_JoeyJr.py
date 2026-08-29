@@ -84,14 +84,14 @@ class GbxDevice(LK_Device):
                                 device_name=self.DEVICE_NAME,
                                 port=ports[i],
                             ),
-                        ]
+                        ],
                     )
                 continue
-            elif self.FW is None:
+            if self.FW is None:
                 dev.close()
                 self.DEVICE = None
                 continue
-            elif self.FW["cfw_id"] == "G":  # Not a CFW by Lesserkuma
+            if self.FW["cfw_id"] == "G":  # Not a CFW by Lesserkuma
                 dprint("Device runs the JoeyGUI firmware")
             elif (
                 self.FW["pcb_ver"] not in self.PCB_VERSIONS
@@ -112,7 +112,7 @@ class GbxDevice(LK_Device):
                             device_name=self.DEVICE_NAME,
                             port=ports[i],
                         ),
-                    ]
+                    ],
                 )
 
             if (self.FW["pcb_ver"] & 0x7F) == 1:
@@ -123,7 +123,7 @@ class GbxDevice(LK_Device):
                             "Warning: Your {device_name} does not support the software-controlled voltage setting feature, so please be extra careful and always set the switch to the correct voltage before inserting a cartridge.",
                             device_name=self.DEVICE_NAME,
                         ),
-                    ]
+                    ],
                 )
 
             self.PORT = ports[i]
@@ -267,13 +267,12 @@ class GbxDevice(LK_Device):
                 timestamp=self.FW["fw_dt"],
                 port=self.GetPort(),
             )
-        else:
-            return __(
-                "{device_name} – Firmware {fw_version} ({port})",
-                device_name=self.GetFullName(),
-                fw_version=self.GetFirmwareVersion(),
-                port=self.GetPort(),
-            )
+        return __(
+            "{device_name} – Firmware {fw_version} ({port})",
+            device_name=self.GetFullName(),
+            fw_version=self.GetFirmwareVersion(),
+            port=self.GetPort(),
+        )
 
     def CanSetVoltageBySwitch(self):
         return (self.FW["pcb_ver"] & 0x7F) == 1
@@ -415,7 +414,7 @@ class FirmwareUpdater:
                     text=__(
                         "Couldn’t access the {mode_txt} file. Remove cartridge and try again.",
                         mode_txt="MODE.TXT",
-                    )
+                    ),
                 )
                 return 2
 
@@ -581,7 +580,7 @@ try:
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             self.setWindowTitle("FlashGBX – " + __("Firmware Updater for {device_name}", device_name="Joey Jr"))
             self.setWindowFlags(
-                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
+                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint,
             )
 
             self.APP = app
@@ -702,7 +701,7 @@ try:
 
             self.rowUpdate2 = QtWidgets.QHBoxLayout()
             self.lblUpdateDisclaimer = QtWidgets.QLabel(
-                __("Please note that FlashGBX is not officially supported by BennVenn.")
+                __("Please note that FlashGBX is not officially supported by BennVenn."),
             )
             self.lblUpdateDisclaimer.setWordWrap(True)
             self.lblUpdateDisclaimer.setAlignment(QtGui.Qt.AlignmentFlag.AlignCenter)
@@ -779,7 +778,7 @@ try:
             if self.btnClose.isEnabled() is False:
                 text = (
                     __(
-                        "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state."
+                        "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state.",
                     )
                     + " "
                     + __("You can still recover it by running the Firmware Updater again later.")
@@ -834,7 +833,7 @@ try:
                         __("Firmware Update ({firmware_jr})", firmware_jr="FIRMWARE.JR"),
                     )[0]
                     if path == "":
-                        return
+                        return None
                     if not os.path.basename(path).endswith(".JR"):
                         msgbox = QtWidgets.QMessageBox(
                             parent=self,
@@ -848,8 +847,8 @@ try:
                             standardButtons=QtWidgets.QMessageBox.Ok,
                         )
                         answer = msgbox.exec()
-                        return
-                    elif os.path.exists(os.path.dirname(path) + "DEBUG.TXT"):
+                        return None
+                    if os.path.exists(os.path.dirname(path) + "DEBUG.TXT"):
                         msgbox = QtWidgets.QMessageBox(
                             parent=self,
                             icon=QtWidgets.QMessageBox.Critical,
@@ -861,7 +860,7 @@ try:
                             standardButtons=QtWidgets.QMessageBox.Ok,
                         )
                         answer = msgbox.exec()
-                        return
+                        return None
                     self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
                     fw = path
                     fn = None
@@ -915,7 +914,7 @@ try:
             msgbox.setDefaultButton(QtWidgets.QMessageBox.Yes)
             answer = msgbox.exec()
             if answer == QtWidgets.QMessageBox.No:
-                return
+                return None
             self.grpAvailableFwUpdates.setEnabled(False)
             self.btnUpdate.setEnabled(False)
             self.btnClose.setEnabled(False)
@@ -950,7 +949,7 @@ try:
                     self.DEVICE = None
                     self.reject()
                     return True
-                elif ret == 2:
+                if ret == 2:
                     text = __("The firmware update has failed. Please try again.")
                     self.grpAvailableFwUpdates.setEnabled(True)
                     self.btnUpdate.setEnabled(True)
@@ -964,7 +963,7 @@ try:
                     )
                     answer = msgbox.exec()
                     return False
-                elif ret == 3:
+                if ret == 3:
                     text = __("The firmware update file is corrupted. Please re-install the application.")
                     self.grpAvailableFwUpdates.setEnabled(True)
                     self.btnUpdate.setEnabled(True)
@@ -978,11 +977,11 @@ try:
                     )
                     answer = msgbox.exec()
                     return False
-                elif ret == 4:
+                if ret == 4:
                     if platform.system() == "Darwin":
                         self.SetStatus(__("No device found."), enableUI=True)
                         text = __(
-                            "If your Joey Jr device is currently running the Drag’n’Drop firmware, please update the firmware on Windows or Linux, or use the standalone firmware updater."
+                            "If your Joey Jr device is currently running the Drag’n’Drop firmware, please update the firmware on Windows or Linux, or use the standalone firmware updater.",
                         )
                         msgbox = QtWidgets.QMessageBox(
                             parent=self,

@@ -128,9 +128,8 @@ class Flashcart:
                 length += 1
             if length == 0:
                 length = 2
-        else:
-            if length == 0:
-                length = 1
+        elif length == 0:
+            length = 1
         return self._cart_read(address, length)
 
     def CartWrite(
@@ -186,15 +185,13 @@ class Flashcart:
         buffer_size = self.GetBufferSize()
         if buffer_size is False:
             return False
-        else:
-            return "buffer_write" in self._config["commands"]
+        return "buffer_write" in self._config["commands"]
 
     def SupportsPageWrite(self) -> bool:
         buffer_size = self.GetBufferSize()
         if buffer_size is False:
             return False
-        else:
-            return "page_write" in self._config["commands"]
+        return "page_write" in self._config["commands"]
 
     def SupportsSingleWrite(self) -> bool:
         return "single_write" in self._config["commands"]
@@ -241,7 +238,7 @@ class Flashcart:
     def GetBufferSize(self) -> int | Literal[False]:
         if "buffer_size" in self._config:
             return self._config["buffer_size"]
-        elif "buffer_write" in self._config["commands"]:
+        if "buffer_write" in self._config["commands"]:
             if "cfi" in self._config:
                 cfi = self._config["cfi"]
             else:
@@ -252,14 +249,13 @@ class Flashcart:
                         del self._config["commands"]["buffer_write"]
                         print(__("Buffered write disabled."))
                     return False
-            if not "buffer_size" in cfi:
+            if "buffer_size" not in cfi:
                 return False
             buffer_size = cfi["buffer_size"]
             dprint("Buffer size was read from CFI data:", cfi["buffer_size"])
             self._config["buffer_size"] = buffer_size
             return buffer_size
-        else:
-            return False
+        return False
 
     def GetCommands(self, key: str) -> ProfileCommands:
         if key not in self._config["commands"]:
@@ -327,7 +323,7 @@ class Flashcart:
 
     def VerifyFlashID(self) -> tuple[bool, list[int]]:
         if "flash_ids_banks" in self._config:
-            bank_flash_ids = cast(Sequence[Sequence[int]], self._config["flash_ids_banks"])
+            bank_flash_ids = cast("Sequence[Sequence[int]]", self._config["flash_ids_banks"])
             if not bank_flash_ids:
                 return (False, [])
             cart_flash_ids: list[list[int]] = []
@@ -403,9 +399,9 @@ class Flashcart:
     def GetSectorMap(self) -> SectorMap | Literal[False]:
         if self._sector_map is not None:
             return self._sector_map
-        elif "sector_size" in self._config:
+        if "sector_size" in self._config:
             return self._config["sector_size"]
-        elif "sector_erase" in self._config["commands"]:
+        if "sector_erase" in self._config["commands"]:
             if "cfi" in self._config:
                 cfi = self._config["cfi"]
             else:
@@ -422,8 +418,7 @@ class Flashcart:
             dprint("Sector size map was read from CFI data:", cfi["erase_sector_blocks"])
             self._config["sector_size"] = sector_size
             return sector_size
-        else:
-            return False
+        return False
 
     def ChipErase(self) -> bool:
         self.Reset(full_reset=True)
@@ -434,7 +429,7 @@ class Flashcart:
                 "time_start": time_start,
                 "time_estimated": self._config["chip_erase_timeout"],
                 "abortable": False,
-            }
+            },
         )
         for i in range(len(self._config["commands"]["chip_erase"])):
             addr = self._config["commands"]["chip_erase"][i][0]
@@ -468,7 +463,7 @@ class Flashcart:
                             "time_start": time_start,
                             "time_estimated": self._config["chip_erase_timeout"],
                             "abortable": False,
-                        }
+                        },
                     )
                     if self._config.get("wait_read_status_register"):
                         for j in range(len(self._config["commands"]["read_status_register"])):
@@ -498,7 +493,7 @@ class Flashcart:
                             self._config["commands"]["chip_erase_wait_for"][i][2],
                             data,
                             str((wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]) == data),
-                        )
+                        ),
                     )
                     wait_for = wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]
                     if wait_for == data:
@@ -516,10 +511,10 @@ class Flashcart:
                                 )
                                 + "\n\n"
                                 + __(
-                                    "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."
+                                    "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
                                 ),
                                 "abortable": False,
-                            }
+                            },
                         )
                         return False
         self.Reset(full_reset=True)
@@ -620,7 +615,7 @@ class Flashcart:
                                 self._config["commands"]["sector_erase_wait_for"][i][2],
                                 data,
                                 str(wait_for & self._config["commands"]["sector_erase_wait_for"][i][2] == data),
-                            )
+                            ),
                         )
                         wait_for = wait_for & self._config["commands"]["sector_erase_wait_for"][i][2]
                         time.sleep(0.05)
@@ -637,7 +632,7 @@ class Flashcart:
                                 "sector_pos": buffer_pos,
                                 "time_start": time.time(),
                                 "abortable": True,
-                            }
+                            },
                         )
                     dprint("Done waiting!")
 
@@ -647,7 +642,7 @@ class Flashcart:
         if raw_sector_map is None:
             return False
         if isinstance(raw_sector_map, list):
-            sector_map = cast(list[list[int]], raw_sector_map)
+            sector_map = cast("list[list[int]]", raw_sector_map)
             try:
                 sector_map[self._sector_pos][1] -= 1
                 if (sector_map[self._sector_pos][1] == 0) and (len(sector_map) > self._sector_pos + 1):
@@ -674,7 +669,7 @@ class Flashcart:
             self.CartWrite([[3, 0x40]], sram=True)
             self.CartWrite([[4, 0x00]], sram=True)
             return True
-        elif self._config["flash_bank_select_type"] == 2:  # Flash2Advance Ultra
+        if self._config["flash_bank_select_type"] == 2:  # Flash2Advance Ultra
             bank1 = 0 if index < 4 else 0x10
             bank2 = index % 4 * 0x400
             self.CartWrite([[0x987654 * 2, 0x5354]], fast_write=False)
@@ -715,7 +710,7 @@ class CFI:
         else:
             return False
 
-        info = cast(CFIInfo, {"d_swap": d_swap})
+        info = cast("CFIInfo", {"d_swap": d_swap})
         for pair in d_swap:
             for j in range(len(buffer)):
                 buffer[j] = CFI.swap_bits(buffer[j], pair)
@@ -803,7 +798,7 @@ class CFI:
                 __(
                     "Error: Trying to parse CFI data resulted in an error: {err}",
                     err=str(err),
-                )
+                ),
             )
             try:
                 with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f:
@@ -983,10 +978,10 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
                     )
                     + "\n\n"
                     + __(
-                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."
+                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
                     ),
                     "abortable": False,
-                }
+                },
             )
             return False
 
@@ -1038,7 +1033,7 @@ class Flashcart_DMG_MMSA(Flashcart):
                 "sector_pos": 0,
                 "time_start": time.time(),
                 "abortable": False,
-            }
+            },
         )
 
         if self.UnlockForWriting() is False:
@@ -1100,7 +1095,7 @@ class Flashcart_DMG_MMSA(Flashcart):
                     "sector_pos": 0,
                     "time_start": time.time(),
                     "abortable": False,
-                }
+                },
             )
             raw = self.CartRead(0)
             sr = raw[0] if raw else 0
@@ -1121,10 +1116,10 @@ class Flashcart_DMG_MMSA(Flashcart):
                     )
                     + "\n\n"
                     + __(
-                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."
+                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
                     ),
                     "abortable": False,
-                }
+                },
             )
             return False
 
@@ -1274,10 +1269,10 @@ class Flashcart_DMG_MMSA(Flashcart):
                     )
                     + "\n\n"
                     + __(
-                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."
+                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
                     ),
                     "abortable": False,
-                }
+                },
             )
             return False
 
@@ -1414,10 +1409,10 @@ class Flashcart_DMG_MMSA(Flashcart):
                     )
                     + "\n\n"
                     + __(
-                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct."
+                        "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
                     ),
                     "abortable": False,
-                }
+                },
             )
             return False
         return True
@@ -1433,10 +1428,10 @@ def _profile_flash_ids(profile: Mapping[str, object]) -> set[tuple[int, ...]]:
         return set()
 
     flash_ids: set[tuple[int, ...]] = set()
-    for raw_flash_id in cast(Sequence[object], raw_flash_ids):
+    for raw_flash_id in cast("Sequence[object]", raw_flash_ids):
         if not isinstance(raw_flash_id, (list, tuple)):
             continue
-        values = cast(Sequence[object], raw_flash_id)
+        values = cast("Sequence[object]", raw_flash_id)
         if all(isinstance(value, int) for value in values):
             flash_ids.add(tuple(value for value in values if isinstance(value, int)))
     return flash_ids
@@ -1452,7 +1447,7 @@ def has_3v_compatible_profile(carts: Iterable[object], cart_type_index: int | No
     selected = profiles[cart_type_index]
     if not isinstance(selected, dict):
         return False
-    selected_profile = cast(Mapping[str, object], selected)
+    selected_profile = cast("Mapping[str, object]", selected)
     if selected_profile.get("voltage", 5) != 5:
         return False
     selected_id_set = _profile_flash_ids(selected_profile)
@@ -1464,7 +1459,7 @@ def has_3v_compatible_profile(carts: Iterable[object], cart_type_index: int | No
             continue
         if not isinstance(profile, dict):
             continue
-        candidate = cast(Mapping[str, object], profile)
+        candidate = cast("Mapping[str, object]", profile)
         if candidate.get("type") != selected_type:
             continue
         if candidate.get("voltage", 5) != 3.3 and not candidate.get("voltage_variants", False):

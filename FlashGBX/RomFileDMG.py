@@ -132,7 +132,7 @@ class RomFileDMG:
                 0xD5,
                 0x4B,
                 0x4C,
-            ]
+            ],
         )
         data["cgb"] = int(buffer[0x143])
         data["sgb"] = int(buffer[0x146])
@@ -232,41 +232,41 @@ class RomFileDMG:
 
             # MBC1M
             if (
-                data["mapper_raw"] == 0x03
-                and data["game_title"] == "MOMOCOL"
-                and data["header_checksum"] == 0x28
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "BOMCOL"
-                and data["header_checksum"] == 0x86
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "BOMSEL"
-                and data["header_checksum"] == 0x9C
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "GENCOL"
-                and data["header_checksum"] == 0x8A
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "SUPERCHINESE 123"
-                and data["header_checksum"] == 0xE4
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "MORTALKOMBATI&II"
-                and data["header_checksum"] == 0xB9
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "MORTALKOMBAT DUO"
-                and data["header_checksum"] == 0xA7
+                (data["mapper_raw"] == 0x03 and data["game_title"] == "MOMOCOL" and data["header_checksum"] == 0x28)
+                or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMCOL" and data["header_checksum"] == 0x86)
+                or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMSEL" and data["header_checksum"] == 0x9C)
+                or (data["mapper_raw"] == 0x01 and data["game_title"] == "GENCOL" and data["header_checksum"] == 0x8A)
+                or (
+                    data["mapper_raw"] == 0x01
+                    and data["game_title"] == "SUPERCHINESE 123"
+                    and data["header_checksum"] == 0xE4
+                )
+                or (
+                    data["mapper_raw"] == 0x01
+                    and data["game_title"] == "MORTALKOMBATI&II"
+                    and data["header_checksum"] == 0xB9
+                )
+                or (
+                    data["mapper_raw"] == 0x01
+                    and data["game_title"] == "MORTALKOMBAT DUO"
+                    and data["header_checksum"] == 0xA7
+                )
             ):
                 data["mapper_raw"] += 0x100
 
             # GB-Memory (DMG-MMSA-JPN)
             if (
-                data["mapper_raw"] == 0x19
-                and data["game_title"] == "NP M-MENU MENU"
-                and data["header_checksum"] == 0xD3
-                or data["mapper_raw"] == 0x01
-                and data["game_title"] == "DMG MULTI MENU "
-                and data["header_checksum"] == 0x36
-                or data["mapper_raw"] == 0x1B
-                and data["game_title"] == "GBMEM-MENU MMSA"
-                and data["version"] == 0x01
+                (
+                    data["mapper_raw"] == 0x19
+                    and data["game_title"] == "NP M-MENU MENU"
+                    and data["header_checksum"] == 0xD3
+                )
+                or (
+                    data["mapper_raw"] == 0x01
+                    and data["game_title"] == "DMG MULTI MENU "
+                    and data["header_checksum"] == 0x36
+                )
+                or (data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01)
             ):
                 data["rom_size_raw"] = 0x05
                 data["ram_size_raw"] = 0x04
@@ -278,18 +278,22 @@ class RomFileDMG:
 
             # MMM01 (Mani 4 in 1)
             elif (
-                data["mapper_raw"] == 0x11
-                and data["game_title"] == "BOUKENJIMA2 SET"
-                and data["header_checksum"] == 0
-                or data["mapper_raw"] == 0x11
-                and data["game_title"] == "BUBBLEBOBBLE SET"
-                and data["header_checksum"] == 0xC6
-                or data["mapper_raw"] == 0x11
-                and data["game_title"] == "GANBARUGA SET"
-                and data["header_checksum"] == 0x90
-                or data["mapper_raw"] == 0x11
-                and data["game_title"] == "RTYPE 2 SET"
-                and data["header_checksum"] == 0x32
+                (data["mapper_raw"] == 0x11 and data["game_title"] == "BOUKENJIMA2 SET" and data["header_checksum"] == 0)
+                or (
+                    data["mapper_raw"] == 0x11
+                    and data["game_title"] == "BUBBLEBOBBLE SET"
+                    and data["header_checksum"] == 0xC6
+                )
+                or (
+                    data["mapper_raw"] == 0x11
+                    and data["game_title"] == "GANBARUGA SET"
+                    and data["header_checksum"] == 0x90
+                )
+                or (
+                    data["mapper_raw"] == 0x11
+                    and data["game_title"] == "RTYPE 2 SET"
+                    and data["header_checksum"] == 0x32
+                )
             ):
                 data["mapper_raw"] = 0x0B
 
@@ -331,7 +335,7 @@ class RomFileDMG:
                     0x12,
                     0x49,
                     0x13,
-                ]
+                ],
             ):  # Exodus / Joshua
                 data["rom_size_raw"] = 0x02
                 data["mapper_raw"] = 0x202
@@ -357,7 +361,7 @@ class RomFileDMG:
                     0x1A,
                     0xA9,
                     0xA2,
-                ]
+                ],
             ):  # Spiritual Warfare
                 data["rom_size_raw"] = 0x03
                 data["mapper_raw"] = 0x202
@@ -383,7 +387,7 @@ class RomFileDMG:
                     0xA4,
                     0xD6,
                     0x35,
-                ]
+                ],
             ):  # King James Bible
                 data["rom_size_raw"] = 0x05
                 data["mapper_raw"] = 0x202
@@ -409,7 +413,7 @@ class RomFileDMG:
                     0x62,
                     0xDD,
                     0x34,
-                ]
+                ],
             ):  # NIV Bible
                 data["rom_size_raw"] = 0x06
                 data["mapper_raw"] = 0x202
@@ -437,7 +441,7 @@ class RomFileDMG:
                     0xC6,
                     0xB7,
                     0xBD,
-                ]
+                ],
             ):
                 data["rom_size_raw"] = 0x02
                 data["ram_size_raw"] = 0x203
@@ -487,7 +491,7 @@ class RomFileDMG:
                     0xDE,
                     0xC5,
                     0x23,
-                ]
+                ],
             ):
                 data["rom_size_raw"] = 0x02
                 data["ram_size_raw"] = 0
@@ -525,7 +529,7 @@ class RomFileDMG:
                     0xEC,
                     0x9A,
                     0xF2,
-                ]
+                ],
             ) or hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
                 [
                     0xC9,
@@ -548,7 +552,7 @@ class RomFileDMG:
                     0xED,
                     0xCC,
                     0x67,
-                ]
+                ],
             ):
                 data["rom_size_raw"] = 0x02
                 data["ram_size_raw"] = 0
@@ -588,7 +592,7 @@ class RomFileDMG:
                         0x00,
                         0x70,
                         0x77,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -617,7 +621,7 @@ class RomFileDMG:
                         0xF1,
                         0xEF,
                         0x42,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x01
                     data["mapper_raw"] = 0x204
@@ -646,7 +650,7 @@ class RomFileDMG:
                         0xB5,
                         0x68,
                         0x01,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -675,7 +679,7 @@ class RomFileDMG:
                         0xF4,
                         0x9D,
                         0x34,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -704,7 +708,7 @@ class RomFileDMG:
                         0x47,
                         0xCD,
                         0x8E,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -733,7 +737,7 @@ class RomFileDMG:
                         0x77,
                         0x91,
                         0x60,
-                    ]
+                    ],
                 ):
                     sachen_hash2 = hashlib.sha1(buffer[0x0:0x80]).digest()
                     if sachen_hash2 == bytearray(
@@ -758,7 +762,7 @@ class RomFileDMG:
                             0x88,
                             0x03,
                             0xBC,
-                        ]
+                        ],
                     ):
                         data["rom_size_raw"] = 0x04
                         data["mapper_raw"] = 0x204
@@ -793,7 +797,7 @@ class RomFileDMG:
                         0x74,
                         0x1B,
                         0xA8,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -822,7 +826,7 @@ class RomFileDMG:
                         0x78,
                         0xE5,
                         0x39,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x03
                     data["mapper_raw"] = 0x204
@@ -851,7 +855,7 @@ class RomFileDMG:
                         0x0A,
                         0xB3,
                         0xFF,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x01
                     data["mapper_raw"] = 0x204
@@ -880,7 +884,7 @@ class RomFileDMG:
                         0xBF,
                         0xE0,
                         0x9F,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x06
                     data["mapper_raw"] = 0x204
@@ -910,7 +914,7 @@ class RomFileDMG:
                         0xBA,
                         0xB5,
                         0x99,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x06
                     data["mapper_raw"] = 0x204
@@ -940,7 +944,7 @@ class RomFileDMG:
                         0x0A,
                         0xA0,
                         0x9D,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -970,7 +974,7 @@ class RomFileDMG:
                         0xD1,
                         0x7E,
                         0x9D,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -1000,7 +1004,7 @@ class RomFileDMG:
                         0xB7,
                         0x26,
                         0xE1,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -1030,7 +1034,7 @@ class RomFileDMG:
                         0xB0,
                         0xA0,
                         0xDE,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -1060,7 +1064,7 @@ class RomFileDMG:
                         0x21,
                         0xFB,
                         0x78,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x02
                     data["mapper_raw"] = 0x204
@@ -1090,7 +1094,7 @@ class RomFileDMG:
                         0x63,
                         0x34,
                         0x7B,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -1120,7 +1124,7 @@ class RomFileDMG:
                         0xD4,
                         0x8F,
                         0x2C,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x04
                     data["mapper_raw"] = 0x204
@@ -1150,7 +1154,7 @@ class RomFileDMG:
                         0x39,
                         0x47,
                         0xE7,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x06
                     data["mapper_raw"] = 0x204
@@ -1180,7 +1184,7 @@ class RomFileDMG:
                         0xF6,
                         0x2F,
                         0x00,
-                    ]
+                    ],
                 ):
                     data["rom_size_raw"] = 0x06
                     data["mapper_raw"] = 0x204
@@ -1220,7 +1224,7 @@ class RomFileDMG:
                         mapper="0x{:02X}".format(data["mapper_raw"]),
                     ),
                     ANSI.RESET,
-                )
+                ),
             )
 
         self.DATA = data
@@ -1250,14 +1254,14 @@ class RomFileDMG:
                         __(
                             "No database entry found for this title (Header SHA1: {sha1})",
                             sha1=data["header_sha1"],
-                        )
+                        ),
                     )
         else:
             print(
                 __(
                     "Error: Database for Game Boy titles not found at {path}",
                     path=AppContext.CONFIG_PATH + os.sep + "db_DMG.json",
-                )
+                ),
             )
         return db_entry
 
@@ -1333,12 +1337,12 @@ def from_isx(buffer):
             rec_type = struct.unpack("B", data_input.read(1))[0]
             if rec_type == 4:
                 break
-            elif rec_type != 1:
+            if rec_type != 1:
                 print(
                     __(
                         "Warning: Unhandled ISX record type {type} found. Converted ROM may not be working correctly.",
                         type=f"0x{rec_type:02X}",
-                    )
+                    ),
                 )
                 continue
             bank = struct.unpack("B", data_input.read(1))[0]

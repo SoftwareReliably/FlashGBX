@@ -257,7 +257,7 @@ def loadTranslation(language):
     if not os.path.exists(filename):
         raise FileNotFoundError(f"{filename} not found")
 
-    with open(filename, "r", encoding="utf-8") as f:
+    with open(filename, encoding="utf-8") as f:
         lines = f.readlines()
 
     for line in lines:
@@ -392,8 +392,7 @@ def format_number(n):
 def format_decimal(value, precision=2, grouping=False, localized=True):
     if localized:
         return locale.format_string(f"%.{precision}f", value, grouping=grouping)
-    else:
-        return "{:.{}f}".format(value, precision)
+    return "{:.{}f}".format(value, precision)
 
 
 def loadQtTranslation(app=None, language=None):

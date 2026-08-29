@@ -40,7 +40,7 @@ _MENU_TITLES: frozenset[str] = frozenset(
         "DMG MULTI MENU ",
         "GBMEM-MENU MMSA",
         "GBMEM-MENU 256M",
-    )
+    ),
 )
 
 
@@ -115,10 +115,31 @@ ParsedMapResult: TypeAlias = (  # noqa: UP040
 )
 
 _MapValues: TypeAlias = tuple[  # noqa: UP040
-    bytes, int, int, bytes, bytes, bytes, bytes, int, bytes, bytes, int
+    bytes,
+    int,
+    int,
+    bytes,
+    bytes,
+    bytes,
+    bytes,
+    int,
+    bytes,
+    bytes,
+    int,
 ]
 _MenuValues: TypeAlias = tuple[  # noqa: UP040
-    int, int, int, int, int, bytes, bytes, bytes, bytes, bytes, bytes, bytes
+    int,
+    int,
+    int,
+    int,
+    int,
+    bytes,
+    bytes,
+    bytes,
+    bytes,
+    bytes,
+    bytes,
+    bytes,
 ]
 
 
@@ -180,8 +201,7 @@ class GBMemoryMap:
     @staticmethod
     def _read_header(data: ByteBuffer) -> HeaderData:
         """Read a DMG header from any supported bytes-like object."""
-
-        return cast(HeaderData, RomFileDMG(bytearray(data)).GetHeader())
+        return cast("HeaderData", RomFileDMG(bytearray(data)).GetHeader())
 
     @staticmethod
     def _title_encoding(game_title: str) -> str:
@@ -265,10 +285,10 @@ class GBMemoryMap:
         start = layout.base_offset + index * layout.item_stride
         item_size = struct.calcsize(layout.format)
         values = cast(
-            _MenuValues,
+            "_MenuValues",
             struct.unpack(layout.format, data[start : start + item_size]),
         )
-        return cast(_RawMenuItem, dict(zip(_MENU_ITEM_KEYS, values)))
+        return cast("_RawMenuItem", dict(zip(_MENU_ITEM_KEYS, values)))
 
     def _reset_map_data(self) -> None:
         self.MAP_DATA[:] = b"\xff" * 0x80
@@ -301,7 +321,7 @@ class GBMemoryMap:
         if len(map_data) < _MAP_DATA_SIZE:
             return False
 
-        values = cast(_MapValues, struct.unpack(_MAP_FORMAT, map_data[:_MAP_DATA_SIZE]))
+        values = cast("_MapValues", struct.unpack(_MAP_FORMAT, map_data[:_MAP_DATA_SIZE]))
         (
             mapper_params,
             f_size,
@@ -391,7 +411,7 @@ class GBMemoryMap:
 
                 db_entry = rom_header_game.get("db")
                 if isinstance(db_entry, dict) and db_entry.get("rc") == entry["crc32"]:
-                    entry["db_entry"] = cast(HeaderData, db_entry)
+                    entry["db_entry"] = cast("HeaderData", db_entry)
                 else:
                     rom_header_game["db"] = None
             dprint(f"GB-Memory Game {index:d}: {entry!s:s}")
@@ -399,14 +419,13 @@ class GBMemoryMap:
 
         menu_data["num_games"] = num_games
         if not menu_data["timestamp"] and len(data_list) > 1:
-            first_entry = cast(ParsedMenuEntry, data_list[1])
+            first_entry = cast("ParsedMenuEntry", data_list[1])
             menu_data["timestamp"] = first_entry["timestamp"]
             menu_data["kiosk_id"] = first_entry["kiosk_id"]
         return data_list
 
     def ImportROM(self, data: ByteBuffer) -> bool:
         """Generate hidden-sector map data for a ROM or GB-Memory menu ROM."""
-
         self._reset_map_data()
         self.IS_MENU = False
         if len(data) < 0x180:
@@ -512,7 +531,7 @@ class GBMemoryMap:
                     sram_type,
                     rom_start_block,
                     ram_start_block,
-                )
+                ),
             )
 
         for index, map_raw in enumerate(menu_items):
@@ -540,7 +559,7 @@ class GBMemoryMap:
                     "Note: The ROM is using a mapper type that may be incompatible with the {gb_memory_cartridge}.",
                     gb_memory_cartridge="GB Memory Cartridge",
                 )
-                + f" (0x{mbc:02X})"
+                + f" (0x{mbc:02X})",
             )
             mbc_type = 5
         return mbc_type

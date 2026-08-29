@@ -52,7 +52,7 @@ class DumpReport:
                 ("MD5", di["hash_md5"]),
                 ("SHA-1", di["hash_sha1"]),
                 ("SHA-256", di["hash_sha256"]),
-            ]
+            ],
         )
 
         lines += ["", "== General Information =="]
@@ -185,7 +185,7 @@ class DumpReport:
                                 ("Write Counter", f"{p0['write_count']:d}"),
                                 ("Cartridge ID", p0["cart_id"]),
                                 ("Raw Map Data", raw_data),
-                            ]
+                            ],
                         )
                         for i in range(1, len(di["gbmem_parsed"])):
                             entry = di["gbmem_parsed"][i]
@@ -221,8 +221,8 @@ class DumpReport:
                                         (
                                             "Database Match",
                                             f"{entry['db_entry']['gn']} {entry['db_entry']['ne']}",
-                                        )
-                                    ]
+                                        ),
+                                    ],
                                 )
                     elif isinstance(di["gbmem_parsed"]["game_code"], str):
                         p = di["gbmem_parsed"]
@@ -236,7 +236,7 @@ class DumpReport:
                                 ("Write Counter", f"{p['write_count']:d}"),
                                 ("Cartridge ID", p["cart_id"]),
                                 ("Raw Map Data", raw_data),
-                            ]
+                            ],
                         )
                 else:
                     lines += _fields_to_lines([("GB-Memory Data", raw_data)])
@@ -263,7 +263,7 @@ class DumpReport:
                         (
                             "ROM Size",
                             Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
-                        )
+                        ),
                     )
                 lines += ["", "== Database Match =="]
                 lines += _fields_to_lines(db_fields)
@@ -329,7 +329,7 @@ class DumpReport:
                         (
                             "ROM Size",
                             Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
-                        )
+                        ),
                     )
                 if "st" in db:
                     db_fields.append(("Save Type", AgbSaveTypes(db["st"]).GetString(localized=False)))

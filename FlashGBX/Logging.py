@@ -36,7 +36,7 @@ class Logger:
             "FlashGBX {version}\n© 2020–{year} Lesserkuma".format(
                 version=AppInfo.VERSION,
                 year=time.strftime("%Y"),
-            )
+            ),
         )
 
     def write(self, *args, **kwargs):

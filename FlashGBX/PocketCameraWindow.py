@@ -77,7 +77,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.APP_PATH = app_path
         self.setWindowTitle(AppInfo.NAME + " – " + __("GB Camera Album Viewer"))
         self.setWindowFlags(
-            (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
+            (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint,
         )
 
         self.layout = QtWidgets.QGridLayout()
@@ -105,7 +105,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 __("Game Boy Color (Pocket Camera)"),
                 __("Game Boy Color (Game Boy Camera Gold)"),
                 __("Game Boy Color (Game Boy Camera)"),
-            ]
+            ],
         )
         self.cmbColor.currentIndexChanged.connect(self.SetColors)
         self.cmbColor.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
@@ -150,7 +150,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.lblPhotoViewer.setMinimumSize(256, 223)
         self.lblPhotoViewer.setMaximumSize(256, 223)
         self.lblPhotoViewer.setStyleSheet(
-            "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;"
+            "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;",
         )
         self.lblPhotoViewer.mousePressEvent = self.lblPhotoViewer_Clicked
         self.grpPhotoViewLayout.addWidget(self.lblPhotoViewer)
@@ -184,12 +184,13 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
                 self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
                 self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(
-                    self.lblPhoto_Clicked, index=len(self.lblPhoto) - 1
+                    self.lblPhoto_Clicked,
+                    index=len(self.lblPhoto) - 1,
                 )
                 self.lblPhoto[len(self.lblPhoto) - 1].setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
                 self.lblPhoto[len(self.lblPhoto) - 1].setAlignment(QtCore.Qt.AlignCenter)
                 self.lblPhoto[len(self.lblPhoto) - 1].setStyleSheet(
-                    "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #fefefe; border-right: 1px solid #fefefe;"
+                    "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #fefefe; border-right: 1px solid #fefefe;",
                 )
                 rowsPhotos[row].addWidget(self.lblPhoto[len(self.lblPhoto) - 1])
             self.grpPhotoThumbsLayout.addLayout(rowsPhotos[row])
@@ -278,16 +279,13 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.UpdateViewer(self.CUR_INDEX)
 
     def OpenFile(self, file):
-        if (
-            isinstance(file, bytearray)
-            and len(file) == 0x100000
-            or isinstance(file, str)
-            and os.path.getsize(file) == 0x100000
+        if (isinstance(file, bytearray) and len(file) == 0x100000) or (
+            isinstance(file, str) and os.path.getsize(file) == 0x100000
         ):
             dlg_args = {
                 "title": "Photo!",
                 "intro": __(
-                    "A “Photo!” save file was detected. Please select the roll of pictures that you would like to load."
+                    "A “Photo!” save file was detected. Please select the roll of pictures that you would like to load.",
                 ),
                 "params": [
                     [
@@ -409,13 +407,13 @@ class PocketCameraWindow(QtWidgets.QDialog):
                     self,
                     AppInfo.NAME,
                     __(
-                        "There are already pictures that use the same file names. If you continue, these files will be overwritten."
+                        "There are already pictures that use the same file names. If you continue, these files will be overwritten.",
                     ),
                     QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
                 )
                 if answer == QtWidgets.QMessageBox.Ok:
                     break
-                elif answer == QtWidgets.QMessageBox.Cancel:
+                if answer == QtWidgets.QMessageBox.Cancel:
                     return
 
         for i in range(32):
@@ -459,7 +457,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 draw.line([0, 112, 128, 0], fill=(255, 0, 0, 192), width=8)
                 pic.paste(draw_bg, mask=draw_bg)
                 self.lblPhoto[i].setToolTip(
-                    __("This picture was marked as “deleted” and may be overwritten when you take new pictures.")
+                    __("This picture was marked as “deleted” and may be overwritten when you take new pictures."),
                 )
             self.CUR_THUMBS[i] = ImageQt(pic.resize((47, 41), Image.Resampling.HAMMING))
             qpixmap = QtGui.QPixmap.fromImage(self.CUR_THUMBS[i])
@@ -477,11 +475,11 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         for i in range(30):
             self.lblPhoto[i].setStyleSheet(
-                "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;"
+                "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;",
             )
 
         self.CUR_PIC = ImageQt(
-            cam.GetPicture(index).resize((int(256 * scale_factor), int(224 * scale_factor)), resampler)
+            cam.GetPicture(index).resize((int(256 * scale_factor), int(224 * scale_factor)), resampler),
         )
         if index < 30:
             self.lblPhoto[index].setStyleSheet("border: 3px solid green; padding: 1px;")

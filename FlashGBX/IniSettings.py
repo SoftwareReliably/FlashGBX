@@ -51,7 +51,7 @@ class IniSettings:
         if self.SETTINGS is None:
             return
         if self.FILENAME is not False:
-            with open(self.FILENAME, "r", encoding="UTF-8") as f:
+            with open(self.FILENAME, encoding="UTF-8") as f:
                 self.SETTINGS.read_file(f)
         if not self.SETTINGS.has_section(self.MAIN_SECTION):
             self.SETTINGS.add_section(self.MAIN_SECTION)

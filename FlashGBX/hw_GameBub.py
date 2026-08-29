@@ -74,7 +74,7 @@ class GbxDevice(LK_Device):
                                 device_name=self.DEVICE_NAME,
                                 port=ports[i],
                             ),
-                        ]
+                        ],
                     )
                 continue
 
@@ -164,13 +164,12 @@ class GbxDevice(LK_Device):
                 timestamp=self.FW["fw_dt"],
                 port=self.GetPort(),
             )
-        else:
-            return __(
-                "{device_name} – Firmware {fw_version} ({port})",
-                device_name=self.GetFullName(),
-                fw_version=self.GetFirmwareVersion(),
-                port=self.GetPort(),
-            )
+        return __(
+            "{device_name} – Firmware {fw_version} ({port})",
+            device_name=self.GetFullName(),
+            fw_version=self.GetFirmwareVersion(),
+            port=self.GetPort(),
+        )
 
     def CanSetVoltageBySwitch(self):
         return False

@@ -44,7 +44,6 @@ def modern_firmware(**overrides: object) -> FirmwareInfo:
 
 def intel_hex_record(address: int, record_type: int, data: bytes = b"") -> str:
     """Build one checksummed Intel HEX record for parser tests."""
-
     record = bytearray([len(data)])
     record.extend(address.to_bytes(2, byteorder="big"))
     record.append(record_type)
@@ -55,7 +54,6 @@ def intel_hex_record(address: int, record_type: int, data: bytes = b"") -> str:
 
 def build_firmware_archive(path: Path, firmware: bytes) -> None:
     """Create the encrypted archive format consumed by ``FirmwareUpdater``."""
-
     key = bytearray(b"unit-test-key")
     seed = 0x12345678
     total_length = len(firmware) + 24
@@ -83,7 +81,7 @@ def test_parse_intel_hex_supports_offsets_and_fills_address_gaps() -> None:
             intel_hex_record(1, 0x00, b"!"),
             intel_hex_record(0, 0x05, b"\x00\x00\x00\x00"),
             intel_hex_record(0, 0x01),
-        ]
+        ],
     )
 
     assert _parse_intel_hex(image) == bytearray(b"\xff!" + b"\xff" * 16 + b"RED")
@@ -114,7 +112,7 @@ def test_parse_intel_hex_rejects_oversized_images() -> None:
         [
             intel_hex_record(MAX_V13_FIRMWARE_SIZE - 1, 0x00, b"x"),
             intel_hex_record(0, 0x01),
-        ]
+        ],
     )
 
     with pytest.raises(ValueError, match="too large"):
@@ -123,7 +121,6 @@ def test_parse_intel_hex_rejects_oversized_images() -> None:
 
 def test_initialize_returns_false_without_discovered_hardware() -> None:
     """The default test environment must never fall through to real serial."""
-
     device = GbxDevice()
 
     assert device.Initialize() is False
@@ -384,7 +381,7 @@ def test_read_rom_chunks_requests_without_serial_hardware() -> None:
     device._set_fw_variable = Mock()  # type: ignore[method-assign]
     device._write = Mock()  # type: ignore[method-assign]
     device._read = Mock(  # type: ignore[method-assign]
-        side_effect=[bytearray(b"ABCD"), bytearray(b"EFGH")]
+        side_effect=[bytearray(b"ABCD"), bytearray(b"EFGH")],
     )
 
     result = device.ReadROM(address=0x4000, length=8, max_length=4)
@@ -450,7 +447,7 @@ def test_set_mode_configures_protocol_without_power_cycle(
 
     device.SetMode(mode)
 
-    assert device.MODE == mode
+    assert mode == device.MODE
     device._write.assert_any_call(
         device.DEVICE_CMD[f"SET_MODE_{mode}"],
         wait=True,
@@ -559,7 +556,7 @@ def test_firmware_update_availability(
     device.FW_UPDATE_REQ = False
 
     assert device.FirmwareUpdateAvailable() is expected
-    assert device.FW_UPDATE_REQ == expected_request
+    assert expected_request == device.FW_UPDATE_REQ
 
 
 def test_set_timeout_clamps_to_backend_minimum() -> None:
@@ -759,7 +756,7 @@ def test_initialize_warns_for_new_firmware_and_sizes_legacy_buffers(
 
     assert messages is not False
     assert ([message[0] for message in messages] or [None]) == [expected_status]
-    assert device.MAX_BUFFER_WRITE == expected_write_buffer
+    assert expected_write_buffer == device.MAX_BUFFER_WRITE
 
 
 def test_load_firmware_version_handles_absent_device_and_empty_response() -> None:

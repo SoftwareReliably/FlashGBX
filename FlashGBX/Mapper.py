@@ -605,7 +605,7 @@ class DMG_MBC3(DMG_Mapper):
         buffer[4] = rtc_dict["rtc_d"] >> 8 & 1
 
         dprint(
-            f"New values: RTC_S=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_H=0x{buffer[2]:02X}, RTC_DL=0x{buffer[3]:02X}, RTC_DH=0x{buffer[4]:02X}"
+            f"New values: RTC_S=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_H=0x{buffer[2]:02X}, RTC_DL=0x{buffer[3]:02X}, RTC_DH=0x{buffer[4]:02X}",
         )
 
         # Unlock and latch RTC
@@ -862,7 +862,7 @@ class DMG_MBC6(DMG_Mapper):
                     [0x1000, 0x01 if enable_write else 0x00],  # Disable flash write?
                     [0x2800, 0x08],  # Map flash memory into ROM Bank A
                     [0x3800, 0x08],  # Map flash memory into ROM Bank B
-                ]
+                ],
             )
         else:
             self.CartWrite(
@@ -872,7 +872,7 @@ class DMG_MBC6(DMG_Mapper):
                     [0x1000, 0x00],  # Disable flash write
                     [0x2800, 0x00],  # Map ROM memory into ROM Bank A
                     [0x3800, 0x00],  # Map ROM memory into ROM Bank B
-                ]
+                ],
             )
 
     def EraseFlashSector(self):
@@ -905,14 +905,14 @@ class DMG_MBC6(DMG_Mapper):
                 [0x7555, 0xAA],
                 [0x4AAA, 0x55],
                 [0x7555, 0x90],
-            ]
+            ],
         )
         flash_id = self.CartRead(0x6000, 8)
         # Reset to Read Array Mode
         self.CartWrite(
             [
                 [0x4000, 0xF0],
-            ]
+            ],
         )
         self.SelectBankROM(self.CURRENT_ROM_BANK)
         return flash_id
@@ -1120,16 +1120,15 @@ class DMG_GMMC1(DMG_MBC5):
 
         if hp > 0:
             return hs
-        else:
-            print(
-                ANSI.RED
-                + __(
-                    "Failed to read the hidden sector data of the {gb_memory_cartridge}.",
-                    gb_memory_cartridge="NP GB-Memory Cartridge",
-                )
-                + ANSI.RESET
+        print(
+            ANSI.RED
+            + __(
+                "Failed to read the hidden sector data of the {gb_memory_cartridge}.",
+                gb_memory_cartridge="NP GB-Memory Cartridge",
             )
-            return False
+            + ANSI.RESET,
+        )
+        return False
 
     def CalcChecksum(self, buffer):
         header = RomFileDMG(buffer[:0x180]).GetHeader()
@@ -1145,12 +1144,10 @@ class DMG_GMMC1(DMG_MBC5):
         if target_chk_value != 0:
             if hashlib.sha1(buffer[0:0x18000]).hexdigest() != target_sha1_value:
                 return 0
-            elif buffer[0:0x180] == buffer[0x20000:0x20180]:
+            if buffer[0:0x180] == buffer[0x20000:0x20180]:
                 return 1
-            else:
-                return target_chk_value
-        else:
-            return super().CalcChecksum(buffer=buffer)
+            return target_chk_value
+        return super().CalcChecksum(buffer=buffer)
 
     def GetMaxROMSize(self):
         return 1 * 1024 * 1024
@@ -1421,7 +1418,7 @@ class DMG_TAMA5(DMG_Mapper):
                     __(
                         "Error: Couldn’t enable the {mapper_name} mapper.",
                         mapper_name="TAMA5",
-                    )
+                    ),
                 )
                 return False
         dprint("Enabled TAMA5 successfully")
@@ -1485,7 +1482,7 @@ class DMG_TAMA5(DMG_Mapper):
 
         commands = [
             # Select RTC
-            [0xA001, 0x00]
+            [0xA001, 0x00],
         ]
         self.CartWrite(commands, sram=True)
         self.SelectBankROM(0)
@@ -1736,7 +1733,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
         flash_bank = math.floor(index / 512)
         dprint(self.GetName(), "|SelectBankFlash()|", index, "->", flash_bank)
 
-        if self.CURRENT_FLASH_BANK != flash_bank:
+        if flash_bank != self.CURRENT_FLASH_BANK:
             dprint("Power cycling now")
             self._power_cycle()
             self.CURRENT_FLASH_BANK = flash_bank
@@ -1748,7 +1745,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
     def SelectBankROM(self, index):
         dprint(self.GetName(), index)
 
-        if (index % 512 == 0) or (self.CURRENT_FLASH_BANK != math.floor(index / 512)):
+        if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
             self.SelectBankFlash(index)
         self.CURRENT_ROM_BANK = index
         index = index % 512
@@ -1944,7 +1941,7 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
     def SelectBankROM(self, index):
         dprint(self.GetName(), index)
 
-        if (index % 512 == 0) or (self.CURRENT_FLASH_BANK != math.floor(index / 512)):
+        if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
             self.SelectBankFlash(math.floor(index / 512))
         self.CURRENT_ROM_BANK = index
         index = index % 512
@@ -2048,7 +2045,7 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
                     [self.GPIO_REG_DAT, 5 | (bit << 1)],
-                ]
+                ],
             )
 
     def RTCReadData(self) -> int:
@@ -2062,7 +2059,7 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 4],
                     [self.GPIO_REG_DAT, 4],
                     [self.GPIO_REG_DAT, 5],
-                ]
+                ],
             )
             temp = self.CartRead(self.GPIO_REG_DAT) & 0xFF
             bit = (temp & 2) >> 1
@@ -2079,7 +2076,7 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
                     [self.GPIO_REG_DAT, 5 | (bit << 1)],
-                ]
+                ],
             )
 
     def RTCReadStatus(self) -> int:
@@ -2089,13 +2086,13 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 5],
                 [self.GPIO_REG_CNT, 7],  # Write Enable
-            ]
+            ],
         )
         self.RTCCommand(self.RTC_READ_STATUS)
         self.CartWrite(
             [
                 [self.GPIO_REG_CNT, 5],  # Read Enable
-            ]
+            ],
         )
         data = self.RTCReadData()
         self.CartWrite(
@@ -2103,7 +2100,7 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_RE, 0],  # Disable RTC Mapping
-            ]
+            ],
         )
         return data
 
@@ -2114,7 +2111,7 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 5],
                 [self.GPIO_REG_CNT, 7],  # Write Enable
-            ]
+            ],
         )
         self.RTCCommand(self.RTC_WRITE_STATUS)
         self.RTCWriteData(value)
@@ -2124,7 +2121,7 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_RE, 0],  # Disable RTC Mapping
-            ]
+            ],
         )
 
     def HasRTC(self, buffer: bytearray | None = None) -> bool | Literal[1, 2, 3]:
@@ -2151,13 +2148,13 @@ class AGB_GPIO:
             self.CartWrite(
                 [
                     [self.GPIO_REG_RE, 1],  # Enable RTC Mapping
-                ]
+                ],
             )
             rom2 = self.CartRead(self.GPIO_REG_DAT, 6)
             self.CartWrite(
                 [
                     [self.GPIO_REG_RE, 0],  # Disable RTC Mapping
-                ]
+                ],
             )
         else:
             rom2 = buffer[1:7]
@@ -2184,13 +2181,13 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 1],
                     [self.GPIO_REG_DAT, 5],
                     [self.GPIO_REG_CNT, 7],  # Write Enable
-                ]
+                ],
             )
             self.RTCCommand(self.RTC_READ_DATE)
             self.CartWrite(
                 [
                     [self.GPIO_REG_CNT, 5],  # Read Enable
-                ]
+                ],
             )
             buffer = bytearray()
             for _ in range(7):
@@ -2201,7 +2198,7 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 1],
                     [self.GPIO_REG_DAT, 1],
                     [self.GPIO_REG_RE, 0],  # Disable RTC Mapping
-                ]
+                ],
             )
 
         # Add timestamp of backup time
@@ -2232,7 +2229,7 @@ class AGB_GPIO:
             buffer[5] = BCD.encode(rtc_dict["rtc_i"])
             buffer[6] = BCD.encode(rtc_dict["rtc_s"])
             dprint(
-                f"New values: RTC_Y=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_D=0x{buffer[2]:02X}, RTC_W=0x{buffer[3]:02X}, RTC_H=0x{buffer[4]:02X}, RTC_I=0x{buffer[5]:02X}, RTC_S=0x{buffer[6]:02X}"
+                f"New values: RTC_Y=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_D=0x{buffer[2]:02X}, RTC_W=0x{buffer[3]:02X}, RTC_H=0x{buffer[4]:02X}, RTC_I=0x{buffer[5]:02X}, RTC_S=0x{buffer[6]:02X}",
             )
         except ValueError as e:
             print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
@@ -2243,7 +2240,7 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 5],
                 [self.GPIO_REG_CNT, 7],  # Write Enable
-            ]
+            ],
         )
         self.RTCCommand(self.RTC_WRITE_DATE)
         for i in range(7):
@@ -2254,7 +2251,7 @@ class AGB_GPIO:
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_DAT, 1],
                 [self.GPIO_REG_RE, 0],  # Disable RTC Mapping
-            ]
+            ],
         )
         return True
 
@@ -2344,7 +2341,7 @@ class AGB_GPIO:
         if has_rtc is not True:
             if has_rtc is False or has_rtc in (2, 3):
                 return {"string": __("Not available")}
-            elif has_rtc == 1:
+            if has_rtc == 1:
                 return {"string": __("Not available / Battery dry")}
 
         rtc_buffer = self.RTC_BUFFER

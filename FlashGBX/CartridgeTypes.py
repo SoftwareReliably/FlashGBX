@@ -39,11 +39,10 @@ class RomSizes:
         if size >= 1024 * 1024:
             value = size // (1024 * 1024)
             return f"{value}{mib}"
-        elif size >= 1024:
+        if size >= 1024:
             value = size // 1024
             return f"{value}{kib}"
-        else:
-            return f"{size}{bytes}"
+        return f"{size}{bytes}"
 
     def GetNextLarger(self, size):
         for valid_size in self.ROM_SIZES:
@@ -64,7 +63,7 @@ class RomSizes:
     def GetStringList(self, mode="AGB"):
         if mode == "DMG":
             return [self.GetString(index=index) for index in range(len(self.ROM_SIZES_DMG))]
-        elif mode == "AGB":
+        if mode == "AGB":
             return [self.GetString(index=index) for index in range(len(self.ROM_SIZES))]
         return []
 
@@ -178,10 +177,9 @@ class AgbSaveTypes:
 
         if bytes_val >= 1024 * 1024:
             return f"{name} ({bytes_val >> 20}{mib})"
-        elif bytes_val >= 1024:
+        if bytes_val >= 1024:
             return f"{name} ({bytes_val >> 10}{kib})"
-        else:
-            return f"{name} ({bytes_val}{bytes})"
+        return f"{name} ({bytes_val}{bytes})"
 
     def GetIndexFromSize(self, size):
         for idx, (bytes_val, _) in enumerate(self.SAVE_TYPES):
@@ -192,22 +190,19 @@ class AgbSaveTypes:
     def GetStringFromSaveLib(self, savelib_string, localized=True):
         if not savelib_string or savelib_string == "N/A":
             return __("None") if localized else "None"
-        elif "SRAM_F_" in savelib_string:
+        if "SRAM_F_" in savelib_string:
             return f"256K SRAM/FRAM ({savelib_string:s})"
-        elif "SRAM_" in savelib_string:
+        if "SRAM_" in savelib_string:
             return f"256K SRAM ({savelib_string:s})"
-        elif "EEPROM_V" in savelib_string:
+        if "EEPROM_V" in savelib_string:
             return f"4K or 64K EEPROM ({savelib_string:s})"
-        elif "FLASH_V" in savelib_string or "FLASH512_V" in savelib_string:
+        if "FLASH_V" in savelib_string or "FLASH512_V" in savelib_string:
             return f"512K FLASH ({savelib_string:s})"
-        elif "FLASH1M_V" in savelib_string:
+        if "FLASH1M_V" in savelib_string:
             return f"1M FLASH ({savelib_string:s})"
-        elif "AGB_8MDACS_DL_V" in savelib_string:
+        if "AGB_8MDACS_DL_V" in savelib_string:
             return f"8M DACS ({savelib_string:s})"
-        else:
-            return (
-                c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
-            )
+        return c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
 
     def GetStringList(self):
         return [self.GetString(index) for index in range(len(self.SAVE_TYPES))]
@@ -334,12 +329,11 @@ class DmgSaveTypes:
 
         if size == 0x108000:
             return f"{name} ({size / (1024 * 1024):.2f}{mib})"
-        elif size >= 1024 * 1024:
+        if size >= 1024 * 1024:
             return f"{name} ({size // (1024 * 1024)}{mib})"
-        elif size >= 1024:
+        if size >= 1024:
             return f"{name} ({size // 1024}{kib})"
-        else:
-            return f"{name} ({size}{bytes})"
+        return f"{name} ({size}{bytes})"
 
     def GetStringList(self):
         return [self.GetString(index=index) for index in range(len(self.RAM_TYPES))]

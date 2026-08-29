@@ -59,7 +59,7 @@ def ReadConfigFiles(args):
             __(
                 "No flashcart profile files found in {config_path}. Resetting configuration...",
                 config_path=args["config_path"],
-            )
+            ),
         )
         settings.clear()
         os.rename(
@@ -160,13 +160,13 @@ def LoadConfig(args):
                     [
                         1,
                         __(
-                            "The application was recently updated and some flashcart profile files have been updated as well. You will find backup copies of them in your configuration directory."
+                            "The application was recently updated and some flashcart profile files have been updated as well. You will find backup copies of them in your configuration directory.",
                         )
                         + "\n\n"
                         + __("Updated files:")
                         + "\n"
                         + rf_list[:-1],
-                    ]
+                    ],
                 )
             fc_files = glob.glob(f"{glob.escape(config_path):s}{os.sep}fc_*.txt")
         else:
@@ -174,7 +174,7 @@ def LoadConfig(args):
                 __(
                     "Warning: {config_zip_file} not found. This is required to load new flashcart profile configurations after updating.",
                     config_zip_file=app_path + os.sep + os.path.join("res", "config.zip"),
-                )
+                ),
             )
 
     # Read flash cart types
@@ -183,7 +183,9 @@ def LoadConfig(args):
             with open(file, encoding="utf-8") as f:
                 data = f.read()
                 specs_int = re.sub(
-                    "(0x[0-9A-F]+)", lambda m: str(int(m.group(1), 16)), data
+                    "(0x[0-9A-F]+)",
+                    lambda m: str(int(m.group(1), 16)),
+                    data,
                 )  # hex numbers to int numbers, otherwise not valid json
                 try:
                     specs = json.loads(specs_int)
@@ -192,13 +194,13 @@ def LoadConfig(args):
                         [
                             2,
                             f"The flashchip type file “{os.path.basename(file):s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {e}",
-                        ]
+                        ],
                     )
                     continue
                 if "names" not in specs:
                     continue
                 for name in specs["names"]:
-                    if not specs["type"] in flashcarts:
+                    if specs["type"] not in flashcarts:
                         continue  # only DMG and AGB are supported right now
                     temp = copy.deepcopy(specs)
                     temp["names"] = [name]
@@ -239,7 +241,7 @@ def main(portableMode=False):
             "subdir": os.path.join(app_path, "config"),
             "appdata": os.path.join(
                 QtCore.QDir.toNativeSeparators(
-                    QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation)
+                    QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation),
                 ),
                 "FlashGBX",
             ),
@@ -390,7 +392,7 @@ def main(portableMode=False):
         c__(
             "Command Line Arguments Category",
             "Optional command line interface arguments",
-        )
+        ),
     )
     ap_cli2.add_argument(
         "--dmg-romsize",
@@ -605,7 +607,7 @@ def main(portableMode=False):
                     "Error: This program has no permission to use the configuration directory “{config_path}”!",
                     config_path=config_path,
                 )
-                + ANSI.RESET
+                + ANSI.RESET,
             )
             if "appdata" in cp and args["argparsed"].cfgdir == "subdir":
                 answer = (
@@ -614,21 +616,20 @@ def main(portableMode=False):
                             "Use directory “{appdata_folder}” instead?",
                             appdata_folder=cp["appdata"],
                         )
-                        + " [y/N] "
+                        + " [y/N] ",
                     )
                     .strip()
                     .lower()
                 )
                 if answer != "y":
-                    return
+                    return None
                 config_path = cp["appdata"]
                 args["config_path"] = config_path
                 continue
-            else:
-                input("")
+            input("")
             if args["argparsed"].wait:
                 input("\n\n" + __("Press ENTER to exit.") + "\n")
-            return
+            return None
 
     args.update(LoadConfig(args))
 
@@ -658,7 +659,7 @@ def main(portableMode=False):
                     + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.")
                     + "\n      "
                     + __("Optional command line switches are explained above.")
-                    + f"{ANSI.RED:s}\n"
+                    + f"{ANSI.RED:s}\n",
                 )
                 if exc is not None:
                     print(ANSI.YELLOW + str(exc) + ANSI.RESET)

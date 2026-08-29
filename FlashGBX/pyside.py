@@ -131,7 +131,6 @@ class _NoopQtWin:
 
 def _check_hresult(result: int, operation: str) -> None:
     """Raise a useful error when a Windows COM call returns a failure HRESULT."""
-
     unsigned_result = result & 0xFFFFFFFF
     if result < 0 or unsigned_result >= 0x80000000:
         raise OSError(f"{operation} failed with HRESULT 0x{unsigned_result:08X}")
@@ -139,7 +138,6 @@ def _check_hresult(result: int, operation: str) -> None:
 
 def _debug_print(*args: Any, **kwargs: Any) -> None:
     """Log when the package logger is already initialized."""
-
     logging_module = sys.modules.get(f"{__package__}.Logging")
     if logging_module is None:
         return
@@ -150,7 +148,6 @@ def _debug_print(*args: Any, **kwargs: Any) -> None:
 
 def _log_exception(message: str) -> None:
     """Log an exception when the package logger is already initialized."""
-
     logging_module = sys.modules.get(f"{__package__}.Logging")
     if logging_module is None:
         return
@@ -168,7 +165,7 @@ if _IS_WINDOWS:
     from ctypes import wintypes
 
     _WINFUNCTYPE: Callable[..., Any] | None = cast(
-        Callable[..., Any],
+        "Callable[..., Any]",
         getattr(ctypes, "WINFUNCTYPE"),  # noqa: B009
     )
 
@@ -198,7 +195,7 @@ if _IS_WINDOWS:
                     ole32.CLSIDFromString(
                         ctypes.c_wchar_p("{56FDF344-FD6D-11D0-958A-006097C9A090}"),
                         clsid,
-                    )
+                    ),
                 ),
                 "CLSIDFromString",
             )
@@ -207,7 +204,7 @@ if _IS_WINDOWS:
                     ole32.CLSIDFromString(
                         ctypes.c_wchar_p("{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}"),
                         iid,
-                    )
+                    ),
                 ),
                 "CLSIDFromString",
             )
@@ -239,7 +236,7 @@ if _IS_WINDOWS:
             if taskbar is None or winfunctype is None:
                 return None
             vtable = cast(
-                Any,
+                "Any",
                 ctypes.cast(
                     taskbar,
                     ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)),
@@ -274,7 +271,7 @@ if _IS_WINDOWS:
                         ),
                         self._window_handle,
                         state,
-                    )
+                    ),
                 ),
                 "ITaskbarList3::SetProgressState",
             )
@@ -294,7 +291,7 @@ if _IS_WINDOWS:
                             self._window_handle,
                             ctypes.c_ulonglong(max(0, min(span, self._value - self._minimum))),
                             ctypes.c_ulonglong(span),
-                        )
+                        ),
                     ),
                     "ITaskbarList3::SetProgressValue",
                 )
@@ -333,7 +330,6 @@ if _IS_LINUX:
 
 def _application_desktop_file() -> str:
     """Return the desktop-file basename used by the Unity launcher API."""
-
     app_name = os.environ.get("FLASHGBX_DESKTOP_FILE", "").strip()
     app = QtWidgets.QApplication.instance()
     if not app_name and app is not None:
@@ -405,7 +401,7 @@ class _LinuxTaskbarProgress(_TaskbarProgressBase):
             if not self._bus.send(message):
                 self._available = False
                 _debug_print(
-                    "Unity Launcher progress disabled: launcher API is not available in this desktop environment."
+                    "Unity Launcher progress disabled: launcher API is not available in this desktop environment.",
                 )
                 return
         except Exception as err:
@@ -452,7 +448,6 @@ __all__ = [
 
 def IsDarkMode() -> bool:
     """Return whether Qt reports that the current color scheme is dark."""
-
     try:
         scheme = QtGui.QGuiApplication.styleHints().colorScheme()
         return scheme == QtCore.Qt.ColorScheme.Dark
@@ -471,7 +466,6 @@ def bitmap2pixmap(
     retain their intended logical size on high-DPI displays. ``False`` is
     returned when Pillow or Qt cannot perform the conversion.
     """
-
     try:
         if scale_factor <= 0:
             raise ValueError("scale_factor must be greater than zero")

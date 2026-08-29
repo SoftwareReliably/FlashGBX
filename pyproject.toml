@@ -81,7 +81,7 @@ line-length = 121
 
 [tool.ruff.lint]
 # Add rule codes you want to ignore
-#select =["ALL"]
+select =["ALL"]
 ignore = [
     "BLE001", # Do not catch blind exceoption
     "D102", #undocumented-public-method

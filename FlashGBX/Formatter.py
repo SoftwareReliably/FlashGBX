@@ -19,18 +19,17 @@ class Formatter:
             if short:
                 return c___("Bytes (short form)", "B", "B", n=1)
             return _translate(" Byte").replace(" ", space)
-        elif size < 1024:
+        if size < 1024:
             if short:
                 return f"{size:d}" + c___("Bytes (short form)", "B", "B", n=size)
             return f"{size:d}" + _translate(" Bytes").replace(" ", space)
-        elif size < 1024 * 1024:
+        if size < 1024 * 1024:
             val = cls.round2(size / 1024)
             precision = 0 if as_int else 1
             return format_decimal(val, precision=precision, localized=localized) + _translate(" KiB").replace(" ", space)
-        else:
-            val = cls.round2(size / 1024 / 1024)
-            precision = 0 if as_int else 2
-            return format_decimal(val, precision=precision, localized=localized) + _translate(" MiB").replace(" ", space)
+        val = cls.round2(size / 1024 / 1024)
+        precision = 0 if as_int else 2
+        return format_decimal(val, precision=precision, localized=localized) + _translate(" MiB").replace(" ", space)
 
     @classmethod
     def progress_time_short(cls, sec):
@@ -70,7 +69,7 @@ class Formatter:
                             "{days} days",
                             n=components[i],
                             days=format_number(components[i]),
-                        )
+                        ),
                     )
                 elif i == 1:
                     parts.append(
@@ -79,7 +78,7 @@ class Formatter:
                             "{hours} hours",
                             n=components[i],
                             hours=format_number(components[i]),
-                        )
+                        ),
                     )
                 elif i == 2:
                     parts.append(
@@ -88,7 +87,7 @@ class Formatter:
                             "{minutes} minutes",
                             n=components[i],
                             minutes=format_number(components[i]),
-                        )
+                        ),
                     )
 
         if (len(parts) == 0) or (int(secs) != 0) or (seconds < 1 and as_float):
@@ -105,7 +104,7 @@ class Formatter:
                     "{seconds} seconds",
                     n=n_value,
                     seconds=secs_formatted,
-                )
+                ),
             )
 
         separator = tc__("Time duration separator (e.g. 6 minutes, 4 seconds)", ", ")

@@ -26,7 +26,10 @@ ProgressAction: TypeAlias = Literal[  # noqa: UP040
     "FINISHED",
 ]
 ProgressStateAction: TypeAlias = Literal[  # noqa: UP040
-    "INITIALIZE", "PROGRESS", "UPDATE_INFO", "FINISHED"
+    "INITIALIZE",
+    "PROGRESS",
+    "UPDATE_INFO",
+    "FINISHED",
 ]
 UserAction: TypeAlias = Literal["REINSERT_CART", "RETRY_5V"]  # noqa: UP040
 ProgressCallback: TypeAlias = Callable[[Mapping[str, object]], None]  # noqa: UP040
@@ -120,26 +123,23 @@ class Progress:
         updater: ProgressCallback,
         waiter: ProgressCallback,
     ) -> None:
-        self.PROGRESS: ProgressState = cast(ProgressState, {})
+        self.PROGRESS: ProgressState = cast("ProgressState", {})
         self.UPDATER: ProgressCallback = updater
         self.WAITER: ProgressCallback = waiter
 
     def _active_state(self) -> ProgressState | None:
         """Return the active state, if an operation has been initialized."""
-
         if "method" not in self.PROGRESS:
             return None
         return self.PROGRESS
 
     def _emit(self, payload: Mapping[str, object]) -> None:
         """Publish a payload through the configured update callback."""
-
         self.UPDATER(payload)
 
     @staticmethod
     def _int_or_default(value: object, default: int) -> int:
         """Return an integer payload value, falling back for bad input."""
-
         if isinstance(value, int) and not isinstance(value, bool):
             return value
         return default
@@ -147,7 +147,6 @@ class Progress:
     @staticmethod
     def _float_or_default(value: object, default: float) -> float:
         """Return a numeric payload value as a float, falling back if needed."""
-
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return float(value)
         return default
@@ -159,7 +158,6 @@ class Progress:
         threshold: float,
     ) -> bool:
         """Return whether ``new_number`` is far outside the speed history."""
-
         if not speeds:
             return False
         mean = statistics.fmean(speeds)
@@ -169,7 +167,6 @@ class Progress:
     @classmethod
     def _record_speed(cls, state: ProgressState, speed: float) -> None:
         """Add a valid speed sample while keeping a bounded history."""
-
         speeds = state["speeds"]
         if len(speeds) < cls.SPEED_OUTLIER_START or not cls._is_outlier(
             speeds=speeds,
@@ -182,7 +179,6 @@ class Progress:
 
     def _initialize(self, event: ProgressEvent, now: float) -> None:
         """Start a fresh operation and publish its initial state."""
-
         method = event.get("method")
         if not isinstance(method, str):
             return
@@ -227,7 +223,6 @@ class Progress:
         now: float,
     ) -> None:
         """Publish non-transfer status events such as erase or error updates."""
-
         payload: ProgressPayload = dict(event)
         if state is not None:
             payload["time_elapsed"] = max(now - state["time_start"], 0.0)
@@ -247,14 +242,10 @@ class Progress:
         now: float,
     ) -> None:
         """Apply a read/write position event and emit it when due."""
-
         action = event["action"]
         method = state["method"]
-        if (
-            action == "READ"
-            and method in ("SAVE_WRITE", "ROM_WRITE")
-            or action == "WRITE"
-            and method in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY")
+        if (action == "READ" and method in ("SAVE_WRITE", "ROM_WRITE")) or (
+            action == "WRITE" and method in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY")
         ):
             return
 
@@ -332,7 +323,6 @@ class Progress:
 
     def _finish(self, event: ProgressEvent, state: ProgressState, now: float) -> None:
         """Publish the final position and completed operation state."""
-
         # Keep the first emission for compatibility: consumers see the bar
         # reach its endpoint before receiving the FINISHED action.
         state["pos"] = state["size"]
@@ -363,12 +353,11 @@ class Progress:
         keeps optional progress reporting from interrupting cartridge operations
         if a future worker adds an event that this version does not understand.
         """
-
         action = args.get("action")
         if not isinstance(action, str):
             return
 
-        event = cast(ProgressEvent, args)
+        event = cast("ProgressEvent", args)
         with self.MUTEX:
             now = time.time()
             state = self._active_state()
@@ -376,7 +365,7 @@ class Progress:
                 # ``FINISHED`` removes ``method`` but leaves the last state
                 # available for callers that inspect it after completion.
                 # Start subsequent event handling from a clean state.
-                self.PROGRESS = cast(ProgressState, {})
+                self.PROGRESS = cast("ProgressState", {})
 
             if action == "USER_ACTION":
                 self.WAITER(args)
@@ -390,7 +379,7 @@ class Progress:
 
             if action == "ABORT":
                 self._emit(args)
-                self.PROGRESS = cast(ProgressState, {})
+                self.PROGRESS = cast("ProgressState", {})
                 return
 
             if action in (

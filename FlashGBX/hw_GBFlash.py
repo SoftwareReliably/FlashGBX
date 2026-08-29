@@ -79,10 +79,10 @@ class GbxDevice(LK_Device):
                                 device_name=self.DEVICE_NAME,
                                 port=ports[i],
                             ),
-                        ]
+                        ],
                     )
                 continue
-            elif (
+            if (
                 self.FW is None
                 or self.FW["pcb_ver"] not in self.PCB_VERSIONS
                 or "cfw_id" not in self.FW
@@ -93,7 +93,7 @@ class GbxDevice(LK_Device):
                 dev.close()
                 self.DEVICE = None
                 continue
-            elif self.FW["fw_ts"] > self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
+            if self.FW["fw_ts"] > self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
                 conn_msg.append(
                     [
                         1,
@@ -102,7 +102,7 @@ class GbxDevice(LK_Device):
                             device_name=self.DEVICE_NAME,
                             port=ports[i],
                         ),
-                    ]
+                    ],
                 )
 
             self.MAX_BUFFER_READ = 0x1000
@@ -203,13 +203,12 @@ class GbxDevice(LK_Device):
                 timestamp=self.FW["fw_dt"],
                 port=self.GetPort(),
             )
-        else:
-            return __(
-                "{device_name} – Firmware {fw_version} ({port})",
-                device_name=self.GetFullName(),
-                fw_version=self.GetFirmwareVersion(),
-                port=self.GetPort(),
-            )
+        return __(
+            "{device_name} – Firmware {fw_version} ({port})",
+            device_name=self.GetFullName(),
+            fw_version=self.GetFirmwareVersion(),
+            port=self.GetPort(),
+        )
 
     def CanSetVoltageBySwitch(self):
         return False
@@ -295,7 +294,7 @@ class GbxDevice(LK_Device):
             __("Your GBFlash device reported a registration error, which means it may be an illegitimate clone.")
             + "<br><br>"
             + __(
-                "The device’s integrated piracy detection may limit the device in performance and functionality until proper registration. The FlashGBX software has no control over this."
+                "The device’s integrated piracy detection may limit the device in performance and functionality until proper registration. The FlashGBX software has no control over this.",
             )
         )
         return text
@@ -568,7 +567,7 @@ try:
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             self.setWindowTitle(AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBFlash"))
             self.setWindowFlags(
-                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
+                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint,
             )
 
             self.APP = app
@@ -683,7 +682,7 @@ try:
                 self.OFW_TEXT = self.INI.GetValue("fw_text")
 
             self.lblDeviceFWVer2Result.setText(
-                f"{self.OFW_VER:s} ({datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat():s})"
+                f"{self.OFW_VER:s} ({datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat():s})",
             )
 
         def run(self):
@@ -711,7 +710,7 @@ try:
             if self.btnClose.isEnabled() is False:
                 text = (
                     __(
-                        "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state."
+                        "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state.",
                     )
                     + " "
                     + __("You can still recover it by running the Firmware Updater again later.")
@@ -740,11 +739,11 @@ try:
                 text += "\n\n" + __(
                     "- Unplug your GBFlash device.\n"
                     "- On your GBFlash circuit board, push and hold the small button (U22) while plugging the USB cable back in.\n"
-                    "- If done right, the blue LED labeled “ACT” should now keep blinking twice continuously."
+                    "- If done right, the blue LED labeled “ACT” should now keep blinking twice continuously.",
                 )
                 text += "\n" + __("- Click OK to continue.")
                 text += "\n\n" + __(
-                    "Note: Illegitimate clones of the GBFlash may have been modified to disallow firmware updates."
+                    "Note: Illegitimate clones of the GBFlash may have been modified to disallow firmware updates.",
                 )
                 msgbox = QtWidgets.QMessageBox(
                     parent=self,
@@ -756,7 +755,7 @@ try:
                 msgbox.setDefaultButton(QtWidgets.QMessageBox.Ok)
                 answer = msgbox.exec()
                 if answer == QtWidgets.QMessageBox.Cancel:
-                    return
+                    return None
             else:
                 self.APP.DisconnectDevice()
                 time.sleep(1)
@@ -783,7 +782,7 @@ try:
                     self.DEVICE = None
                     self.reject()
                     return True
-                elif ret == 2:
+                if ret == 2:
                     text = __("The firmware update has failed. Please try again.")
                     self.btnUpdate.setEnabled(True)
                     self.btnClose.setEnabled(True)
@@ -796,7 +795,7 @@ try:
                     )
                     answer = msgbox.exec()
                     return False
-                elif ret == 3:
+                if ret == 3:
                     text = __("The firmware update file is corrupted. Please re-install the application.")
                     self.btnUpdate.setEnabled(True)
                     self.btnClose.setEnabled(True)
@@ -816,7 +815,7 @@ try:
             if cloneError:
                 text = (
                     __(
-                        "Your GBFlash device failed to enter the firmware update mode. This means your GBFlash may be an <b>illegitimate clone</b> that blocks certain features intentionally. If this error persists, return the device for a refund."
+                        "Your GBFlash device failed to enter the firmware update mode. This means your GBFlash may be an <b>illegitimate clone</b> that blocks certain features intentionally. If this error persists, return the device for a refund.",
                     )
                     + "<br><br>"
                     + text

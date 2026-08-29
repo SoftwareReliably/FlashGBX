@@ -36,10 +36,9 @@ class DataTransfer(QtCore.QThread):
             if self.CONFIG is None:
                 self.FINISHED = True
                 return
-            else:
-                self.FINISHED = False
-                self.CONFIG["port"].TransferData(self.CONFIG, self.updateProgress)
-                self.FINISHED = True
+            self.FINISHED = False
+            self.CONFIG["port"].TransferData(self.CONFIG, self.updateProgress)
+            self.FINISHED = True
 
         except SerialException as e:
             if e.args and isinstance(e.args[0], str) and "GetOverlappedResult failed" in e.args[0]:
@@ -48,10 +47,10 @@ class DataTransfer(QtCore.QThread):
                         "action": "ABORT",
                         "info_type": "msgbox_critical",
                         "info_msg": __(
-                            "The USB connection was lost during a transfer. Try different USB cables, reconnect the device, restart the software and try again."
+                            "The USB connection was lost during a transfer. Try different USB cables, reconnect the device, restart the software and try again.",
                         ),
                         "abortable": False,
-                    }
+                    },
                 )
                 self.FINISHED = True
                 return
@@ -71,10 +70,10 @@ class DataTransfer(QtCore.QThread):
                     "info_type": "msgbox_critical",
                     "fatal": True,
                     "info_msg": __(
-                        "An unresolvable error has occured. See the debug log file for more information. Reconnect the device, restart the software and try again."
+                        "An unresolvable error has occured. See the debug log file for more information. Reconnect the device, restart the software and try again.",
                     )
                     + f"\n\n{type(error).__name__:s}: {error!s:s}",
                     "abortable": False,
-                }
+                },
             )
             self.FINISHED = True

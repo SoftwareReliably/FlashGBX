@@ -33,7 +33,7 @@ class UserInputDialog(QtWidgets.QDialog):
         self.setWindowTitle(AppInfo.NAME + " – " + args["title"])
         self.setWindowFlags(
             (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
-            & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint
+            & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
         )
 
         self.APP = app
