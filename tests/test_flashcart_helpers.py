@@ -5,7 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import FlashGBX.Flashcart as flashcart_module  # noqa: N813
-from FlashGBX.Flashcart import CFI, Flashcart, _profile_flash_ids, empty_flashcarts_map, has_3v_compatible_profile
+from FlashGBX.Flashcart import (
+    CFI,
+    Flashcart,
+    Flashcart_AGB_GBAMP,
+    Flashcart_DMG_BUNG_16M,
+    Flashcart_DMG_MMSA,
+    _profile_flash_ids,
+    empty_flashcarts_map,
+    has_3v_compatible_profile,
+)
 
 if TYPE_CHECKING:
     import pytest
@@ -198,3 +207,174 @@ def test_flashcart_cfi_and_flash_id_failure_paths(monkeypatch: pytest.MonkeyPatc
     cart = Flashcart(profile(commands={"read_identifier": [[0, 0x90]]}), functions)  # type: ignore[arg-type]
     cart._cart_read = lambda _address, _length: next(responses)
     assert cart.VerifyFlashID() == (True, [0x12, 0x34])
+
+
+def test_flashcart_agb_widths_features_and_cfi_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flashcart_module.time, "sleep", lambda _seconds: None)
+    calls, functions = callbacks()
+    config = profile(
+        type="AGB",
+        command_set="GBMEMORY",
+        commands={"buffer_write": [["SA+2", 0]], "page_write": []},
+        rtc=True,
+        double_die=True,
+        write_pin="AUDIO",
+    )
+    config.pop("buffer_size")
+    cart = Flashcart(config, functions)  # type: ignore[arg-type]
+
+    cart.CartRead(0x10, 3)
+    cart.CartRead(0x10)
+    cart.CartWrite([[1, 2], [3, 4]])
+
+    assert calls["read"] == [(0x10, 4), (0x10, 2)]
+    assert len(calls["write"]) == 2
+    assert cart.GetMBC() is False
+    assert cart.HasRTC() is True
+    assert cart.HasDoubleDie() is True
+    assert cart.IsF2A() is True
+    cart.ReadCFI = lambda: {"buffer_size": 4}  # type: ignore[method-assign]
+    assert cart.SupportsBufferWrite() is True
+    assert cart.SupportsPageWrite() is True
+    assert cart.WEisAUDIO() is True
+    assert cart.WEisWR() is False
+    assert cart.GetFlashSize(default=123) == 0x10000
+
+    cart.CONFIG.pop("flash_size")
+    cart.SetFlashSize(0x20000)
+    assert cart.GetFlashSize(default=123) == 123
+
+    cart.CONFIG.pop("buffer_size")
+    cfi_info = {"buffer_size": 16}
+    cart.ReadCFI = lambda: cfi_info  # type: ignore[method-assign]
+    assert cart.GetBufferSize() == 16
+    assert cart.CONFIG["buffer_size"] == 16
+
+
+def test_flashcart_sector_map_cfi_and_banked_verification() -> None:
+    _calls, functions = callbacks()
+    cart = Flashcart(
+        profile(
+            commands={"sector_erase": []},
+            cfi={"erase_sector_blocks": [[1, 2], [2, 3]], "tb_boot_sector_raw": 3},
+        ),
+        functions,  # type: ignore[arg-type]
+    )
+
+    assert cart.GetSectorMap() == [[2, 3], [1, 2]]
+    assert cart.GetSectorOffsets(rom_size=5) == [[0, 2], [2, 2], [4, 2], [6, 1], [7, 1]]
+
+    banked = Flashcart(
+        profile(flash_ids_banks=[[1, 2], [3, 4]], flash_bank_select_type=1),
+        functions,  # type: ignore[arg-type]
+    )
+    checked: list[list[int]] = []
+
+    def verify(config: dict[str, Any]) -> tuple[bool, list[int]]:
+        checked.append(config["flash_ids"][0])
+        return True, config["flash_ids"][0]
+
+    banked._VerifyFlashID = verify  # type: ignore[method-assign]
+    assert banked.VerifyFlashID() == (True, [1, 2])
+    assert checked == [[1, 2], [3, 4]]
+
+
+def test_flashcart_sector_erase_and_read_cfi_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flashcart_module.time, "sleep", lambda _seconds: None)
+    calls, functions = callbacks()
+    cart = Flashcart(
+        profile(
+            commands={
+                "reset": [[0xAA, 0xF0]],
+                "sector_erase": [["SA+2", 0x30]],
+                "sector_erase_wait_for": [[None, 0, 0]],
+            },
+            sector_size=0x1000,
+        ),
+        functions,  # type: ignore[arg-type]
+    )
+
+    assert cart.SectorErase(pos=0x400) == 0x1000
+    assert [[0x402, 0x30]] in [args[0] for args, _kwargs in calls["fast"]]
+
+    parsed = {"magic": "QRY", "buffer_size": 8}
+    cart = Flashcart(profile(), functions)  # type: ignore[arg-type]
+    monkeypatch.setattr(flashcart_module.CFI, "Parse", lambda _self, _buffer: parsed)
+    cart._cart_read = lambda _address, length: bytearray(length)
+
+    result = cart.ReadCFI()
+
+    assert result is parsed
+    assert result["raw"] == bytearray(0x400)
+    assert cart.ReadCFI() is parsed
+
+
+def test_special_flashcart_handlers_cover_erase_and_verify_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flashcart_module.time, "sleep", lambda _seconds: None)
+
+    calls, functions = callbacks()
+    agb = Flashcart_AGB_GBAMP(
+        profile(
+            type="AGB",
+            commands={"reset": [], "read_identifier": [[0, 0x90]]},
+            sector_size=[[0x2000, 4]],
+            flash_ids=[[0x12, 0x34, 0x56, 0x78]],
+        ),
+        functions,  # type: ignore[arg-type]
+    )
+    agb._cart_powercycle = lambda: calls["progress"].append("power")
+    responses = iter(
+        [
+            bytearray([0, 0]),
+            bytearray([1, 2]),
+            bytearray([3, 4]),
+            bytearray([0x12, 0x34]),
+            bytearray([0x56, 0x78]),
+        ],
+    )
+    agb._cart_read = lambda _address, _length: next(responses)
+    assert agb.SectorErase(pos=0x2000, skip=True) == 0x2000
+    assert agb.VerifyFlashID() == (True, [0x12, 0x34, 0x56, 0x78])
+
+    calls, functions = callbacks()
+    bung = Flashcart_DMG_BUNG_16M(
+        profile(flash_ids=[[4, 5, 6, 7]], commands={"reset": []}),
+        functions,  # type: ignore[arg-type]
+    )
+    bung._cart_read = lambda _address, length: bytearray([0x80] * length)
+    assert bung.SupportsSectorErase() is False
+    assert bung.SupportsChipErase() is True
+    assert bung.ChipErase() is True
+
+    verify_responses = iter([bytearray([0, 1, 2, 3]), bytearray([4, 5, 6, 7])])
+    bung._cart_read = lambda _address, _length: next(verify_responses)
+    assert bung.VerifyFlashID() == (True, [4, 5, 6, 7])
+    assert calls["fast"]
+
+
+def test_mmsa_handler_unlocks_and_reports_erase_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flashcart_module.time, "sleep", lambda _seconds: None)
+    calls, functions = callbacks()
+    mmsa = Flashcart_DMG_MMSA(profile(), functions)  # type: ignore[arg-type]
+    mmsa._cart_read = lambda _address, length: bytearray([0x80] * length)
+
+    assert mmsa.GetMBC() == 0x105
+    assert mmsa.ReadCFI() is False
+    assert mmsa.SupportsSectorErase() is False
+    assert mmsa.SupportsChipErase() is True
+    assert mmsa.UnlockForWriting() is True
+    assert mmsa.EraseHiddenSector(bytearray()) is True
+    assert mmsa.ChipErase() is True
+    assert calls["fast"]
+
+    mmsa.UnlockForWriting = lambda: False  # type: ignore[method-assign]
+    assert mmsa.EraseHiddenSector(bytearray()) is False
+    assert mmsa.ChipErase() is False

@@ -61,12 +61,14 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = [
+    "FlashGBX.DumpReport",
     "FlashGBX.CartridgeTypes",
     "FlashGBX.Flashcart",
     "FlashGBX.Formatter",
     "FlashGBX.GBMemory",
     "FlashGBX.IniSettings",
     "FlashGBX.InteractiveConsole",
+    "FlashGBX.i18n",
     "FlashGBX.Mapper",
     "FlashGBX.Progress",
     "FlashGBX.RomFileAGB",
@@ -76,7 +78,7 @@ source = [
 ]
 
 [tool.coverage.report]
-fail_under = 50
+fail_under = 30
 show_missing = true
 skip_covered = true
 

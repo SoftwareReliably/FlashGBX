@@ -92,9 +92,84 @@ def test_console_reports_invalid_and_power_commands() -> None:
     assert console.execute_line("q, w 1 2") is False
     assert console.execute_command("re 4 20 3") is True
     assert console.execute_command("unknown") is True
-    assert any("multiple of 8" in text for text in output)
+    assert any("EEPROM read" in text for text in output)
     assert any("Unknown command" in text for text in output)
     assert console.execute_command("on") is True
     assert console.execute_command("off") is True
     assert ("on", {}) in device.writes
     assert ("off", {}) in device.writes
+
+
+def test_console_handles_save_commands_and_agb_flash_paths(tmp_path: Path) -> None:
+    device = ConsoleDevice()
+    output: list[str] = []
+    errors: list[str] = []
+    console = InteractiveConsole(device, output.append, errors.append)
+
+    assert console.execute_command("rs 20 2") is True
+    assert device.reads[-1] == (0x20, 2)
+    assert console.execute_command("ws 30 10101010") is True
+    assert console.execute_command("wf 40 ff") is True
+    assert ((0x30, 0xAA), {"sram": True}) in device.writes
+    assert ([[0x40, 0xFF]], {}) in device.writes
+
+    assert console.execute_command("rs 20 nope") is True
+    assert console.execute_command("ws 30 nope") is True
+    assert console.execute_command("wf 40 nope") is True
+    assert console.execute_command("we 4 20 nope") is True
+    assert any("Invalid" in text for text in output)
+
+    console.last_read_data = None
+    assert console.execute_command("s output.bin") is True
+    console.last_read_data = bytearray(b"saved")
+    assert console.execute_command(f"s {tmp_path}") is True
+    assert console.execute_command(f"s {tmp_path / 'missing' / 'output.bin'}") is True
+    assert any("No data available" in text for text in output)
+    assert any("directory" in text.lower() for text in output)
+    assert any("does not exist" in text for text in output)
+
+
+def test_console_handles_read_errors_eeprom_errors_and_power_limits() -> None:
+    device = ConsoleDevice()
+    output: list[str] = []
+    errors: list[str] = []
+    console = InteractiveConsole(device, output.append, errors.append)
+
+    device._cart_read = lambda *_args, **_kwargs: False  # type: ignore[method-assign]
+    assert console.execute_command("r 10 2") is True
+    assert console.execute_command("rs 10 2") is True
+    device._read = lambda _count: False  # type: ignore[method-assign]
+    assert console.execute_command("re 4 20 8") is True
+
+    def reject_eeprom_write(_data: object, wait: bool = False) -> int | bool:
+        return False if wait else 1
+
+    device._write = reject_eeprom_write  # type: ignore[method-assign]
+    assert console.execute_command("we 4 20 0102030405060708") is True
+    assert errors.count("ERROR") == 4
+
+    device.CanPowerCycleCart = lambda: False  # type: ignore[method-assign]
+    help_lines = console.get_help_lines()
+    assert not any(line.strip().startswith("on ") for line in help_lines)
+    assert any(line.strip().startswith("h ") for line in help_lines)
+    assert console.execute_command("on") is True
+    assert console.execute_command("off") is True
+    assert any("does not support" in text for text in output)
+
+
+def test_console_dmg_sram_writes_and_syntax_failures() -> None:
+    device = ConsoleDevice("DMG")
+    output: list[str] = []
+    console = InteractiveConsole(device, output.append)
+    device.CanPowerCycleCart = lambda: False  # type: ignore[method-assign]
+    help_lines = console.get_help_lines()
+    assert not any(line.strip().startswith("rs ") for line in help_lines)
+    assert not any(line.strip().startswith("on ") for line in help_lines)
+
+    assert console.execute_command("w a000 ff") is True
+    assert device.writes[-1][1]["sram"] is True
+    assert console.execute_command("w a000 nope") is True
+    assert console.execute_command("r nope 2") is True
+    assert console.execute_command("w '") is True
+    assert console.execute_command("   ") is True
+    assert any("Invalid command syntax" in text for text in output)

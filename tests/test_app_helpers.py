@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+
+import pytest
 
 import FlashGBX.app as app_module
 from FlashGBX.app import AppInfo, generate_filename
@@ -87,3 +90,44 @@ def test_app_info_unknown_platform_falls_back_to_platform_label(monkeypatch: pyt
     monkeypatch.setattr(app_module.platform, "machine", lambda: "generic")
 
     assert AppInfo.os_string() == "Plan9 release"
+
+
+def test_app_info_formats_supported_windows_versions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_module.platform, "system", lambda: "Windows")
+    versions = [
+        (10, 0, 22000, "Windows 11"),
+        (10, 0, 19045, "Windows 10"),
+        (6, 3, 9600, "Windows 8.1"),
+        (6, 2, 9200, "Windows 8"),
+        (6, 1, 7601, "Windows 7"),
+        (6, 0, 6002, "Windows Vista"),
+        (5, 1, 2600, "Windows XP"),
+        (4, 0, 1381, "Windows 4.0"),
+    ]
+
+    for major, minor, build, expected in versions:
+        monkeypatch.setattr(
+            app_module.sys,
+            "getwindowsversion",
+            lambda major=major, minor=minor, build=build: SimpleNamespace(
+                major=major,
+                minor=minor,
+                build=build,
+            ),
+            raising=False,
+        )
+        assert AppInfo.os_string() == f"{expected} (Build {build})"
+
+
+def test_app_info_windows_fallback_handles_version_lookup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app_module.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(app_module.sys, "getwindowsversion", lambda: (_ for _ in ()).throw(OSError("unsupported")), raising=False)
+    monkeypatch.setattr(app_module.platform, "release", lambda: "10")
+    monkeypatch.setattr(app_module.platform, "version", lambda: "build")
+    assert AppInfo.os_string() == "Windows 10 (build)"
+
+    monkeypatch.setattr(app_module.platform, "release", lambda: "")
+    monkeypatch.setattr(app_module.platform, "platform", lambda: "Windows fallback")
+    assert AppInfo.os_string() == "Windows fallback"

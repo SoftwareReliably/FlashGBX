@@ -6,8 +6,8 @@ import hashlib
 import random
 import struct
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, call
 
 import pytest
@@ -22,6 +22,9 @@ from FlashGBX.hw_GBxCartRW import (
 )
 
 from .fakes import EchoSerial, MockSerial
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def modern_firmware(**overrides: object) -> FirmwareInfo:
@@ -61,7 +64,7 @@ def build_firmware_archive(path: Path, firmware: bytes) -> None:
         key = key + key
 
     encrypted = bytearray(len(firmware))
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 - deterministic test fixture
     for index, value in enumerate(firmware):
         random_byte = int(rng.random() * 256) % 256
         encrypted[len(firmware) - index - 1] = value ^ random_byte ^ key[len(key) - index - 1]
@@ -95,6 +98,9 @@ def test_parse_intel_hex_supports_offsets_and_fills_address_gaps() -> None:
         (":02000000FF", "invalid length"),
         (":01000000FF01", "invalid checksum"),
         (intel_hex_record(0, 0x06), "unsupported record type"),
+        (intel_hex_record(0, 0x01, b"x"), "invalid EOF"),
+        (intel_hex_record(0, 0x02, b"x"), "invalid segment address"),
+        (intel_hex_record(0, 0x04, b"x"), "invalid linear address"),
         (intel_hex_record(0, 0x00, b"data"), "incomplete"),
         (intel_hex_record(0, 0x01), "incomplete"),
     ],
@@ -231,7 +237,7 @@ def test_initialize_falls_back_to_high_speed_and_loads_flashcart_map(
         return False
 
     monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", try_connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
 
@@ -253,7 +259,7 @@ def test_initialize_closes_device_when_connection_validation_fails(
         return True
 
     monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", try_connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
 
@@ -523,6 +529,50 @@ def test_device_capabilities_and_version_labels_are_derived_from_firmware() -> N
     assert device.SupportsBootloaderReset() is True
 
 
+def test_gbxdevice_legacy_capabilities_and_reset_helpers() -> None:
+    device = GbxDevice()
+    assert device.SupportsFirmwareUpdates() is True
+    assert device.CanPowerCycleCart() is False
+    assert device.SupportsBootloaderReset() is False
+
+    device.DEVICE = MockSerial()  # type: ignore[assignment]
+    device.FW = modern_firmware(fw_ver=0, pcb_ver=5, ofw_ver=31)
+    device.PORT = "mock-port"
+    assert device.GetFirmwareVersion() == "R31"
+    assert "R31" in device.GetFullNameExtended()
+    assert device.CanPowerCycleCart() is True
+    device.LAST_CHECK_ACTIVE = 0
+    assert device.CheckActive() is True
+
+    device._write = Mock()  # type: ignore[method-assign]
+    device._read_byte = Mock(return_value=0)  # type: ignore[method-assign]
+    device.ResetLEDs()
+    device._write.assert_called_once_with(device.DEVICE_CMD["OFW_CART_MODE"])
+
+    device.FW = modern_firmware(pcb_ver=101)
+    assert device.GetSupprtedModes() == ["DMG"]
+    assert device.IsClkConnected() is True
+    assert device.FirmwareUpdateAvailable() is False
+
+    device.FW = modern_firmware(ofw_ver=29, pcb_ver=3)
+    assert device.SupportsFirmwareUpdates() is False
+
+
+def test_gbxdevice_supports_non_linknload_probe_and_one_megabaud() -> None:
+    serial_device = MockSerial(timeout=0.7)
+    device = GbxDevice()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.FW = modern_firmware(ofw_ver=30, pcb_ver=6)
+    device._write = Mock()  # type: ignore[method-assign]
+    device._read = Mock(return_value=0)  # type: ignore[method-assign]
+    device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
+
+    assert device.SupportsFirmwareUpdates() is True
+    assert serial_device.timeout == 0.7
+    device.ChangeBaudRate(1_000_000)
+    device._write.assert_any_call(device.DEVICE_CMD["OFW_USART_1_0M_SPEED"])
+
+
 def test_linknload_probe_disables_updates_and_restores_timeout() -> None:
     serial_device = MockSerial(timeout=0.7)
     device = GbxDevice()
@@ -600,7 +650,7 @@ def test_firmware_updater_writes_decrypted_payload_over_mock_serial(
     build_firmware_archive(archive_path, firmware)
     serial_device = EchoSerial()
     status = Mock()
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(gbxcartrw.time, "sleep", lambda _seconds: None)
 
     result = FirmwareUpdater(port="mock-port").WriteFirmware(archive_path, status)
@@ -748,7 +798,7 @@ def test_initialize_warns_for_new_firmware_and_sizes_legacy_buffers(
         return True
 
     monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
 
@@ -908,7 +958,7 @@ def test_firmware_updater_reports_open_and_echo_failures(
     assert status.call_args.kwargs == {"text": "Device not accessible.", "enableUI": True}
 
     serial_device = MockSerial()
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     status.reset_mock()
     assert FirmwareUpdater(port="mock-port").WriteFirmware(archive_path, status) == 2
     assert status.call_args.kwargs == {"text": "Update failed!", "enableUI": True}

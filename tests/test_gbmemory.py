@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING
+
+import pytest
 
 from FlashGBX.GBMemory import GBMemoryMap
 from FlashGBX.RomFileDMG import RomFileDMG
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def test_gbmemory_static_helpers_cover_mapper_sizes_and_encoding() -> None:
@@ -79,6 +77,56 @@ def test_menu_map_without_entries_is_supported(
     parsed = memory_map.ParseMapData(memory_map.GetMapData(), menu_rom)
     assert isinstance(parsed, list)
     assert parsed[0]["num_games"] == 0
+
+
+def test_populated_menu_map_import_and_parse(
+    monkeypatch: pytest.MonkeyPatch,
+    pokemon_red_header: bytearray,
+) -> None:
+    monkeypatch.setattr(RomFileDMG, "GetDatabaseEntry", lambda _self: None)
+    menu_header = bytearray(pokemon_red_header)
+    menu_header[0x134:0x144] = b"NP M-MENU MENU".ljust(16, b"\x00")
+    menu_rom = bytearray([0xFF] * 0x100000)
+    menu_rom[: len(menu_header)] = menu_header
+
+    item = struct.pack(
+        "=BBBHH12s44s384s18s8s23s16s",
+        0,
+        2,
+        0,
+        1,
+        1,
+        b"GAME -  -  ",
+        b"Nested game".ljust(44, b"\x00"),
+        b"\x00" * 384,
+        b"01/01/202600:00:00",
+        b"TESTAPP".ljust(8, b"\x00"),
+        b"\x00" * 23,
+        b"comment".ljust(16, b"\x00"),
+    )
+    menu_rom[0x1C000 : 0x1C000 + len(item)] = item
+    menu_rom[0x40000 : 0x40000 + len(pokemon_red_header)] = pokemon_red_header
+
+    memory_map = GBMemoryMap()
+
+    assert memory_map.ImportROM(menu_rom) is True
+    parsed = memory_map.ParseMapData(memory_map.GetMapData(), menu_rom)
+
+    assert isinstance(parsed, list)
+    assert len(parsed) == 2
+    assert parsed[1]["menu_index"] == 0
+    assert parsed[1]["rom_offset"] == 0x40000
+    assert parsed[1]["header"]["game_title"] == "POKEMON RED"
+    assert "crc32" in parsed[1]
+
+
+def test_gbmemory_rejects_unknown_menu_layout_and_maps_all_mbc_types() -> None:
+    with pytest.raises(ValueError, match="Unsupported GB-Memory menu"):
+        GBMemoryMap._unpack_menu_item(bytearray(0x100), "unknown", 0)
+
+    memory_map = GBMemoryMap()
+    assert [memory_map.MapperToMBCType(value) for value in (0x00, 0x01, 0x06, 0x10, 0x19, 0xFF)] == [0, 1, 2, 3, 5, 5]
+    assert [memory_map.GetBlockSizeBackup(value) for value in (None, 0, 1, 64, 256, 1024, 2)] == [4, 0, 1, 1, 4, 16, 4]
 
 
 def test_map_rejects_short_and_invalid_rom_data() -> None:

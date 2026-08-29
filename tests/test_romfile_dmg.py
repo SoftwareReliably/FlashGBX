@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import FlashGBX.RomFileDMG as dmg_module  # noqa: N813
 from FlashGBX.app import AppContext
 from FlashGBX.RomFileDMG import RomFileDMG, from_isx
 
@@ -70,6 +71,26 @@ def test_file_loading_and_checksum_repair(
 
 def test_short_buffer_has_no_header() -> None:
     assert RomFileDMG(bytearray(0x17F)).GetHeader() == {}
+
+
+def test_dmg_logo_rendering_and_unknown_header_sizes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rom = RomFileDMG()
+    assert rom.Load() is None
+
+    image = rom.LogoToImage(bytearray(48), valid=False)
+    assert image is not False
+    assert image.getpalette()[:6] == [255, 255, 255, 255, 0, 0]
+
+    monkeypatch.setattr(dmg_module, "Image", None)
+    assert rom.LogoToImage(bytearray(b"logo")) is False
+
+    header = make_header(bytearray(0x200), title="UNKNOWN", mapper=0, rom_size=0xFF, ram_size=0xFF)
+    monkeypatch.setattr(rom, "GetDatabaseEntry", lambda: None)
+    data = RomFileDMG(header).GetHeader()
+    assert data["rom_size"] == "?"
+    assert data["ram_size"] == "?"
 
 
 def test_cgb_title_extracts_game_and_maker_codes(

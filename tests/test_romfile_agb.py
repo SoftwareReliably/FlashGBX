@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import FlashGBX.RomFileAGB as agb_module  # noqa: N813
 from FlashGBX.app import AppContext
 from FlashGBX.RomFileAGB import RomFileAGB
 
@@ -51,10 +52,7 @@ def test_agb_file_loading_checksums_and_header_fields(
     assert "logo" not in data
 
 
-def test_agb_fix_header_and_logo_rejects_empty_data(
-    pokemon_red_header: bytearray,
-) -> None:
-    del pokemon_red_header
+def test_agb_fix_header_and_logo_rejects_empty_data() -> None:
     header = make_agb_header()
     header[0xBD] = 0
     rom = RomFileAGB(header)
@@ -109,3 +107,61 @@ def test_agb_detects_vast_fame_and_database_code_aliases(
     assert data["vast_fame"] is True
     assert data["db"]["gc"] == "AGS-ZMAJ"
     assert data["3d_memory"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw_code", "prefix"),
+    [
+        ("ZMAJ", "AGS-"),
+        ("ZMBJ", "AGS-"),
+        ("ZMDE", "AGS-"),
+        ("ZBBJ", "NTR-"),
+        ("PEAJ", "PEC-"),
+        ("PSAJ", "PES-"),
+        ("PSAE", "PES-"),
+        ("ABCD", "AGB-"),
+    ],
+)
+def test_agb_database_code_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raw_code: str,
+    prefix: str,
+) -> None:
+    monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
+    (tmp_path / "db_AGB.json").write_text(
+        json.dumps({"header": {"gc": raw_code}}),
+        encoding="utf-8",
+    )
+    rom = RomFileAGB(bytearray(0x200))
+    rom.DATA = {"header_sha1": "header"}
+
+    entry = rom.GetDatabaseEntry()
+
+    assert entry is not None
+    assert entry["gc"] == prefix + raw_code
+
+
+def test_agb_load_open_and_parser_error_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rom = RomFileAGB()
+    assert rom.Load() is None
+
+    path = tmp_path / "input.gba"
+    path.write_bytes(b"payload")
+    rom.Open(path)
+    assert bytearray(b"payload") == rom.ROMFILE
+    assert RomFileAGB(bytearray(0x100)).GetHeader() == {}
+
+    monkeypatch.setattr(agb_module, "Image", None)
+    full_rom = RomFileAGB(make_agb_header())
+    monkeypatch.setattr(full_rom, "GetDatabaseEntry", lambda: None)
+    data = full_rom.GetHeader()
+    assert data["db"] is None
+    assert full_rom.LogoToImage(bytearray(b"not-empty")) is False
+
+    (tmp_path / "db_AGB.json").write_text("{invalid", encoding="utf-8")
+    full_rom.DATA = {"header_sha1": "header"}
+    assert full_rom.GetDatabaseEntry() is None
