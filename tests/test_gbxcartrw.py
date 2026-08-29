@@ -131,6 +131,55 @@ def test_initialize_returns_false_without_discovered_hardware() -> None:
     assert device.PORT == ""
 
 
+def test_runtime_state_is_isolated_between_device_instances() -> None:
+    first = GbxDevice()
+    second = GbxDevice()
+
+    first.CANCEL_ARGS["from_user"] = True
+    first.ERROR_ARGS["iteration"] = 2
+    first.INFO["dump_info"]["game_title"] = "POKEMON RED"
+    first.FW_VAR["ADDRESS"] = 0x4000
+
+    assert second.CANCEL_ARGS == {}
+    assert second.ERROR_ARGS == {}
+    assert second.INFO["dump_info"] == {}
+    assert second.FW_VAR == {}
+
+
+def test_firmware_variable_metadata_uses_exact_typed_names() -> None:
+    device = GbxDevice()
+
+    assert device._resolve_fw_variable("TRANSFER_SIZE") == (2, 0)
+    with pytest.raises(KeyError):
+        device._resolve_fw_variable("SIZE")  # type: ignore[arg-type]
+
+
+def test_write_accepts_byte_buffers_and_rejects_out_of_range_byte() -> None:
+    serial_device = MockSerial()
+    device = GbxDevice()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+
+    device._write(b"\x12\x34")
+
+    assert serial_device.writes == [b"\x12\x34"]
+    with pytest.raises(ValueError, match="one byte"):
+        device._write(0x100)
+
+
+def test_set_pin_serializes_each_selected_pin() -> None:
+    device = GbxDevice()
+    device.FW = modern_firmware()
+    device._write = Mock(return_value=1)  # type: ignore[method-assign]
+
+    assert device.SetPin(["PIN_WR", "PIN_A0"], True) == 1
+
+    expected_mask = (1 << 2) | (1 << 5)
+    expected = bytearray([device.DEVICE_CMD["SET_PIN"]])
+    expected.extend(struct.pack(">I", expected_mask))
+    expected.append(1)
+    device._write.assert_called_once_with(expected, wait=True)
+
+
 def test_initialize_filters_ports_and_uses_injected_serial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
