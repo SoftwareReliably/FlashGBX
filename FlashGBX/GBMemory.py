@@ -280,7 +280,8 @@ class GBMemoryMap:
     ) -> _RawMenuItem:
         layout = cls._menu_layout(game_title)
         if layout is None:
-            raise ValueError(f"Unsupported GB-Memory menu title: {game_title!r}")
+            msg = f"Unsupported GB-Memory menu title: {game_title!r}"
+            raise ValueError(msg)
 
         start = layout.base_offset + index * layout.item_stride
         item_size = struct.calcsize(layout.format)
@@ -288,7 +289,7 @@ class GBMemoryMap:
             "_MenuValues",
             struct.unpack(layout.format, data[start : start + item_size]),
         )
-        return cast("_RawMenuItem", dict(zip(_MENU_ITEM_KEYS, values)))
+        return cast("_RawMenuItem", dict(zip(_MENU_ITEM_KEYS, values, strict=False)))
 
     def _reset_map_data(self) -> None:
         self.MAP_DATA[:] = b"\xff" * 0x80

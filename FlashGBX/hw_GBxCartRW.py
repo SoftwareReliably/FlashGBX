@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import math
@@ -86,15 +87,19 @@ def _parse_intel_hex(contents: str) -> bytearray:
         if not line:
             continue
         if not line.startswith(":"):
-            raise ValueError(f"Intel HEX line {line_number} has no start marker")
+            msg = f"Intel HEX line {line_number} has no start marker"
+            raise ValueError(msg)
         try:
             record = bytes.fromhex(line[1:])
         except ValueError as exc:
-            raise ValueError(f"Intel HEX line {line_number} contains invalid hexadecimal data") from exc
+            msg = f"Intel HEX line {line_number} contains invalid hexadecimal data"
+            raise ValueError(msg) from exc
         if len(record) < 5 or len(record) != record[0] + 5:
-            raise ValueError(f"Intel HEX line {line_number} has an invalid length")
+            msg = f"Intel HEX line {line_number} has an invalid length"
+            raise ValueError(msg)
         if sum(record) & 0xFF:
-            raise ValueError(f"Intel HEX line {line_number} has an invalid checksum")
+            msg = f"Intel HEX line {line_number} has an invalid checksum"
+            raise ValueError(msg)
 
         byte_count = record[0]
         address = int.from_bytes(record[1:3], byteorder="big")
@@ -105,29 +110,35 @@ def _parse_intel_hex(contents: str) -> bytearray:
             absolute_address = address_base + address
             end_address = absolute_address + byte_count
             if end_address >= MAX_V13_FIRMWARE_SIZE:
-                raise ValueError("The firmware image is too large")
+                msg = "The firmware image is too large"
+                raise ValueError(msg)
             if len(image) < end_address:
                 image.extend(b"\xff" * (end_address - len(image)))
             image[absolute_address:end_address] = data
             found_data = True
         elif record_type == 0x01:
             if byte_count != 0:
-                raise ValueError(f"Intel HEX line {line_number} has an invalid EOF")
+                msg_0 = f"Intel HEX line {line_number} has an invalid EOF"
+                raise ValueError(msg_0)
             found_eof = True
             break
         elif record_type == 0x02:
             if byte_count != 2:
-                raise ValueError(f"Intel HEX line {line_number} has an invalid segment address")
+                msg_1 = f"Intel HEX line {line_number} has an invalid segment address"
+                raise ValueError(msg_1)
             address_base = int.from_bytes(data, byteorder="big") << 4
         elif record_type == 0x04:
             if byte_count != 2:
-                raise ValueError(f"Intel HEX line {line_number} has an invalid linear address")
+                msg_2 = f"Intel HEX line {line_number} has an invalid linear address"
+                raise ValueError(msg_2)
             address_base = int.from_bytes(data, byteorder="big") << 16
         elif record_type not in (0x03, 0x05):
-            raise ValueError(f"Intel HEX line {line_number} has unsupported record type 0x{record_type:02X}")
+            msg_3 = f"Intel HEX line {line_number} has unsupported record type 0x{record_type:02X}"
+            raise ValueError(msg_3)
 
     if not found_data or not found_eof:
-        raise ValueError("The Intel HEX firmware image is incomplete")
+        msg_4 = "The Intel HEX firmware image is incomplete"
+        raise ValueError(msg_4)
     return image
 
 
@@ -199,29 +210,34 @@ class GbxDevice(LK_Device):
 
     def _firmware(self) -> FirmwareInfo:
         if self.FW is None:
-            raise RuntimeError("Firmware information is not available")
+            msg = "Firmware information is not available"
+            raise RuntimeError(msg)
         return self.FW
 
     def _serial_device(self) -> serial.Serial:
         if self.DEVICE is None:
-            raise ConnectionError("The GBxCart RW is not connected")
+            msg = "The GBxCart RW is not connected"
+            raise ConnectionError(msg)
         return self.DEVICE
 
     def _read_byte(self) -> int:
         value = self._read(1)
         if value is False or not isinstance(value, int):
-            raise ConnectionError("Expected one byte from the GBxCart RW")
+            msg = "Expected one byte from the GBxCart RW"
+            raise ConnectionError(msg)
         return value
 
     def _read_bytes(self, count: int) -> bytearray:
         value = self._read(count)
         if value is False:
-            raise ConnectionError(f"Expected {count} bytes from the GBxCart RW firmware")
+            msg = f"Expected {count} bytes from the GBxCart RW firmware"
+            raise ConnectionError(msg)
         if count == 1 and isinstance(value, int):
             return bytearray([value])
         if isinstance(value, bytearray) and len(value) == count:
             return value
-        raise ConnectionError(f"Expected {count} bytes from the GBxCart RW firmware")
+        msg_0 = f"Expected {count} bytes from the GBxCart RW firmware"
+        raise ConnectionError(msg_0)
 
     def _close_serial_device(self) -> None:
         device = self.DEVICE
@@ -468,7 +484,8 @@ class GbxDevice(LK_Device):
         elif baudrate == 1_000_000:
             self._write(self.DEVICE_CMD["OFW_USART_1_0M_SPEED"])
         else:
-            raise ValueError(f"Unsupported GBxCart RW baud rate: {baudrate}")
+            msg = f"Unsupported GBxCart RW baud rate: {baudrate}"
+            raise ValueError(msg)
         self.BAUDRATE = baudrate
         self._serial_device().close()
 
@@ -642,10 +659,8 @@ class GbxDevice(LK_Device):
         return True
 
     def Close(self, cartPowerOff: bool = False) -> Any:
-        try:
+        with contextlib.suppress(OSError, SerialException, ConnectionError):
             self.ResetLEDs()
-        except OSError, SerialException, ConnectionError:
-            pass
         return super().Close(cartPowerOff)
 
     def SetTimeout(self, seconds: float = 1) -> None:
@@ -680,7 +695,7 @@ class FirmwareUpdater:
             return 3
         while len(buffer1) < len(buffer2):
             buffer1 = buffer1 + buffer1
-        rng = random.Random(struct.unpack("<I", buffer2[-0x18:-0x14])[0])
+        rng = random.Random(struct.unpack("<I", buffer2[-0x18:-0x14])[0])  # noqa: S311
         chk = buffer2[-0x14:]
         encrypted = buffer2[:-0x18]
         buffer = bytearray()
@@ -1131,7 +1146,8 @@ try:
                 self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             if device is None:
-                raise ValueError("A connected GBxCart RW is required for this updater")
+                msg = "A connected GBxCart RW is required for this updater"
+                raise ValueError(msg)
             self.APP = app
             self.APP_PATH = Path(app_path)
             self.DEVICE = device
@@ -1312,7 +1328,8 @@ try:
         def ReadDeviceInfo(self) -> None:
             device = self.DEVICE
             if device is None:
-                raise RuntimeError("The GBxCart RW connection was closed")
+                msg = "The GBxCart RW connection was closed"
+                raise RuntimeError(msg)
             self.lblDeviceNameResult.setText(device.GetName())
             self.lblDeviceFWVerResult.setText(device.GetFirmwareVersion(more=True))
             self.lblDevicePCBVerResult.setText(device.GetPCBVersion())
@@ -1396,7 +1413,8 @@ try:
             try:
                 if path == "":
                     if archive_member is None:
-                        raise ValueError("No bundled firmware file was selected")
+                        msg_0 = "No bundled firmware file was selected"
+                        raise ValueError(msg_0)
                     with (
                         zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
                         archive.open(archive_member) as firmware_file,
