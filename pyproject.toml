@@ -61,9 +61,18 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = [
+    "FlashGBX.CartridgeTypes",
+    "FlashGBX.Flashcart",
+    "FlashGBX.Formatter",
+    "FlashGBX.GBMemory",
+    "FlashGBX.IniSettings",
+    "FlashGBX.InteractiveConsole",
     "FlashGBX.Mapper",
+    "FlashGBX.Progress",
+    "FlashGBX.RomFileAGB",
     "FlashGBX.RomFileDMG",
     "FlashGBX.hw_GBxCartRW",
+    "FlashGBX.app",
 ]
 
 [tool.coverage.report]
