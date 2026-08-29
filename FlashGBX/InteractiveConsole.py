@@ -20,44 +20,21 @@ class InteractiveConsole:
         lines = []
         lines.append(__("Interactive Console") + " – " + __("Commands:"))
         lines.append("  r <addr> <size>               " + __("Read from ROM region"))
-        lines.append(
-            "  s <filepath>                  " + __("Save last read data to file")
-        )
-        lines.append(
-            "  w <addr> <value>              "
-            + __("Write to ROM region (e.g. mapper registers)")
-        )
+        lines.append("  s <filepath>                  " + __("Save last read data to file"))
+        lines.append("  w <addr> <value>              " + __("Write to ROM region (e.g. mapper registers)"))
         if self.MODE == "AGB":
-            lines.append(
-                "  rs <addr> <size>              "
-                + __("Read from SRAM or FLASH save region")
-            )
-            lines.append(
-                "  ws <addr> <value>             "
-                + __("Write to SRAM or FLASH save region")
-            )
-            lines.append(
-                "  wf <addr> <value>             "
-                + __("Send commands to FLASH save chip")
-            )
-            lines.append(
-                "  re <4|64> <addr> <size>       " + __("Read from EEPROM save region")
-            )
-            lines.append(
-                "  we <4|64> <addr> <data>       " + __("Write to EEPROM save region")
-            )
+            lines.append("  rs <addr> <size>              " + __("Read from SRAM or FLASH save region"))
+            lines.append("  ws <addr> <value>             " + __("Write to SRAM or FLASH save region"))
+            lines.append("  wf <addr> <value>             " + __("Send commands to FLASH save chip"))
+            lines.append("  re <4|64> <addr> <size>       " + __("Read from EEPROM save region"))
+            lines.append("  we <4|64> <addr> <data>       " + __("Write to EEPROM save region"))
         if self.CONN.CanPowerCycleCart():
             lines.append("  on                            " + __("Cartridge Power On"))
             lines.append("  off                           " + __("Cartridge Power Off"))
         lines.append("  h                             " + __("Show this help"))
-        lines.append(
-            "  q                             " + __("Quit interactive console")
-        )
+        lines.append("  q                             " + __("Quit interactive console"))
         lines.append("")
-        lines.append(
-            "  "
-            + __("Multiple commands can be entered on one line, separated by commas.")
-        )
+        lines.append("  " + __("Multiple commands can be entered on one line, separated by commas."))
         lines.append("  " + __("All addresses, sizes and values are hexadecimal."))
         lines.append("")
         return lines
@@ -113,11 +90,7 @@ class InteractiveConsole:
                 else:
                     value = int(parts[2], 16)
             except ValueError:
-                self.on_output(
-                    __(
-                        "Invalid input. Use hexadecimal or 8/16-bit binary for the value."
-                    )
-                )
+                self.on_output(__("Invalid input. Use hexadecimal or 8/16-bit binary for the value."))
                 return True
             self.CONN._cart_write(
                 address,
@@ -147,9 +120,7 @@ class InteractiveConsole:
 
         if command == "s" and len(parts) == 2:
             if self.last_read_data is None:
-                self.on_output(
-                    __("No data available. Read data first with “r”, “rs” or “re”.")
-                )
+                self.on_output(__("No data available. Read data first with “r”, “rs” or “re”."))
                 return True
             filepath = os.path.abspath(parts[1])
             if os.path.isdir(filepath):
@@ -200,11 +171,7 @@ class InteractiveConsole:
                     else:
                         value = int(parts[2], 16)
                 except ValueError:
-                    self.on_output(
-                        __(
-                            "Invalid input. Use hexadecimal or 8-bit binary for the value."
-                        )
-                    )
+                    self.on_output(__("Invalid input. Use hexadecimal or 8-bit binary for the value."))
                     return True
                 self.CONN._cart_write(address, value, sram=True)
                 self.on_output(__("OK"))
@@ -233,15 +200,11 @@ class InteractiveConsole:
                     self.on_output(__("Invalid hexadecimal input."))
                     return True
                 if size % 8 != 0 or size == 0:
-                    self.on_output(
-                        __("EEPROM read requires size to be a multiple of 8 bytes.")
-                    )
+                    self.on_output(__("EEPROM read requires size to be a multiple of 8 bytes."))
                     return True
                 self.CONN._set_fw_variable("TRANSFER_SIZE", size)
                 self.CONN._set_fw_variable("ADDRESS", address)
-                cmd = bytearray(
-                    [self.CONN.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type]
-                )
+                cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type])
                 self.CONN._write(cmd)
                 data = self.CONN._read(size)
                 if data is False or (isinstance(data, bytearray) and len(data) == 0):
@@ -263,17 +226,11 @@ class InteractiveConsole:
                     self.on_output(__("Invalid input."))
                     return True
                 if len(data) == 0 or len(data) % 8 != 0:
-                    self.on_output(
-                        __(
-                            "EEPROM write requires data length to be a multiple of 8 bytes."
-                        )
-                    )
+                    self.on_output(__("EEPROM write requires data length to be a multiple of 8 bytes."))
                     return True
                 self.CONN._set_fw_variable("TRANSFER_SIZE", len(data))
                 self.CONN._set_fw_variable("ADDRESS", address)
-                cmd = bytearray(
-                    [self.CONN.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], eeprom_type]
-                )
+                cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], eeprom_type])
                 self.CONN._write(cmd)
                 ack = self.CONN._write(data, wait=True)
                 if ack is False:
@@ -284,9 +241,7 @@ class InteractiveConsole:
 
         if command == "on":
             if not self.CONN.CanPowerCycleCart():
-                self.on_output(
-                    __("This device does not support cartridge power control.")
-                )
+                self.on_output(__("This device does not support cartridge power control."))
                 return True
             try:
                 self.CONN.CartPowerOn()
@@ -297,9 +252,7 @@ class InteractiveConsole:
 
         if command == "off":
             if not self.CONN.CanPowerCycleCart():
-                self.on_output(
-                    __("This device does not support cartridge power control.")
-                )
+                self.on_output(__("This device does not support cartridge power control."))
                 return True
             try:
                 self.CONN.CartPowerOff()

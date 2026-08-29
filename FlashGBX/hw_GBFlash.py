@@ -31,7 +31,9 @@ class GbxDevice(LK_Device):
     DEVICE_LABEL_SHORT = "GBFlash"
     FWUPDATE_ACTION = "fwupdate-gbflash"
     CLI_UPDATER_METHOD = "UpdateFirmwareGBFlash"
-    DEVICE_SUPPORT_MESSAGE = "For help with your GBFlash, please visit the GitHub page:\nhttps://github.com/simonkwng/GBFlash"
+    DEVICE_SUPPORT_MESSAGE = (
+        "For help with your GBFlash, please visit the GitHub page:\nhttps://github.com/simonkwng/GBFlash"
+    )
 
     def __init__(self):
         pass
@@ -140,10 +142,7 @@ class GbxDevice(LK_Device):
             self.FW = dict(zip(keys, values))
             self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
             self.FW["fw_dt"] = (
-                datetime.datetime.fromtimestamp(self.FW["fw_ts"])
-                .astimezone()
-                .replace(microsecond=0)
-                .isoformat()
+                datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
             )
             self.FW["ofw_ver"] = None
             self.FW["pcb_name"] = None
@@ -154,9 +153,7 @@ class GbxDevice(LK_Device):
                 name = self._read(size)
                 if len(name) > 0:
                     try:
-                        self.FW["pcb_name"] = (
-                            name.decode("UTF-8").replace("\x00", "").strip()
-                        )
+                        self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
                     except:
                         self.FW["pcb_name"] = "Unnamed Device"
                     self.DEVICE_NAME = self.FW["pcb_name"]
@@ -183,9 +180,7 @@ class GbxDevice(LK_Device):
                     self.DEVICE.close()
                 self.DEVICE = None
             except Exception:
-                logger.exception(
-                    "Failed to close GBFlash after an initialization error"
-                )
+                logger.exception("Failed to close GBFlash after an initialization error")
             return False
 
     def ChangeBaudRate(self, _):
@@ -241,9 +236,7 @@ class GbxDevice(LK_Device):
         return True
 
     def FirmwareUpdateAvailable(self):
-        if (
-            self.FW["pcb_ver"] == 5 or self.FW["fw_ts"] < 1730592000
-        ):  # unofficial firmware
+        if self.FW["pcb_ver"] == 5 or self.FW["fw_ts"] < 1730592000:  # unofficial firmware
             self.FW_UPDATE_REQ = True
             return True
         if self.FW["fw_ts"] != self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
@@ -299,9 +292,7 @@ class GbxDevice(LK_Device):
 
     def GetRegisterInformation(self):
         text = (
-            __(
-                "Your GBFlash device reported a registration error, which means it may be an illegitimate clone."
-            )
+            __("Your GBFlash device reported a registration error, which means it may be an illegitimate clone.")
             + "<br><br>"
             + __(
                 "The device’s integrated piracy detection may limit the device in performance and functionality until proper registration. The FlashGBX software has no control over this."
@@ -341,7 +332,7 @@ class FirmwareUpdater:
             if temp is False:
                 temp = b""
             values = struct.unpack(">IBHHH", temp)
-        except (struct.error, TypeError):
+        except struct.error, TypeError:
             return {
                 "clone": True,
                 "error": "Bootloader error! " + "".join(format(x, "02X") for x in temp),
@@ -356,8 +347,7 @@ class FirmwareUpdater:
         except struct.error:
             return {
                 "clone": True,
-                "error": "Erroneous outro response! "
-                + "".join(format(x, "02X") for x in data["outro"]),
+                "error": "Erroneous outro response! " + "".join(format(x, "02X") for x in data["outro"]),
             }
         return data
 
@@ -441,7 +431,7 @@ class FirmwareUpdater:
         try:
             with zipfile.ZipFile(zipfn) as archive, archive.open("fw.bin") as f:
                 fw_data = bytearray(f.read())
-        except (zipfile.BadZipFile, KeyError):
+        except zipfile.BadZipFile, KeyError:
             fncSetStatus(__("The firmware update file is corrupted."))
             return 2
 
@@ -465,9 +455,7 @@ class FirmwareUpdater:
             data = self.TryConnect(self.PORT)
 
         if isinstance(data, dict) and "error" in data:
-            fncSetStatus(
-                text=data["error"], cloneError="clone" in data and data["clone"] is True
-            )
+            fncSetStatus(text=data["error"], cloneError="clone" in data and data["clone"] is True)
             return 2
         if not isinstance(data, dict) or self.DEVICE is None:
             fncSetStatus(__("No device found."))
@@ -578,14 +566,9 @@ try:
             if icon is not None:
                 self.setWindowIcon(QtGui.QIcon(icon))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
-            self.setWindowTitle(
-                AppInfo.NAME
-                + " – "
-                + __("Firmware Updater for {device_name}", device_name="GBFlash")
-            )
+            self.setWindowTitle(AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBFlash"))
             self.setWindowFlags(
-                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint)
-                & ~QtCore.Qt.WindowContextHelpButtonHint
+                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
             )
 
             self.APP = app
@@ -638,9 +621,7 @@ try:
             rowDeviceInfo4 = QtWidgets.QHBoxLayout()
             self.lblDeviceFWVer2 = QtWidgets.QLabel(__("Firmware version:"))
             self.lblDeviceFWVer2.setMinimumWidth(120)
-            self.lblDeviceFWVer2Result = QtWidgets.QLabel(
-                "(" + __("Please choose the PCB version") + ")"
-            )
+            self.lblDeviceFWVer2Result = QtWidgets.QLabel("(" + __("Please choose the PCB version") + ")")
             rowDeviceInfo4.addWidget(self.lblDeviceFWVer2)
             rowDeviceInfo4.addWidget(self.lblDeviceFWVer2Result)
             rowDeviceInfo4.addStretch(1)
@@ -676,9 +657,7 @@ try:
             self.layout_device.addWidget(self.grpStatus)
 
             self.grpFooterLayout = QtWidgets.QHBoxLayout()
-            self.btnClose = QtWidgets.QPushButton(
-                c__("Button (& = Keyboard Shortcut)", "&Close")
-            )
+            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
             self.btnClose.clicked.connect(self.reject)
             self.grpFooterLayout.addStretch()
             self.grpFooterLayout.addWidget(self.btnClose)
@@ -692,9 +671,7 @@ try:
             self.SetPCBVersion()
 
         def SetPCBVersion(self):
-            file_name = (
-                self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
-            )
+            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
 
             with zipfile.ZipFile(file_name) as zip:
                 with zip.open("fw.ini") as f:
@@ -713,9 +690,7 @@ try:
             try:
                 self.layout.update()
                 self.layout.activate()
-                screenGeometry = (
-                    self.screen() or QtGui.QGuiApplication.primaryScreen()
-                ).geometry()
+                screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
                 x = (screenGeometry.width() - self.width()) / 2
                 y = (screenGeometry.height() - self.height()) / 2
                 self.move(x, y)
@@ -739,9 +714,7 @@ try:
                         "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state."
                     )
                     + " "
-                    + __(
-                        "You can still recover it by running the Firmware Updater again later."
-                    )
+                    + __("You can still recover it by running the Firmware Updater again later.")
                     + "<br><br>"
                     + __("Are you sure you want to close this window?")
                 )
@@ -750,8 +723,7 @@ try:
                     icon=QtWidgets.QMessageBox.Warning,
                     windowTitle=AppInfo.NAME,
                     text=text,
-                    standardButtons=QtWidgets.QMessageBox.Yes
-                    | QtWidgets.QMessageBox.No,
+                    standardButtons=QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 )
                 msgbox.setDefaultButton(QtWidgets.QMessageBox.No)
                 answer = msgbox.exec()
@@ -760,15 +732,11 @@ try:
             return True
 
         def UpdateFirmware(self):
-            file_name = (
-                self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
-            )
+            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
 
             if self.APP.CONN is None or self.APP.CONN.BootloaderReset() is False:
                 self.APP.DisconnectDevice()
-                text = __(
-                    "Please follow these steps to proceed with the firmware update:"
-                )
+                text = __("Please follow these steps to proceed with the firmware update:")
                 text += "\n\n" + __(
                     "- Unplug your GBFlash device.\n"
                     "- On your GBFlash circuit board, push and hold the small button (U22) while plugging the USB cable back in.\n"
@@ -783,8 +751,7 @@ try:
                     icon=QtWidgets.QMessageBox.Information,
                     windowTitle=AppInfo.NAME,
                     text=text,
-                    standardButtons=QtWidgets.QMessageBox.Ok
-                    | QtWidgets.QMessageBox.Cancel,
+                    standardButtons=QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
                 )
                 msgbox.setDefaultButton(QtWidgets.QMessageBox.Ok)
                 answer = msgbox.exec()
@@ -830,9 +797,7 @@ try:
                     answer = msgbox.exec()
                     return False
                 elif ret == 3:
-                    text = __(
-                        "The firmware update file is corrupted. Please re-install the application."
-                    )
+                    text = __("The firmware update file is corrupted. Please re-install the application.")
                     self.btnUpdate.setEnabled(True)
                     self.btnClose.setEnabled(True)
                     msgbox = QtWidgets.QMessageBox(

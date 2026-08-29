@@ -60,9 +60,7 @@ class UserInputDialog(QtWidgets.QDialog):
                     cmb.setEditable(True)
                 elif len(param[3]) == 1:
                     cmb.setEnabled(False)
-                cmb.setSizeAdjustPolicy(
-                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
-                )
+                cmb.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
                 self.paramWidgets[param[0]] = cmb
                 grid_layout.addWidget(lbl, grid_rows, 0, 1, 1)
                 grid_layout.addWidget(cmb, grid_rows, 1, 1, 1)
@@ -91,12 +89,8 @@ class UserInputDialog(QtWidgets.QDialog):
 
         grpButtonsLayout = QtWidgets.QHBoxLayout()
         grpButtonsLayout.addStretch(30)
-        grpButtonsLayout.addWidget(
-            self.btnOK, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight
-        )
-        grpButtonsLayout.addWidget(
-            self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight
-        )
+        grpButtonsLayout.addWidget(self.btnOK, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
+        grpButtonsLayout.addWidget(self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
 
         grid_layout.addLayout(grpButtonsLayout, grid_rows, 0, 1, 2)
         self.setLayout(grid_layout)

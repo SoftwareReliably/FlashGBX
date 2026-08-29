@@ -77,8 +77,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.APP_PATH = app_path
         self.setWindowTitle(AppInfo.NAME + " – " + __("GB Camera Album Viewer"))
         self.setWindowFlags(
-            (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint)
-            & ~QtCore.Qt.WindowContextHelpButtonHint
+            (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
         )
 
         self.layout = QtWidgets.QGridLayout()
@@ -123,9 +122,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.rowOptions1.addWidget(self.spnZoom)
         self.rowOptions1.addStretch(1)
 
-        self.chkFrame = QtWidgets.QCheckBox(
-            c__("Check Box (& = Keyboard Shortcut)", "Save With &Frame")
-        )
+        self.chkFrame = QtWidgets.QCheckBox(c__("Check Box (& = Keyboard Shortcut)", "Save With &Frame"))
         self.rowOptions1.addWidget(self.chkFrame)
 
         grpOptionsLayout.addLayout(self.rowOptions1)
@@ -134,14 +131,10 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.layout_options1.addWidget(self.grpOptions)
 
         rowActionsGeneral1 = QtWidgets.QHBoxLayout()
-        self.btnOpenSRAM = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Open Save Data File")
-        )
+        self.btnOpenSRAM = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Open Save Data File"))
         self.btnOpenSRAM.setStyleSheet("padding: 5px 10px;")
         self.btnOpenSRAM.clicked.connect(self.btnOpenSRAM_Clicked)
-        self.btnClose = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Close")
-        )
+        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
         self.btnClose.setStyleSheet("padding: 5px 15px;")
         self.btnClose.clicked.connect(self.btnClose_Clicked)
         rowActionsGeneral1.addWidget(self.btnOpenSRAM)
@@ -164,15 +157,11 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         # Actions below Viewer
         rowActionsGeneral2 = QtWidgets.QHBoxLayout()
-        self.btnSavePhoto = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Save This Picture")
-        )
+        self.btnSavePhoto = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Save This Picture"))
         self.btnSavePhoto.setStyleSheet("padding: 5px 10px;")
         self.btnSavePhoto.clicked.connect(self.btnSavePhoto_Clicked)
         rowActionsGeneral2.addWidget(self.btnSavePhoto)
-        self.btnSaveAll = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "Save &All Pictures")
-        )
+        self.btnSaveAll = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "Save &All Pictures"))
         self.btnSaveAll.setStyleSheet("padding: 5px 10px;")
         self.btnSaveAll.clicked.connect(self.btnSaveAll_Clicked)
         rowActionsGeneral2.addWidget(self.btnSaveAll)
@@ -194,17 +183,11 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 self.lblPhoto.append(QtWidgets.QLabel(self))
                 self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
                 self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
-                self.lblPhoto[
-                    len(self.lblPhoto) - 1
-                ].mousePressEvent = functools.partial(
+                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(
                     self.lblPhoto_Clicked, index=len(self.lblPhoto) - 1
                 )
-                self.lblPhoto[len(self.lblPhoto) - 1].setCursor(
-                    QtGui.QCursor(QtCore.Qt.PointingHandCursor)
-                )
-                self.lblPhoto[len(self.lblPhoto) - 1].setAlignment(
-                    QtCore.Qt.AlignCenter
-                )
+                self.lblPhoto[len(self.lblPhoto) - 1].setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+                self.lblPhoto[len(self.lblPhoto) - 1].setAlignment(QtCore.Qt.AlignCenter)
                 self.lblPhoto[len(self.lblPhoto) - 1].setStyleSheet(
                     "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #fefefe; border-right: 1px solid #fefefe;"
                 )
@@ -212,15 +195,11 @@ class PocketCameraWindow(QtWidgets.QDialog):
             self.grpPhotoThumbsLayout.addLayout(rowsPhotos[row])
 
         rowActionsGeneral3 = QtWidgets.QHBoxLayout()
-        self.btnShowGameFace = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Game Face")
-        )
+        self.btnShowGameFace = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Game Face"))
         self.btnShowGameFace.setStyleSheet("padding: 5px 10px;")
         self.btnShowGameFace.clicked.connect(self.btnShowGameFace_Clicked)
         rowActionsGeneral3.addWidget(self.btnShowGameFace)
-        self.btnShowLastSeen = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Last Seen Image")
-        )
+        self.btnShowLastSeen = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Last Seen Image"))
         self.btnShowLastSeen.setStyleSheet("padding: 5px 10px;")
         self.btnShowLastSeen.clicked.connect(self.btnShowLastSeen_Clicked)
         rowActionsGeneral3.addWidget(self.btnShowLastSeen)
@@ -245,10 +224,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             self.spnZoom.setValue(int(self.APP.SETTINGS.value("PocketCameraZoom")))
         except:
             self.spnZoom.setValue(2)
-        self.chkFrame.setChecked(
-            self.APP.SETTINGS.value("PocketCameraFrame", default="disabled")
-            == "enabled"
-        )
+        self.chkFrame.setChecked(self.APP.SETTINGS.value("PocketCameraFrame", default="disabled") == "enabled")
 
         palette = self.APP.SETTINGS.value("PocketCameraPalette")
         try:
@@ -273,9 +249,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         self.CUR_EXPORT_PATH = self.APP.SETTINGS.value("LastDirPocketCamera")
         if self.CUR_EXPORT_PATH is None:
-            self.CUR_EXPORT_PATH = QtCore.QStandardPaths.writableLocation(
-                QtCore.QStandardPaths.DocumentsLocation
-            )
+            self.CUR_EXPORT_PATH = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.DocumentsLocation)
 
         self.SetColors()
 
@@ -289,9 +263,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             return
         self.layout.update()
         self.layout.activate()
-        screenGeometry = (
-            self.screen() or QtGui.QGuiApplication.primaryScreen()
-        ).geometry()
+        screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
         x = (screenGeometry.width() - self.width()) / 2
         y = (screenGeometry.height() - self.height()) / 2
         self.move(x, y)
@@ -387,9 +359,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
     def btnOpenSRAM_Clicked(self):
         last_dir = self.APP.SETTINGS.value("LastDirSaveDataDMG")
         if last_dir is None:
-            last_dir = QtCore.QStandardPaths.writableLocation(
-                QtCore.QStandardPaths.DocumentsLocation
-            )
+            last_dir = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.DocumentsLocation)
         path = QtWidgets.QFileDialog.getOpenFileName(
             self,
             __("Open GB Camera Save Data File"),
@@ -449,9 +419,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                     return
 
         for i in range(32):
-            file = (
-                os.path.splitext(path)[0] + f"{i + 1:02d}" + os.path.splitext(path)[1]
-            )
+            file = os.path.splitext(path)[0] + f"{i + 1:02d}" + os.path.splitext(path)[1]
             self.SavePicture(i, path=file)
 
     def btnSavePhoto_Clicked(self, event):
@@ -471,10 +439,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.APP.SETTINGS.setValue("PocketCameraZoom", str(self.spnZoom.value()))
         self.APP.SETTINGS.setValue(
             "PocketCameraFrame",
-            str(self.chkFrame.isChecked())
-            .lower()
-            .replace("true", "enabled")
-            .replace("false", "disabled"),
+            str(self.chkFrame.isChecked()).lower().replace("true", "enabled").replace("false", "disabled"),
         )
         self.APP.SETTINGS.setValue("LastDirPocketCamera", self.CUR_EXPORT_PATH)
         self.APP.activateWindow()
@@ -494,9 +459,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 draw.line([0, 112, 128, 0], fill=(255, 0, 0, 192), width=8)
                 pic.paste(draw_bg, mask=draw_bg)
                 self.lblPhoto[i].setToolTip(
-                    __(
-                        "This picture was marked as “deleted” and may be overwritten when you take new pictures."
-                    )
+                    __("This picture was marked as “deleted” and may be overwritten when you take new pictures.")
                 )
             self.CUR_THUMBS[i] = ImageQt(pic.resize((47, 41), Image.Resampling.HAMMING))
             qpixmap = QtGui.QPixmap.fromImage(self.CUR_THUMBS[i])
@@ -518,9 +481,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             )
 
         self.CUR_PIC = ImageQt(
-            cam.GetPicture(index).resize(
-                (int(256 * scale_factor), int(224 * scale_factor)), resampler
-            )
+            cam.GetPicture(index).resize((int(256 * scale_factor), int(224 * scale_factor)), resampler)
         )
         if index < 30:
             self.lblPhoto[index].setStyleSheet("border: 3px solid green; padding: 1px;")
@@ -568,9 +529,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         if index == 31:
             frame = False  # last seen image
-        cam.ExportPicture(
-            index=index, path=path, scale=self.spnZoom.value(), frame=frame
-        )
+        cam.ExportPicture(index=index, path=path, scale=self.spnZoom.value(), frame=frame)
 
     def dragEnterEvent(self, e):
         if self._dragEventHover(e):
@@ -589,11 +548,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             for url in e.mimeData().urls():
                 fn = str(url.toLocalFile())
                 if fn == "":
-                    fn = urllib.parse.unquote(
-                        str(
-                            QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()
-                        )
-                    )
+                    fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
                 fn_split = os.path.splitext(os.path.abspath(fn))
                 if fn_split[1] == ".sav":
@@ -607,11 +562,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             for url in e.mimeData().urls():
                 fn = str(url.toLocalFile())
                 if fn == "":
-                    fn = urllib.parse.unquote(
-                        str(
-                            QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()
-                        )
-                    )
+                    fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
                 fn_split = os.path.splitext(os.path.abspath(fn))
                 if fn_split[1] == ".sav":

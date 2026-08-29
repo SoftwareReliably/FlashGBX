@@ -49,9 +49,7 @@ class GbxDevice(LK_Device):
             if self.TryConnect(ports[i], max_baud):
                 self.BAUDRATE = max_baud
                 try:
-                    dev = serial.Serial(
-                        ports[i], self.BAUDRATE, timeout=0.1, exclusive=True
-                    )
+                    dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1, exclusive=True)
                 except (SerialException, OSError) as e:
                     dprint(f"Couldn’t reopen port {ports[i]:s}:", e)
                     continue
@@ -109,10 +107,7 @@ class GbxDevice(LK_Device):
             self.FW = dict(zip(keys, values))
             self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
             self.FW["fw_dt"] = (
-                datetime.datetime.fromtimestamp(self.FW["fw_ts"])
-                .astimezone()
-                .replace(microsecond=0)
-                .isoformat()
+                datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
             )
             self.FW["ofw_ver"] = None
             self.FW["pcb_name"] = ""
@@ -123,9 +118,7 @@ class GbxDevice(LK_Device):
                 name = self._read(size)
                 if len(name) > 0:
                     try:
-                        self.FW["pcb_name"] = (
-                            name.decode("UTF-8").replace("\x00", "").strip()
-                        )
+                        self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
                     except:
                         self.FW["pcb_name"] = "Unnamed Device"
                     self.DEVICE_NAME = self.FW["pcb_name"]
@@ -150,9 +143,7 @@ class GbxDevice(LK_Device):
                     self.DEVICE.close()
                 self.DEVICE = None
             except Exception:
-                logger.exception(
-                    "Failed to close Game Bub after an initialization error"
-                )
+                logger.exception("Failed to close Game Bub after an initialization error")
             return False
 
     def ChangeBaudRate(self, _):

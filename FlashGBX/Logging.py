@@ -44,9 +44,7 @@ class Logger:
         if len(msg.strip()) > 0:
             if ANSI.RED in msg:
                 self.LOG_ERROR = True
-            AppContext.PRINT_LOG.append(
-                re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", msg.strip())
-            )
+            AppContext.PRINT_LOG.append(re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", msg.strip()))
             if len(AppContext.PRINT_LOG) > 16 * 1024:
                 AppContext.PRINT_LOG.pop(0)
         sys.__stdout__.write(msg)
@@ -87,20 +85,14 @@ class Logger:
         msg = "\n\n\n---- Debug Log ----\n"
         msg += f"{AppInfo.NAME:s} version: {AppInfo.VERSION_PEP440:s} ({AppInfo.VERSION_TIMESTAMP:d})\n"
         msg += f"Language: {i18n.CONFIGURED_LANGUAGE:s}\n"
-        msg += "Platform: {:s}\n".format(
-            AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.OS_LANGUAGE
-        )
+        msg += "Platform: {:s}\n".format(AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.OS_LANGUAGE)
         if device is not False:
             if device is not None:
                 msg += f"Connected device: {device:s}\n"
             else:
                 msg += "No device connected\n"
 
-        launch_time = (
-            datetime.datetime.fromtimestamp(AppContext.LAUNCH_TIMESTAMP)
-            .astimezone()
-            .replace(microsecond=0)
-        )
+        launch_time = datetime.datetime.fromtimestamp(AppContext.LAUNCH_TIMESTAMP).astimezone().replace(microsecond=0)
         now = datetime.datetime.now().astimezone().replace(microsecond=0)
         runtime = now - launch_time
         days, hours, minutes, seconds = (

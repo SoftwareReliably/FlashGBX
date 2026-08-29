@@ -66,9 +66,7 @@ class CartWriteCallback(Protocol):
 
 
 class CartWriteFastCallback(Protocol):
-    def __call__(
-        self, commands: FlashCommands, *, flashcart: bool = False
-    ) -> object: ...
+    def __call__(self, commands: FlashCommands, *, flashcart: bool = False) -> object: ...
 
 
 class CartReadCallback(Protocol):
@@ -173,16 +171,10 @@ class Flashcart:
         return mbc
 
     def FlashCommandsOnBank1(self) -> bool:
-        return (
-            "flash_commands_on_bank_1" in self._config
-            and self._config["flash_commands_on_bank_1"] is True
-        )
+        return "flash_commands_on_bank_1" in self._config and self._config["flash_commands_on_bank_1"] is True
 
     def PulseResetAfterWrite(self) -> bool:
-        return (
-            "pulse_reset_after_write" in self._config
-            and self._config["pulse_reset_after_write"] is True
-        )
+        return "pulse_reset_after_write" in self._config and self._config["pulse_reset_after_write"] is True
 
     def HasRTC(self) -> bool:
         return "rtc" in self._config and self._config["rtc"] is True
@@ -236,9 +228,7 @@ class Flashcart:
             return False
         return self._config["write_pin"] == "WR+RESET"
 
-    def GetFlashSize(
-        self, default: int | Literal[False] = False
-    ) -> int | Literal[False]:
+    def GetFlashSize(self, default: int | Literal[False] = False) -> int | Literal[False]:
         if "flash_size" not in self._config:
             return default
         return self._config["flash_size"]
@@ -257,11 +247,7 @@ class Flashcart:
             else:
                 cfi = self.ReadCFI()
                 if cfi is False:
-                    print(
-                        __(
-                            "CFI Error: Couldn’t retrieve buffer size from the cartridge."
-                        )
-                    )
+                    print(__("CFI Error: Couldn’t retrieve buffer size from the cartridge."))
                     if "single_write" in self._config["commands"]:
                         del self._config["commands"]["buffer_write"]
                         print(__("Buffered write disabled."))
@@ -286,9 +272,7 @@ class Flashcart:
             for command in self._config["commands"]["unlock_read"]:
                 for _ in range(command[2]):
                     temp = self.CartRead(command[0], command[1])
-                    dprint(
-                        f"Reading 0x{command[1]:X} bytes from cartridge at 0x{command[0]:X} = {temp!s:s}"
-                    )
+                    dprint(f"Reading 0x{command[1]:X} bytes from cartridge at 0x{command[0]:X} = {temp!s:s}")
             time.sleep(0.001)
         if "unlock" in self._config["commands"]:
             self.CartWrite(self._config["commands"]["unlock"], fast_write=False)
@@ -301,11 +285,7 @@ class Flashcart:
             time.sleep(0.001)
             if self.Unlock() is False:
                 return False
-        elif (
-            full_reset
-            and "reset_every" in self._config
-            and "flash_size" in self._config
-        ):
+        elif full_reset and "reset_every" in self._config and "flash_size" in self._config:
             for j in range(0, self._config["flash_size"], self._config["reset_every"]):
                 if j >= max_address:
                     break
@@ -332,14 +312,10 @@ class Flashcart:
         read_identifier_at = 0
         if "read_identifier_at" in config:
             read_identifier_at = config["read_identifier_at"]
-        cart_flash_id = list(
-            self.CartRead(read_identifier_at, len(config["flash_ids"][0]))
-        )
+        cart_flash_id = list(self.CartRead(read_identifier_at, len(config["flash_ids"][0])))
         self.Reset()
         dprint(config["names"], config["commands"]["read_identifier"])
-        dprint(
-            "Flash ID: {:s}".format(" ".join(format(x, "02X") for x in cart_flash_id))
-        )
+        dprint("Flash ID: {:s}".format(" ".join(format(x, "02X") for x in cart_flash_id)))
         verified = True
         if rom == cart_flash_id:
             dprint("ROM data matched Flash ID response.")
@@ -351,9 +327,7 @@ class Flashcart:
 
     def VerifyFlashID(self) -> tuple[bool, list[int]]:
         if "flash_ids_banks" in self._config:
-            bank_flash_ids = cast(
-                Sequence[Sequence[int]], self._config["flash_ids_banks"]
-            )
+            bank_flash_ids = cast(Sequence[Sequence[int]], self._config["flash_ids_banks"])
             if not bank_flash_ids:
                 return (False, [])
             cart_flash_ids: list[list[int]] = []
@@ -408,9 +382,7 @@ class Flashcart:
             smallest_sector_size = min(smallest_sector_size, sector[0])
         return smallest_sector_size
 
-    def GetSectorOffsets(
-        self, rom_size: int = 0, rom_bank_size: int = 0x4000
-    ) -> list[list[int]]:
+    def GetSectorOffsets(self, rom_size: int = 0, rom_bank_size: int = 0x4000) -> list[list[int]]:
         regions = self.GetSectorMap()
         pos = 0
         offsets: list[list[int]] = []
@@ -439,11 +411,7 @@ class Flashcart:
             else:
                 cfi = self.ReadCFI()
                 if cfi is False:
-                    print(
-                        __(
-                            "CFI Error: Couldn’t retrieve sector size map from the cartridge."
-                        )
-                    )
+                    print(__("CFI Error: Couldn’t retrieve sector size map from the cartridge."))
                     if "chip_erase" in self._config["commands"]:
                         del self._config["commands"]["sector_erase"]
                         print(__("Sector erase mode disabled."))
@@ -451,9 +419,7 @@ class Flashcart:
             sector_size = cfi["erase_sector_blocks"]
             if cfi["tb_boot_sector_raw"] == 0x03:
                 sector_size.reverse()
-            dprint(
-                "Sector size map was read from CFI data:", cfi["erase_sector_blocks"]
-            )
+            dprint("Sector size map was read from CFI data:", cfi["erase_sector_blocks"])
             self._config["sector_size"] = sector_size
             return sector_size
         else:
@@ -505,12 +471,8 @@ class Flashcart:
                         }
                     )
                     if self._config.get("wait_read_status_register"):
-                        for j in range(
-                            len(self._config["commands"]["read_status_register"])
-                        ):
-                            sr_data = self._config["commands"]["read_status_register"][
-                                j
-                            ][1]
+                        for j in range(len(self._config["commands"]["read_status_register"])):
+                            sr_data = self._config["commands"]["read_status_register"][j][1]
 
                             if we == "WR":
                                 self._set_we_pin_wr()
@@ -535,20 +497,10 @@ class Flashcart:
                             wait_for,
                             self._config["commands"]["chip_erase_wait_for"][i][2],
                             data,
-                            str(
-                                (
-                                    wait_for
-                                    & self._config["commands"]["chip_erase_wait_for"][
-                                        i
-                                    ][2]
-                                )
-                                == data
-                            ),
+                            str((wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]) == data),
                         )
                     )
-                    wait_for = (
-                        wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]
-                    )
+                    wait_for = wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]
                     if wait_for == data:
                         break
                     time.sleep(0.5)
@@ -573,9 +525,7 @@ class Flashcart:
         self.Reset(full_reset=True)
         return True
 
-    def SectorErase(
-        self, pos: int = 0, buffer_pos: int = 0, skip: bool = False
-    ) -> int | Literal[False]:
+    def SectorErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> int | Literal[False]:
         if not skip:
             self.Reset(full_reset=False)
             if "sector_erase" not in self._config["commands"]:
@@ -638,15 +588,9 @@ class Flashcart:
                             "wait_read_status_register" in self._config
                             and self._config["wait_read_status_register"] == True
                         ):
-                            for j in range(
-                                len(self._config["commands"]["read_status_register"])
-                            ):
-                                sr_addr = self._config["commands"][
-                                    "read_status_register"
-                                ][j][0]
-                                sr_data = self._config["commands"][
-                                    "read_status_register"
-                                ][j][1]
+                            for j in range(len(self._config["commands"]["read_status_register"])):
+                                sr_addr = self._config["commands"]["read_status_register"][j][0]
+                                sr_data = self._config["commands"]["read_status_register"][j][1]
 
                                 if we == "WR":
                                     self._set_we_pin_wr()
@@ -675,25 +619,14 @@ class Flashcart:
                                 wait_for,
                                 self._config["commands"]["sector_erase_wait_for"][i][2],
                                 data,
-                                str(
-                                    wait_for
-                                    & self._config["commands"]["sector_erase_wait_for"][
-                                        i
-                                    ][2]
-                                    == data
-                                ),
+                                str(wait_for & self._config["commands"]["sector_erase_wait_for"][i][2] == data),
                             )
                         )
-                        wait_for = (
-                            wait_for
-                            & self._config["commands"]["sector_erase_wait_for"][i][2]
-                        )
+                        wait_for = wait_for & self._config["commands"]["sector_erase_wait_for"][i][2]
                         time.sleep(0.05)
                         timeout -= 1
                         if timeout < 1:
-                            dprint(
-                                f"Timeout error in SectorErase(): 0x{self._last_status:X}"
-                            )
+                            dprint(f"Timeout error in SectorErase(): 0x{self._last_status:X}")
                             # self._progress({"action":"ABORT", "info_type":"msgbox_critical", "info_msg":"The sector erase attempt timed out. The last status register value was 0x{:X}.\n\nPlease make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.".format(self._last_status), "abortable":False})
                             return False
                         if wait_for == data:
@@ -717,9 +650,7 @@ class Flashcart:
             sector_map = cast(list[list[int]], raw_sector_map)
             try:
                 sector_map[self._sector_pos][1] -= 1
-                if (sector_map[self._sector_pos][1] == 0) and (
-                    len(sector_map) > self._sector_pos + 1
-                ):
+                if (sector_map[self._sector_pos][1] == 0) and (len(sector_map) > self._sector_pos + 1):
                     self._sector_pos += 1
                 return sector_map[self._sector_pos][0]
             except (IndexError, TypeError) as e:
@@ -767,9 +698,7 @@ class CFI:
             n ^= 1 << q
         return n
 
-    def Parse(
-        self, buffer: bytes | bytearray | memoryview | Literal[False]
-    ) -> CFIInfo | Literal[False]:
+    def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
         if buffer is False or buffer == b"":
             return False
         buffer = bytearray(buffer)
@@ -792,20 +721,12 @@ class CFI:
                 buffer[j] = CFI.swap_bits(buffer[j], pair)
         try:
             info["flash_id"] = buffer[0:8]
-            info["magic"] = (
-                f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
-            )
+            info["magic"] = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
 
             if buffer[0x36] == 0xFF and buffer[0x48] == 0xFF:
-                print(
-                    __(
-                        "Warning: No information about the voltage range found in CFI data."
-                    )
-                )
+                print(__("Warning: No information about the voltage range found in CFI data."))
                 try:
-                    with open(
-                        AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb"
-                    ) as f:
+                    with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f:
                         f.write(buffer)
                 except Exception:
                     logger.exception("Failed to write CFI diagnostics")
@@ -821,52 +742,41 @@ class CFI:
             if buffer[0x3E] > 0 and buffer[0x3E] < 0xFF:
                 info["single_write"] = True
                 info["single_write_time_avg"] = int(math.pow(2, buffer[0x3E]))
-                info["single_write_time_max"] = int(
-                    math.pow(2, buffer[0x46]) * info["single_write_time_avg"]
-                )
+                info["single_write_time_max"] = int(math.pow(2, buffer[0x46]) * info["single_write_time_avg"])
             else:
                 info["single_write"] = False
 
             if buffer[0x40] > 0 and buffer[0x40] < 0xFF:
                 info["buffer_write"] = True
                 info["buffer_write_time_avg"] = int(math.pow(2, buffer[0x40]))
-                info["buffer_write_time_max"] = int(
-                    math.pow(2, buffer[0x48]) * info["buffer_write_time_avg"]
-                )
+                info["buffer_write_time_max"] = int(math.pow(2, buffer[0x48]) * info["buffer_write_time_avg"])
             else:
                 info["buffer_write"] = False
 
             if buffer[0x42] > 0 and buffer[0x42] < 0xFF:
                 info["sector_erase"] = True
                 info["sector_erase_time_avg"] = int(math.pow(2, buffer[0x42]))
-                info["sector_erase_time_max"] = int(
-                    math.pow(2, buffer[0x4A]) * info["sector_erase_time_avg"]
-                )
+                info["sector_erase_time_max"] = int(math.pow(2, buffer[0x4A]) * info["sector_erase_time_avg"])
             else:
                 info["sector_erase"] = False
 
             if buffer[0x44] > 0 and buffer[0x44] < 0xFF:
                 info["chip_erase"] = True
                 info["chip_erase_time_avg"] = int(math.pow(2, buffer[0x44]))
-                info["chip_erase_time_max"] = int(
-                    math.pow(2, buffer[0x4C]) * info["chip_erase_time_avg"]
-                )
+                info["chip_erase_time_max"] = int(math.pow(2, buffer[0x4C]) * info["chip_erase_time_avg"])
             else:
                 info["chip_erase"] = False
 
             info["tb_boot_sector"] = False
             info["tb_boot_sector_raw"] = 0
             if (
-                f"{chr(buffer[pri_address]):s}{chr(buffer[pri_address + 2]):s}{chr(buffer[pri_address + 4]):s}"
-                == "PRI"
+                f"{chr(buffer[pri_address]):s}{chr(buffer[pri_address + 2]):s}{chr(buffer[pri_address + 4]):s}" == "PRI"
                 and buffer[pri_address + 0x1E] not in (0, 0xFF)
             ):
                 temp = {0x02: "As shown", 0x03: "Reversed"}
                 info["tb_boot_sector_raw"] = buffer[pri_address + 0x1E]
                 try:
-                    info["tb_boot_sector"] = (
-                        f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
-                    )
+                    info["tb_boot_sector"] = f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
                 except Exception:
                     info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
 
@@ -909,8 +819,7 @@ class CFI:
             __(
                 "Device size: {size_hex} ({size_mib})",
                 size_hex="0x{:07X}".format(info["device_size"]),
-                size_mib=format_decimal(info["device_size"] / 1024 / 1024, precision=2)
-                + __(" MiB"),
+                size_mib=format_decimal(info["device_size"] / 1024 / 1024, precision=2) + __(" MiB"),
             )
             + "\n"
         )
@@ -953,11 +862,7 @@ class CFI:
                 )
                 + "\n"
             )
-        if (
-            info["chip_erase"]
-            and "chip_erase_time_avg" in info
-            and "chip_erase_time_max" in info
-        ):
+        if info["chip_erase"] and "chip_erase_time_avg" in info and "chip_erase_time_max" in info:
             s += (
                 __(
                     "Chip erase: {avg}–{max} ms",
@@ -966,11 +871,7 @@ class CFI:
                 )
                 + "\n"
             )
-        if (
-            info["sector_erase"]
-            and "sector_erase_time_avg" in info
-            and "sector_erase_time_max" in info
-        ):
+        if info["sector_erase"] and "sector_erase_time_avg" in info and "sector_erase_time_max" in info:
             s += (
                 __(
                     "Sector erase: {avg}–{max} ms",
@@ -1014,9 +915,7 @@ class CFI:
 
 
 class Flashcart_AGB_GBAMP(Flashcart):
-    def SectorErase(
-        self, pos: int = 0, buffer_pos: int = 0, skip: bool = False
-    ) -> int | Literal[False]:
+    def SectorErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> int | Literal[False]:
         ret: int | Literal[False] = False
         for i in range(4):
             sector = pos >> 13 << 16 | (pos & 0x1FFF) + (i * 4)
@@ -1031,9 +930,7 @@ class Flashcart_AGB_GBAMP(Flashcart):
         self.Unlock()
         rom = list(self.CartRead(0x1E8F << 1, 2) + self.CartRead(0x168F << 1, 2))
         self.CartWrite(self._config["commands"]["read_identifier"], fast_write=True)
-        cart_flash_id = list(
-            self.CartRead(0x1E8F << 1, 2) + self.CartRead(0x168F << 1, 2)
-        )
+        cart_flash_id = list(self.CartRead(0x1E8F << 1, 2) + self.CartRead(0x168F << 1, 2))
         if rom != cart_flash_id and cart_flash_id == self._config["flash_ids"][0]:
             self.CartWrite(self._config["commands"]["reset"], fast_write=True)
             verified = True
@@ -1050,9 +947,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
 
     def ChipErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> bool:
         time_start = time.time()
-        self._progress(
-            {"action": "ERASE", "time_start": time_start, "abortable": False}
-        )
+        self._progress({"action": "ERASE", "time_start": time_start, "abortable": False})
 
         self.CartWrite([[0x2000, 0x02]], fast_write=False)
         self.CartWrite([[0x6AAA, 0xAA]], fast_write=True)
@@ -1072,9 +967,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
             raw = self.CartRead(0)
             sr = raw[0] if raw else 0
             self._last_status = sr
-            dprint(
-                f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}"
-            )
+            dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
             if (sr & 0x80) == 0x80:
                 break
             time.sleep(0.5)
@@ -1212,9 +1105,7 @@ class Flashcart_DMG_MMSA(Flashcart):
             raw = self.CartRead(0)
             sr = raw[0] if raw else 0
             self._last_status = sr
-            dprint(
-                f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}"
-            )
+            dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
             if (sr & 0x80) == 0x80:
                 break
             time.sleep(0.5)
@@ -1307,9 +1198,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 
     def ChipErase(self) -> bool:
         time_start = time.time()
-        self._progress(
-            {"action": "ERASE", "time_start": time_start, "abortable": False}
-        )
+        self._progress({"action": "ERASE", "time_start": time_start, "abortable": False})
 
         if self.UnlockForWriting() is False:
             return False
@@ -1365,15 +1254,11 @@ class Flashcart_DMG_MMSA(Flashcart):
         self.CartWrite(cmds)
         lives = 10
         while lives > 0:
-            self._progress(
-                {"action": "ERASE", "time_start": time_start, "abortable": False}
-            )
+            self._progress({"action": "ERASE", "time_start": time_start, "abortable": False})
             raw = self.CartRead(0)
             sr = raw[0] if raw else 0
             self._last_status = sr
-            dprint(
-                f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}"
-            )
+            dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
             if (sr & 0x80) == 0x80:
                 break
             time.sleep(0.5)
@@ -1419,9 +1304,7 @@ class Flashcart_DMG_MMSA(Flashcart):
 
     def UnlockForWriting(self) -> bool:
         time_start = time.time()
-        self._progress(
-            {"action": "UNLOCK", "time_start": time_start, "abortable": False}
-        )
+        self._progress({"action": "UNLOCK", "time_start": time_start, "abortable": False})
 
         self.CartWrite([[0x2100, 0x01]])
         # Enable Flash Chip Access
@@ -1514,14 +1397,10 @@ class Flashcart_DMG_MMSA(Flashcart):
             raw = self.CartRead(0)
             sr = raw[0] if raw else 0
             self._last_status = sr
-            dprint(
-                f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}"
-            )
+            dprint(f"Status Register Check: 0x{sr:X} & 0x{0x80:X} == 0x{0x80:X}? {(sr & 0x80) == 0x80!s:s}")
             if (sr & 0x80) == 0x80:
                 break
-            self._progress(
-                {"action": "UNLOCK", "time_start": time_start, "abortable": False}
-            )
+            self._progress({"action": "UNLOCK", "time_start": time_start, "abortable": False})
             time.sleep(0.5)
             lives -= 1
         if lives == 0:
@@ -1563,18 +1442,12 @@ def _profile_flash_ids(profile: Mapping[str, object]) -> set[tuple[int, ...]]:
     return flash_ids
 
 
-def has_3v_compatible_profile(
-    carts: Iterable[object], cart_type_index: int | None
-) -> bool:
+def has_3v_compatible_profile(carts: Iterable[object], cart_type_index: int | None) -> bool:
     try:
         profiles = list(carts)
     except TypeError:
         return False
-    if (
-        cart_type_index is None
-        or cart_type_index < 0
-        or cart_type_index >= len(profiles)
-    ):
+    if cart_type_index is None or cart_type_index < 0 or cart_type_index >= len(profiles):
         return False
     selected = profiles[cart_type_index]
     if not isinstance(selected, dict):
@@ -1594,9 +1467,7 @@ def has_3v_compatible_profile(
         candidate = cast(Mapping[str, object], profile)
         if candidate.get("type") != selected_type:
             continue
-        if candidate.get("voltage", 5) != 3.3 and not candidate.get(
-            "voltage_variants", False
-        ):
+        if candidate.get("voltage", 5) != 3.3 and not candidate.get("voltage_variants", False):
             continue
         if _profile_flash_ids(candidate) & selected_id_set:
             return True

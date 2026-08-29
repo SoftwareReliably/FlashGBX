@@ -52,11 +52,7 @@ class AppInfo:
                     try:
                         product_name = winreg.QueryValueEx(key, "ProductName")[0]
                         # Keep build-based naming for 10/11 to avoid compatibility-masked ProductName values.
-                        if (
-                            w.major != 10
-                            and isinstance(product_name, str)
-                            and product_name.startswith("Windows ")
-                        ):
+                        if w.major != 10 and isinstance(product_name, str) and product_name.startswith("Windows "):
                             parts = product_name.split(" ")
                             if len(parts) >= 2:
                                 name = " ".join(parts[:2])
@@ -68,19 +64,13 @@ class AppInfo:
                         try:
                             display_version = winreg.QueryValueEx(key, "ReleaseId")[0]
                         except Exception:
-                            logger.exception(
-                                "Failed to read the Windows release ID: {}", e
-                            )
+                            logger.exception("Failed to read the Windows release ID: {}", e)
                     try:
                         ubr = int(winreg.QueryValueEx(key, "UBR")[0])
                     except Exception:
-                        logger.exception(
-                            "Failed to read the Windows update build revision"
-                        )
+                        logger.exception("Failed to read the Windows update build revision")
             except Exception:
-                logger.exception(
-                    "Failed to read Windows version details from the registry"
-                )
+                logger.exception("Failed to read Windows version details from the registry")
 
             build_str = f"{w.build}.{ubr}" if ubr is not None else f"{w.build}"
             if display_version:
@@ -109,10 +99,7 @@ def generate_filename(mode, header, settings=None):
 
     fe_ni = True
     if settings is not None:
-        fe_ni = (
-            settings.value(key="UseNoIntroFilenames", default="enabled").lower()
-            == "enabled"
-        )
+        fe_ni = settings.value(key="UseNoIntroFilenames", default="enabled").lower() == "enabled"
 
     path = "ROM"
     path_extension = "bin"
@@ -137,11 +124,7 @@ def generate_filename(mode, header, settings=None):
             path = "%TITLE%"
         if header["cgb"] in (0xC0, 0x80):
             path_extension = "gbc"
-        elif (
-            header["old_lic"] == 0x33
-            and header["sgb"] == 0x03
-            and fe_sgb.lower() == "enabled"
-        ):
+        elif header["old_lic"] == 0x33 and header["sgb"] == 0x03 and fe_sgb.lower() == "enabled":
             path_extension = "sgb"
         else:
             path_extension = "gb"
@@ -182,23 +165,13 @@ def generate_filename(mode, header, settings=None):
         path += "." + path_extension
 
     if fe_ni and header.get("db") is not None:
-        if (
-            mode == "DMG"
-            and get_mbc_name(header["mapper_raw"]) == "G-MMC1"
-            and "gbmem_parsed" in header
-        ):
+        if mode == "DMG" and get_mbc_name(header["mapper_raw"]) == "G-MMC1" and "gbmem_parsed" in header:
             if isinstance(header["gbmem_parsed"], list):
-                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(
-                    header["gbmem_parsed"][0]["cart_id"], path_extension
-                )
+                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(header["gbmem_parsed"][0]["cart_id"], path_extension)
             else:
-                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(
-                    header["gbmem_parsed"]["cart_id"], path_extension
-                )
+                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(header["gbmem_parsed"]["cart_id"], path_extension)
         else:
-            path = "{:s} {:s}.{:s}".format(
-                header["db"]["gn"], header["db"]["ne"], path_extension
-            )
+            path = "{:s} {:s}.{:s}".format(header["db"]["gn"], header["db"]["ne"], path_extension)
 
     return path
 

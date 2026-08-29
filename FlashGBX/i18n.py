@@ -338,9 +338,7 @@ def loadTranslation(language):
         koffsets += [l1, o1 + keystart]
         voffsets += [l2, o2 + valuestart]
 
-    mo = struct.pack(
-        "Iiiiiii", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0
-    )
+    mo = struct.pack("Iiiiiii", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
     mo += array.array("i", koffsets + voffsets).tobytes()
     mo += ids + strs
 
@@ -351,7 +349,7 @@ def __(msgid, **kwargs):
     msg = lang.gettext(msgid)
     try:
         return msg.format(**kwargs)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         return msgid.format(**kwargs)
 
 
@@ -359,7 +357,7 @@ def ___(singular, plural, n=1, **kwargs):
     msg = lang.ngettext(singular, plural, n)
     try:
         return msg.format(n=n, **kwargs)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         fallback = singular if n == 1 else plural
         return fallback.format(n=n, **kwargs)
 
@@ -371,7 +369,7 @@ def c__(context, msgid, **kwargs):
         msg = lang.gettext(msgid)
     try:
         return msg.format(**kwargs)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         return msgid.format(**kwargs)
 
 
@@ -382,7 +380,7 @@ def c___(context, singular, plural, n=1, **kwargs):
         msg = lang.ngettext(singular, plural, n)
     try:
         return msg.format(n=n, **kwargs)
-    except (KeyError, IndexError):
+    except KeyError, IndexError:
         fallback = singular if n == 1 else plural
         return fallback.format(n=n, **kwargs)
 
@@ -421,13 +419,9 @@ def loadQtTranslation(app=None, language=None):
     set_locale(qt_locale.name())
 
     try:
-        translations_path = QtCore.QLibraryInfo.path(
-            QtCore.QLibraryInfo.TranslationsPath
-        )
+        translations_path = QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.TranslationsPath)
     except AttributeError:
-        translations_path = QtCore.QLibraryInfo.location(
-            QtCore.QLibraryInfo.TranslationsPath
-        )
+        translations_path = QtCore.QLibraryInfo.location(QtCore.QLibraryInfo.TranslationsPath)
 
     translator = QtCore.QTranslator(app)
     for catalog in ("qtbase", "qt"):
@@ -449,12 +443,9 @@ def init_language(config_path, override=None):
         app_path = os.path.dirname(os.path.abspath(__file__))
     available_langs = ["en"]  # Always include English
     available_langs += [
-        os.path.splitext(os.path.basename(f))[0]
-        for f in glob.glob(os.path.join(app_path, "locale", "*.po"))
+        os.path.splitext(os.path.basename(f))[0] for f in glob.glob(os.path.join(app_path, "locale", "*.po"))
     ]
-    filtered_langs = {
-        code: name for code, name in LANGUAGES.items() if code in available_langs
-    }
+    filtered_langs = {code: name for code, name in LANGUAGES.items() if code in available_langs}
     LANGUAGES = dict(sorted(filtered_langs.items(), key=lambda x: x[1][1]))
 
     try:
@@ -512,7 +503,7 @@ except locale.Error:
 lang_country = None
 try:
     lang_country, _ = locale.getlocale()
-except (TypeError, ValueError):
+except TypeError, ValueError:
     lang_country = None
 
 OS_LANGUAGE = lang_country

@@ -142,18 +142,12 @@ class RomFileDMG:
             data["logo"] = temp
 
         if data["cgb"] in (0x80, 0xC0):
-            data["game_title_raw"] = bytearray(buffer[0x134:0x143]).decode(
-                "ascii", "replace"
-            )
+            data["game_title_raw"] = bytearray(buffer[0x134:0x143]).decode("ascii", "replace")
         else:
-            data["game_title_raw"] = bytearray(buffer[0x134:0x144]).decode(
-                "ascii", "replace"
-            )
+            data["game_title_raw"] = bytearray(buffer[0x134:0x144]).decode("ascii", "replace")
         game_title = data["game_title_raw"]
         game_title = re.sub(r"(\x00+)$", "", game_title)
-        game_title = re.sub(
-            r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-        ).replace("\x00", "_")
+        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
         game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
         data["game_code"] = ""
         if (
@@ -184,9 +178,7 @@ class RomFileDMG:
         data["maker_code"] = format(int(buffer[0x14B]), "02X")
         if data["maker_code"] == "33":
             maker_code = bytearray(buffer[0x144:0x146]).decode("ascii", "replace")
-            maker_code = "".join(
-                filter(lambda x: x in set(string.printable), maker_code)
-            )
+            maker_code = "".join(filter(lambda x: x in set(string.printable), maker_code))
             data["maker_code_new"] = maker_code
         data["mapper_raw"] = int(buffer[0x147])
         data["mapper"] = "?"
@@ -205,9 +197,7 @@ class RomFileDMG:
         data["version"] = int(buffer[0x14C])
         data["header_checksum"] = int(buffer[0x14D])
         data["header_checksum_calc"] = self.CalcChecksumHeader()
-        data["header_checksum_correct"] = (
-            data["header_checksum"] == data["header_checksum_calc"]
-        )
+        data["header_checksum_correct"] = data["header_checksum"] == data["header_checksum_calc"]
         data["rom_checksum"] = int(256 * buffer[0x14E] + buffer[0x14F])
         data["rom_checksum_calc"] = self.CalcChecksumGlobal()
         data["rom_checksum_correct"] = data["rom_checksum"] == data["rom_checksum_calc"]
@@ -283,11 +273,7 @@ class RomFileDMG:
                 data["mapper_raw"] = 0x105
 
             # M161 (Mani 4 in 1)
-            elif (
-                data["mapper_raw"] == 0x10
-                and data["game_title"] == "TETRIS SET"
-                and data["header_checksum"] == 0x3F
-            ):
+            elif data["mapper_raw"] == 0x10 and data["game_title"] == "TETRIS SET" and data["header_checksum"] == 0x3F:
                 data["mapper_raw"] = 0x104
 
             # MMM01 (Mani 4 in 1)
@@ -309,13 +295,8 @@ class RomFileDMG:
 
             # Unlicensed 256M Mapper
             elif (
-                (
-                    data["game_title"].upper() == "GB HICOL"
-                    and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9)
-                )
-                or (
-                    data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48
-                )
+                (data["game_title"].upper() == "GB HICOL" and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9))
+                or (data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48)
                 or buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder"
                 or (
                     data["mapper_raw"] in (0x19, 0x1B)
@@ -463,35 +444,25 @@ class RomFileDMG:
                 data["mapper_raw"] = 0x203
                 data["cgb"] = 0x80
                 try:
-                    game_title = (
-                        bytearray(buffer[0:0x10])
-                        .decode("ascii", "replace")
-                        .replace("\xff", "")
-                    )
+                    game_title = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
                     game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(
-                        r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-                    ).replace("\x00", "")
-                    game_title = "".join(
-                        filter(lambda x: x in set(string.printable), game_title)
-                    )
+                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
                     data["game_title"] = game_title
                 except Exception:
                     logger.exception("Failed to parse the unlicensed mapper ROM title")
-                data["version"] = (
-                    "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(
-                        buffer[0xD8],
-                        buffer[0xD9],
-                        buffer[0xDA],
-                        buffer[0xD7],
-                        buffer[0xD0],
-                        buffer[0xD1],
-                        buffer[0xD2],
-                        buffer[0xD3],
-                        buffer[0xD4],
-                        struct.unpack("<H", buffer[0xD5:0xD7])[0],
-                    ).replace("\x00", "")
-                )
+                data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(
+                    buffer[0xD8],
+                    buffer[0xD9],
+                    buffer[0xDA],
+                    buffer[0xD7],
+                    buffer[0xD0],
+                    buffer[0xD1],
+                    buffer[0xD2],
+                    buffer[0xD3],
+                    buffer[0xD4],
+                    struct.unpack("<H", buffer[0xD5:0xD7])[0],
+                ).replace("\x00", "")
 
             # Unlicensed Datel Orbit V2 Mapper
             elif hashlib.sha1(buffer[0x101:0x134]).digest() == bytearray(
@@ -523,18 +494,10 @@ class RomFileDMG:
                 data["mapper_raw"] = 0x205
                 data["cgb"] = 0x80
                 try:
-                    game_title = (
-                        bytearray(buffer[0x134:0x150])
-                        .decode("ascii", "replace")
-                        .replace("\xff", "")
-                    )
+                    game_title = bytearray(buffer[0x134:0x150]).decode("ascii", "replace").replace("\xff", "")
                     game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(
-                        r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-                    ).replace("\x00", "")
-                    game_title = "".join(
-                        filter(lambda x: x in set(string.printable), game_title)
-                    )
+                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
                     data["game_title"] = game_title
                 except Exception:
                     logger.exception("Failed to parse the Datel Orbit V2 ROM title")
@@ -591,23 +554,13 @@ class RomFileDMG:
                 data["ram_size_raw"] = 0
                 data["mapper_raw"] = 0x205
                 try:
-                    game_title = (
-                        bytearray(buffer[0x134:0x140])
-                        .decode("ascii", "replace")
-                        .replace("\xff", "")
-                    )
+                    game_title = bytearray(buffer[0x134:0x140]).decode("ascii", "replace").replace("\xff", "")
                     game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(
-                        r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-                    ).replace("\x00", "")
-                    game_title = "".join(
-                        filter(lambda x: x in set(string.printable), game_title)
-                    )
+                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
                     data["game_title"] = game_title
                 except Exception:
-                    logger.exception(
-                        "Failed to parse the legacy Datel Orbit V2 ROM title"
-                    )
+                    logger.exception("Failed to parse the legacy Datel Orbit V2 ROM title")
 
             # Unlicensed Sachen MMC1/MMC2
             elif len(buffer) >= 0x280:
@@ -1275,11 +1228,7 @@ class RomFileDMG:
         batteryless_sram = self.GetBatterylessSramConfig(data)
         if batteryless_sram is not None:
             data["batteryless_sram"] = batteryless_sram
-        if (
-            data["db"] is not None
-            and data["game_code"] == ""
-            and data["db"]["gc"] != ""
-        ):
+        if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
             data["game_code"] = data["db"]["gc"][4:]
         return data
 
@@ -1292,11 +1241,7 @@ class RomFileDMG:
                 try:
                     db: dict = json.loads(db_raw)
                 except (json.JSONDecodeError, ValueError) as e:
-                    print(
-                        __("Error: Database for Game Boy titles is corrupted.")
-                        + "\n"
-                        + str(e)
-                    )
+                    print(__("Error: Database for Game Boy titles is corrupted.") + "\n" + str(e))
                     return None
                 if data["header_sha1"] in db:
                     db_entry = db[data["header_sha1"]]

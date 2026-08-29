@@ -32,9 +32,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.APP = app
         self.CONN = app.CONN
         self.MODE = self.CONN.GetMode()
-        self.IM = InteractiveConsole(
-            self.CONN, on_output=self.AppendOutput, on_error=self.AppendOutput
-        )
+        self.IM = InteractiveConsole(self.CONN, on_output=self.AppendOutput, on_error=self.AppendOutput)
 
         self.layout = QtWidgets.QVBoxLayout()
         self.layout.setContentsMargins(8, 8, 8, 8)
@@ -60,9 +58,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
 
         rowButtons = QtWidgets.QHBoxLayout()
         rowButtons.addStretch()
-        self.btnClose = QtWidgets.QPushButton(
-            c__("Button (& = Keyboard Shortcut)", "&Close")
-        )
+        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
         self.btnClose.setStyleSheet("padding: 5px 15px;")
         self.btnClose.setAutoDefault(False)
         self.btnClose.setDefault(False)
@@ -83,9 +79,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.txtInput.setFocus()
         self.layout.update()
         self.layout.activate()
-        screenGeometry = (
-            self.screen() or QtGui.QGuiApplication.primaryScreen()
-        ).geometry()
+        screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
         x = (screenGeometry.width() - self.width()) / 2
         y = (screenGeometry.height() - self.height()) / 2
         self.move(x, y)
@@ -117,9 +111,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
 
     def AppendOutput(self, text):
         self.txtOutput.appendPlainText(text)
-        self.txtOutput.verticalScrollBar().setValue(
-            self.txtOutput.verticalScrollBar().maximum()
-        )
+        self.txtOutput.verticalScrollBar().setValue(self.txtOutput.verticalScrollBar().maximum())
 
     def OnSubmit(self):
         line = self.txtInput.text().strip()

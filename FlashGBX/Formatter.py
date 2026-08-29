@@ -26,15 +26,11 @@ class Formatter:
         elif size < 1024 * 1024:
             val = cls.round2(size / 1024)
             precision = 0 if as_int else 1
-            return format_decimal(
-                val, precision=precision, localized=localized
-            ) + _translate(" KiB").replace(" ", space)
+            return format_decimal(val, precision=precision, localized=localized) + _translate(" KiB").replace(" ", space)
         else:
             val = cls.round2(size / 1024 / 1024)
             precision = 0 if as_int else 2
-            return format_decimal(
-                val, precision=precision, localized=localized
-            ) + _translate(" MiB").replace(" ", space)
+            return format_decimal(val, precision=precision, localized=localized) + _translate(" MiB").replace(" ", space)
 
     @classmethod
     def progress_time_short(cls, sec):
@@ -48,9 +44,7 @@ class Formatter:
     @classmethod
     def progress_time(cls, seconds, as_float=False, localized=True):
         if not localized:
-            t___ = lambda singular, plural, **kwargs: (
-                singular if kwargs.get("n", 1) == 1 else plural
-            ).format(**kwargs)
+            t___ = lambda singular, plural, **kwargs: (singular if kwargs.get("n", 1) == 1 else plural).format(**kwargs)
             tc__ = lambda _context, text, **kwargs: text.format(**kwargs)
         else:
             t___ = ___
@@ -120,9 +114,7 @@ class Formatter:
     @classmethod
     def validate_datetime(cls, string, fmt):
         try:
-            if string != datetime.datetime.strptime(string, fmt).replace(
-                tzinfo=datetime.UTC
-            ).strftime(fmt):
+            if string != datetime.datetime.strptime(string, fmt).replace(tzinfo=datetime.UTC).strftime(fmt):
                 raise ValueError
             return True
         except ValueError:

@@ -35,11 +35,7 @@ class DumpReport:
             rom_size_str = f"{rom_size_int:,} bytes"
 
         keys = list(device.SUPPORTED_CARTS[mode].keys())
-        cart_type_str = (
-            keys[di["cart_type"]]
-            if 0 <= di["cart_type"] < len(keys)
-            else f"#{di['cart_type']}"
-        )
+        cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
         file_name = os.path.split(di["file_name"])[1] if di["file_name"] else ""
         file_size_bytes = di["file_size"]
         file_size_str = f"{Formatter.file_size(file_size_bytes, space=' ', localized=False)} ({file_size_bytes:d} bytes)"
@@ -117,11 +113,7 @@ class DumpReport:
             else:
                 target_platform = "Original Game Boy"
 
-            sgb_str = (
-                "Supported"
-                if (header["old_lic"] == 0x33 and header["sgb"] == 0x03)
-                else "No support"
-            )
+            sgb_str = "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"
             cgb_str = DMG_Mapper().CGB_MAP.get(cgb_raw, f"Unknown (0x{cgb_raw:02X})")
 
             hdr_chk = header["header_checksum"]
@@ -132,9 +124,7 @@ class DumpReport:
                 else f"Invalid (0x{hdr_chk_calc:02X}≠0x{hdr_chk:02X})"
             )
 
-            header["rom_checksum_calc"] = device.INFO.get(
-                "rom_checksum_calc", header.get("rom_checksum_calc")
-            )
+            header["rom_checksum_calc"] = device.INFO.get("rom_checksum_calc", header.get("rom_checksum_calc"))
             rom_chk_ok = header["rom_checksum_calc"] == header["rom_checksum"]
             rom_checksum_str = (
                 f"OK (0x{header['rom_checksum']:04X})"
@@ -144,9 +134,7 @@ class DumpReport:
 
             hdr_rom_size_raw = header["rom_size_raw"]
             if hdr_rom_size_raw < RomSizes().GetNumberOfTypes():
-                hdr_rom_size_str = RomSizes().GetString(
-                    index=hdr_rom_size_raw, localized=False
-                )
+                hdr_rom_size_str = RomSizes().GetString(index=hdr_rom_size_raw, localized=False)
             else:
                 hdr_rom_size_str = f"Unknown (0x{hdr_rom_size_raw:02X})"
 
@@ -160,19 +148,13 @@ class DumpReport:
 
             mapper_raw = header["mapper_raw"]
             if mapper_raw in DMG_Mapper().GetAllMapperIds():
-                hdr_mapper_str = (
-                    f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
-                )
+                hdr_mapper_str = f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
             else:
                 hdr_mapper_str = f"Unknown (0x{mapper_raw:02X})"
 
-            parsed_fields = [
-                ("Game Title", (header.get("game_title") or "").replace("\0", "␀"))
-            ]
+            parsed_fields = [("Game Title", (header.get("game_title") or "").replace("\0", "␀"))]
             if cgb_raw in (0xC0, 0x80) and header.get("game_code"):
-                parsed_fields.append(
-                    ("Game Code", header["game_code"].replace("\0", "␀"))
-                )
+                parsed_fields.append(("Game Code", header["game_code"].replace("\0", "␀")))
             parsed_fields += [
                 ("Revision", str(header["version"])),
                 ("Super Game Boy", sgb_str),
@@ -189,14 +171,9 @@ class DumpReport:
 
             if "gbmem" in di and di["gbmem"] is not None:
                 raw_data = "\n                     ".join(
-                    "".join(f"{x:02X}" for x in di["gbmem"][i * 0x20 : i * 0x20 + 0x20])
-                    for i in range(4)
+                    "".join(f"{x:02X}" for x in di["gbmem"][i * 0x20 : i * 0x20 + 0x20]) for i in range(4)
                 )
-                if (
-                    "gbmem_parsed" in di
-                    and di["gbmem_parsed"] is not None
-                    and len(di["gbmem_parsed"]) > 0
-                ):
+                if "gbmem_parsed" in di and di["gbmem_parsed"] is not None and len(di["gbmem_parsed"]) > 0:
                     if isinstance(di["gbmem_parsed"], list):
                         p0 = di["gbmem_parsed"][0]
                         lines += ["", "== GB-Memory Data (Multi Menu) =="]
@@ -212,10 +189,7 @@ class DumpReport:
                         )
                         for i in range(1, len(di["gbmem_parsed"])):
                             entry = di["gbmem_parsed"][i]
-                            if (
-                                entry["menu_index"] == 0xFF
-                                or not entry["header"]["logo_correct"]
-                            ):
+                            if entry["menu_index"] == 0xFF or not entry["header"]["logo_correct"]:
                                 continue
                             section = "Menu ROM" if i == 1 else f"Game {i - 1}"
                             entry_rom_bytes = entry["rom_size"]
@@ -241,11 +215,7 @@ class DumpReport:
                                 entry_fields.append(("SHA-256", entry["sha256"]))
                             lines += ["", f"=== {section} ==="]
                             lines += _fields_to_lines(entry_fields)
-                            if (
-                                "db_entry" in entry
-                                and "crc32" in entry
-                                and entry["db_entry"]["rc"] == entry["crc32"]
-                            ):
+                            if "db_entry" in entry and "crc32" in entry and entry["db_entry"]["rc"] == entry["crc32"]:
                                 lines += _fields_to_lines(
                                     [
                                         (
@@ -292,9 +262,7 @@ class DumpReport:
                     db_fields.append(
                         (
                             "ROM Size",
-                            Formatter.file_size(
-                                db["rs"], space=" ", as_int=True, localized=False
-                            ),
+                            Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
                         )
                     )
                 lines += ["", "== Database Match =="]
@@ -309,9 +277,7 @@ class DumpReport:
                 else f"Invalid (0x{hdr_chk_calc:02X}≠0x{hdr_chk:02X})"
             )
 
-            savelib_str = AgbSaveTypes().GetStringFromSaveLib(
-                di["agb_savelib"], localized=False
-            )
+            savelib_str = AgbSaveTypes().GetStringFromSaveLib(di["agb_savelib"], localized=False)
             game_title_raw = (header.get("game_title_raw") or "").replace("\0", "␀")
             game_code_raw = (header.get("game_code_raw") or "").replace("\0", "␀")
 
@@ -325,9 +291,7 @@ class DumpReport:
             ]
             if "agb_save_flash_id" in di and di["agb_save_flash_id"] is not None:
                 chip_id, chip_name = di["agb_save_flash_id"]
-                parsed_fields.append(
-                    ("Save Flash Chip", f"{chip_name} (0x{chip_id:04X})")
-                )
+                parsed_fields.append(("Save Flash Chip", f"{chip_name} (0x{chip_id:04X})"))
             if "eeprom_data" in di:
                 eeprom_hex = "".join(f"{x:02X}" for x in di["eeprom_data"])
                 parsed_fields.append(("EEPROM area", f"{eeprom_hex}"))
@@ -364,15 +328,11 @@ class DumpReport:
                     db_fields.append(
                         (
                             "ROM Size",
-                            Formatter.file_size(
-                                db["rs"], space=" ", as_int=True, localized=False
-                            ),
+                            Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
                         )
                     )
                 if "st" in db:
-                    db_fields.append(
-                        ("Save Type", AgbSaveTypes(db["st"]).GetString(localized=False))
-                    )
+                    db_fields.append(("Save Type", AgbSaveTypes(db["st"]).GetString(localized=False)))
                 lines += ["", "== Database Match =="]
                 lines += _fields_to_lines(db_fields)
 

@@ -180,9 +180,7 @@ class PocketCamera:
                 frame.paste(pic, (left, top))
                 pic = frame
 
-        pic = pic.resize(
-            (pic.width * scale, pic.height * scale), Image.Resampling.NEAREST
-        )
+        pic = pic.resize((pic.width * scale, pic.height * scale), Image.Resampling.NEAREST)
 
         ext = os.path.splitext(path)[1]
         if ext == "" or ext.lower() == ".png":

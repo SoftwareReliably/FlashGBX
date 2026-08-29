@@ -104,13 +104,7 @@ class RomFileAGB:
                     0x09,
                 ]
             )
-            data = (
-                bytes([0x20 | BITS])
-                + OUT_SIZE.to_bytes(3, "little")
-                + bytes([len(TREE) // 2])
-                + TREE
-                + data
-            )
+            data = bytes([0x20 | BITS]) + OUT_SIZE.to_bytes(3, "little") + bytes([len(TREE) // 2]) + TREE + data
             bits = data[0] & 15
             out_size = int.from_bytes(data[1:4], "little") & 0xFFFF
             i = 6 + data[4] * 2
@@ -120,8 +114,7 @@ class RomFileAGB:
             out = b""
             while len(out) < out_size:
                 in_unit = (
-                    int.from_bytes(data[i : i + 2], "little")
-                    | int.from_bytes(data[i ^ 2 : (i ^ 2) + 2], "little") << 16
+                    int.from_bytes(data[i : i + 2], "little") | int.from_bytes(data[i ^ 2 : (i ^ 2) + 2], "little") << 16
                 )
                 i += 4
                 for b in range(31, -1, -1):
@@ -317,13 +310,9 @@ class RomFileAGB:
                     ]
                 )
             )
-            data["empty_nocart"] = (
-                hashlib.sha1(buffer[0x10:0x50]).digest() in nocart_hashes
-            )
+            data["empty_nocart"] = hashlib.sha1(buffer[0x10:0x50]).digest() in nocart_hashes
 
-        data["empty"] = (buffer[0x04:0xA0] == bytearray([buffer[0x04]] * 0x9C)) or data[
-            "empty_nocart"
-        ]
+        data["empty"] = (buffer[0x04:0xA0] == bytearray([buffer[0x04]] * 0x9C)) or data["empty_nocart"]
         if data["empty_nocart"]:
             buffer = bytearray([0x00] * len(buffer))
         data["logo_correct"] = hashlib.sha1(buffer[0x04:0xA0]).digest() == bytearray(
@@ -357,32 +346,24 @@ class RomFileAGB:
         data["game_title_raw"] = bytearray(buffer[0xA0:0xAC]).decode("ascii", "replace")
         game_title = data["game_title_raw"]
         game_title = re.sub(r"(\x00+)$", "", game_title)
-        game_title = re.sub(
-            r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-        ).replace("\x00", "_")
+        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
         game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
         data["game_title"] = game_title.replace("\n", "")
         data["game_code_raw"] = bytearray(buffer[0xAC:0xB0]).decode("ascii", "replace")
         game_code = data["game_code_raw"]
         game_code = re.sub(r"(\x00+)$", "", game_code)
-        game_title = re.sub(
-            r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-        ).replace("\x00", "_")
+        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
         game_code = "".join(filter(lambda x: x in set(string.printable), game_code))
         data["game_code"] = game_code
         maker_code = bytearray(buffer[0xB0:0xB2]).decode("ascii", "replace")
         maker_code = re.sub(r"(\x00+)$", "", maker_code)
-        game_title = re.sub(
-            r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title
-        ).replace("\x00", "_")
+        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
         maker_code = "".join(filter(lambda x: x in set(string.printable), maker_code))
 
         data["maker_code"] = maker_code
         data["header_checksum"] = int(buffer[0xBD])
         data["header_checksum_calc"] = self.CalcChecksumHeader()
-        data["header_checksum_correct"] = (
-            data["header_checksum"] == data["header_checksum_calc"]
-        )
+        data["header_checksum_correct"] = data["header_checksum"] == data["header_checksum_calc"]
         if len(game_code) == 4 and game_code[0] == "M":
             data["header_sha1"] = hashlib.sha1(buffer[0x0:0x100]).hexdigest()
         else:
@@ -420,31 +401,15 @@ class RomFileAGB:
 
         # 8M FLASH DACS
         data["dacs_8m"] = False
-        if (
-            data["game_title"] == "NGC-HIKARU3"
-            and data["game_code"] == "GHTJ"
-            and data["header_checksum"] == 0xB3
-        ):
+        if data["game_title"] == "NGC-HIKARU3" and data["game_code"] == "GHTJ" and data["header_checksum"] == 0xB3:
             data["dacs_8m"] = True
 
         # e-Reader
         data["ereader"] = False
         if (
-            (
-                data["game_title"] == "CARDE READER"
-                and data["game_code"] == "PEAJ"
-                and data["header_checksum"] == 0x9E
-            )
-            or (
-                data["game_title"] == "CARDEREADER+"
-                and data["game_code"] == "PSAJ"
-                and data["header_checksum"] == 0x85
-            )
-            or (
-                data["game_title"] == "CARDE READER"
-                and data["game_code"] == "PSAE"
-                and data["header_checksum"] == 0x95
-            )
+            (data["game_title"] == "CARDE READER" and data["game_code"] == "PEAJ" and data["header_checksum"] == 0x9E)
+            or (data["game_title"] == "CARDEREADER+" and data["game_code"] == "PSAJ" and data["header_checksum"] == 0x85)
+            or (data["game_title"] == "CARDE READER" and data["game_code"] == "PSAE" and data["header_checksum"] == 0x95)
         ):
             data["ereader"] = True
 
@@ -470,11 +435,7 @@ class RomFileAGB:
                 try:
                     db = json.loads(db)
                 except (json.JSONDecodeError, ValueError) as e:
-                    print(
-                        __("Error: Database for Game Boy Advance titles is corrupted.")
-                        + "\n"
-                        + str(e)
-                    )
+                    print(__("Error: Database for Game Boy Advance titles is corrupted.") + "\n" + str(e))
                     return None
                 if data["header_sha1"] in db:
                     db_entry = db[data["header_sha1"]]

@@ -63,9 +63,7 @@ class RomSizes:
 
     def GetStringList(self, mode="AGB"):
         if mode == "DMG":
-            return [
-                self.GetString(index=index) for index in range(len(self.ROM_SIZES_DMG))
-            ]
+            return [self.GetString(index=index) for index in range(len(self.ROM_SIZES_DMG))]
         elif mode == "AGB":
             return [self.GetString(index=index) for index in range(len(self.ROM_SIZES))]
         return []
@@ -208,9 +206,7 @@ class AgbSaveTypes:
             return f"8M DACS ({savelib_string:s})"
         else:
             return (
-                c__("Save Type", "Unknown") + f" ({savelib_string:s})"
-                if localized
-                else f"Unknown ({savelib_string:s})"
+                c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
             )
 
     def GetStringList(self):
@@ -287,9 +283,7 @@ class DmgSaveTypes:
 
     def __init__(self, size=None, index=None, mbc=None):
         if index is not None:
-            self._entry = (
-                self.RAM_TYPES[index] if 0 <= index < len(self.RAM_TYPES) else None
-            )
+            self._entry = self.RAM_TYPES[index] if 0 <= index < len(self.RAM_TYPES) else None
         elif mbc is not None:
             self._entry = self._FindByMbc(mbc)
         elif size is not None:
@@ -327,11 +321,7 @@ class DmgSaveTypes:
         return None
 
     def GetString(self, index=None, localized=True):
-        entry = (
-            self.RAM_TYPES[index]
-            if (index is not None and 0 <= index < len(self.RAM_TYPES))
-            else self._entry
-        )
+        entry = self.RAM_TYPES[index] if (index is not None and 0 <= index < len(self.RAM_TYPES)) else self._entry
         name = entry[2] if entry else __("Unknown Save Type")
         size = entry[1] if entry else 0
 

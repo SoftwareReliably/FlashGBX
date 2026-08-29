@@ -195,10 +195,7 @@ class GbxDevice(LK_Device):
             self.FW = dict(zip(keys, values))
             self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
             self.FW["fw_dt"] = (
-                datetime.datetime.fromtimestamp(self.FW["fw_ts"])
-                .astimezone()
-                .replace(microsecond=0)
-                .isoformat()
+                datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
             )
             self.FW["ofw_ver"] = None
             self.FW["pcb_name"] = None
@@ -209,9 +206,7 @@ class GbxDevice(LK_Device):
                 name = self._read(size)
                 if len(name) > 0:
                     try:
-                        self.FW["pcb_name"] = (
-                            name.decode("UTF-8").replace("\x00", "").strip()
-                        )
+                        self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
                     except:
                         self.FW["pcb_name"] = "Unnamed Device"
                     self.DEVICE_NAME = self.FW["pcb_name"]
@@ -235,9 +230,7 @@ class GbxDevice(LK_Device):
                     self.DEVICE.close()
                 self.DEVICE = None
             except Exception:
-                logger.exception(
-                    "Failed to close Joey Jr after an initialization error"
-                )
+                logger.exception("Failed to close Joey Jr after an initialization error")
             return False
 
     def ChangeBaudRate(self, _):
@@ -352,9 +345,7 @@ class GbxDevice(LK_Device):
             try:
                 if cartPowerOff and self.CanPowerCycleCart():
                     self._set_fw_variable("AUTO_POWEROFF_TIME", 0)
-                    self._write(
-                        self.DEVICE_CMD["CART_PWR_OFF"], wait=self.FW["fw_ver"] >= 12
-                    )
+                    self._write(self.DEVICE_CMD["CART_PWR_OFF"], wait=self.FW["fw_ver"] >= 12)
                 else:
                     self._write(
                         self.DEVICE_CMD["SET_VOLTAGE_3_3V"],
@@ -429,16 +420,10 @@ class FirmwareUpdater:
                 return 2
 
         if not temp.startswith("UPDATE"):
-            fncSetStatus(
-                text=__(
-                    "Couldn’t enter {update} mode. Please try again.", update="UPDATE"
-                )
-            )
+            fncSetStatus(text=__("Couldn’t enter {update} mode. Please try again.", update="UPDATE"))
             return 2
 
-        fncSetStatus(
-            text=__("Updating firmware... Do not unplug the device!"), setProgress=0
-        )
+        fncSetStatus(text=__("Updating firmware... Do not unplug the device!"), setProgress=0)
         os.unlink(path + "FIRMWARE.JR")
         if os.path.exists(path + "FIRMWARE.JR"):
             fncSetStatus(text=__("Couldn’t write new firmware. Please try again."))
@@ -515,9 +500,7 @@ class FirmwareUpdater:
                     fncSetStatus(text=__("Device not accessible."), enableUI=True)
                 return 2
             except:
-                fncSetStatus(
-                    text=__("Unknown error while accessing the device."), enableUI=True
-                )
+                fncSetStatus(text=__("Unknown error while accessing the device."), enableUI=True)
                 return 2
             dev.reset_input_buffer()
 
@@ -562,9 +545,7 @@ class FirmwareUpdater:
                 pass
             elif counter + 64 < size:
                 fncSetStatus(
-                    text=__(
-                        "Error! Bad response at {address}!", address=f"0x{counter:X}"
-                    ),
+                    text=__("Error! Bad response at {address}!", address=f"0x{counter:X}"),
                     setProgress=percent,
                 )
                 return 2
@@ -598,13 +579,9 @@ try:
             if icon is not None:
                 self.setWindowIcon(QtGui.QIcon(icon))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
-            self.setWindowTitle(
-                "FlashGBX – "
-                + __("Firmware Updater for {device_name}", device_name="Joey Jr")
-            )
+            self.setWindowTitle("FlashGBX – " + __("Firmware Updater for {device_name}", device_name="Joey Jr"))
             self.setWindowFlags(
-                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint)
-                & ~QtCore.Qt.WindowContextHelpButtonHint
+                (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint
             )
 
             self.APP = app
@@ -649,9 +626,7 @@ try:
             # ↑↑↑ Current Device Information
 
             # ↓↓↓ Available Firmware Updates
-            file_name = (
-                self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
-            )
+            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
 
             try:
                 with zipfile.ZipFile(file_name) as zip:
@@ -671,9 +646,7 @@ try:
                     self.FW_LK_BUILDTS = self.INI.GetValue("fw_buildts")
                     self.FW_LK_TEXT = (
                         "<ul><li>"
-                        + __(
-                            "For use with the FlashGBX software\nNo support by BennVenn"
-                        ).replace("\n", "</li><li>")
+                        + __("For use with the FlashGBX software\nNo support by BennVenn").replace("\n", "</li><li>")
                         + "</li></ul>"
                     )
                     self.FW_MSC_VER = __(
@@ -684,11 +657,7 @@ try:
                             tz=datetime.UTC,
                         ).strftime("%x"),
                     )
-                    self.FW_MSC_TEXT = (
-                        "<ul><li>"
-                        + __("For use with the Windows file explorer")
-                        + "</li></ul>"
-                    )
+                    self.FW_MSC_TEXT = "<ul><li>" + __("For use with the Windows file explorer") + "</li></ul>"
                     self.FW_JOEYGUI_VER = __(
                         "BennVenn JoeyGUI firmware version {version} (updated on {date})",
                         version=self.INI.GetValue("fw_joeygui_ver"),
@@ -697,21 +666,13 @@ try:
                             tz=datetime.UTC,
                         ).strftime("%x"),
                     )
-                    self.FW_JOEYGUI_TEXT = (
-                        "<ul><li>"
-                        + __("For use with the JoeyGUI software")
-                        + "</li></ul>"
-                    )
-            except (FileNotFoundError, zipfile.BadZipFile, KeyError, ValueError):
-                QtWidgets.QMessageBox.critical(
-                    self, __("Error"), __("The firmware update file is corrupted.")
-                )
+                    self.FW_JOEYGUI_TEXT = "<ul><li>" + __("For use with the JoeyGUI software") + "</li></ul>"
+            except FileNotFoundError, zipfile.BadZipFile, KeyError, ValueError:
+                QtWidgets.QMessageBox.critical(self, __("Error"), __("The firmware update file is corrupted."))
                 self.reject()
                 return
 
-            self.grpAvailableFwUpdates = QtWidgets.QGroupBox(
-                __("Firmware Update Options")
-            )
+            self.grpAvailableFwUpdates = QtWidgets.QGroupBox(__("Firmware Update Options"))
             self.grpAvailableFwUpdates.setMinimumWidth(400)
             self.grpAvailableFwUpdatesLayout = QtWidgets.QVBoxLayout()
             self.grpAvailableFwUpdatesLayout.setContentsMargins(-1, 3, -1, -1)
@@ -719,21 +680,15 @@ try:
             self.optFW_LK = QtWidgets.QRadioButton(f"{self.FW_LK_VER:s}")
             self.lblFW_LK_Info = QtWidgets.QLabel(f"{self.FW_LK_TEXT:s}")
             self.lblFW_LK_Info.setWordWrap(True)
-            self.lblFW_LK_Info.mousePressEvent = lambda x: [
-                self.optFW_LK.setChecked(True)
-            ]
+            self.lblFW_LK_Info.mousePressEvent = lambda x: [self.optFW_LK.setChecked(True)]
             self.optFW_MSC = QtWidgets.QRadioButton(f"{self.FW_MSC_VER:s}")
             self.lblFW_MSC_Info = QtWidgets.QLabel(f"{self.FW_MSC_TEXT:s}")
             self.lblFW_MSC_Info.setWordWrap(True)
-            self.lblFW_MSC_Info.mousePressEvent = lambda x: [
-                self.optFW_MSC.setChecked(True)
-            ]
+            self.lblFW_MSC_Info.mousePressEvent = lambda x: [self.optFW_MSC.setChecked(True)]
             self.optFW_JoeyGUI = QtWidgets.QRadioButton(f"{self.FW_JOEYGUI_VER:s}")
             self.lblFW_JoeyGUI_Info = QtWidgets.QLabel(f"{self.FW_JOEYGUI_TEXT:s}")
             self.lblFW_JoeyGUI_Info.setWordWrap(True)
-            self.lblFW_JoeyGUI_Info.mousePressEvent = lambda x: [
-                self.optFW_JoeyGUI.setChecked(True)
-            ]
+            self.lblFW_JoeyGUI_Info.mousePressEvent = lambda x: [self.optFW_JoeyGUI.setChecked(True)]
             self.optExternal = QtWidgets.QRadioButton(__("External FIRMWARE.JR file"))
 
             self.rowUpdate = QtWidgets.QHBoxLayout()
@@ -783,9 +738,7 @@ try:
             self.layout_device.addWidget(self.grpStatus)
 
             self.grpFooterLayout = QtWidgets.QHBoxLayout()
-            self.btnClose = QtWidgets.QPushButton(
-                c__("Button (& = Keyboard Shortcut)", "&Close")
-            )
+            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
             self.btnClose.clicked.connect(self.reject)
             self.grpFooterLayout.addStretch()
             self.grpFooterLayout.addWidget(self.btnClose)
@@ -805,9 +758,7 @@ try:
             try:
                 self.layout.update()
                 self.layout.activate()
-                screenGeometry = (
-                    self.screen() or QtGui.QGuiApplication.primaryScreen()
-                ).geometry()
+                screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
                 x = (screenGeometry.width() - self.width()) / 2
                 y = (screenGeometry.height() - self.height()) / 2
                 self.move(x, y)
@@ -831,9 +782,7 @@ try:
                         "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state."
                     )
                     + " "
-                    + __(
-                        "You can still recover it by running the Firmware Updater again later."
-                    )
+                    + __("You can still recover it by running the Firmware Updater again later.")
                     + "<br><br>"
                     + __("Are you sure you want to close this window?")
                 )
@@ -842,8 +791,7 @@ try:
                     icon=QtWidgets.QMessageBox.Warning,
                     windowTitle=AppInfo.NAME,
                     text=text,
-                    standardButtons=QtWidgets.QMessageBox.Yes
-                    | QtWidgets.QMessageBox.No,
+                    standardButtons=QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 )
                 msgbox.setDefaultButton(QtWidgets.QMessageBox.No)
                 answer = msgbox.exec()
@@ -852,9 +800,7 @@ try:
             return True
 
         def UpdateFirmware(self):
-            with zipfile.ZipFile(
-                self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
-            ) as archive:
+            with zipfile.ZipFile(self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")) as archive:
                 fw = ""
                 path = ""
                 verified = False
@@ -885,9 +831,7 @@ try:
                         self,
                         __("Choose Joey Jr Firmware File"),
                         path,
-                        __(
-                            "Firmware Update ({firmware_jr})", firmware_jr="FIRMWARE.JR"
-                        ),
+                        __("Firmware Update ({firmware_jr})", firmware_jr="FIRMWARE.JR"),
                     )[0]
                     if path == "":
                         return
@@ -918,9 +862,7 @@ try:
                         )
                         answer = msgbox.exec()
                         return
-                    self.APP.SETTINGS.setValue(
-                        "LastDirFirmwareUpdate", os.path.dirname(path)
-                    )
+                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
                     fw = path
                     fn = None
                     try:
@@ -928,16 +870,9 @@ try:
                             fw_data = bytearray(f.read())
                         index_from = fw_data.index(b"Joey Jr")
                         index_to = fw_data[index_from:].index(b"\x00")
-                        fw_string = fw_data[index_from : index_from + index_to].decode(
-                            "ASCII", "ignore"
-                        )
+                        fw_string = fw_data[index_from : index_from + index_to].decode("ASCII", "ignore")
                         if "Firmware" in fw_string:
-                            fw += (
-                                "<br><br><b>"
-                                + __("Detected firmware string:")
-                                + "</b><br>"
-                                + fw_string
-                            )
+                            fw += "<br><br><b>" + __("Detected firmware string:") + "</b><br>" + fw_string
                             if "N64 Firmware" in fw_string:
                                 raise ValueError(__("JoeyN64 Firmware found"))
                             if "Jr4Gen3 Firmware" in fw_string:
@@ -968,11 +903,7 @@ try:
                 answer = msgbox.exec()
                 return False
 
-            text = (
-                __("The following firmware will now be written to your Joey Jr device:")
-                + "\n- "
-                + fw
-            )
+            text = __("The following firmware will now be written to your Joey Jr device:") + "\n- " + fw
             text += "\n\n" + __("Do you want to continue?")
             msgbox = QtWidgets.QMessageBox(
                 parent=self,
@@ -1034,9 +965,7 @@ try:
                     answer = msgbox.exec()
                     return False
                 elif ret == 3:
-                    text = __(
-                        "The firmware update file is corrupted. Please re-install the application."
-                    )
+                    text = __("The firmware update file is corrupted. Please re-install the application.")
                     self.grpAvailableFwUpdates.setEnabled(True)
                     self.btnUpdate.setEnabled(True)
                     self.btnClose.setEnabled(True)
@@ -1092,9 +1021,7 @@ try:
                     if os.path.basename(path) not in ("MODE.TXT", "MODE!.TXT"):
                         self.SetStatus(__("No device found."), enableUI=True)
                         return False
-                    self.APP.SETTINGS.setValue(
-                        "LastDirFirmwareUpdate", os.path.dirname(path)
-                    )
+                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
 
         def SetStatus(self, text, enableUI=False, setProgress=None):
             self.lblStatus.setText(__("Status: {text}", text=text))

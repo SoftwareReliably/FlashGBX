@@ -42,11 +42,7 @@ class DataTransfer(QtCore.QThread):
                 self.FINISHED = True
 
         except SerialException as e:
-            if (
-                e.args
-                and isinstance(e.args[0], str)
-                and "GetOverlappedResult failed" in e.args[0]
-            ):
+            if e.args and isinstance(e.args[0], str) and "GetOverlappedResult failed" in e.args[0]:
                 self.updateProgress.emit(
                     {
                         "action": "ABORT",

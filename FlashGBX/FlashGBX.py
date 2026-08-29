@@ -43,9 +43,7 @@ for _d in HW_DEVICES:
             if _action is not None:
                 FWUPDATE_ACTIONS.append(_action)
     except Exception as e:
-        logger.exception(
-            f"Failed to inspect a hardware backend for firmware-update support: {e}"
-        )
+        logger.exception(f"Failed to inspect a hardware backend for firmware-update support: {e}")
 ALL_ACTIONS = STATIC_ACTIONS + FWUPDATE_ACTIONS
 
 
@@ -55,9 +53,7 @@ def ReadConfigFiles(args):
     config_version = settings.value("ConfigVersion")
     if not os.path.exists(args["config_path"]):
         os.makedirs(args["config_path"])
-    fc_files = glob.glob(
-        "{:s}{:s}fc_*.txt".format(glob.escape(args["config_path"]), os.sep)
-    )
+    fc_files = glob.glob("{:s}{:s}fc_*.txt".format(glob.escape(args["config_path"]), os.sep))
     if config_version is not None and len(fc_files) == 0:
         print(
             __(
@@ -136,9 +132,7 @@ def LoadConfig(args):
         rf_list = ""
         if os.path.exists(app_path + os.sep + os.path.join("res", "config.zip")):
             try:
-                with zipfile.ZipFile(
-                    app_path + os.sep + os.path.join("res", "config.zip")
-                ) as zip:
+                with zipfile.ZipFile(app_path + os.sep + os.path.join("res", "config.zip")) as zip:
                     for zfile in zip.namelist():
                         if os.path.exists(config_path + os.sep + zfile):
                             zfile_crc = zip.getinfo(zfile).CRC
@@ -153,9 +147,7 @@ def LoadConfig(args):
                                 + os.sep
                                 + zfile
                                 + "_"
-                                + datetime.datetime.now(tz=datetime.UTC).strftime(
-                                    "%Y%m%d%H%M%S"
-                                )
+                                + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
                                 + ".bak",
                             )
                             rf_list += zfile + "\n"
@@ -181,9 +173,7 @@ def LoadConfig(args):
             print(
                 __(
                     "Warning: {config_zip_file} not found. This is required to load new flashcart profile configurations after updating.",
-                    config_zip_file=app_path
-                    + os.sep
-                    + os.path.join("res", "config.zip"),
+                    config_zip_file=app_path + os.sep + os.path.join("res", "config.zip"),
                 )
             )
 
@@ -217,9 +207,7 @@ def LoadConfig(args):
     return {"flashcarts": flashcarts, "config_ret": ret}
 
 
-class ArgParseCustomFormatter(
-    argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter
-):
+class ArgParseCustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
     pass
 
 
@@ -230,7 +218,7 @@ def main(portableMode=False):
         macos_version = tuple(map(int, platform.mac_ver()[0].split(".")))
         try:
             macos_version = tuple(map(int, platform.mac_ver()[0].split(".")))
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             macos_version = (0, 0)
 
         # macOS above Big Sur don't need a compat layer fix in the environment
@@ -251,9 +239,7 @@ def main(portableMode=False):
             "subdir": os.path.join(app_path, "config"),
             "appdata": os.path.join(
                 QtCore.QDir.toNativeSeparators(
-                    QtCore.QStandardPaths.writableLocation(
-                        QtCore.QStandardPaths.StandardLocation.AppConfigLocation
-                    )
+                    QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation)
                 ),
                 "FlashGBX",
             ),
@@ -302,9 +288,7 @@ def main(portableMode=False):
         + __("Backup Save Data from a Game Boy cartridge")
         + ":\n\tFlashGBX --mode dmg --action backup-save\n\n"
         + "  "
-        + __(
-            "Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge"
-        )
+        + __("Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge")
         + ":\n\tFlashGBX --mode agb --action flash-rom ROM.gba\n\n"
         + "  "
         + __("Extract Game Boy Camera pictures as .png files from a save data file")
@@ -317,14 +301,10 @@ def main(portableMode=False):
         + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
     )
 
-    parser = argparse.ArgumentParser(
-        formatter_class=ArgParseCustomFormatter, epilog=examples
-    )
+    parser = argparse.ArgumentParser(formatter_class=ArgParseCustomFormatter, epilog=examples)
     try:
         # pylint: disable=protected-access
-        parser._action_groups[1].title = c__(
-            "Command Line Arguments Category", "General arguments"
-        )
+        parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")
     except Exception as e:
         logger.exception(f"Failed to customize the argparse action-group title: {e}")
     parser.add_argument(
@@ -355,9 +335,7 @@ def main(portableMode=False):
     )
 
     parser.add_argument_group("")
-    ap_config = parser.add_argument_group(
-        c__("Command Line Arguments Category", "Configuration arguments")
-    )
+    ap_config = parser.add_argument_group(c__("Command Line Arguments Category", "Configuration arguments"))
     if "appdata" in cp:
         ap_config.add_argument(
             "--cfgdir",
@@ -372,9 +350,7 @@ def main(portableMode=False):
             ),
         )
 
-    ap_cli1 = parser.add_argument_group(
-        c__("Command Line Arguments Category", "Main command line interface arguments")
-    )
+    ap_cli1 = parser.add_argument_group(c__("Command Line Arguments Category", "Main command line interface arguments"))
     ap_cli1.add_argument(
         "--mode",
         choices=["dmg", "agb"],
@@ -441,18 +417,14 @@ def main(portableMode=False):
         choices=RomSizes.GetCLINames(mode="AGB"),
         type=str.lower,
         default="auto",
-        help=c__(
-            "Command Line Help", "set size of Game Boy Advance cartridge ROM data"
-        ),
+        help=c__("Command Line Help", "set size of Game Boy Advance cartridge ROM data"),
     )
     ap_cli2.add_argument(
         "--agb-savetype",
         choices=AgbSaveTypes.GetCLINames(),
         type=str.lower,
         default="auto",
-        help=c__(
-            "Command Line Help", "set type of Game Boy Advance cartridge save data"
-        ),
+        help=c__("Command Line Help", "set type of Game Boy Advance cartridge save data"),
     )
     ap_cli2.add_argument(
         "--bl-offset",
@@ -469,9 +441,7 @@ def main(portableMode=False):
         "--bl-size",
         type=str,
         default="auto",
-        help=c__(
-            "Command Line Help", "Size of Batteryless SRAM data in ROM (e.g. 0x10000)"
-        ),
+        help=c__("Command Line Help", "Size of Batteryless SRAM data in ROM (e.g. 0x10000)"),
     )
     ap_cli2.add_argument(
         "--bl-layout",
@@ -526,9 +496,7 @@ def main(portableMode=False):
     ap_cli2.add_argument(
         "--force-5v",
         action="store_true",
-        help=c__(
-            "Command Line Help", "force 5V when writing Game Boy flash cartridges"
-        ),
+        help=c__("Command Line Help", "force 5V when writing Game Boy flash cartridges"),
     )
     ap_cli2.add_argument(
         "--no-verify-write",
@@ -687,9 +655,7 @@ def main(portableMode=False):
                 parser.print_help()
                 print(
                     "\n\n{:s}"
-                    + __(
-                        "Note: GUI mode couldn’t be launched, but the application can be run in CLI mode."
-                    )
+                    + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.")
                     + "\n      "
                     + __("Optional command line switches are explained above.")
                     + f"{ANSI.RED:s}\n"
