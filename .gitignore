@@ -58,3 +58,6 @@ Desktop.ini
 FlashGBX/config/
 fc*.txt
 db_DMG_bl.json
+
+
+.coverage*

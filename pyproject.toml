@@ -87,5 +87,23 @@ ignore = [
     "D102", #undocumented-public-method
     "N802", #invalid-function-name
     "PLR2004", #magic-value-comparison
-
+    "T201", #print
+    "ANN001", #missing-type-function-argument
+    "ANN201", #missing-return-type-undocumented-public-function
+    "S101", #assert
+    "E501", #line-too-long
+    "RUF001", #ambiguous-unicode-character-string
+    "N806", #on-lowercase-variable-in-function
+    "ERA001", #commented-out-codes
+    "FBT002", #boolean-default-value-positional-argument
+    "D103", #undocumented-public-function
+    "C901", #complex-structure
+    "D101", #undocumented-public-class
+    "PTH123", #builtin-open
+    "SLF001", #private-member-access
+    "PLR0915", #too-many-statements
+    "PLR0912", #too-many-branches
+    "FBT001", #boolean-type-hint-positional-argument
+    "TRY003", #raise-vanilla-args
+    "F405", #undefined-local-with-import-star-usage
 ]

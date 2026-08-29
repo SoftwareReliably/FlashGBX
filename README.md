@@ -403,7 +403,7 @@ uv sync --group dev
 uv run pytest
 ```
 
-Run the branch-coverage report and enforce the current 50% floor with:
+Run the branch-coverage report and enforce the current 64% floor with:
 
 ```shell
 uv run pytest --cov
