@@ -38,7 +38,8 @@ CallbackT = TypeVar("CallbackT", bound=Callable[..., object])
 def _require_callback(callback: CallbackT | None, name: str) -> CallbackT:
     """Return a configured hardware callback or fail with a useful error."""
     if callback is None:
-        raise RuntimeError(f"{name} callback is not configured")
+        msg = f"{name} callback is not configured"
+        raise RuntimeError(msg)
     return callback
 
 
@@ -74,10 +75,7 @@ def ConvertMapperTypeToMapper(mapper_type: int) -> int:
 
 
 def compare_mbc(a: int, b: int) -> bool:
-    for ids, _ in DMG_Mapper.MAPPER_MAP.values():
-        if a in ids and b in ids:
-            return True
-    return False
+    return any(a in ids and b in ids for ids, _ in DMG_Mapper.MAPPER_MAP.values())
 
 
 def get_mbc_name(mapper_id: int) -> str:
@@ -88,7 +86,7 @@ def get_mbc_name(mapper_id: int) -> str:
 
 
 def save_size_includes_rtc(
-    mode: Literal["DMG", "AGB"] | str,
+    mode: Literal["DMG", "AGB"],
     mbc: int,
     save_size: int,
     save_type: int | None,
@@ -317,7 +315,8 @@ class DMG_Mapper:
             result = read(address, length)
             if isinstance(result, bytearray):
                 return result
-        raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+        msg = f"Cartridge read failed at 0x{address:X}"
+        raise RuntimeError(msg)
 
     def CartWrite(
         self,
@@ -346,7 +345,8 @@ class DMG_Mapper:
         if rtc_buffer is None:
             result = self.ReadRTC()
             if not isinstance(result, bytearray):
-                raise RuntimeError(f"Could not read {self.GetName()} RTC data")
+                msg = f"Could not read {self.GetName()} RTC data"
+                raise RuntimeError(msg)
             rtc_buffer = result
         return rtc_buffer
 
@@ -475,10 +475,12 @@ class DMG_Mapper:
 
     def EnableFlash(self, enable: bool = True, enable_write: bool = False) -> None:
         del enable, enable_write
-        raise NotImplementedError(f"{self.GetName()} does not provide flash-memory access")
+        msg = f"{self.GetName()} does not provide flash-memory access"
+        raise NotImplementedError(msg)
 
     def EraseFlashSector(self) -> None:
-        raise NotImplementedError(f"{self.GetName()} does not provide flash-memory access")
+        msg = f"{self.GetName()} does not provide flash-memory access"
+        raise NotImplementedError(msg)
 
 
 ##################
@@ -490,16 +492,7 @@ class DMG_MBC1(DMG_Mapper):
 
     def EnableRAM(self, enable=True):
         dprint(self.GetName(), "|", enable)
-        if enable:
-            commands = [
-                [0x6000, 0x01],
-                [0x0000, 0x0A],
-            ]
-        else:
-            commands = [
-                [0x0000, 0x00],
-                [0x6000, 0x00],
-            ]
+        commands = [[24576, 1], [0, 10]] if enable else [[0, 0], [24576, 0]]
         self.CartWrite(commands)
 
     def SelectBankROM(self, index):
@@ -815,8 +808,8 @@ class DMG_MBC6(DMG_Mapper):
         commands = [
             [0x2800, 0],
             [0x3800, 0],
-            [0x2000, index],  # ROM Bank A (0x4000–0x5FFF)
-            [0x3000, index],  # ROM Bank B (0x6000–0x7FFF)
+            [0x2000, index],  # ROM Bank A (0x4000-0x5FFF)
+            [0x3000, index],  # ROM Bank B (0x6000-0x7FFF)
         ]
         self.CartWrite(commands)
         start_address = 0 if index == 0 else 0x4000
@@ -832,8 +825,8 @@ class DMG_MBC6(DMG_Mapper):
         commands = [
             [0x2800, 8],
             [0x3800, 8],
-            [0x2000, index],  # ROM Bank A (0x4000–0x5FFF)
-            [0x3000, index],  # ROM Bank B (0x6000–0x7FFF)
+            [0x2000, index],  # ROM Bank A (0x4000-0x5FFF)
+            [0x3000, index],  # ROM Bank B (0x6000-0x7FFF)
         ]
         self.CartWrite(commands)
         start_address = 0x4000
@@ -1029,32 +1022,25 @@ class DMG_GMMC1(DMG_MBC5):
         return "G-MMC1"
 
     def lk_dmg_mmsa_flash_command(self, addr, data):
-        commands = [
+        return [
             [0x120, 0x0F],
             [0x125, addr >> 8],
             [0x126, addr & 0xFF],
             [0x127, data],
             [0x13F, 0xA5],
         ]
-        return commands
 
     def lk_dmg_mmsa_access_mapper(self):
-        commands = [[0x120, 0x09], [0x121, 0xAA], [0x122, 0x55], [0x13F, 0xA5]]
-        return commands
+        return [[0x120, 0x09], [0x121, 0xAA], [0x122, 0x55], [0x13F, 0xA5]]
 
     def lk_dmg_mmsa_access_rom(self):
-        commands = [[0x120, 0x08], [0x13F, 0xA5]]
-        return commands
+        return [[0x120, 0x08], [0x13F, 0xA5]]
 
     def lk_dmg_mmsa_access_mbc(self, enable):
-        if enable:
-            commands = [[0x120, 0x11], [0x13F, 0xA5]]
-        else:
-            commands = [[0x120, 0x10], [0x13F, 0xA5]]
-        return commands
+        return [[288, 17], [319, 165]] if enable else [[288, 16], [319, 165]]
 
     def lk_dmg_mmsa_disable_flash_write_protect(self):
-        commands = [
+        return [
             [0x120, 0x0A],
             [0x125, 0x62],
             [0x126, 0x04],
@@ -1062,15 +1048,12 @@ class DMG_GMMC1(DMG_MBC5):
             [0x120, 0x02],
             [0x13F, 0xA5],
         ]
-        return commands
 
     def lk_dmg_mmsa_map_full(self):
-        commands = [[0x120, 0x04], [0x13F, 0xA5]]
-        return commands
+        return [[0x120, 0x04], [0x13F, 0xA5]]
 
     def lk_dmg_mmsa_map_menu(self):
-        commands = [[0x120, 0x05], [0x13F, 0xA5]]
-        return commands
+        return [[0x120, 0x05], [0x13F, 0xA5]]
 
     def EnableMapper(self):
         dprint(self.GetName())
@@ -2013,14 +1996,16 @@ class AGB_GPIO:
             address = address * 2
             result = read(address)
             if not isinstance(result, int):
-                raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+                msg = f"Cartridge read failed at 0x{address:X}"
+                raise RuntimeError(msg)
             data = struct.pack(">H", result)
             data = struct.unpack("<H", data)[0]
             # dprint("0x{:X} is 0x{:X}".format(address, data))
         else:
             result = read(address, length)
             if not isinstance(result, bytearray):
-                raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+                msg_0 = f"Cartridge read failed at 0x{address:X}"
+                raise RuntimeError(msg_0)
             data = result
             # dprint("0x{:X} is".format(address), data)
 
@@ -2130,10 +2115,7 @@ class AGB_GPIO:
         if buffer is not None:
             self.RTC_BUFFER = buffer[1:]
 
-        if buffer is None:
-            status = self.RTCReadStatus()
-        else:
-            status = buffer[0]
+        status = self.RTCReadStatus() if buffer is None else buffer[0]
 
         dprint("Status:", bin(status))
         if (status >> 7) == 1:
@@ -2348,7 +2330,8 @@ class AGB_GPIO:
         if rtc_buffer is None:
             result = self.ReadRTC()
             if not isinstance(result, bytearray):
-                raise RuntimeError("Could not read AGB RTC data")
+                msg = "Could not read AGB RTC data"
+                raise RuntimeError(msg)
             rtc_buffer = result
 
         # weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
