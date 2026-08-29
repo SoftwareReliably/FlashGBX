@@ -7,20 +7,20 @@ import os
 import struct
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Any, Literal, Protocol, TypedDict, cast
 
 from .app import AppContext
 from .i18n import __, c__, format_decimal
 from .Logging import dprint, logger
 
-FlashcartProfile: TypeAlias = dict[str, Any]
-FlashcartEntry: TypeAlias = FlashcartProfile | str
-FlashCommand: TypeAlias = Sequence[int]
-FlashCommands: TypeAlias = Sequence[FlashCommand]
-ProfileCommandValue: TypeAlias = int | str | None
-ProfileCommands: TypeAlias = list[list[ProfileCommandValue]]
-SectorMap: TypeAlias = int | list[list[int]]
-ProgressInfo: TypeAlias = dict[str, object]
+type FlashcartProfile = dict[str, Any]
+type FlashcartEntry = FlashcartProfile | str
+type FlashCommand = Sequence[int]
+type FlashCommands = Sequence[FlashCommand]
+type ProfileCommandValue = int | str | None
+type ProfileCommands = list[list[ProfileCommandValue]]
+type SectorMap = int | list[list[int]]
+type ProgressInfo = dict[str, object]
 
 
 class _CFIRequiredInfo(TypedDict):
