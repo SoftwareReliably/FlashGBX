@@ -4,11 +4,11 @@
 import copy
 import hashlib
 import json
-import os
 import re
 import string
 import struct
 import zlib
+from pathlib import Path
 
 from .app import AppContext
 from .i18n import __
@@ -22,24 +22,25 @@ except Exception:
 
 
 class RomFileAGB:
-    ROMFILE_PATH = None
+    ROMFILE_PATH: Path | None = None
     ROMFILE = bytearray()
     DATA = None
 
     def __init__(self, file=None):
-        if isinstance(file, str):
-            self.ROMFILE_PATH = file
-            if self.ROMFILE_PATH != None:
-                self.Load()
+        if isinstance(file, (str, Path)):
+            self.ROMFILE_PATH = Path(file)
+            self.Load()
         elif isinstance(file, bytearray):
             self.ROMFILE = file
 
     def Open(self, file):
-        self.ROMFILE_PATH = file
+        self.ROMFILE_PATH = Path(file)
         self.Load()
 
     def Load(self):
-        with open(self.ROMFILE_PATH, "rb") as f:
+        if self.ROMFILE_PATH is None:
+            return
+        with self.ROMFILE_PATH.open("rb") as f:
             self.ROMFILE = bytearray(f.read())
 
     def CalcChecksumHeader(self, fix=False):
@@ -429,8 +430,9 @@ class RomFileAGB:
     def GetDatabaseEntry(self):
         data = self.DATA
         db_entry = None
-        if os.path.exists(f"{AppContext.CONFIG_PATH:s}/db_AGB.json"):
-            with open(f"{AppContext.CONFIG_PATH:s}/db_AGB.json", encoding="UTF-8") as f:
+        database_path = Path(AppContext.CONFIG_PATH) / "db_AGB.json"
+        if database_path.exists():
+            with database_path.open(encoding="UTF-8") as f:
                 db = f.read()
                 try:
                     db = json.loads(db)
@@ -460,7 +462,7 @@ class RomFileAGB:
             print(
                 __(
                     "Error: Database for Game Boy Advance titles not found at {path}",
-                    path=AppContext.CONFIG_PATH + os.sep + "db_AGB.json",
+                    path=str(database_path),
                 ),
             )
         return db_entry

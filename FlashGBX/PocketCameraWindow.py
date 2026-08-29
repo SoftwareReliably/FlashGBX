@@ -3,9 +3,9 @@
 
 import functools
 import json
-import os
 import shutil
 import urllib.parse
+from pathlib import Path
 
 from PIL import Image, ImageDraw
 from PIL.ImageQt import ImageQt
@@ -280,7 +280,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
     def OpenFile(self, file):
         if (isinstance(file, bytearray) and len(file) == 0x100000) or (
-            isinstance(file, str) and os.path.getsize(file) == 0x100000
+            isinstance(file, (str, Path)) and Path(file).stat().st_size == 0x100000
         ):
             dlg_args = {
                 "title": "Photo!",
@@ -309,8 +309,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
             if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 result = dlg.GetResult()
                 index = result["index"].currentIndex()
-                if isinstance(file, str):
-                    with open(file, "rb") as f:
+                if isinstance(file, (str, Path)):
+                    with Path(file).open("rb") as f:
                         file = bytearray(f.read())
                 file = file[0x20000 * index :][:0x20000]
             else:
@@ -329,8 +329,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 )
                 return False
             self.CUR_FILE = file
-            if self.CUR_EXPORT_PATH == "":
-                self.CUR_EXPORT_PATH = os.path.dirname(self.CUR_FILE)
+            if self.CUR_EXPORT_PATH == "" and isinstance(self.CUR_FILE, (str, Path)):
+                self.CUR_EXPORT_PATH = str(Path(self.CUR_FILE).parent)
             self.UpdateViewer(0)
             self.SetColors()
             return True
@@ -367,7 +367,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         if path == "":
             return
         if self.OpenFile(path) is True:
-            self.APP.SETTINGS.setValue("LastDirSaveDataDMG", os.path.dirname(path))
+            self.APP.SETTINGS.setValue("LastDirSaveDataDMG", str(Path(path).parent))
 
     def btnShowGameFace_Clicked(self, event):
         self.UpdateViewer(30)
@@ -380,7 +380,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
     def btnSaveAll_Clicked(self, event):
         if self.CUR_PC is None:
             return
-        path = self.CUR_EXPORT_PATH + os.sep + "IMG_PC.png"
+        path = str(Path(self.CUR_EXPORT_PATH) / "IMG_PC.png")
         path = QtWidgets.QFileDialog.getSaveFileName(
             self,
             __("Export all pictures"),
@@ -398,11 +398,12 @@ class PocketCameraWindow(QtWidgets.QDialog):
         )[0]
         if path == "":
             return
-        self.CUR_EXPORT_PATH = os.path.dirname(path)
+        self.CUR_EXPORT_PATH = str(Path(path).parent)
+        output_path = Path(path)
 
         for i in range(32):
-            file = os.path.splitext(path)[0] + f"{i:02d}" + os.path.splitext(path)[1]
-            if os.path.exists(file):
+            file = output_path.with_name(f"{output_path.stem}{i:02d}{output_path.suffix}")
+            if file.exists():
                 answer = QtWidgets.QMessageBox.warning(
                     self,
                     AppInfo.NAME,
@@ -417,8 +418,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
                     return
 
         for i in range(32):
-            file = os.path.splitext(path)[0] + f"{i + 1:02d}" + os.path.splitext(path)[1]
-            self.SavePicture(i, path=file)
+            file = output_path.with_name(f"{output_path.stem}{i + 1:02d}{output_path.suffix}")
+            self.SavePicture(i, path=str(file))
 
     def btnSavePhoto_Clicked(self, event):
         if self.CUR_PC is None:
@@ -490,7 +491,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
     def SavePicture(self, index, path=""):
         if path == "":
-            path = self.CUR_EXPORT_PATH + os.sep + f"IMG_PC{index + 1:02d}.png"
+            path = str(Path(self.CUR_EXPORT_PATH) / f"IMG_PC{index + 1:02d}.png")
             path = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 __("Save Photo"),
@@ -507,7 +508,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 + " (*.*)",
             )[0]
             if path != "":
-                self.CUR_EXPORT_PATH = os.path.dirname(path)
+                self.CUR_EXPORT_PATH = str(Path(path).parent)
         if path == "":
             return
 
@@ -516,13 +517,13 @@ class PocketCameraWindow(QtWidgets.QDialog):
         frame = False
         if self.chkFrame.isChecked():
             frame = True
-            own_frame = self.CONFIG_PATH + os.sep + "pc_frame.png"
-            if not os.path.exists(own_frame):
+            own_frame = Path(self.CONFIG_PATH) / "pc_frame.png"
+            if not own_frame.exists():
                 shutil.copy(
-                    self.APP_PATH + os.sep + os.path.join("res", "pc_frame.png"),
+                    Path(self.APP_PATH) / "res" / "pc_frame.png",
                     own_frame,
                 )
-            with open(own_frame, "rb") as f:
+            with own_frame.open("rb") as f:
                 frame = f.read()
 
         if index == 31:
@@ -548,8 +549,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 if fn == "":
                     fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
-                fn_split = os.path.splitext(os.path.abspath(fn))
-                if fn_split[1] == ".sav":
+                if Path(fn).resolve().suffix == ".sav":
                     return True
         return False
 
@@ -562,8 +562,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 if fn == "":
                     fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
-                fn_split = os.path.splitext(os.path.abspath(fn))
-                if fn_split[1] == ".sav":
+                if Path(fn).resolve().suffix == ".sav":
                     self.OpenFile(fn)
         else:
             e.ignore()

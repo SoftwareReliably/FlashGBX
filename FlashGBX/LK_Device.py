@@ -18,6 +18,7 @@ import traceback
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, overload
 
 import serial
@@ -387,7 +388,9 @@ class LK_Device(ABC):  # noqa: N801
                 self._write(bytearray([self.DEVICE_CMD["PING"], challenge]))
                 response = self._read(1)
                 if response is False or response != ((~challenge) & 0xFF):
-                    msg = f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})"
+                    msg = (
+                        f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})"
+                    )
                     raise ConnectionError(
                         msg,
                     )
@@ -1481,7 +1484,7 @@ class LK_Device(ABC):  # noqa: N801
         header = self.ReadROM(0, 0x180)
 
         if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-            with open(AppContext.CONFIG_PATH + os.sep + "debug_header.bin", "wb") as f:
+            with (Path(AppContext.CONFIG_PATH) / "debug_header.bin").open("wb") as f:
                 f.write(header)
 
         # Parse ROM header
@@ -3408,7 +3411,7 @@ class LK_Device(ABC):  # noqa: N801
             self._cart_write_flash(reset_cmd, flashcart=(self.MODE == "AGB"))
 
             if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                with open(AppContext.CONFIG_PATH + os.sep + "debug_cfi.bin", "wb") as f:
+                with (Path(AppContext.CONFIG_PATH) / "debug_cfi.bin").open("wb") as f:
                     f.write(cfi_buffer)
 
             found = False
@@ -3437,10 +3440,7 @@ class LK_Device(ABC):  # noqa: N801
                         for j in range(len(cfi_buffer)):
                             cfi_buffer[j] = CFI.swap_bits(cfi_buffer[j], d_swap[j2])
                     if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                        with open(
-                            AppContext.CONFIG_PATH + os.sep + "debug_cfi_d0d1+d6d7.bin",
-                            "wb",
-                        ) as f:
+                        with (Path(AppContext.CONFIG_PATH) / "debug_cfi_d0d1+d6d7.bin").open("wb") as f:
                             f.write(cfi_buffer)
                     found = True
                 if found:
@@ -3649,7 +3649,7 @@ class LK_Device(ABC):  # noqa: N801
             raise RuntimeError("Cartridge mode must be selected before reading ROM")
         file = None
         if len(args["path"]) > 0:
-            file = open(args["path"], "wb")  # noqa: SIM115 - closed across the worker's exit paths
+            file = Path(args["path"]).open("wb")  # noqa: SIM115 - closed across the worker's exit paths
 
         self.FAST_READ = True
         agb_read_method = self.AGB_READ_METHOD
@@ -4071,10 +4071,8 @@ class LK_Device(ABC):  # noqa: N801
                     if temp[: len(check)] != check:
                         if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
                             dprint(f"Writing 0x{len(temp):X} bytes to debug_verify_0x{pos_total - len(temp):X}.bin")
-                            with open(
-                                AppContext.CONFIG_PATH + os.sep + f"debug_verify_0x{pos_total - len(temp):X}.bin",
-                                "ab",
-                            ) as f:
+                            debug_path = Path(AppContext.CONFIG_PATH) / f"debug_verify_0x{pos_total - len(temp):X}.bin"
+                            with debug_path.open("ab") as f:
                                 f.write(temp)
 
                         for i in range(pos_total):
@@ -4133,9 +4131,12 @@ class LK_Device(ABC):  # noqa: N801
                     return False
                 if file is not None:
                     file.close()
-                file = open(  # noqa: SIM115 - replaces the worker's active output stream
-                    os.path.splitext(args["path"])[0] + ".map",
-                    "wb",
+                file = (
+                    Path(args["path"])
+                    .with_suffix(".map")
+                    .open(  # noqa: SIM115 - replaces the active stream
+                        "wb",
+                    )
                 )
                 self.INFO["hidden_sector"] = temp
                 self.INFO["dump_info"]["gbmem"] = temp
@@ -4153,8 +4154,8 @@ class LK_Device(ABC):  # noqa: N801
                         if "settings" in args:
                             settings = args["settings"]
                         gbmp_n = generate_filename(mode="DMG", header=gbmp[i]["header"], settings=settings)
-                        gbmp_p = "{:s} - {:s}".format(os.path.splitext(args["path"])[0], gbmp_n)
-                        with open(gbmp_p, "wb") as f:
+                        gbmp_p = Path(f"{Path(args['path']).with_suffix('')} - {gbmp_n}")
+                        with gbmp_p.open("wb") as f:
                             f.write(buffer[gbmp[i]["rom_offset"] : gbmp[i]["rom_offset"] + gbmp[i]["rom_size"]])
             else:
                 if "hidden_sector" in self.INFO:
@@ -4627,7 +4628,7 @@ class LK_Device(ABC):  # noqa: N801
                         raise TypeError(msg_0)
                     buffer = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
                 else:
-                    with open(args["path"], "rb") as f:
+                    with Path(args["path"]).open("rb") as f:
                         buffer = bytearray(f.read())
 
                 if self.MODE == "DMG" and args["save_type"] == 0x204:  # Unlicensed PHOTO!
@@ -5099,7 +5100,7 @@ class LK_Device(ABC):  # noqa: N801
                 if self.MODE == "DMG" and _mbc.GetName() == "MBC2":
                     for i in range(len(buffer)):
                         buffer[i] = buffer[i] & 0x0F
-                with open(args["path"], "wb") as file:
+                with Path(args["path"]).open("wb") as file:
                     file.write(buffer)
                     if rtc_buffer is not None:
                         file.write(rtc_buffer)
@@ -5324,7 +5325,7 @@ class LK_Device(ABC):  # noqa: N801
                 raise TypeError(msg_0)
             data_import = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
         else:
-            with open(args["path"], "rb") as file:
+            with Path(args["path"]).open("rb") as file:
                 data_import = bytearray(file.read())
 
         flash_offset = 0  # Batteryless SRAM or Transfer Resume
@@ -5715,8 +5716,9 @@ class LK_Device(ABC):  # noqa: N801
         # ↓↓↓ DMG-MMSA-JPN hidden sector
         if self.MODE == "DMG" and _mbc.GetName() == "G-MMC1":
             if "buffer_map" not in args:
-                if os.path.exists(os.path.splitext(args["path"])[0] + ".map"):
-                    with open(os.path.splitext(args["path"])[0] + ".map", "rb") as file:
+                map_path = Path(args["path"]).with_suffix(".map")
+                if map_path.exists():
+                    with map_path.open("rb") as file:
                         args["buffer_map"] = file.read()
                 else:
                     temp = data_import
@@ -5750,18 +5752,14 @@ class LK_Device(ABC):  # noqa: N801
                                     gb_memory_cartridge="NP GB-Memory cartridge",
                                 )
                                 + " "
-                                + os.path.splitext(args["path"])[0]
-                                + ".map",
+                                + str(map_path),
                                 "abortable": False,
                             },
                         )
                         return False
                     dprint("Hidden sector data:", args["buffer_map"])
                     if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                        with open(
-                            AppContext.CONFIG_PATH + os.sep + "debug_mmsa_map.bin",
-                            "wb",
-                        ) as f:
+                        with (Path(AppContext.CONFIG_PATH) / "debug_mmsa_map.bin").open("wb") as f:
                             f.write(args["buffer_map"])
             data_map_import = copy.copy(args["buffer_map"])
             data_map_import = bytearray(data_map_import)
@@ -6007,10 +6005,11 @@ class LK_Device(ABC):  # noqa: N801
 
             # Delta flashing
             if len(sector_offsets) > 1:
-                splitext = os.path.splitext(args["path"])
-                if splitext[0].endswith(".delta") and os.path.exists(splitext[0][:-6] + splitext[1]):
+                delta_path = Path(args["path"])
+                source_path = delta_path.with_name(delta_path.stem.removesuffix(".delta") + delta_path.suffix)
+                if delta_path.stem.endswith(".delta") and source_path.exists():
                     delta_state_new = []
-                    with open(splitext[0][:-6] + splitext[1], "rb") as f:
+                    with source_path.open("rb") as f:
                         for i in range(len(sector_offsets)):
                             s_from = sector_offsets[i][0]
                             s_size = sector_offsets[i][1]
@@ -6024,9 +6023,9 @@ class LK_Device(ABC):  # noqa: N801
                                 delta_state_new.append(x)
                                 dprint("Sector differs:", x)
                     write_sectors = copy.copy(delta_state_new)
-                    json_file = f"{splitext[0]:s}_{sector_offsets_hash:s}.json"
-                    if os.path.exists(json_file):
-                        with open(json_file, "rb") as f:
+                    json_file = delta_path.with_name(f"{delta_path.stem}_{sector_offsets_hash}.json")
+                    if json_file.exists():
+                        with json_file.open("rb") as f:
                             try:
                                 delta_state_old = json.loads(f.read().decode("UTF-8-SIG"))
                             except json.JSONDecodeError, UnicodeDecodeError:
@@ -6719,7 +6718,7 @@ class LK_Device(ABC):  # noqa: N801
                 },
             )
             if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                with open(AppContext.CONFIG_PATH + os.sep + "debug_verify.bin", "wb") as f:
+                with (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").open("wb") as f:
                     pass
 
             current_bank = None
@@ -6931,7 +6930,7 @@ class LK_Device(ABC):  # noqa: N801
 
         if delta_state_new is not None and not chip_erase and "broken_sectors" not in self.INFO:
             try:
-                with open(json_file, "wb") as f:
+                with Path(json_file).open("wb") as f:
                     f.write(json.dumps(delta_state_new).encode("UTF-8-SIG"))
             except PermissionError:
                 print(

@@ -2,56 +2,50 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import configparser
-import os
 from io import StringIO
+from pathlib import Path
 
 from .i18n import __
 from .Logging import dprint
 
 
 class IniSettings:
-    FILENAME = ""
-    SETTINGS = None
+    FILENAME: Path | None = None
+    SETTINGS: configparser.RawConfigParser | None = None
     MAIN_SECTION = "General"
 
-    def __init__(self, path="", ini="", main_section="General"):
+    def __init__(self, path: str | Path = "", ini: str = "", main_section: str = "General"):
         if path != "":
+            settings_path = Path(path)
             try:
-                if not os.path.isdir(os.path.dirname(path)):
-                    os.makedirs(os.path.dirname(path))
-                if os.path.exists(path):
-                    with open(path, "a+", encoding="UTF-8") as f:
-                        f.close()
-                else:
-                    with open(path, "w+", encoding="UTF-8") as f:
-                        f.close()
+                settings_path.parent.mkdir(parents=True, exist_ok=True)
+                settings_path.touch(exist_ok=True)
             except:
                 print(__("Can’t access the configuration directory or settings file."))
                 return
-            self.FILENAME = path
+            self.FILENAME = settings_path
             self.SETTINGS = configparser.RawConfigParser()
-            self.SETTINGS.optionxform = str
+            self.SETTINGS.optionxform = lambda optionstr: optionstr
             try:
                 self.reload()
             except configparser.MissingSectionHeaderError:
                 print(__("Resetting invalid settings file..."))
-                with open(path, "w+", encoding="UTF-8") as f:
-                    f.close()
+                settings_path.write_text("", encoding="UTF-8")
                 path = ""
 
         if path == "":
-            self.FILENAME = False
+            self.FILENAME = None
             self.SETTINGS = configparser.RawConfigParser()
             self.SETTINGS.read_string(ini)
-            self.SETTINGS.optionxform = str
+            self.SETTINGS.optionxform = lambda optionstr: optionstr
 
         self.MAIN_SECTION = main_section
 
     def reload(self):
         if self.SETTINGS is None:
             return
-        if self.FILENAME is not False:
-            with open(self.FILENAME, encoding="UTF-8") as f:
+        if self.FILENAME is not None:
+            with self.FILENAME.open(encoding="UTF-8") as f:
                 self.SETTINGS.read_file(f)
         if not self.SETTINGS.has_section(self.MAIN_SECTION):
             self.SETTINGS.add_section(self.MAIN_SECTION)
@@ -77,19 +71,21 @@ class IniSettings:
             self.SETTINGS[self.MAIN_SECTION][key] = value
         if not quiet:
             dprint("Updating settings:", key, "=", value)
-        if self.FILENAME is not False:
-            with open(self.FILENAME, "w", encoding="UTF-8") as f:
+        if self.FILENAME is not None:
+            with self.FILENAME.open("w", encoding="UTF-8") as f:
                 self.SETTINGS.write(f)
 
     def clear(self):
         if self.SETTINGS is None:
             return
         self.SETTINGS.clear()
-        if self.FILENAME is not False:
-            with open(self.FILENAME, "w", encoding="UTF-8") as f:
+        if self.FILENAME is not None:
+            with self.FILENAME.open("w", encoding="UTF-8") as f:
                 self.SETTINGS.write(f)
 
     def get_string(self):
+        if self.SETTINGS is None:
+            return ""
         output = StringIO()
         self.SETTINGS.write(output)
         return output.getvalue()

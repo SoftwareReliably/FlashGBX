@@ -6,7 +6,6 @@ from __future__ import annotations
 import datetime
 import hashlib
 import math
-import os
 import platform
 import random
 import re
@@ -14,6 +13,7 @@ import struct
 import time
 import zipfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, TypedDict
 
 import serial
@@ -657,13 +657,13 @@ class GbxDevice(LK_Device):
 class FirmwareUpdater:
     PORT: str | None = None
 
-    def __init__(self, app_path: str | os.PathLike[str] = ".", port: str | None = None) -> None:
-        self.APP_PATH = os.fspath(app_path)
+    def __init__(self, app_path: str | Path = ".", port: str | None = None) -> None:
+        self.APP_PATH = Path(app_path)
         self.PORT = port
 
     def WriteFirmware(
         self,
-        zipfn: str | os.PathLike[str],
+        zipfn: str | Path,
         fncSetStatus: StatusCallback,
     ) -> FirmwareUpdateResult:
         try:
@@ -784,14 +784,14 @@ try:
         def __init__(
             self,
             app: Any,
-            app_path: str | os.PathLike[str],
+            app_path: str | Path,
             file: str | None = None,
-            icon: str | os.PathLike[str] | QtGui.QIcon | None = None,
+            icon: str | Path | QtGui.QIcon | None = None,
             device: GbxDevice | None = None,
         ) -> None:
             QtWidgets.QDialog.__init__(self, app)
             if icon is not None:
-                self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(os.fspath(icon)))
+                self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             self.setWindowTitle(
                 AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"),
@@ -923,9 +923,9 @@ try:
 
         def SetPCBVersion(self) -> None:
             if self.optDevicePCBVer14.isChecked():
-                file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4.zip")
+                file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4.zip"
             elif self.optDevicePCBVer14a.isChecked():
-                file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4a.zip")
+                file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4a.zip"
             else:
                 return
 
@@ -990,11 +990,11 @@ try:
         def UpdateFirmware(self) -> bool | None:
             if self.optDevicePCBVer14.isChecked():
                 device_version = "v1.4"
-                file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4.zip")
+                file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4.zip"
                 led = "Done"
             elif self.optDevicePCBVer14a.isChecked():
                 device_version = "v1.4a/b/c"
-                file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4a.zip")
+                file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4a.zip"
                 led = "Status"
             else:
                 msgbox = _message_box(
@@ -1121,19 +1121,19 @@ try:
         def __init__(
             self,
             app: Any,
-            app_path: str | os.PathLike[str],
+            app_path: str | Path,
             file: str | None = None,
-            icon: str | os.PathLike[str] | QtGui.QIcon | None = None,
+            icon: str | Path | QtGui.QIcon | None = None,
             device: GbxDevice | None = None,
         ) -> None:
             QtWidgets.QDialog.__init__(self, app)
             if icon is not None:
-                self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(os.fspath(icon)))
+                self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             if device is None:
                 raise ValueError("A connected GBxCart RW is required for this updater")
             self.APP = app
-            self.APP_PATH = os.fspath(app_path)
+            self.APP_PATH = Path(app_path)
             self.DEVICE = device
             self.PCB_VER = device.GetPCBVersion()
             self.FW_VER = device.GetFirmwareVersion()
@@ -1148,7 +1148,7 @@ try:
             )
 
             with zipfile.ZipFile(
-                self.APP_PATH + os.sep + os.path.join("res", f"{self.FW_FILES[self.PCB_VER]:s}"),
+                self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER],
             ) as archive:
                 with archive.open("fw.ini") as f:
                     ini_file = f.read()
@@ -1354,7 +1354,7 @@ try:
                 )[0]
                 if path == "":
                     return None
-                temp = re.search(r"^(gbx(?:cart|mas)_rw_.+_pcb_r.+\.hex)$", os.path.basename(path))
+                temp = re.search(r"^(gbx(?:cart|mas)_rw_.+_pcb_r.+\.hex)$", Path(path).name)
                 if temp is None:
                     msg = __(
                         "The expected filename for a valid firmware file is <b>{filename_pattern}</b>. Please visit {url} for the latest official firmware updates.",
@@ -1370,7 +1370,7 @@ try:
                     )
                     answer = msgbox.exec()
                     return None
-                self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
+                self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", str(Path(path).parent))
                 fw = f"{path:s}\n\n" + __(
                     "Please double check that this is a valid firmware file for your GBxCart RW. If it is invalid or an update for a different device, it may render your device unusable.",
                 )
@@ -1398,12 +1398,12 @@ try:
                     if archive_member is None:
                         raise ValueError("No bundled firmware file was selected")
                     with (
-                        zipfile.ZipFile(os.path.join(self.APP_PATH, "res", self.FW_FILES[self.PCB_VER])) as archive,
+                        zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
                         archive.open(archive_member) as firmware_file,
                     ):
                         ihex = firmware_file.read().decode("ascii")
                 else:
-                    with open(path, "rb") as firmware_file:
+                    with Path(path).open("rb") as firmware_file:
                         ihex = firmware_file.read().decode("ascii")
                 buffer = _parse_intel_hex(ihex)
             except (

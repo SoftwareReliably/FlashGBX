@@ -4,7 +4,6 @@
 import array
 import ast
 import gettext
-import glob
 import io
 import locale
 import os
@@ -13,6 +12,7 @@ import re
 import struct
 import subprocess
 import sys
+from pathlib import Path
 
 from loguru import logger
 
@@ -249,15 +249,15 @@ def loadTranslation(language):
     is_plural = False
 
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        app_path = os.path.dirname(sys.executable)
+        app_path = Path(sys.executable).parent
     else:
-        app_path = os.path.dirname(os.path.abspath(__file__))
+        app_path = Path(__file__).resolve().parent
 
-    filename = os.path.join(app_path, "locale", f"{language}.po")
-    if not os.path.exists(filename):
+    filename = app_path / "locale" / f"{language}.po"
+    if not filename.exists():
         raise FileNotFoundError(f"{filename} not found")
 
-    with open(filename, encoding="utf-8") as f:
+    with filename.open(encoding="utf-8") as f:
         lines = f.readlines()
 
     for line in lines:
@@ -437,13 +437,11 @@ def init_language(config_path, override=None):
     global lang, CONFIGURED_LANGUAGE, LANGUAGES, TRANSLATION_AUTHOR
 
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        app_path = os.path.dirname(sys.executable)
+        app_path = Path(sys.executable).parent
     else:
-        app_path = os.path.dirname(os.path.abspath(__file__))
+        app_path = Path(__file__).resolve().parent
     available_langs = ["en"]  # Always include English
-    available_langs += [
-        os.path.splitext(os.path.basename(f))[0] for f in glob.glob(os.path.join(app_path, "locale", "*.po"))
-    ]
+    available_langs += [language_file.stem for language_file in (app_path / "locale").glob("*.po")]
     filtered_langs = {code: name for code, name in LANGUAGES.items() if code in available_langs}
     LANGUAGES = dict(sorted(filtered_langs.items(), key=lambda x: x[1][1]))
 
@@ -452,7 +450,7 @@ def init_language(config_path, override=None):
     except ImportError:
         from IniSettings import IniSettings
 
-    settings = IniSettings(path=os.path.join(config_path, "settings.ini"))
+    settings = IniSettings(path=Path(config_path) / "settings.ini")
     if override:
         language_setting = override
         settings.SetValue("Language", override)

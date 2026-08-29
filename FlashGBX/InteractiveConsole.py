@@ -1,9 +1,9 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import os
 import re
 import shlex
+from pathlib import Path
 
 from .i18n import __
 
@@ -122,26 +122,24 @@ class InteractiveConsole:
             if self.last_read_data is None:
                 self.on_output(__("No data available. Read data first with “r”, “rs” or “re”."))
                 return True
-            filepath = os.path.abspath(parts[1])
-            if os.path.isdir(filepath):
+            filepath = Path(parts[1]).resolve()
+            if filepath.is_dir():
                 self.on_output(__("Invalid file path. Path is a directory."))
                 return True
-            dir_path = os.path.dirname(filepath)
-            if dir_path and not os.path.exists(dir_path):
+            if not filepath.parent.exists():
                 self.on_output(__("Invalid file path. Directory does not exist."))
                 return True
-            backup_path = filepath + ".bak"
+            backup_path = filepath.with_name(filepath.name + ".bak")
             try:
-                if os.path.exists(filepath):
-                    if os.path.exists(backup_path):
-                        os.remove(backup_path)
-                    os.replace(filepath, backup_path)
-                with open(filepath, "wb") as fh:
+                if filepath.exists():
+                    backup_path.unlink(missing_ok=True)
+                    filepath.replace(backup_path)
+                with filepath.open("wb") as fh:
                     fh.write(self.last_read_data)
             except OSError as e:
                 self.on_error(__("Failed to save file: {error}", error=str(e)))
                 return True
-            self.on_output(__("Saved to {filepath}", filepath=filepath))
+            self.on_output(__("Saved to {filepath}", filepath=str(filepath)))
             return True
 
         if self.MODE == "AGB":

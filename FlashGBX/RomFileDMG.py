@@ -4,10 +4,10 @@
 import copy
 import hashlib
 import json
-import os
 import re
 import string
 import struct
+from pathlib import Path
 
 from .app import AppContext
 from .CartridgeTypes import DmgSaveTypes, RomSizes
@@ -22,25 +22,25 @@ except Exception:
 
 
 class RomFileDMG:
-    ROMFILE_PATH: str | None = None
+    ROMFILE_PATH: Path | None = None
     ROMFILE = bytearray()
     BATTERYLESS_SRAM_DB = None
 
     def __init__(self, file=None):
         self.DATA: dict = {}
-        if isinstance(file, str):
+        if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):
             self.ROMFILE = file
 
     def Open(self, file):
-        self.ROMFILE_PATH = file
+        self.ROMFILE_PATH = Path(file)
         self.Load()
 
     def Load(self):
         if self.ROMFILE_PATH is None:
             return
-        with open(self.ROMFILE_PATH, "rb") as f:
+        with self.ROMFILE_PATH.open("rb") as f:
             self.ROMFILE = bytearray(f.read(0x1000))
 
     def CalcChecksumHeader(self, fix=False):
@@ -1239,8 +1239,9 @@ class RomFileDMG:
     def GetDatabaseEntry(self) -> dict | None:
         data = self.DATA
         db_entry = None
-        if os.path.exists(f"{AppContext.CONFIG_PATH:s}/db_DMG.json"):
-            with open(f"{AppContext.CONFIG_PATH:s}/db_DMG.json", encoding="UTF-8") as f:
+        database_path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
+        if database_path.exists():
+            with database_path.open(encoding="UTF-8") as f:
                 db_raw = f.read()
                 try:
                     db: dict = json.loads(db_raw)
@@ -1260,7 +1261,7 @@ class RomFileDMG:
             print(
                 __(
                     "Error: Database for Game Boy titles not found at {path}",
-                    path=AppContext.CONFIG_PATH + os.sep + "db_DMG.json",
+                    path=str(database_path),
                 ),
             )
         return db_entry
@@ -1273,18 +1274,15 @@ class RomFileDMG:
             return None
 
         if cls.BATTERYLESS_SRAM_DB is None:
-            config_paths = [
-                AppContext.CONFIG_PATH,
-                os.path.join(os.path.dirname(__file__), "config"),
-            ]
+            config_paths = [Path(__file__).resolve().parent / "config"]
+            if AppContext.CONFIG_PATH:
+                config_paths.insert(0, Path(AppContext.CONFIG_PATH))
             for config_path in config_paths:
-                if config_path == "":
-                    continue
-                db_path = os.path.join(config_path, "db_DMG_bl.json")
-                if not os.path.exists(db_path):
+                db_path = config_path / "db_DMG_bl.json"
+                if not db_path.exists():
                     continue
                 try:
-                    with open(db_path, encoding="UTF-8") as f:
+                    with db_path.open(encoding="UTF-8") as f:
                         cls.BATTERYLESS_SRAM_DB = json.loads(f.read())
                     break
                 except Exception as e:

@@ -3,10 +3,10 @@
 
 import copy
 import math
-import os
 import struct
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, Literal, Protocol, TypedDict, cast
 
 from .app import AppContext
@@ -721,7 +721,7 @@ class CFI:
             if buffer[0x36] == 0xFF and buffer[0x48] == 0xFF:
                 print(__("Warning: No information about the voltage range found in CFI data."))
                 try:
-                    with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f:
+                    with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
                         f.write(buffer)
                 except Exception:
                     logger.exception("Failed to write CFI diagnostics")
@@ -801,7 +801,7 @@ class CFI:
                 ),
             )
             try:
-                with open(AppContext.CONFIG_PATH + os.sep + "cfi_debug.bin", "wb") as f:
+                with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
                     f.write(buffer)
             except Exception as e:
                 logger.exception(f"Failed to write CFI diagnostics: {e}")

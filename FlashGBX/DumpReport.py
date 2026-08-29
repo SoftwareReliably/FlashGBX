@@ -1,8 +1,8 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import os
 import platform
+from pathlib import Path
 
 
 class DumpReport:
@@ -36,7 +36,7 @@ class DumpReport:
 
         keys = list(device.SUPPORTED_CARTS[mode].keys())
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
-        file_name = os.path.split(di["file_name"])[1] if di["file_name"] else ""
+        file_name = Path(di["file_name"]).name if di["file_name"] else ""
         file_size_bytes = di["file_size"]
         file_size_str = f"{Formatter.file_size(file_size_bytes, space=' ', localized=False)} ({file_size_bytes:d} bytes)"
         logo_str = "OK" if header["logo_correct"] else "Invalid"

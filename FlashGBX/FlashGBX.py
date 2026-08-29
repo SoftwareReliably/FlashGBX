@@ -4,7 +4,6 @@
 import argparse
 import copy
 import datetime
-import glob
 import json
 import os
 import platform
@@ -14,6 +13,7 @@ import time
 import traceback
 import zipfile
 import zlib
+from pathlib import Path
 
 from .app import HW_DEVICES, AppContext, AppInfo
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
@@ -49,11 +49,12 @@ ALL_ACTIONS = STATIC_ACTIONS + FWUPDATE_ACTIONS
 
 def ReadConfigFiles(args):
     reset = args["argparsed"].reset
-    settings = IniSettings(path=args["config_path"] + os.sep + "settings.ini")
+    config_path = Path(args["config_path"])
+    settings_path = config_path / "settings.ini"
+    settings = IniSettings(path=settings_path)
     config_version = settings.value("ConfigVersion")
-    if not os.path.exists(args["config_path"]):
-        os.makedirs(args["config_path"])
-    fc_files = glob.glob("{:s}{:s}fc_*.txt".format(glob.escape(args["config_path"]), os.sep))
+    config_path.mkdir(parents=True, exist_ok=True)
+    fc_files = list(config_path.glob("fc_*.txt"))
     if config_version is not None and len(fc_files) == 0:
         print(
             __(
@@ -62,13 +63,10 @@ def ReadConfigFiles(args):
             ),
         )
         settings.clear()
-        os.rename(
-            args["config_path"] + os.sep + "settings.ini",
-            args["config_path"]
-            + os.sep
-            + "settings.ini_"
-            + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
-            + ".bak",
+        settings_path.rename(
+            settings_path.with_name(
+                settings_path.name + "_" + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S") + ".bak",
+            ),
         )
         config_version = False  # extracts the config.zip again
     elif reset:
@@ -82,8 +80,8 @@ def ReadConfigFiles(args):
 
 
 def LoadConfig(args):
-    app_path = args["app_path"]
-    config_path = args["config_path"]
+    app_path = Path(args["app_path"])
+    config_path = Path(args["config_path"])
     ret = []
     flashcarts = empty_flashcarts_map()
 
@@ -118,40 +116,41 @@ def LoadConfig(args):
             "fc_DMG_Retrostage.txt",
         ]
         for file in deprecated_files:
-            if os.path.exists(config_path + os.sep + file):
-                os.rename(
-                    config_path + os.sep + file,
-                    config_path
-                    + os.sep
-                    + file
-                    + "_"
-                    + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
-                    + ".bak",
+            deprecated_path = config_path / file
+            if deprecated_path.exists():
+                deprecated_path.rename(
+                    deprecated_path.with_name(
+                        deprecated_path.name
+                        + "_"
+                        + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
+                        + ".bak",
+                    ),
                 )
 
         rf_list = ""
-        if os.path.exists(app_path + os.sep + os.path.join("res", "config.zip")):
+        config_zip_path = app_path / "res" / "config.zip"
+        if config_zip_path.exists():
             try:
-                with zipfile.ZipFile(app_path + os.sep + os.path.join("res", "config.zip")) as zip:
+                with zipfile.ZipFile(config_zip_path) as zip:
                     for zfile in zip.namelist():
-                        if os.path.exists(config_path + os.sep + zfile):
+                        extracted_path = config_path / zfile
+                        if extracted_path.exists():
                             zfile_crc = zip.getinfo(zfile).CRC
-                            with open(config_path + os.sep + zfile, "rb") as ofile:
+                            with extracted_path.open("rb") as ofile:
                                 buffer = ofile.read()
                             ofile_crc = zlib.crc32(buffer) & 0xFFFFFFFF
                             if zfile_crc == ofile_crc:
                                 continue
-                            os.rename(
-                                config_path + os.sep + zfile,
-                                config_path
-                                + os.sep
-                                + zfile
-                                + "_"
-                                + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
-                                + ".bak",
+                            extracted_path.rename(
+                                extracted_path.with_name(
+                                    extracted_path.name
+                                    + "_"
+                                    + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
+                                    + ".bak",
+                                ),
                             )
                             rf_list += zfile + "\n"
-                        zip.extract(zfile, config_path + os.sep)
+                        zip.extract(zfile, config_path)
             except zipfile.BadZipFile:
                 print(__("Warning: config.zip is corrupted and could not be read."))
 
@@ -168,19 +167,20 @@ def LoadConfig(args):
                         + rf_list[:-1],
                     ],
                 )
-            fc_files = glob.glob(f"{glob.escape(config_path):s}{os.sep}fc_*.txt")
+            fc_files = list(config_path.glob("fc_*.txt"))
         else:
             print(
                 __(
                     "Warning: {config_zip_file} not found. This is required to load new flashcart profile configurations after updating.",
-                    config_zip_file=app_path + os.sep + os.path.join("res", "config.zip"),
+                    config_zip_file=str(config_zip_path),
                 ),
             )
 
     # Read flash cart types
     for file in fc_files:
-        if os.path.exists(file):
-            with open(file, encoding="utf-8") as f:
+        file_path = Path(file)
+        if file_path.exists():
+            with file_path.open(encoding="utf-8") as f:
                 data = f.read()
                 specs_int = re.sub(
                     "(0x[0-9A-F]+)",
@@ -193,7 +193,7 @@ def LoadConfig(args):
                     ret.append(
                         [
                             2,
-                            f"The flashchip type file “{os.path.basename(file):s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {e}",
+                            f"The flashchip type file “{file_path.name:s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {e}",
                         ],
                     )
                     continue
@@ -230,27 +230,29 @@ def main(portableMode=False):
     AppContext.LAUNCH_TIMESTAMP = time.time()
 
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        app_path = os.path.dirname(sys.executable)
+        app_path = str(Path(sys.executable).parent)
     else:
-        app_path = os.path.dirname(os.path.abspath(__file__))
+        app_path = str(Path(__file__).resolve().parent)
 
     try:
         from PySide6 import QtCore
 
         cp = {
-            "subdir": os.path.join(app_path, "config"),
-            "appdata": os.path.join(
-                QtCore.QDir.toNativeSeparators(
-                    QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation),
-                ),
-                "FlashGBX",
+            "subdir": str(Path(app_path) / "config"),
+            "appdata": str(
+                Path(
+                    QtCore.QDir.toNativeSeparators(
+                        QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation),
+                    ),
+                )
+                / "FlashGBX",
             ),
         }  # type: ignore
     except Exception as e:
         logger.exception(f"Failed to import PySide: {e}")
         cp = {
-            "subdir": os.path.join(app_path, "config"),
-            "appdata": os.path.join(os.path.expanduser("~"), "FlashGBX"),
+            "subdir": str(Path(app_path) / "config"),
+            "appdata": str(Path.home() / "FlashGBX"),
         }
 
     if portableMode:
@@ -593,10 +595,10 @@ def main(portableMode=False):
     args = {"app_path": app_path, "config_path": config_path, "argparsed": args}
     while True:
         try:
-            if not os.path.exists(config_path):
-                os.mkdir(config_path)
-            tf = f"{config_path:s}/settings.ini"
-            with open(tf, "ab"):
+            config_dir = Path(config_path)
+            config_dir.mkdir(exist_ok=True)
+            tf = config_dir / "settings.ini"
+            with tf.open("ab"):
                 pass
             break
         except PermissionError:

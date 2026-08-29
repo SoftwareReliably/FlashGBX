@@ -3,10 +3,10 @@
 
 # pylint: disable=wildcard-import, unused-wildcard-import
 import datetime
-import os
 import struct
 import time
 import zipfile
+from pathlib import Path
 
 from .app import AppInfo
 from .i18n import __, c__
@@ -670,7 +670,7 @@ try:
             self.SetPCBVersion()
 
         def SetPCBVersion(self):
-            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
+            file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBFlash.zip"
 
             with zipfile.ZipFile(file_name) as zip:
                 with zip.open("fw.ini") as f:
@@ -731,7 +731,7 @@ try:
             return True
 
         def UpdateFirmware(self):
-            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
+            file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBFlash.zip"
 
             if self.APP.CONN is None or self.APP.CONN.BootloaderReset() is False:
                 self.APP.DisconnectDevice()

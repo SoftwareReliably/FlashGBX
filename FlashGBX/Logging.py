@@ -4,12 +4,12 @@
 # Terminal output, debug logging, and Python exception hook.
 
 import datetime
-import os
 import platform
 import re
 import sys
 import time
 import traceback
+from pathlib import Path
 
 from loguru import logger
 
@@ -71,7 +71,7 @@ class Logger:
         stack = stack[len(stack) - 2]
         msg = "[{:s}] [{:s}:{:d}] {:s}(): {:s}".format(
             str(datetime.datetime.now().astimezone()),
-            os.path.split(stack.filename)[1],
+            Path(stack.filename).name,
             stack.lineno,
             stack.name,
             " ".join(map(str, args)),
@@ -106,8 +106,8 @@ class Logger:
         msg += f"Runtime: {days}d {hours}h {minutes}m {seconds}s\n\n"
 
         try:
-            fn = AppContext.CONFIG_PATH + os.sep + "debug.log"
-            with open(fn, "wb") as f:
+            fn = Path(AppContext.CONFIG_PATH) / "debug.log"
+            with fn.open("wb") as f:
                 f.write("".encode("UTF-8-SIG"))
                 if platform.system() == "Windows":
                     f.write("\r\n".join(AppContext.PRINT_LOG).encode("UTF-8"))
@@ -117,7 +117,7 @@ class Logger:
                     f.write("\n".join(AppContext.PRINT_LOG).encode("UTF-8"))
                     f.write(msg.encode("UTF-8"))
                     f.write("\n".join(AppContext.DEBUG_LOG).encode("UTF-8"))
-                print(__("The debug log was written to {logfile}", logfile=fn))
+                print(__("The debug log was written to {logfile}", logfile=str(fn)))
             return True
         except:
             return False

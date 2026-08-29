@@ -15,6 +15,7 @@ import time
 import traceback
 import zipfile
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
@@ -297,36 +298,28 @@ class FlashGBX_CLI:
             pc = PocketCamera()
             if pc.LoadFile(args.path) != False:
                 pc.SetPalette(PocketCamera.PALETTE_NAMES.index(args.gbcamera_palette))
-                file = os.path.splitext(args.path)[0] + os.sep + "IMG_PC00.png"
-                if os.path.isfile(os.path.dirname(file)):
+                destination = Path(args.path).with_suffix("")
+                file = destination / "IMG_PC00.png"
+                if destination.is_file():
                     print(
                         "\n"
                         + ANSI.RED
                         + __(
                             "Can’t save pictures at location “{path}”.",
-                            path=os.path.abspath(os.path.dirname(file)),
+                            path=str(destination.resolve()),
                         )
                         + ANSI.RESET,
                     )
                     return 1
-                if not os.path.isdir(os.path.dirname(file)):
-                    os.makedirs(os.path.dirname(file))
+                destination.mkdir(parents=True, exist_ok=True)
                 for i in range(32):
-                    file = (
-                        os.path.splitext(args.path)[0]
-                        + os.sep
-                        + f"IMG_PC{i + 1:02d}"
-                        + "."
-                        + args.gbcamera_outfile_format
-                    )
+                    file = destination / f"IMG_PC{i + 1:02d}.{args.gbcamera_outfile_format}"
                     pc.ExportPicture(i, file, scale=1)
                 print(
                     __(
                         "The pictures from “{save_file}” were extracted to “{destination}”.",
-                        save_file=os.path.abspath(args.path),
-                        destination=os.path.abspath(os.path.dirname(file))
-                        + os.sep
-                        + f"IMG_PC**.{args.gbcamera_outfile_format:s}",
+                        save_file=str(Path(args.path).resolve()),
+                        destination=str(destination.resolve() / f"IMG_PC**.{args.gbcamera_outfile_format:s}"),
                     ),
                 )
             else:
@@ -682,8 +675,8 @@ class FlashGBX_CLI:
                         else:
                             dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
                             dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
-                        dumpinfo_file = os.path.splitext(self.CONN.INFO["last_path"])[0] + ".txt"
-                        with open(dumpinfo_file, "wb") as f:
+                        dumpinfo_file = Path(self.CONN.INFO["last_path"]).with_suffix(".txt")
+                        with dumpinfo_file.open("wb") as f:
                             f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
                             f.write(dump_report.encode("UTF-8"))
                 except Exception as e:
@@ -764,34 +757,29 @@ class FlashGBX_CLI:
             ):
                 if getattr(self.ARGS["argparsed"], "gbcamera_extract", False):
                     if self.CONN.INFO["transferred"] == 0x100000:
-                        base = os.path.splitext(self.CONN.INFO["last_path"])[0]
-                        if os.path.isfile(base):
+                        base = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                        if base.is_file():
                             print(
                                 __(
                                     "Can’t save pictures at location “{path}”.",
-                                    path=os.path.abspath(base),
+                                    path=str(base.resolve()),
                                 ),
                             )
                             self.RETVAL = 1
                             return
-                        if not os.path.isdir(base):
-                            os.makedirs(base)
+                        base.mkdir(parents=True, exist_ok=True)
                         pc = PocketCamera()
                         pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
                         for roll in range(1, 9):
-                            with open(self.CONN.INFO["last_path"], "rb") as f:
+                            with Path(self.CONN.INFO["last_path"]).open("rb") as f:
                                 f.seek(0x20000 * (roll - 1))
                                 roll_data = bytearray(f.read(0x20000))
                             if pc.LoadFile(roll_data) != False:
                                 for i in range(32):
-                                    file = (
-                                        base
-                                        + os.sep
-                                        + "IMG_P{:1d}{:02d}.{}".format(
-                                            roll,
-                                            i,
-                                            self.ARGS["argparsed"].gbcamera_outfile_format,
-                                        )
+                                    file = base / "IMG_P{:1d}{:02d}.{}".format(
+                                        roll,
+                                        i,
+                                        self.ARGS["argparsed"].gbcamera_outfile_format,
                                     )
                                     pc.ExportPicture(i, file, scale=1)
                     else:
@@ -799,26 +787,20 @@ class FlashGBX_CLI:
                         pc = PocketCamera()
                         if pc.LoadFile(file) != False:
                             pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
-                            file = os.path.splitext(self.CONN.INFO["last_path"])[0] + os.sep + "IMG_PC00.png"
-                            if os.path.isfile(os.path.dirname(file)):
+                            destination = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                            file = destination / "IMG_PC00.png"
+                            if destination.is_file():
                                 print(
                                     __(
                                         "Can’t save pictures at location “{path}”.",
-                                        path=os.path.abspath(os.path.dirname(file)),
+                                        path=str(destination.resolve()),
                                     ),
                                 )
                                 self.RETVAL = 1
                                 return
-                            if not os.path.isdir(os.path.dirname(file)):
-                                os.makedirs(os.path.dirname(file))
+                            destination.mkdir(parents=True, exist_ok=True)
                             for i in range(32):
-                                file = (
-                                    os.path.splitext(self.CONN.INFO["last_path"])[0]
-                                    + os.sep
-                                    + f"IMG_PC{i:02d}"
-                                    + "."
-                                    + self.ARGS["argparsed"].gbcamera_outfile_format
-                                )
+                                file = destination / f"IMG_PC{i:02d}.{self.ARGS['argparsed'].gbcamera_outfile_format}"
                                 pc.ExportPicture(i, file, scale=1)
                     print(__("The pictures were extracted."))
                 print()
@@ -963,9 +945,9 @@ class FlashGBX_CLI:
             # Use (label_with_colon, value) pairs to match existing GUI translation keys
             game_name = None
             if data["db"]:
-                game_name = os.path.splitext(
+                game_name = Path(
                     generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None),
-                )[0]
+                ).stem
             if game_name is not None:
                 rows.append((__("Game Name:"), game_name))
 
@@ -1005,8 +987,9 @@ class FlashGBX_CLI:
 
             if data["logo_correct"] and data["header_checksum_correct"]:
                 rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
-                if not os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin", "wb") as f:
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+                if not bootlogo_path.exists():
+                    with bootlogo_path.open("wb") as f:
                         f.write(data["raw"][0x104:0x134])
             else:
                 rows.append(
@@ -1075,9 +1058,9 @@ class FlashGBX_CLI:
         elif self.CONN.GetMode() == "AGB":
             game_name = None
             if data["db"]:
-                game_name = os.path.splitext(
+                game_name = Path(
                     generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None),
-                )[0]
+                ).stem
             if game_name is not None:
                 rows.append((__("Game Name:"), game_name))
 
@@ -1102,8 +1085,9 @@ class FlashGBX_CLI:
 
             if data["logo_correct"]:
                 rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
-                if not os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin", "wb") as f:
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+                if not bootlogo_path.exists():
+                    with bootlogo_path.open("wb") as f:
                         f.write(data["raw"][0x04:0xA0])
             else:
                 rows.append(
@@ -1461,19 +1445,20 @@ class FlashGBX_CLI:
                 rom_size = RomSizes.GetSizeFromCLIName(args.agb_romsize, mode="AGB")
 
         if args.path != "auto":
-            if os.path.isdir(args.path):
-                path = args.path + os.sep + path
+            if Path(args.path).is_dir():
+                path = str(Path(args.path) / path)
             else:
                 path = args.path
 
         if path == "":
             return
-        if not args.overwrite and os.path.exists(os.path.abspath(path)):
+        output_path = Path(path).resolve()
+        if not args.overwrite and output_path.exists():
             answer = (
                 input(
                     __(
                         "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                        file_path=os.path.abspath(path),
+                        file_path=str(output_path),
                     )
                     + " [y/N]: ",
                 )
@@ -1486,7 +1471,7 @@ class FlashGBX_CLI:
                 return
 
         try:
-            with open(path, "ab+"):
+            with Path(path).open("ab+"):
                 pass
         except PermissionError:
             print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
@@ -1498,7 +1483,7 @@ class FlashGBX_CLI:
         print(
             __(
                 "The ROM will now be read and saved to “{path}”.",
-                path=os.path.abspath(path),
+                path=str(output_path),
             ),
         )
         if self.CONN.GetMode() == "DMG":
@@ -1657,9 +1642,11 @@ class FlashGBX_CLI:
             print(ANSI.RED + __("No ROM file for writing was selected.") + ANSI.RESET)
             return
         path = args.path
+        rom_path = Path(path)
 
         try:
-            if os.path.getsize(path) > 0x20000000:  # reject too large files to avoid exploding RAM
+            rom_size = rom_path.stat().st_size
+            if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
                 print(
                     ANSI.RED
                     + __(
@@ -1669,7 +1656,7 @@ class FlashGBX_CLI:
                     + ANSI.RESET,
                 )
                 return
-            if os.path.getsize(path) < 0x400:
+            if rom_size < 0x400:
                 print(
                     ANSI.RED
                     + __(
@@ -1680,21 +1667,20 @@ class FlashGBX_CLI:
                 )
                 return
 
-            with open(path, "rb") as file:
-                ext = os.path.splitext(path)[1]
+            with rom_path.open("rb") as file:
+                ext = rom_path.suffix
                 if ext.lower() == ".isx":
                     buffer = bytearray(file.read())
                     buffer = from_isx(buffer)
                 else:
                     buffer = bytearray(file.read(0x1000))
-            rom_size = os.stat(path).st_size
             if "flash_size" in carts[cart_type] and rom_size > carts[cart_type]["flash_size"]:
                 print(
                     ANSI.YELLOW
                     + __(
                         "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}. You can still give it a try, but it’s possible that it’s too large which may cause the ROM writing to fail.",
                         max_size=Formatter.file_size(carts[cart_type]["flash_size"]),
-                        file_size=Formatter.file_size(os.path.getsize(path)),
+                        file_size=Formatter.file_size(rom_size),
                     )
                     + ANSI.RESET,
                 )
@@ -1778,12 +1764,15 @@ class FlashGBX_CLI:
             )
             bootlogo = None
             if self.CONN.GetMode() == "DMG":
-                if os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin", "rb") as f:
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+                if bootlogo_path.exists():
+                    with bootlogo_path.open("rb") as f:
                         bootlogo = bytearray(f.read(0x30))
-            elif self.CONN.GetMode() == "AGB" and os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin"):
-                with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin", "rb") as f:
-                    bootlogo = bytearray(f.read(0x9C))
+            elif self.CONN.GetMode() == "AGB":
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+                if bootlogo_path.exists():
+                    with bootlogo_path.open("rb") as f:
+                        bootlogo = bytearray(f.read(0x9C))
             if bootlogo is not None:
                 answer = input(__("Fix the boot logo before continuing?") + " [Y/n]: ").strip().lower()
                 print()
@@ -1819,7 +1808,7 @@ class FlashGBX_CLI:
                 voltage=str(v),
             )
             + "\n"
-            + os.path.abspath(path),
+            + str(rom_path.resolve()),
         )
         if self.CONN.GetMode() == "DMG":
             if mbc in DMG_Mapper().GetAllMapperIds():
@@ -1905,7 +1894,7 @@ class FlashGBX_CLI:
             path_datetime = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
 
         path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
-        path = os.path.splitext(path)[0]
+        path = str(Path(path).with_suffix(""))
         path += f"{path_datetime:s}.sav"
 
         if self.CONN.GetMode() == "DMG":
@@ -1991,8 +1980,8 @@ class FlashGBX_CLI:
             return
 
         if args.path != "auto":
-            if os.path.isdir(args.path):
-                path = args.path + os.sep + path
+            if Path(args.path).is_dir():
+                path = str(Path(args.path) / path)
             else:
                 path = args.path
 
@@ -2007,13 +1996,14 @@ class FlashGBX_CLI:
             return
 
         buffer = None
+        target_path = Path(path).resolve()
         if args.action == "backup-save":
-            if not args.overwrite and os.path.exists(os.path.abspath(path)):
+            if not args.overwrite and target_path.exists():
                 answer = (
                     input(
                         __(
                             "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                            file_path=os.path.abspath(path),
+                            file_path=str(target_path),
                         )
                         + " [y/N]: ",
                     )
@@ -2027,7 +2017,7 @@ class FlashGBX_CLI:
             print(
                 __("The cartridge save data will now be read and saved to the following file:")
                 + "\n"
-                + os.path.abspath(path),
+                + str(target_path),
             )
         elif args.action == "restore-save":
             if not args.overwrite:
@@ -2043,7 +2033,7 @@ class FlashGBX_CLI:
                     print(__("Canceled."))
                     return
             print(
-                __("The following save data file will now be written to the cartridge:") + "\n" + os.path.abspath(path),
+                __("The following save data file will now be written to the cartridge:") + "\n" + str(target_path),
             )
         elif args.action == "erase-save":
             if not args.overwrite:
@@ -2087,7 +2077,7 @@ class FlashGBX_CLI:
                 return
             self.CONN.ReadHeader()
             if "ereader_calibration" in self.CONN.INFO:
-                with open(path, "rb") as f:
+                with Path(path).open("rb") as f:
                     buffer = bytearray(f.read())
                 if buffer[0xD000:0xF000] != self.CONN.INFO["ereader_calibration"]:
                     if args.keep_calibration:
@@ -2120,10 +2110,10 @@ class FlashGBX_CLI:
 
         try:
             if args.action == "backup-save":
-                with open(path, "ab+"):
+                with Path(path).open("ab+"):
                     pass
             elif args.action == "restore-save":
-                with open(path, "rb+"):
+                with Path(path).open("rb+"):
                     pass
         except PermissionError:
             print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
@@ -2175,12 +2165,17 @@ class FlashGBX_CLI:
             )
         elif args.action == "debug-test-save":  # debug
             self.ARGS["debug"] = True
+            config_path = Path(AppContext.CONFIG_PATH)
+            test1_path = config_path / "test1.bin"
+            test2_path = config_path / "test2.bin"
+            test3_path = config_path / "test3.bin"
+            test4_path = config_path / "test4.bin"
 
             print(__("Making a backup of the original save data."))
             ret = self.CONN.TransferData(
                 args={
                     "mode": 2,
-                    "path": AppContext.CONFIG_PATH + os.sep + "test1.bin",
+                    "path": str(test1_path),
                     "mbc": mbc,
                     "save_type": save_type,
                 },
@@ -2190,13 +2185,13 @@ class FlashGBX_CLI:
                 return
             time.sleep(0.1)
             print(__("Writing random data."))
-            test2 = bytearray(os.urandom(os.path.getsize(AppContext.CONFIG_PATH + os.sep + "test1.bin")))
-            with open(AppContext.CONFIG_PATH + os.sep + "test2.bin", "wb") as f:
+            test2 = bytearray(os.urandom(test1_path.stat().st_size))
+            with test2_path.open("wb") as f:
                 f.write(test2)
             self.CONN.TransferData(
                 args={
                     "mode": 3,
-                    "path": AppContext.CONFIG_PATH + os.sep + "test2.bin",
+                    "path": str(test2_path),
                     "mbc": mbc,
                     "save_type": save_type,
                     "erase": False,
@@ -2208,14 +2203,14 @@ class FlashGBX_CLI:
             self.CONN.TransferData(
                 args={
                     "mode": 2,
-                    "path": AppContext.CONFIG_PATH + os.sep + "test3.bin",
+                    "path": str(test3_path),
                     "mbc": mbc,
                     "save_type": save_type,
                 },
                 signal=self.PROGRESS.SetProgress,
             )
             time.sleep(0.1)
-            with open(AppContext.CONFIG_PATH + os.sep + "test3.bin", "rb") as f:
+            with test3_path.open("rb") as f:
                 test3 = bytearray(f.read())
             if self.CONN.CanPowerCycleCart():
                 print("\n" + __("Power cycling."))
@@ -2228,20 +2223,20 @@ class FlashGBX_CLI:
             self.CONN.TransferData(
                 args={
                     "mode": 2,
-                    "path": AppContext.CONFIG_PATH + os.sep + "test4.bin",
+                    "path": str(test4_path),
                     "mbc": mbc,
                     "save_type": save_type,
                 },
                 signal=self.PROGRESS.SetProgress,
             )
             time.sleep(0.1)
-            with open(AppContext.CONFIG_PATH + os.sep + "test4.bin", "rb") as f:
+            with test4_path.open("rb") as f:
                 test4 = bytearray(f.read())
             print(__("Restoring original save data."))
             self.CONN.TransferData(
                 args={
                     "mode": 3,
-                    "path": AppContext.CONFIG_PATH + os.sep + "test1.bin",
+                    "path": str(test1_path),
                     "mbc": mbc,
                     "save_type": save_type,
                     "erase": False,
@@ -2447,12 +2442,13 @@ class FlashGBX_CLI:
         print()
 
         if args.action == "backup-save":
-            if not args.overwrite and os.path.exists(os.path.abspath(path)):
+            target_path = Path(path).resolve()
+            if not args.overwrite and target_path.exists():
                 answer = (
                     input(
                         __(
                             "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                            file_path=os.path.abspath(path),
+                            file_path=str(target_path),
                         )
                         + " [y/N]: ",
                     )
@@ -2466,10 +2462,10 @@ class FlashGBX_CLI:
             print(
                 __("The Batteryless SRAM save data will now be read and saved to the following file:")
                 + "\n"
-                + os.path.abspath(path),
+                + str(target_path),
             )
             try:
-                with open(path, "ab+"):
+                with Path(path).open("ab+"):
                     pass
             except PermissionError, FileNotFoundError:
                 print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
@@ -2511,10 +2507,10 @@ class FlashGBX_CLI:
             print(
                 __("The following save data file will now be written to the cartridge’s Batteryless SRAM region:")
                 + "\n"
-                + os.path.abspath(path),
+                + str(Path(path).resolve()),
             )
             try:
-                with open(path, "rb+"):
+                with Path(path).open("rb+"):
                     pass
             except PermissionError, FileNotFoundError:
                 print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
@@ -2627,7 +2623,7 @@ class FlashGBX_CLI:
             return None
         return cart_type
 
-    def _LoadFirmwareInfo(self, file_name: str) -> tuple[str, int]:
+    def _LoadFirmwareInfo(self, file_name: str | Path) -> tuple[str, int]:
         """Load and validate display metadata from a firmware archive."""
         with zipfile.ZipFile(file_name) as archive, archive.open("fw.ini") as firmware_file:
             ini_data = firmware_file.read().decode(encoding="utf-8")
@@ -2669,10 +2665,10 @@ class FlashGBX_CLI:
         print()
         if answer == "1":
             led = "Done"
-            file_name = AppContext.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4.zip")
+            file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4.zip"
         elif answer == "2":
             led = "Status"
-            file_name = AppContext.APP_PATH + os.sep + os.path.join("res", "fw_GBxCart_RW_v1_4a.zip")
+            file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4a.zip"
         else:
             print(__("Canceled."))
             return False
@@ -2755,7 +2751,7 @@ class FlashGBX_CLI:
         print("\n" + title)
         print("=" * len(title))
         print(__("Supported revisions:") + " v1.0, v1.1, v1.2, v1.3\n")
-        file_name = AppContext.APP_PATH + os.sep + os.path.join("res", "fw_GBFlash.zip")
+        file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBFlash.zip"
 
         fw_ver, fw_buildts = self._LoadFirmwareInfo(file_name)
 
@@ -2837,7 +2833,7 @@ class FlashGBX_CLI:
         title = __("Firmware Updater for {device_name}", device_name="Joey Jr")
         print("\n" + title)
         print("=" * len(title))
-        file_name = AppContext.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
+        file_name = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
 
         with zipfile.ZipFile(file_name) as zf:
             with zf.open("fw.ini") as f:
@@ -2893,7 +2889,7 @@ class FlashGBX_CLI:
                     print(__("Using port {port}", port=port) + "\n")
                     FirmwareUpdater = hw_JoeyJr.FirmwareUpdater
                     FWUPD = FirmwareUpdater(port=port)
-                    file_name = AppContext.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
+                    file_name = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
                     with zipfile.ZipFile(file_name) as archive:
                         fw_data = None
                         if fw_choice == 1:

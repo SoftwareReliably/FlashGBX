@@ -59,7 +59,7 @@ def test_file_loading_and_checksum_repair(
     rom_path = tmp_path / "generated.gb"
     rom_path.write_bytes(source + bytes(0x2000))
 
-    rom = RomFileDMG(str(rom_path))
+    rom = RomFileDMG(rom_path)
     fixed = rom.FixHeader()
 
     assert len(rom.ROMFILE) == 0x1000
@@ -208,10 +208,7 @@ def test_batteryless_sram_database_failure_is_cached(
     database_path.write_text("not-json", encoding="utf-8")
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     monkeypatch.setattr(RomFileDMG, "BATTERYLESS_SRAM_DB", None)
-    monkeypatch.setattr(
-        "FlashGBX.RomFileDMG.os.path.exists",
-        lambda path: Path(path) == database_path,
-    )
+    monkeypatch.setattr(Path, "exists", lambda path: path == database_path)
 
     assert RomFileDMG.GetBatterylessSramConfig({"game_title_raw": "POKEMON RED"}) is None
     assert RomFileDMG.BATTERYLESS_SRAM_DB is False

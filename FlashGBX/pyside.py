@@ -10,6 +10,7 @@ import os
 import platform
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -344,7 +345,7 @@ def _application_desktop_file() -> str:
     if not app_name:
         app_name = "flashgbx"
 
-    desktop_file = os.path.basename(app_name) or "flashgbx"
+    desktop_file = Path(app_name).name or "flashgbx"
     if not desktop_file.lower().endswith(".desktop"):
         desktop_file += ".desktop"
     return desktop_file

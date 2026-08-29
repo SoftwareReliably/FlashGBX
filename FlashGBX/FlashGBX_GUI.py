@@ -19,6 +19,7 @@ import time
 import urllib.parse
 import webbrowser
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, ClassVar, Literal, TypedDict, cast
 
 import requests
@@ -184,7 +185,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.MSGBOX_QUEUE = queue.Queue()
         self.MSGBOX_DISPLAYING = False
         self.DEFAULT_STYLESHEET = ""
-        self.SETTINGS = IniSettings(path=args["config_path"] + os.sep + "settings.ini")
+        self.SETTINGS = IniSettings(path=Path(args["config_path"]) / "settings.ini")
         self.FLASHCARTS = args["flashcarts"]
         self.PROGRESS = Progress(self.UpdateProgress, self.WaitProgress)
 
@@ -581,7 +582,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuThirdParty.addAction("", self.AboutGameDB)
         self.mnuThirdParty.addAction(
             "",
-            lambda: [self.OpenPath(AppContext.APP_PATH + os.sep + os.path.join("res", "Third Party Notices.md"))],
+            lambda: [self.OpenPath(str(Path(AppContext.APP_PATH) / "res" / "Third Party Notices.md"))],
         )
 
         self.btnMainMenu = QtWidgets.QPushButton()
@@ -1743,8 +1744,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         system = platform.system()
         env = self.GetHostLauncherEnv()
         try:
-            if select_file and os.path.isfile(path):
-                abs_path = os.path.abspath(path)
+            target_path = Path(path).resolve()
+            if select_file and target_path.is_file():
+                abs_path = str(target_path)
                 if system == "Windows":
                     subprocess.Popen(["explorer", "/select,", abs_path])
                     return
@@ -1771,9 +1773,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     )
                     return
                 except Exception:
-                    path = os.path.dirname(abs_path)
+                    target_path = target_path.parent
 
-            path_uri = f"file://{path:s}"
+            path_uri = target_path.as_uri()
             if system == "Windows":
                 cast("Any", os).startfile(path_uri)
             elif system == "Darwin":
@@ -1805,8 +1807,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         Logger.write_debug_log(device)
         try:
             if open_log is True:
-                fn = AppContext.CONFIG_PATH + os.sep + "debug.log"
-                self.OpenPath(fn)
+                self.OpenPath(str(Path(AppContext.CONFIG_PATH) / "debug.log"))
                 self.lblWarning.setVisible(False)
                 if isinstance(sys.stdout, Logger) and sys.stdout.LOG_ERROR is True:
                     sys.stdout.LOG_ERROR = False
@@ -2340,13 +2341,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 else:
                     dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
                     dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
-                dumpinfo_file = os.path.splitext(self.STATUS["last_path"])[0] + ".txt"
+                dumpinfo_file = str(Path(self.STATUS["last_path"]).with_suffix(".txt"))
             # except Exception as e:
             # 	print(__("Dump Report Error:") + " {:s}".format(str(e)))
 
             if dump_report is not False and dumpinfo_file != "" and temp is True:
                 try:
-                    with open(dumpinfo_file, "wb") as f:
+                    with Path(dumpinfo_file).open("wb") as f:
                         f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
                         f.write(dump_report.encode("UTF-8"))
                     button_dump_report = msgbox.addButton(
@@ -2502,7 +2503,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if msgbox.clickedButton() == button_dump_report:
                 if not (dump_report is not False and dumpinfo_file != "" and temp is True):
                     try:
-                        with open(dumpinfo_file, "wb") as f:
+                        with Path(dumpinfo_file).open("wb") as f:
                             f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
                             f.write(dump_report.encode("UTF-8"))
                     except Exception as e:
@@ -2830,7 +2831,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             path = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 __("Backup ROM"),
-                last_dir + os.sep + path,
+                str(Path(last_dir) / path),
                 __("Game Boy ROM File")
                 + " ("
                 + " ".join("*" + e for e in ROM_EXTS_DMG_READ)
@@ -2853,7 +2854,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             path = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 __("Backup ROM"),
-                last_dir + os.sep + path,
+                str(Path(last_dir) / path),
                 __("Game Boy Advance ROM File")
                 + " ("
                 + " ".join("*" + e for e in ROM_EXTS_AGB)
@@ -2868,7 +2869,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if path == "":
             return
 
-        self.SETTINGS.setValue(setting_name, os.path.dirname(path))
+        self.SETTINGS.setValue(setting_name, str(Path(path).parent))
         self.lblDMGHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
         self.lblAGBHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
 
@@ -2906,7 +2907,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         path = ""
         buffer = bytearray()
         if dpath != "":
-            ext = os.path.splitext(dpath)[1]
+            ext = Path(dpath).suffix
             if ext.lower() == ".isx":
                 text = (
                     __(
@@ -3039,8 +3040,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if not just_erase:
             assert isinstance(path, str)
-            self.SETTINGS.setValue(setting_name, os.path.dirname(path))
-            if os.path.getsize(path) == 0:
+            rom_path = Path(path)
+            self.SETTINGS.setValue(setting_name, str(rom_path.parent))
+            rom_size = rom_path.stat().st_size
+            if rom_size == 0:
                 QtWidgets.QMessageBox.critical(
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
@@ -3048,7 +3051,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return
-            if os.path.getsize(path) > 0x20000000:  # reject too large files to avoid exploding RAM
+            if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
                 QtWidgets.QMessageBox.critical(
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
@@ -3060,20 +3063,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return
 
-            with open(path, "rb") as file:
-                ext = os.path.splitext(path)[1]
+            with rom_path.open("rb") as file:
+                ext = rom_path.suffix
                 if ext.lower() == ".isx":
                     buffer = bytearray(file.read())
                     buffer = from_isx(buffer)
                 else:
                     buffer = bytearray(file.read(0x1000))
-            rom_size = os.stat(path).st_size
             flash_size = cart_profile.get("flash_size")
             if isinstance(flash_size, int) and rom_size > flash_size:
                 msg = __(
                     "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}.",
                     max_size=Formatter.file_size(flash_size),
-                    file_size=Formatter.file_size(os.path.getsize(path)),
+                    file_size=Formatter.file_size(rom_size),
                 )
                 msg += " " + __(
                     "You can still give it a try, but it’s possible that it’s too large which may cause the ROM writing to fail.",
@@ -3215,12 +3217,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 bootlogo = None
                 if mode == "DMG":
-                    if os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin"):
-                        with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin", "rb") as f:
+                    bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+                    if bootlogo_path.exists():
+                        with bootlogo_path.open("rb") as f:
                             bootlogo = bytearray(f.read(0x30))
-                elif mode == "AGB" and os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin", "rb") as f:
-                        bootlogo = bytearray(f.read(0x9C))
+                elif mode == "AGB":
+                    bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+                    if bootlogo_path.exists():
+                        with bootlogo_path.open("rb") as f:
+                            bootlogo = bytearray(f.read(0x9C))
                 if bootlogo is not None:
                     msgbox = _create_message_box(
                         parent=self,
@@ -3499,7 +3504,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 header=self._device.INFO,
                 settings=self.SETTINGS,
             )
-            path = os.path.splitext(path)[0]
+            path = str(Path(path).with_suffix(""))
 
             add_date_time = self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled")
             if len(path) > 0 and add_date_time and add_date_time.lower() == "enabled":
@@ -3509,7 +3514,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             path = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 "Backup Save Data",
-                last_dir + os.sep + path,
+                str(Path(last_dir) / path),
                 "Save Data File (" + " ".join("*" + e for e in SAVE_EXTS) + ");;All Files (*.*)",
             )[0]
             if path == "":
@@ -3574,7 +3579,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if bl_args is False:
                 return
 
-        self.SETTINGS.setValue(setting_name, os.path.dirname(path))
+        self.SETTINGS.setValue(setting_name, str(Path(path).parent))
 
         self.grpDMGCartridgeInfo.setEnabled(False)
         self.grpAGBCartridgeInfo.setEnabled(False)
@@ -3750,7 +3755,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
                     return
             path = dpath
-            self.SETTINGS.setValue(setting_name, os.path.dirname(path))
+            self.SETTINGS.setValue(setting_name, str(Path(path).parent))
         elif erase:
             if not skip_warning:
                 answer = QtWidgets.QMessageBox.warning(
@@ -3832,23 +3837,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if path == "":
                 generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
                 path = generated_path if isinstance(generated_path, str) else "save.sav"
-                path = os.path.splitext(path)[0]
+                path = str(Path(path).with_suffix(""))
                 path += ".sav"
             path = QtWidgets.QFileDialog.getOpenFileName(
                 self,
                 __("Restore Save Data"),
-                last_dir + os.sep + path,
+                str(Path(last_dir) / path),
                 __("Save Data File") + " (" + " ".join("*" + e for e in SAVE_EXTS) + ");;" + __("All Files") + " (*.*)",
             )[0]
             if path != "":
-                self.SETTINGS.setValue(setting_name, os.path.dirname(path))
+                self.SETTINGS.setValue(setting_name, str(Path(path).parent))
             if path == "":
                 return
 
         if not isinstance(path, str):
             return
         if not erase and not test and len(path) > 0:
-            filesize = os.path.getsize(path)
+            filesize = Path(path).stat().st_size
             if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
                 QtWidgets.QMessageBox.critical(
                     self,
@@ -3900,7 +3905,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         QtWidgets.QMessageBox.ButtonRole.ActionRole,
                     )
                 else:
-                    with open(path, "rb") as f:
+                    with Path(path).open("rb") as f:
                         buffer = bytearray(f.read())
                     msg_text = (
                         __(
@@ -4008,7 +4013,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             QtWidgets.QMessageBox.ButtonRole.ActionRole,
                         )
                     else:
-                        with open(path, "rb") as f:
+                        with Path(path).open("rb") as f:
                             buffer = bytearray(f.read())
                         msg_text = __(
                             "This {cart_name} cartridge currently has calibration data in place that is different from this save file’s data.\n\nHow do you want to proceed?",
@@ -4158,7 +4163,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             save2 = bytearray([1])
             towrite = save1
             readback = save2
-            backup_fn = AppContext.CONFIG_PATH + os.sep + "backup_stress_test.bin"
+            backup_fn = Path(AppContext.CONFIG_PATH) / "backup_stress_test.bin"
 
             try:
                 self.lblStatus4a.setText(__("Testing ({pattern} 1/2)...", pattern=test_patterns_names[0]))
@@ -4219,9 +4224,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
             stop = False
             if (save1 is not None and save1 != save2) and "stresstest_running" in self.STATUS:
-                with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_1.bin", "wb") as f:
+                with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as f:
                     f.write(save1)
-                with open(AppContext.CONFIG_PATH + os.sep + "debug_stress_test_2.bin", "wb") as f:
+                with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as f:
                     f.write(save2)
                 msg = (
                     __(
@@ -4247,7 +4252,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     stop = True
 
             if not stop and save1 is not None:
-                with open(backup_fn, "wb") as f:
+                with backup_fn.open("wb") as f:
                     f.write(save1)
                 test_ok += 1
                 for i in range(len(test_patterns)):
@@ -4372,15 +4377,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         if test_ok == 0:
                             towrite = save1 or bytearray()
                             readback = save2
-                        with open(
-                            AppContext.CONFIG_PATH + os.sep + "debug_stress_test_1.bin",
-                            "wb",
-                        ) as f:
+                        with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as f:
                             f.write(towrite[: len(readback)])
-                        with open(
-                            AppContext.CONFIG_PATH + os.sep + "debug_stress_test_2.bin",
-                            "wb",
-                        ) as f:
+                        with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as f:
                             f.write(readback)
                     except Exception:
                         logger.exception("Failed to write cartridge stress-test diagnostics")
@@ -5333,8 +5332,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if data["logo_correct"] and data["header_checksum_correct"]:
                 self.lblDMGHeaderBootlogoResult.setText(c__("Game Data", "OK"))
                 self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                if not os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_dmg.bin", "wb") as f:
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+                if not bootlogo_path.exists():
+                    with bootlogo_path.open("wb") as f:
                         f.write(data["raw"][0x104:0x134])
             else:
                 self.lblDMGHeaderBootlogoResult.setText(c__("Game Data", "Invalid"))
@@ -5468,8 +5468,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if data["logo_correct"]:
                 self.lblAGBHeaderBootlogoResult.setText("OK")
                 self.lblAGBHeaderBootlogoResult.setStyleSheet(self.lblAGBRomTitleResult.styleSheet())
-                if not os.path.exists(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin"):
-                    with open(AppContext.CONFIG_PATH + os.sep + "bootlogo_agb.bin", "wb") as f:
+                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+                if not bootlogo_path.exists():
+                    with bootlogo_path.open("wb") as f:
                         f.write(data["raw"][0x04:0xA0])
             else:
                 self.lblAGBHeaderBootlogoResult.setText(c__("Game Data", "Invalid"))
@@ -6664,8 +6665,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if fn == "":
                     fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
-                fn_split = os.path.splitext(os.path.abspath(fn))
-                ext = fn_split[1].lower()
+                ext = Path(fn).resolve().suffix.lower()
                 return _is_supported_drop(ext, mode)
         return False
 
@@ -6678,8 +6678,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if fn == "":
                     fn = urllib.parse.unquote(str(QtCore.QUrl(str(url.toString())).toLocalFile() or url.path()))
 
-                fn_split = os.path.splitext(os.path.abspath(fn))
-                ext = fn_split[1].lower()
+                ext = Path(fn).resolve().suffix.lower()
                 if ext in DROP_ROM_EXTS_ALL:
                     self.FlashROM(fn)
                 elif ext in SAVE_EXTS:
@@ -6708,7 +6707,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.move(frame_geometry.topLeft())
         self.setAcceptDrops(True)
         icon_filename = "icon.png" if platform.system() == "Linux" else "icon.ico"
-        app_icon = QtGui.QIcon(AppContext.APP_PATH + os.sep + os.path.join("res", icon_filename))
+        app_icon = QtGui.QIcon(str(Path(AppContext.APP_PATH) / "res" / icon_filename))
         qt_app.setWindowIcon(app_icon)
         self.setWindowIcon(app_icon)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowMaximizeButtonHint, False)

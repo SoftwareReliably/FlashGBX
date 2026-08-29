@@ -5,7 +5,7 @@ import email.utils
 import hashlib
 import io
 import math
-import os
+from pathlib import Path
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -65,9 +65,10 @@ class PocketCamera:
         if isinstance(savefile, bytearray):
             self.DATA = savefile
         else:
-            if os.path.getsize(savefile) != 128 * 1024:
+            save_path = Path(savefile)
+            if save_path.stat().st_size != 128 * 1024:
                 return False
-            with open(savefile, "rb") as file:
+            with save_path.open("rb") as file:
                 self.DATA = file.read()
 
         # if self.DATA[0x1FFB1:0x1FFB6] != b'Magic':
@@ -182,7 +183,7 @@ class PocketCamera:
 
         pic = pic.resize((pic.width * scale, pic.height * scale), Image.Resampling.NEAREST)
 
-        ext = os.path.splitext(path)[1]
+        ext = Path(path).suffix
         if ext == "" or ext.lower() == ".png":
             outpic = pic
             outpic.save(path, pnginfo=pnginfo)

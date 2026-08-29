@@ -100,7 +100,6 @@ ignore = [
     "D103", #undocumented-public-function
     "C901", #complex-structure
     "D101", #undocumented-public-class
-    "PTH123", #builtin-open
     "SLF001", #private-member-access
     "PLR0915", #too-many-statements
     "PLR0912", #too-many-branches

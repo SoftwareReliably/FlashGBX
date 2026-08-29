@@ -3,11 +3,11 @@
 
 # pylint: disable=wildcard-import, unused-wildcard-import
 import datetime
-import os
 import platform
 import struct
 import time
 import zipfile
+from pathlib import Path
 
 from serial import SerialException
 
@@ -376,22 +376,21 @@ class FirmwareUpdater:
         return True
 
     def WriteFirmwareMSC(self, path, buffer, fncSetStatus):
-        file = path
-        path = os.path.dirname(path) + os.sep
+        mode_path = Path(path)
+        device_path = mode_path.parent
+        firmware_path = device_path / "FIRMWARE.JR"
         fncSetStatus(text=__("Connecting... This may take a moment."))
 
-        filename = os.path.split(file)[1]
-        filepath = os.path.split(file)[0]
-        with open(filepath + os.sep + filename, "rb") as f:
+        with mode_path.open("rb") as f:
             temp = f.read().decode("UTF-8", "ignore")
         if not temp.startswith("UPDATE"):
-            with open(file, "wb") as f:
+            with mode_path.open("wb") as f:
                 temp = bytearray(b"UPDATE")
                 temp += bytearray([0] * (256 - len(temp)))
                 f.write(temp)
             hp = 30
             while hp > 0:
-                if os.path.exists(path + "FIRMWARE.JR"):
+                if firmware_path.exists():
                     break
                 time.sleep(1)
                 hp -= 1
@@ -400,12 +399,12 @@ class FirmwareUpdater:
                 return 2
 
         try:
-            with open(filepath + os.sep + filename, "rb") as f:
+            with mode_path.open("rb") as f:
                 temp = f.read().decode("UTF-8", "ignore")
         except FileNotFoundError as e:
             try:
-                if filename == "MODE.TXT":
-                    with open(filepath + os.sep + "MODE!.TXT", "rb") as f:
+                if mode_path.name == "MODE.TXT":
+                    with (device_path / "MODE!.TXT").open("rb") as f:
                         temp = f.read().decode("UTF-8", "ignore")
                 else:
                     raise FileNotFoundError from e
@@ -423,13 +422,13 @@ class FirmwareUpdater:
             return 2
 
         fncSetStatus(text=__("Updating firmware... Do not unplug the device!"), setProgress=0)
-        os.unlink(path + "FIRMWARE.JR")
-        if os.path.exists(path + "FIRMWARE.JR"):
+        firmware_path.unlink()
+        if firmware_path.exists():
             fncSetStatus(text=__("Couldn’t write new firmware. Please try again."))
             return 2
 
         try:
-            f = open(path + "FIRMWARE.JR", "wb")
+            f = firmware_path.open("wb")
         except OSError:
             fncSetStatus(text=__("Couldn’t write new firmware. Please try again."))
             return 2
@@ -450,7 +449,7 @@ class FirmwareUpdater:
         if b"Joey Jr. Firmware" not in buffer:
             hp = 5
             while hp > 0:
-                if not os.path.exists(path + "FIRMWARE.JR"):
+                if not firmware_path.exists():
                     break
                 time.sleep(1)
                 hp -= 1
@@ -625,7 +624,7 @@ try:
             # ↑↑↑ Current Device Information
 
             # ↓↓↓ Available Firmware Updates
-            file_name = self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")
+            file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_JoeyJr.zip"
 
             try:
                 with zipfile.ZipFile(file_name) as zip:
@@ -799,7 +798,7 @@ try:
             return True
 
         def UpdateFirmware(self):
-            with zipfile.ZipFile(self.FWUPD.APP_PATH + os.sep + os.path.join("res", "fw_JoeyJr.zip")) as archive:
+            with zipfile.ZipFile(Path(self.FWUPD.APP_PATH) / "res" / "fw_JoeyJr.zip") as archive:
                 fw = ""
                 path = ""
                 verified = False
@@ -834,7 +833,8 @@ try:
                     )[0]
                     if path == "":
                         return None
-                    if not os.path.basename(path).endswith(".JR"):
+                    firmware_path = Path(path)
+                    if not firmware_path.name.endswith(".JR"):
                         msgbox = QtWidgets.QMessageBox(
                             parent=self,
                             icon=QtWidgets.QMessageBox.Critical,
@@ -848,7 +848,7 @@ try:
                         )
                         answer = msgbox.exec()
                         return None
-                    if os.path.exists(os.path.dirname(path) + "DEBUG.TXT"):
+                    if (firmware_path.parent / "DEBUG.TXT").exists():
                         msgbox = QtWidgets.QMessageBox(
                             parent=self,
                             icon=QtWidgets.QMessageBox.Critical,
@@ -861,11 +861,11 @@ try:
                         )
                         answer = msgbox.exec()
                         return None
-                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
+                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", str(firmware_path.parent))
                     fw = path
                     fn = None
                     try:
-                        with open(path, "rb") as f:
+                        with firmware_path.open("rb") as f:
                             fw_data = bytearray(f.read())
                         index_from = fw_data.index(b"Joey Jr")
                         index_to = fw_data[index_from:].index(b"\x00")
@@ -1017,10 +1017,11 @@ try:
                         "MODE.TXT (MODE*.TXT)",
                     )[0]
                     self.APP.QT_APP.processEvents()
-                    if os.path.basename(path) not in ("MODE.TXT", "MODE!.TXT"):
+                    mode_path = Path(path)
+                    if mode_path.name not in ("MODE.TXT", "MODE!.TXT"):
                         self.SetStatus(__("No device found."), enableUI=True)
                         return False
-                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", os.path.dirname(path))
+                    self.APP.SETTINGS.setValue("LastDirFirmwareUpdate", str(mode_path.parent))
 
         def SetStatus(self, text, enableUI=False, setProgress=None):
             self.lblStatus.setText(__("Status: {text}", text=text))
