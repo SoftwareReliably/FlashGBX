@@ -106,4 +106,20 @@ ignore = [
     "FBT001", #boolean-type-hint-positional-argument
     "TRY003", #raise-vanilla-args
     "F405", #undefined-local-with-import-star-usage
+    "N803", #invalid-argument-name
+    "ARG002", #unused-method-argument
+    "D107", #undocumented-public-init
+    "CPY001", #missing-copyright-notice
+    "PLR0911", #too-many-return-statements
+    "FBT003", #boolean-positional-value-in-call
+    "ANN204", #missing-return-type-special-method
+    "D100", #undocumented-public-module
+    "PLC0415", #import-outside-top-level
+    "S324", #hashlib-insecure-hash-function
+    "N801", #invalid-class-name
+    "ANN202", #missing-return-type-private-function
+    "ANN206", #missing-return-type-class-method
+    "PLR0913", #too-many-arguments
+    "PLR0917", #too-many-positional-arguments
+    
 ]

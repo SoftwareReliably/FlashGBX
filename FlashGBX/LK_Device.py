@@ -1,4 +1,4 @@
-# FlashGBX  # noqa: CPY001, D100, N999
+# FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ FirmwareVariable = Literal[
 
 
 class ProgressSignal(Protocol):
-    """Structural type for Qt-style progress signals."""
+    """Structural cart_type for Qt-style progress signals."""
 
     def emit(self, update: ProgressUpdate) -> object: ...
 
@@ -89,7 +89,7 @@ class ProgressSignal(Protocol):
 ProgressCallback = Callable[[ProgressUpdate], object]
 
 
-class LK_Device(ABC):  # noqa: N801
+class LK_Device(ABC):
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
     DEVICE_MAX_FW: ClassVar[int] = 0
@@ -391,17 +391,13 @@ class LK_Device(ABC):  # noqa: N801
                     msg = (
                         f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})"
                     )
-                    raise ConnectionError(
-                        msg,
-                    )
+                    raise ConnectionError(msg)
             else:
                 modes = self.GetSupprtedModes()
                 mode = self._get_fw_variable("CART_MODE")
                 if mode > len(modes):
                     msg_0 = f"Invalid firmware response (mode={mode - 1!s})"
                     raise ConnectionError(msg_0)
-            self.LAST_CHECK_ACTIVE = time.time()
-            return True
         except Exception as e:
             if self.USER_ANSWER is not True:  # Called from CartPowerCycleOrAskReconnect()
                 print(
@@ -428,7 +424,9 @@ class LK_Device(ABC):  # noqa: N801
             except Exception:
                 logger.exception("Failed to close the device after a connection error")
             return False
-
+        else:
+            self.LAST_CHECK_ACTIVE = time.time()
+            return True
     def IsSupportedMbc(self, mbc: int) -> bool:
         return mbc in (
             0x00,
@@ -512,8 +510,7 @@ class LK_Device(ABC):  # noqa: N801
         if self._firmware_info().get("fw_ver", 0) < 12:
             return None
         pin_names = ["CART_POWER", "PIN_CLK", "PIN_WR", "PIN_RD", "PIN_CS"]
-        for i in range(24):
-            pin_names.append(f"PIN_A{i}")
+        pin_names.extend([f"PIN_A{i}" for i in range(24)])
         pin_names += ["PIN_CS2", "PIN_AUDIO"]
         value = 0
         selected_pins: list[int] = []
@@ -750,7 +747,8 @@ class LK_Device(ABC):  # noqa: N801
         retries: int = 5,
     ) -> int | Literal[False]:
         if retries < 1:
-            raise ValueError("retries must be at least 1")
+            msg = "retries must be at least 1"
+            raise ValueError(msg)
         while retries > 0:
             ack = self._write(data, wait=True)
             if self.CANCEL_ARGS.get("from_user"):
@@ -784,7 +782,8 @@ class LK_Device(ABC):  # noqa: N801
     ) -> DeviceWriteResult:
         if isinstance(data, int):
             if not 0 <= data <= 0xFF:
-                raise ValueError("integer writes must fit in one byte")
+                msg = "integer writes must fit in one byte"
+                raise ValueError(msg)
             payload = bytearray([data])
         else:
             payload = bytearray(data)
@@ -804,8 +803,8 @@ class LK_Device(ABC):  # noqa: N801
         device.write(payload)
         device.flush()
 
-        # On MacOS it’s possible not all bytes are transmitted successfully,
-        # even though we’re using flush() which is the tcdrain function.
+        # On MacOS it's possible not all bytes are transmitted successfully,
+        # even though we're using flush() which is the tcdrain function.
         # Still looking for a better solution than delaying here.
         if self.WRITE_DELAY is True or (
             platform.system() == "Darwin" and (self.FW is None or self.FW.get("pcb_name") == "GBxCart RW")
@@ -814,6 +813,7 @@ class LK_Device(ABC):  # noqa: N801
 
         if wait:
             return self.wait_for_ack()
+        return None
 
     @overload
     def _read(self, count: Literal[1]) -> int | Literal[False]: ...
@@ -826,7 +826,8 @@ class LK_Device(ABC):  # noqa: N801
 
     def _read(self, count: int) -> DeviceReadResult:
         if count < 1:
-            raise ValueError("read count must be at least 1")
+            msg = "read count must be at least 1"
+            raise ValueError(msg)
         if AppContext.DEBUG:
             dprint("_read() thread_id:", threading.get_ident())
 
@@ -886,7 +887,8 @@ class LK_Device(ABC):  # noqa: N801
 
     def _set_fw_variable(self, key: FirmwareVariable, value: int) -> DeviceWriteResult:
         if not 0 <= value <= 0xFFFFFFFF:
-            raise ValueError("firmware variable values must fit in 32 bits")
+            msg = "firmware variable values must fit in 32 bits"
+            raise ValueError(msg)
         dprint(f"Setting firmware variable {key:s} to 0x{value:X}")
         self.FW_VAR[key] = value
 
@@ -969,7 +971,8 @@ class LK_Device(ABC):  # noqa: N801
                     max_length=self.MAX_BUFFER_READ,
                 )
             return self.ReadROM(address, length, max_length=self.MAX_BUFFER_READ)
-        raise RuntimeError("Cartridge mode must be DMG or AGB before reading")
+        msg = "Cartridge mode must be DMG or AGB before reading"
+        raise RuntimeError(msg)
 
     def _mapper_cart_read(self, address: int, length: int = 0) -> DeviceReadResult:
         """Expose the mapper callback's non-overloaded legacy signature."""
@@ -1015,7 +1018,8 @@ class LK_Device(ABC):  # noqa: N801
             buffer.extend(struct.pack(">I", address >> 1))
             buffer.extend(struct.pack(">H", value & 0xFFFF))
         else:
-            raise RuntimeError("Cartridge mode must be DMG or AGB before writing")
+            msg = "Cartridge mode must be DMG or AGB before writing"
+            raise RuntimeError(msg)
 
         if self._firmware_info().get("fw_ver", 0) >= 12:
             self._try_write(buffer)
@@ -1072,7 +1076,8 @@ class LK_Device(ABC):  # noqa: N801
 
     def _clk_toggle(self, num: int = 1) -> DeviceWriteResult | bool:
         if num < 0:
-            raise ValueError("toggle count cannot be negative")
+            msg = "toggle count cannot be negative"
+            raise ValueError(msg)
         if self._firmware_info().get("fw_ver", 0) >= 12:
             buffer = bytearray()
             buffer.extend(struct.pack("B", self.DEVICE_CMD["CLK_TOGGLE"]))
@@ -1179,7 +1184,6 @@ class LK_Device(ABC):  # noqa: N801
                 self._write(self.DEVICE_CMD["CART_PWR_OFF"], wait=self.FW["fw_ver"] >= 12)
             else:
                 self._write(self.DEVICE_CMD["OFW_CART_PWR_OFF"])
-            # time.sleep(delay) # TODO: Move necessary delays to firmware
         else:
             self._write(self.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=self.FW["fw_ver"] >= 12)
 
@@ -1228,7 +1232,8 @@ class LK_Device(ABC):  # noqa: N801
                             device.close()
                             self.DEVICE = None
                             self.ERROR = True
-                            raise BrokenPipeError("Couldn’t power on the cartridge.")
+                            msg = "Couldn’t power on the cartridge."
+                            raise BrokenPipeError(msg)
                     else:
                         self._write(self.DEVICE_CMD["CART_PWR_ON"], wait=True)
 
@@ -1266,7 +1271,6 @@ class LK_Device(ABC):  # noqa: N801
                 if self._read(1) == 0:
                     dprint("Turning on the cartridge power.")
                     self._write(self.DEVICE_CMD["CART_PWR_ON"], wait=False)
-                    # time.sleep(delay) # TODO: Move necessary delays to firmware
 
         elif self.MODE == "AGB":
             dprint("Executing AGB Bootup Sequence")
@@ -1372,10 +1376,11 @@ class LK_Device(ABC):  # noqa: N801
                 return None
             auto_poweroff_time = self._get_fw_variable("AUTO_POWEROFF_TIME")
             self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
-            return auto_poweroff_time
         except Exception as e:
             dprint("AUTO_POWEROFF thread enter failed:", str(e))
             return None
+        else:
+            return auto_poweroff_time
 
     def _thread_worker_auto_poweroff_leave(self, auto_poweroff_time: int | Literal[False] | None) -> None:
         if auto_poweroff_time is None:
@@ -3355,7 +3360,7 @@ class LK_Device(ABC):  # noqa: N801
                 continue
             found = False
             if flash_id_methods not in (None, []) and len(flash_id_methods) > 0:
-                for we, type, flash_id, _, cmd_rfi in flash_id_methods:
+                for we, cart_type, flash_id, _, cmd_rfi in flash_id_methods:
                     if cmd_rfi != cart_type["commands"]["read_identifier"]:
                         continue
                     if self.MODE == "DMG" and "write_pin" in cart_type and cart_type["write_pin"] != we_pins[we]:
@@ -3369,8 +3374,8 @@ class LK_Device(ABC):  # noqa: N801
                                         cart_type["names"][0],
                                         " ".join(format(x, "02X") for x in fcm_flash_id),
                                         we_pins[we],
-                                        flash_id_cmds[type]["read_identifier"][0][0],
-                                        flash_id_cmds[type]["read_identifier"][0][1],
+                                        flash_id_cmds[cart_type]["read_identifier"][0][0],
+                                        flash_id_cmds[cart_type]["read_identifier"][0][1],
                                     ),
                                 )
                             elif self.MODE == "AGB":
@@ -3378,8 +3383,8 @@ class LK_Device(ABC):  # noqa: N801
                                     "“{:s}” matches with Flash ID “{:s}” ({:X})/{:X}".format(
                                         cart_type["names"][0],
                                         " ".join(format(x, "02X") for x in fcm_flash_id),
-                                        flash_id_cmds[type]["read_identifier"][0][0],
-                                        flash_id_cmds[type]["read_identifier"][0][1],
+                                        flash_id_cmds[cart_type]["read_identifier"][0][0],
+                                        flash_id_cmds[cart_type]["read_identifier"][0][1],
                                     ),
                                 )
                             found = True
@@ -3536,7 +3541,6 @@ class LK_Device(ABC):  # noqa: N801
         if self.MODE == "DMG":
             self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
             self._set_fw_variable("FLASH_WE_PIN", 1)  # back to WE=WR
-            # time.sleep(0.1) # TODO: Move necessary delays to firmware
         elif self.MODE == "AGB":
             self.SetAGBReadMethod(read_method)
 
@@ -3646,7 +3650,8 @@ class LK_Device(ABC):  # noqa: N801
     def _BackupROM_Worker(self, args):
         mode = self.MODE
         if mode is None:
-            raise RuntimeError("Cartridge mode must be selected before reading ROM")
+            msg = "Cartridge mode must be selected before reading ROM"
+            raise RuntimeError(msg)
         file = None
         if len(args["path"]) > 0:
             file = Path(args["path"]).open("wb")  # noqa: SIM115 - closed across the worker's exit paths
@@ -4134,7 +4139,7 @@ class LK_Device(ABC):  # noqa: N801
                 file = (
                     Path(args["path"])
                     .with_suffix(".map")
-                    .open(  # noqa: SIM115 - replaces the active stream
+                    .open(
                         "wb",
                     )
                 )
@@ -4205,8 +4210,8 @@ class LK_Device(ABC):  # noqa: N801
                         b"FLASH1M_V",
                         b"AGB_8MDACS_DL_V",
                     ]
-                    for id in ids:
-                        temp_pos = buffer.find(id)
+                    for ident in ids:
+                        temp_pos = buffer.find(ident)
                         if temp_pos > 0:
                             temp_ver = buffer[temp_pos : temp_pos + 0x20]
                             temp_ver = temp_ver[: temp_ver.index(0x00)].decode("ascii", "replace")
@@ -4316,7 +4321,8 @@ class LK_Device(ABC):  # noqa: N801
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]):
         mode = self.MODE
         if mode is None:
-            raise RuntimeError("Cartridge mode must be selected before accessing save data")
+            msg = "Cartridge mode must be selected before accessing save data"
+            raise RuntimeError(msg)
         self.FAST_READ = False
         if "rtc" not in args:
             args["rtc"] = False
@@ -4728,10 +4734,7 @@ class LK_Device(ABC):  # noqa: N801
 
                 if args["mode"] == 2:  # Backup
                     in_temp = [bytearray(), bytearray()]
-                    if args.get("verify_read"):  # Read twice for detecting instabilities
-                        xe = 2
-                    else:
-                        xe = 1
+                    xe = 2 if args.get("verify_read") else 1  # Read twice for detecting instabilities
                     _read_failed = False
                     for x in range(xe):
                         if x == 1:
@@ -5369,8 +5372,8 @@ class LK_Device(ABC):  # noqa: N801
                         b"FLASH1M_V",
                         b"AGB_8MDACS_DL_V",
                     ]
-                    for id in ids:
-                        temp_pos = data_import.find(id)
+                    for ident in ids:
+                        temp_pos = data_import.find(ident)
                         if temp_pos > 0:
                             temp_ver = data_import[temp_pos : temp_pos + 0x20]
                             temp_ver = temp_ver[: temp_ver.index(0x00)].decode("ascii", "replace")
@@ -6036,9 +6039,7 @@ class LK_Device(ABC):  # noqa: N801
                                         del write_sectors[write_sectors.index(x)]
                                         dprint("Skipping sector:", x)
                                     else:
-                                        write_sectors2 = []
-                                        for y in write_sectors:
-                                            write_sectors2.append(y[:-1])
+                                        write_sectors2 = [y[:-1] for y in write_sectors]
                                         if x[:-1] not in write_sectors2:
                                             write_sectors.append(x)
                                             dprint("Forcing sector:", x)
@@ -6124,8 +6125,7 @@ class LK_Device(ABC):  # noqa: N801
         # ↓↓↓ Flash Write
         if chip_erase:
             write_sectors = [[0, len(data_import)]]
-            for i in range(0, len(data_import), 0x20000):
-                verify_sectors.append([i, 0x20000])
+            verify_sectors.extend([[i, 0x20000] for i in range(0, len(data_import), 0x20000)])
         elif len(write_sectors) == 0:
             write_sectors = sector_offsets
 
