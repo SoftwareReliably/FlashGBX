@@ -641,3 +641,278 @@ def test_read_header_identifies_synthetic_pokemon_red_without_hardware(
     device.ReadROM.assert_called_once_with(0, 0x180)
     device._write.assert_any_call(device.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
     device._write.assert_any_call(device.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=True)
+
+
+def test_connection_guards_and_typed_read_helpers_reject_missing_data() -> None:
+    device = GbxDevice()
+
+    with pytest.raises(RuntimeError, match="Firmware information"):
+        device._firmware()
+    with pytest.raises(ConnectionError, match="not connected"):
+        device._serial_device()
+
+    device._read = Mock(side_effect=[7, bytearray(b"AB"), 9, False, bytearray(b"X")])  # type: ignore[method-assign]
+    assert device._read_byte() == 7
+    assert device._read_bytes(2) == b"AB"
+    assert device._read_bytes(1) == b"\x09"
+    with pytest.raises(ConnectionError, match="Expected 2 bytes"):
+        device._read_bytes(2)
+    with pytest.raises(ConnectionError, match="Expected 2 bytes"):
+        device._read_bytes(2)
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (PermissionError("Permission denied"), "permission"),
+        (OSError("serial controller failure"), "critical error"),
+    ],
+)
+def test_initialize_reports_serial_open_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    error: OSError,
+    message: str,
+) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(device, "TryConnect", Mock(side_effect=error))
+
+    result = device.Initialize(port="mock-port", max_baud=1_000_000)
+
+    assert result is not False
+    assert result[0][0] == 3
+    assert message in str(result[0][1]).lower()
+    assert device.DEVICE is None
+
+
+def test_initialize_ignores_disappearing_serial_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(device, "TryConnect", Mock(side_effect=FileNotFoundError("gone")))
+
+    assert device.Initialize(port="mock-port", max_baud=1_000_000) == []
+    assert device.FW is None
+
+
+def test_initialize_reopens_supported_device_at_high_speed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_serial = MockSerial()
+    second_serial = MockSerial()
+    serial_devices = iter([first_serial, second_serial])
+    opens: list[tuple[object, ...]] = []
+    device = GbxDevice()
+
+    def connect(_port: str, _baudrate: int) -> bool:
+        device.FW = modern_firmware(pcb_ver=6)
+        return True
+
+    def open_serial(*args: object, **_kwargs: object) -> MockSerial:
+        opens.append(args)
+        return next(serial_devices)
+
+    def change_baud(baudrate: int) -> None:
+        device.BAUDRATE = baudrate
+        first_serial.close()
+
+    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", open_serial)
+    monkeypatch.setattr(device, "TryConnect", connect)
+    monkeypatch.setattr(device, "ChangeBaudRate", change_baud)
+    monkeypatch.setattr(device, "IsConnected", lambda: True)
+
+    assert device.Initialize(port="mock-port", max_baud=1_500_000) == []
+    assert opens == [("mock-port", 1_000_000), ("mock-port", 1_500_000)]
+    assert first_serial.is_open is False
+    assert device.DEVICE is second_serial
+    assert device.BAUDRATE == 1_500_000
+
+
+@pytest.mark.parametrize(
+    ("firmware", "expected_status", "expected_write_buffer"),
+    [
+        (modern_firmware(fw_ts=GbxDevice.DEVICE_LATEST_FW_TS[6] + 1), 1, 0x400),
+        (modern_firmware(fw_ver=0, pcb_ver=4, fw_ts=0), None, 0x100),
+    ],
+)
+def test_initialize_warns_for_new_firmware_and_sizes_legacy_buffers(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: FirmwareInfo,
+    expected_status: int | None,
+    expected_write_buffer: int,
+) -> None:
+    serial_device = MockSerial()
+    device = GbxDevice()
+
+    def connect(_port: str, _baudrate: int) -> bool:
+        device.FW = firmware
+        return True
+
+    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    monkeypatch.setattr(device, "TryConnect", connect)
+    monkeypatch.setattr(device, "IsConnected", lambda: True)
+
+    messages = device.Initialize(port="mock-port", max_baud=1_000_000)
+
+    assert messages is not False
+    assert ([message[0] for message in messages] or [None]) == [expected_status]
+    assert device.MAX_BUFFER_WRITE == expected_write_buffer
+
+
+def test_load_firmware_version_handles_absent_device_and_empty_response() -> None:
+    device = GbxDevice()
+    assert device.LoadFirmwareVersion() is False
+
+    serial_device = MockSerial(timeout=0.6, responses=[b""])
+    device.DEVICE = serial_device  # type: ignore[assignment]
+    assert device.LoadFirmwareVersion() is False
+    assert serial_device.is_open is True
+    assert serial_device.timeout == 0.6
+
+
+@pytest.mark.parametrize(("cfw_id", "version"), [(b"A", 18), (b"L", 11)])
+def test_load_firmware_version_skips_modern_capabilities_for_old_protocols(
+    cfw_id: bytes,
+    version: int,
+) -> None:
+    payload = bytes([8]) + struct.pack(">cHBI", cfw_id, version, 6, 1_700_000_000)
+    serial_device = MockSerial(responses=[b"\x06", b"\x1f", payload])
+    device = GbxDevice()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+
+    assert device.LoadFirmwareVersion() is True
+    assert device.FW is not None
+    assert device.FW["cfw_id"] == cfw_id.decode()
+    assert device.FW["pcb_name"] == ""
+    assert device.FW["cart_power_ctrl"] is False
+
+
+def test_load_firmware_version_accepts_empty_modern_device_name() -> None:
+    payload = bytes([8]) + struct.pack(">cHBI", b"L", 12, 6, 1_700_000_000)
+    serial_device = MockSerial(responses=[b"\x06", b"\x1f", payload + b"\x00\x05\x00"])
+    device = GbxDevice()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+
+    assert device.LoadFirmwareVersion() is True
+    assert device.FW is not None
+    assert device.FW["pcb_name"] == ""
+    assert device.FW["cart_power_ctrl"] is True
+    assert device.FW["cart_mode_switch"] is True
+
+
+def test_change_baud_rate_noops_when_disconnected_and_supports_one_megabaud() -> None:
+    device = GbxDevice()
+    device.IsConnected = Mock(return_value=False)  # type: ignore[method-assign]
+    device.ChangeBaudRate(1_000_000)
+    assert device.DEVICE is None
+
+    serial_device = MockSerial()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
+    device._write = Mock()  # type: ignore[method-assign]
+    device.ChangeBaudRate(1_000_000)
+    device._write.assert_called_once_with(device.DEVICE_CMD["OFW_USART_1_0M_SPEED"])
+    assert serial_device.is_open is False
+
+
+def test_check_active_fast_paths_and_modern_parent_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cached = GbxDevice()
+    cached.LAST_CHECK_ACTIVE = gbxcartrw.time.time()
+    assert cached.CheckActive() is True
+
+    disconnected = GbxDevice()
+    disconnected.LAST_CHECK_ACTIVE = 0
+    assert disconnected.CheckActive() is False
+
+    legacy = GbxDevice()
+    legacy.DEVICE = MockSerial()  # type: ignore[assignment]
+    legacy.FW = modern_firmware(fw_ver=0)
+    legacy.LAST_CHECK_ACTIVE = 0
+    assert legacy.CheckActive() is True
+
+    reloadable = GbxDevice()
+    reloadable.DEVICE = MockSerial()  # type: ignore[assignment]
+    reloadable.FW = modern_firmware(pcb_name=None)
+    reloadable.LAST_CHECK_ACTIVE = 0
+    reloadable.LoadFirmwareVersion = Mock(return_value=True)  # type: ignore[method-assign]
+    assert reloadable.CheckActive() is True
+
+    modern = GbxDevice()
+    modern.DEVICE = MockSerial()  # type: ignore[assignment]
+    modern.FW = modern_firmware()
+    modern.LAST_CHECK_ACTIVE = 0
+    monkeypatch.setattr(gbxcartrw.LK_Device, "CheckActive", lambda _self: True)
+    assert modern.CheckActive() is True
+
+
+def test_legacy_labels_and_capability_fallbacks() -> None:
+    legacy = GbxDevice()
+    legacy.DEVICE = MockSerial()  # type: ignore[assignment]
+    legacy.FW = modern_firmware(fw_ver=0, pcb_ver=5)
+    legacy.PORT = "legacy-port"
+    assert legacy.GetFirmwareVersion() == "R31"
+    assert "legacy-port" in legacy.GetFullNameExtended(more=True)
+    assert legacy.CanPowerCycleCart() is True
+
+    custom = GbxDevice()
+    custom.FW = modern_firmware(pcb_ver=4)
+    custom.PORT = "custom-port"
+    assert custom.GetFirmwareVersion() == "L18"
+    assert custom.GetFullNameExtended(more=True).endswith("custom-port at 1.0M baud")
+    assert custom.CanSetVoltageBySwitch() is False
+    assert custom.CanSetVoltageByCode() is True
+    assert custom.CanSetVoltageByAutoswitch() is False
+    assert custom.IsSupported3dMemory() is True
+    assert custom.IsClkConnected() is False
+
+    dmg_only = GbxDevice()
+    dmg_only.FW = modern_firmware(pcb_ver=101)
+    assert dmg_only.GetSupprtedModes() == ["DMG"]
+
+
+def test_update_support_reset_leds_and_static_capabilities() -> None:
+    device = GbxDevice()
+    assert device.SupportsFirmwareUpdates() is True
+    assert device.CanPowerCycleCart() is False
+    assert device.SupportsBootloaderReset() is False
+    assert device.BootloaderReset() is False
+    assert device.SupportsAudioAsWe() is True
+
+    serial_device = MockSerial()
+    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.FW = modern_firmware(pcb_ver=255, bootloader_reset=True)
+    device._write = Mock()  # type: ignore[method-assign]
+    device._read = Mock(return_value=0)  # type: ignore[method-assign]
+    device.ResetLEDs()
+    device._write.assert_called_once_with(device.DEVICE_CMD["OFW_CART_MODE"])
+    assert device.SupportsFirmwareUpdates() is False
+    assert device.SupportsBootloaderReset() is True
+
+
+def test_firmware_updater_reports_open_and_echo_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive_path = tmp_path / "firmware.zip"
+    build_firmware_archive(archive_path, b"pokemon-red")
+    status = Mock()
+    monkeypatch.setattr(
+        gbxcartrw.serial,
+        "Serial",
+        Mock(side_effect=gbxcartrw.SerialException("busy")),
+    )
+
+    assert FirmwareUpdater(port="mock-port").WriteFirmware(archive_path, status) == 2
+    assert status.call_args.kwargs == {"text": "Device not accessible.", "enableUI": True}
+
+    serial_device = MockSerial()
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *args, **kwargs: serial_device)
+    status.reset_mock()
+    assert FirmwareUpdater(port="mock-port").WriteFirmware(archive_path, status) == 2
+    assert status.call_args.kwargs == {"text": "Update failed!", "enableUI": True}
+    assert serial_device.is_open is False

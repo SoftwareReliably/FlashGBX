@@ -403,6 +403,12 @@ uv sync --group dev
 uv run pytest
 ```
 
+Run the branch-coverage report and enforce the current 50% floor with:
+
+```shell
+uv run pytest --cov
+```
+
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
 
 ## Contributors

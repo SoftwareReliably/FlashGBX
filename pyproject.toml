@@ -58,6 +58,19 @@ dev = [
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+branch = true
+source = [
+    "FlashGBX.Mapper",
+    "FlashGBX.RomFileDMG",
+    "FlashGBX.hw_GBxCartRW",
+]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true
+skip_covered = true
+
 [tool.pyright]
 include = ["FlashGBX"]
 typeCheckingMode = "standard"
@@ -68,6 +81,11 @@ line-length = 121
 
 [tool.ruff.lint]
 # Add rule codes you want to ignore
+#select =["ALL"]
 ignore = [
-    "BLE001" # Do not catch blind exceoption
+    "BLE001", # Do not catch blind exceoption
+    "D102", #undocumented-public-method
+    "N802", #invalid-function-name
+    "PLR2004", #magic-value-comparison
+
 ]
