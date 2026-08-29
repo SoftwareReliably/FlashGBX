@@ -1,17 +1,50 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
+# ruff: noqa: UP007, UP017, UP040, UP047
+# Keep syntax compatible with the project's declared Python 3.10 minimum.
+
+from __future__ import annotations
 
 import datetime
 import hashlib
 import math
 import struct
 import time
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, ClassVar, Literal, Protocol, TypeAlias, TypeVar, Union, overload
 
 from dateutil.relativedelta import relativedelta
 
 from .i18n import __, ___, c__, c___
-from .Logging import ANSI, dprint, logger
+from .Logging import ANSI, dprint, logger  # pyright: ignore[reportAttributeAccessIssue]
 from .RomFileDMG import RomFileDMG
+
+Buffer: TypeAlias = Union[bytes, bytearray, memoryview]
+CartCommands: TypeAlias = Sequence[Sequence[int]]
+RTCDict: TypeAlias = dict[str, Union[int, bool, str, bytearray]]
+
+
+class CartReadCallback(Protocol):
+    def __call__(self, address: int, length: int = 0) -> int | bytearray | bool | None: ...
+
+
+class CartWriteCallback(Protocol):
+    def __call__(self, address: int, value: int, *, sram: bool = False) -> object: ...
+
+
+CallbackT = TypeVar("CallbackT", bound=Callable[..., object])
+
+
+def _require_callback(callback: CallbackT | None, name: str) -> CallbackT:
+    """Return a configured hardware callback or fail with a useful error."""
+    if callback is None:
+        raise RuntimeError(f"{name} callback is not configured")
+    return callback
+
+
+def _local_timezone() -> datetime.tzinfo:
+    """Return the system timezone with a UTC fallback for static analyzers."""
+    return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
 
 
 class BCD:
@@ -24,76 +57,81 @@ class BCD:
         return (value & 0x0F) + ((value >> 4) * 10)
 
 
-def ConvertMapperToMapperType(mapper_raw):
-    i = 0
-    for mapper_type, (ids, _) in DMG_Mapper.MAPPER_MAP.items():
-        if i == 0:
-            retval = (mapper_type, ids, i)
+def ConvertMapperToMapperType(mapper_raw: int) -> tuple[str, list[int], int]:
+    for index, (mapper_type, (ids, _)) in enumerate(DMG_Mapper.MAPPER_MAP.items()):
         if mapper_raw in ids:
-            retval = (mapper_type, ids, i)
-            break
-        i += 1
-    return retval
+            return mapper_type, ids, index
+
+    mapper_type, (ids, _) = next(iter(DMG_Mapper.MAPPER_MAP.items()))
+    return mapper_type, ids, 0
 
 
-def ConvertMapperTypeToMapper(mapper_type):
-    i = 0
-    for ids, _ in DMG_Mapper.MAPPER_MAP.values():
-        if mapper_type == i:
+def ConvertMapperTypeToMapper(mapper_type: int) -> int:
+    for index, (ids, _) in enumerate(DMG_Mapper.MAPPER_MAP.values()):
+        if mapper_type == index:
             return ids[0]
-        i += 1
     return 0
 
 
-def compare_mbc(a, b):
-    for _, (ids, _) in DMG_Mapper.MAPPER_MAP.items():
+def compare_mbc(a: int, b: int) -> bool:
+    for ids, _ in DMG_Mapper.MAPPER_MAP.values():
         if a in ids and b in ids:
             return True
     return False
 
 
-def get_mbc_name(id):
+def get_mbc_name(mapper_id: int) -> str:
     for mapper_type, (ids, _) in DMG_Mapper.MAPPER_MAP.items():
-        if id in ids:
+        if mapper_id in ids:
             return mapper_type
-    return __("Unknown mapper type {id}", id=f"0x{id:02X}")
+    return __("Unknown mapper type {id}", id=f"0x{mapper_id:02X}")
 
 
-def save_size_includes_rtc(mode, mbc, save_size, save_type):
+def save_size_includes_rtc(
+    mode: Literal["DMG", "AGB"] | str,
+    mbc: int,
+    save_size: int,
+    save_type: int | None,
+) -> bool:
     from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
+
+    if save_size <= 0:
+        return False
 
     rtc_size = 0x10
     if mode == "DMG":
-        save_type = DmgSaveTypes(mbc=save_type).GetIndex()
+        save_type_index = DmgSaveTypes(mbc=save_type).GetIndex()
         if get_mbc_name(mbc) in ("MBC3", "MBC30"):
             rtc_size = 0x30
         elif get_mbc_name(mbc) == "HuC-3":
             rtc_size = 0x0C
         elif get_mbc_name(mbc) == "TAMA5":
             rtc_size = 0x28
-        return ((DmgSaveTypes(index=save_type).GetSize() + rtc_size) % save_size) == 0
+        base_size = DmgSaveTypes(index=save_type_index).GetSize()
     elif mode == "AGB":
-        rtc_size = 0x10
-        return ((AgbSaveTypes().GetSize(save_type) + rtc_size) % save_size) == 0
-    return False
+        base_size = AgbSaveTypes().GetSize(save_type)
+    else:
+        return False
+
+    return base_size is not None and ((base_size + rtc_size) % save_size) == 0
 
 
 class DMG_Mapper:
-    MBC_ID = 0
-    CART_WRITE_FNCPTR = None
-    CART_READ_FNCPTR = None
-    CART_POWERCYCLE_FNCPTR = None
-    CLK_TOGGLE_FNCPTR = None
-    ROM_BANK_SIZE = 0x4000
-    RAM_BANK_SIZE = 0x2000
-    ROM_BANK_NUM = 0
-    CURRENT_ROM_BANK = 0
-    CURRENT_FLASH_BANK = -1
-    START_BANK = 0
-    RTC_BUFFER = None
+    MBC_ID: int
+    CART_WRITE_FNCPTR: CartWriteCallback | None
+    CART_READ_FNCPTR: CartReadCallback | None
+    CART_POWERCYCLE_FNCPTR: Callable[[], object] | None
+    CLK_TOGGLE_FNCPTR: Callable[[int], object] | None
+    ROM_BANK_SIZE: int = 0x4000
+    RAM_BANK_SIZE: int = 0x2000
+    ROM_BANK_NUM: int
+    CURRENT_ROM_BANK: int
+    CURRENT_FLASH_BANK: int
+    START_BANK: int
+    RTC_BUFFER: bytearray | None
 
     # Mapper type definitions (class-level constants)
-    MAPPER_TYPES = {
+    MAPPER_TYPES: ClassVar[dict[int, str]] = {
         0x00: "None",  # ROM
         0x01: "MBC1",
         0x02: "MBC1+SRAM",
@@ -135,7 +173,7 @@ class DMG_Mapper:
     }
 
     # Mapper type to IDs mapping (class names as strings to avoid forward reference issues)
-    MAPPER_MAP = {
+    MAPPER_MAP: ClassVar[dict[str, tuple[list[int], str | None]]] = {
         "None": ([0x00, 0x08, 0x09], None),
         "MBC1": ([0x01, 0x02, 0x03], "DMG_MBC1"),
         "MBC2": ([0x05, 0x06], "DMG_MBC2"),
@@ -160,25 +198,31 @@ class DMG_Mapper:
         "Unlicensed MBCX Mapper": ([0x206], "DMG_Unlicensed_MBCX"),
     }
 
-    SGB_MAP = {0x00: "No support", 0x03: "Supported"}
-    CGB_MAP = {0x00: "No support", 0x80: "Supported", 0xC0: "Required"}
+    SGB_MAP: ClassVar[dict[int, str]] = {0x00: "No support", 0x03: "Supported"}
+    CGB_MAP: ClassVar[dict[int, str]] = {0x00: "No support", 0x80: "Supported", 0xC0: "Required"}
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
-    ):
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
+    ) -> None:
         if args is None:
             args = {}
+        self.MBC_ID = 0
+        self.ROM_BANK_NUM = 0
+        self.CURRENT_ROM_BANK = 0
+        self.CURRENT_FLASH_BANK = -1
+        self.START_BANK = 0
+        self.RTC_BUFFER = None
         if "mbc" in args:
-            self.MBC_ID = args["mbc"]
+            self.MBC_ID = int(args["mbc"])
         if "rom_banks" in args:
-            self.ROM_BANK_NUM = args["rom_banks"]
+            self.ROM_BANK_NUM = int(args["rom_banks"])
         elif "rom_size" in args:
-            self.ROM_BANK_NUM = math.ceil(args["rom_size"] / self.ROM_BANK_SIZE)
+            self.ROM_BANK_NUM = math.ceil(int(args["rom_size"]) / self.ROM_BANK_SIZE)
         self.CART_WRITE_FNCPTR = cart_write_fncptr
         self.CART_READ_FNCPTR = cart_read_fncptr
         self.CART_POWERCYCLE_FNCPTR = cart_powercycle_fncptr
@@ -186,12 +230,12 @@ class DMG_Mapper:
 
     def GetInstance(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
-    ):
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
+    ) -> DMG_Mapper:
         if args is None:
             args = {}
         mbc_id = args["mbc"]
@@ -205,7 +249,7 @@ class DMG_Mapper:
         # Resolve class name to actual class object
         if mapper_class_name:
             mapper_class = globals().get(mapper_class_name)
-            if mapper_class:
+            if isinstance(mapper_class, type) and issubclass(mapper_class, DMG_Mapper):
                 return mapper_class(
                     args=args,
                     cart_write_fncptr=cart_write_fncptr,
@@ -225,94 +269,129 @@ class DMG_Mapper:
         return self
 
     @classmethod
-    def GetMapperName(cls, mapper_id):
+    def GetMapperName(cls, mapper_id: int) -> str:
         return cls.MAPPER_TYPES.get(mapper_id, "Unknown")
 
     @classmethod
-    def GetMapperType(cls, mapper_id):
+    def GetMapperType(cls, mapper_id: int) -> str:
         for mapper_type, (ids, _) in cls.MAPPER_MAP.items():
             if mapper_id in ids:
                 return mapper_type
         return "Unknown"
 
     @classmethod
-    def GetMapperIdsByType(cls, mapper_type):
+    def GetMapperIdsByType(cls, mapper_type: str) -> list[int]:
         mapper_info = cls.MAPPER_MAP.get(mapper_type)
         return mapper_info[0] if mapper_info else []
 
     @classmethod
-    def IsValidMapperId(cls, mapper_id):
+    def IsValidMapperId(cls, mapper_id: int) -> bool:
         return mapper_id in cls.MAPPER_TYPES
 
     @classmethod
-    def HasFeature(cls, feature, mapper_id):
+    def HasFeature(cls, feature: str, mapper_id: int) -> bool:
         name = cls.GetMapperName(mapper_id)
         return feature.upper() in name.upper()
 
     @classmethod
-    def GetAllMapperTypes(cls):
+    def GetAllMapperTypes(cls) -> list[str]:
         return list(cls.MAPPER_MAP.keys())
 
     @classmethod
-    def GetAllMapperIds(cls):
+    def GetAllMapperIds(cls) -> list[int]:
         return list(cls.MAPPER_TYPES.keys())
 
-    def CartRead(self, address, length=0):
-        if length == 0:  # auto size:
-            return self.CART_READ_FNCPTR(address)
-        else:
-            return self.CART_READ_FNCPTR(address, length)
+    @overload
+    def CartRead(self, address: int) -> int: ...
 
-    def CartWrite(self, commands, delay=False, sram=False):
+    @overload
+    def CartRead(self, address: int, length: int) -> bytearray: ...
+
+    def CartRead(self, address: int, length: int = 0) -> int | bytearray:
+        read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
+        if length == 0:  # auto size:
+            result = read(address)
+            if isinstance(result, int):
+                return result
+        else:
+            result = read(address, length)
+            if isinstance(result, bytearray):
+                return result
+        raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+
+    def CartWrite(
+        self,
+        commands: CartCommands,
+        delay: float | bool = False,
+        sram: bool = False,
+    ) -> None:
+        write = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
         for command in commands:
             address = command[0]
             value = command[1]
-            self.CART_WRITE_FNCPTR(address, value, sram=sram)
+            write(address, value, sram=sram)
             if delay is not False:
                 time.sleep(delay)
 
-    def GetID(self):
+    def _toggle_clock(self, cycles: int) -> None:
+        toggle = _require_callback(self.CLK_TOGGLE_FNCPTR, "clock toggle")
+        toggle(cycles)
+
+    def _power_cycle(self) -> None:
+        power_cycle = _require_callback(self.CART_POWERCYCLE_FNCPTR, "cartridge power-cycle")
+        power_cycle()
+
+    def _get_rtc_buffer(self) -> bytearray:
+        rtc_buffer = self.RTC_BUFFER
+        if rtc_buffer is None:
+            result = self.ReadRTC()
+            if not isinstance(result, bytearray):
+                raise RuntimeError(f"Could not read {self.GetName()} RTC data")
+            rtc_buffer = result
+        return rtc_buffer
+
+    def GetID(self) -> int:
         return self.MBC_ID
 
-    def GetName(self):
+    def GetName(self) -> str:
         # Get the base mapper type name (e.g. "MBC1", "MBC5")
         mapper_type = self.GetMapperType(self.MBC_ID)
         if mapper_type != "Unknown":
             return mapper_type
         return f"Unknown MBC {self.MBC_ID:d}"
 
-    def GetFullName(self):
+    def GetFullName(self) -> str:
         # Get the full mapper name with all features (e.g. "MBC1+SRAM+BATTERY")
         full_name = self.GetMapperName(self.MBC_ID)
         if full_name != "Unknown":
             return full_name
         return f"Unknown MBC {self.MBC_ID:d}"
 
-    def GetROMBank(self):
+    def GetROMBank(self) -> int:
         return self.CURRENT_ROM_BANK
 
-    def GetFlashBank(self):
+    def GetFlashBank(self) -> int:
         return self.CURRENT_FLASH_BANK
 
-    def GetROMBanks(self, rom_size):
+    def GetROMBanks(self, rom_size: int) -> int:
         return math.ceil(rom_size / self.ROM_BANK_SIZE)
 
-    def GetROMBankSize(self):
+    def GetROMBankSize(self) -> int:
         return self.ROM_BANK_SIZE
 
-    def GetRAMBanks(self, ram_size):
+    def GetRAMBanks(self, ram_size: int) -> int:
         return math.ceil(ram_size / self.RAM_BANK_SIZE)
 
-    def GetRAMBankSize(self):
+    def GetRAMBankSize(self) -> int:
         return self.RAM_BANK_SIZE
 
-    def GetROMSize(self):
+    def GetROMSize(self) -> int:
         return self.ROM_BANK_SIZE * self.ROM_BANK_NUM
 
-    def GetMaxROMSize(self):
+    def GetMaxROMSize(self) -> int:
         return 32 * 1024
 
-    def CalcChecksum(self, buffer):
+    def CalcChecksum(self, buffer: Buffer) -> int:
         chk = 0
         for i in range(0, len(buffer), 2):
             if i != 0x14E:
@@ -320,15 +399,15 @@ class DMG_Mapper:
                 chk = chk + buffer[i]
         return chk & 0xFFFF
 
-    def EnableMapper(self):
+    def EnableMapper(self) -> bool:
         return True
 
-    def EnableRAM(self, enable=True):
+    def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
         commands = [[0x0000, 0x0A if enable else 0x00]]
         self.CartWrite(commands)
 
-    def SelectBankROM(self, index):
+    def SelectBankROM(self, index: int) -> tuple[int, int]:
         dprint(self.GetName(), "|", index)
         commands = [
             [0x2100, index & 0xFF],
@@ -339,64 +418,74 @@ class DMG_Mapper:
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def SelectBankRAM(self, index):
+    def SelectBankRAM(self, index: int) -> tuple[int, int]:
         dprint(self.GetName(), "|", index)
         commands = [[0x4000, index & 0xFF]]
         start_address = 0
         self.CartWrite(commands)
         return (start_address, self.RAM_BANK_SIZE)
 
-    def SetStartBank(self, index):
+    def SetStartBank(self, index: int) -> None:
         self.START_BANK = index
 
-    def SelectBankFlash(self, index):
+    def SelectBankFlash(self, index: int) -> tuple[int, int] | None:
         return
 
-    def HasFlashBanks(self):
+    def HasFlashBanks(self) -> bool:
         return False
 
-    def HasHiddenSector(self):
+    def HasHiddenSector(self) -> bool:
         return False
 
-    def HasRTC(self):
+    def ReadHiddenSector(self) -> bytearray | bool:
+        return False
+
+    def HasRTC(self) -> bool:
         return self.HasFeature("RTC", self.MBC_ID)
 
-    def GetRTCBufferSize(self):
+    def GetRTCBufferSize(self) -> int:
         return 0
 
-    def LatchRTC(self):
+    def LatchRTC(self) -> int | None:
         return 0
 
-    def ReadRTC(self):
+    def ReadRTC(self) -> bytearray | bool:
         return False
 
-    def WriteRTC(self, buffer, advance=False):
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         pass
 
-    def GetRTCDict(self):
+    def GetRTCDict(self) -> RTCDict:
         return {}
 
-    def WriteRTCDict(self, rtc_dict):
+    def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> bool | None:
         pass
 
-    def GetRTCString(self):
+    def GetRTCString(self) -> str:
         return c__("Real Time Clock Feature", "Not available")
 
-    def ResetBeforeBankChange(self, index):
+    def ResetBeforeBankChange(self, index: int) -> bool:
         return False
 
-    def ReadWithCSPulse(self):
+    def ReadWithCSPulse(self) -> bool:
         return False
 
-    def WriteWithCSPulse(self):
+    def WriteWithCSPulse(self) -> bool:
         return False
+
+    def EnableFlash(self, enable: bool = True, enable_write: bool = False) -> None:
+        del enable, enable_write
+        raise NotImplementedError(f"{self.GetName()} does not provide flash-memory access")
+
+    def EraseFlashSector(self) -> None:
+        raise NotImplementedError(f"{self.GetName()} does not provide flash-memory access")
 
 
 ##################
 
 
 class DMG_MBC1(DMG_Mapper):
-    def GetName(self):
+    def GetName(self) -> str:
         return "MBC1"
 
     def EnableRAM(self, enable=True):
@@ -425,7 +514,7 @@ class DMG_MBC1(DMG_Mapper):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self):
+    def GetMaxROMSize(self) -> int:
         return 2 * 1024 * 1024
 
 
@@ -441,7 +530,7 @@ class DMG_MBC2(DMG_Mapper):
 
 
 class DMG_MBC3(DMG_Mapper):
-    def GetName(self):
+    def GetName(self) -> str:
         return "MBC3"
 
     def HasRTC(self):
@@ -455,7 +544,7 @@ class DMG_MBC3(DMG_Mapper):
 
         skipped = True
         for i in range(0x08, 0x0D):
-            self.CLK_TOGGLE_FNCPTR(60)
+            self._toggle_clock(60)
             self.CartWrite([[0x4000, i]])
             data = self.CartRead(0xA880, 0x100)
             if len(data) == 0:
@@ -477,11 +566,11 @@ class DMG_MBC3(DMG_Mapper):
 
     def LatchRTC(self):
         dprint("Latching RTC")
-        self.CLK_TOGGLE_FNCPTR(60)
+        self._toggle_clock(60)
         self.CartWrite([[0x0000, 0x0A]])
-        self.CLK_TOGGLE_FNCPTR(60)
+        self._toggle_clock(60)
         self.CartWrite([[0x6000, 0x00]])
-        self.CLK_TOGGLE_FNCPTR(60)
+        self._toggle_clock(60)
         self.CartWrite([[0x6000, 0x01]])
 
     def ReadRTC(self):
@@ -490,7 +579,7 @@ class DMG_MBC3(DMG_Mapper):
 
         buffer = bytearray()
         for i in range(0x08, 0x0D):
-            self.CLK_TOGGLE_FNCPTR(60)
+            self._toggle_clock(60)
             self.CartWrite([[0x4000, i]])
             buffer.extend(struct.pack("<I", self.CartRead(0xA000)))
         buffer.extend(buffer)  # copy
@@ -520,31 +609,31 @@ class DMG_MBC3(DMG_Mapper):
         )
 
         # Unlock and latch RTC
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x0000, 0x0A]])
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x6000, 0x00]])
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x6000, 0x01]])
 
         # Halt RTC
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x4000, 0x0C]])
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0xA000, 0x40]], sram=True)
 
         # Write to registers
         for i in range(0x08, 0x0D):
-            self.CLK_TOGGLE_FNCPTR(50)
+            self._toggle_clock(50)
             self.CartWrite([[0x4000, i]])
-            self.CLK_TOGGLE_FNCPTR(50)
+            self._toggle_clock(50)
             data = buffer[i - 8]
             self.CartWrite([[0xA000, data]], sram=True)
 
         # Latch RTC
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x6000, 0x00]])
-        self.CLK_TOGGLE_FNCPTR(50)
+        self._toggle_clock(50)
         self.CartWrite([[0x6000, 0x01]])
 
         self.CartWrite([[0x4000, 0]])
@@ -564,8 +653,8 @@ class DMG_MBC3(DMG_Mapper):
         carry = (buffer[0x10] & 0x80) != 0
         if advance:
             try:
-                local_timezone = datetime.datetime.now().astimezone().tzinfo
-                dt_now = datetime.datetime.fromtimestamp(time.time(), local_timezone)
+                local_timezone = _local_timezone()
+                dt_now = datetime.datetime.now(local_timezone)
                 if buffer == bytearray([0x00] * len(buffer)):  # Reset
                     seconds = 0
                     minutes = 0
@@ -583,31 +672,27 @@ class DMG_MBC3(DMG_Mapper):
                     timestamp_now = int(time.time())
                     dprint(seconds, minutes, hours, days, carry)
                     if timestamp_then < timestamp_now:
-                        dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-                        dt_buffer1 = datetime.datetime.strptime(
-                            f"{2000:04d}-{1:02d}-{1:02d} {0:02d}:{0:02d}:{0:02d}",
-                            "%Y-%m-%d %H:%M:%S",
-                        )
-                        dt_buffer2 = datetime.datetime.strptime(
-                            f"{2000:04d}-{1:02d}-{1:02d} {hours % 24:02d}:{minutes % 60:02d}:{seconds % 60:02d}",
-                            "%Y-%m-%d %H:%M:%S",
+                        dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
+                        dt_buffer1 = datetime.datetime(2000, 1, 1, tzinfo=local_timezone)
+                        dt_buffer2 = datetime.datetime(
+                            2000,
+                            1,
+                            1,
+                            hours % 24,
+                            minutes % 60,
+                            seconds % 60,
+                            tzinfo=local_timezone,
                         )
                         dt_buffer2 += datetime.timedelta(days=days)
                         rd = relativedelta(dt_now, dt_then)
                         dt_new = dt_buffer2 + rd
-                        dprint(
-                            dt_then, dt_now, dt_buffer1, dt_buffer2, dt_new, sep="\n"
-                        )
+                        dprint(dt_then, dt_now, dt_buffer1, dt_buffer2, dt_new, sep="\n")
                         seconds = dt_new.second
                         minutes = dt_new.minute
                         hours = dt_new.hour
                         temp = (
-                            datetime.datetime.fromtimestamp(
-                                timestamp_now, tz=datetime.UTC
-                            ).date()
-                            - datetime.datetime.fromtimestamp(
-                                timestamp_then, tz=datetime.UTC
-                            ).date()
+                            datetime.datetime.fromtimestamp(timestamp_now, tz=datetime.timezone.utc).date()
+                            - datetime.datetime.fromtimestamp(timestamp_then, tz=datetime.timezone.utc).date()
                         )
                         days = temp.days + days
                         if days >= 512:
@@ -616,11 +701,7 @@ class DMG_MBC3(DMG_Mapper):
                         dprint(seconds, minutes, hours, days, carry)
 
             except Exception as e:
-                print(
-                    __("Error: Couldn’t update the RTC register values.")
-                    + "\n"
-                    + str(e)
-                )
+                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
 
         d = {
             "rtc_s": seconds % 60,
@@ -632,9 +713,7 @@ class DMG_MBC3(DMG_Mapper):
         self.EnableRAM(enable=False)
 
     def GetRTCDict(self):
-        if self.RTC_BUFFER is None:
-            self.ReadRTC()
-        rtc_buffer = self.RTC_BUFFER
+        rtc_buffer = self._get_rtc_buffer()
 
         rtc_s = rtc_buffer[0x00]
         rtc_m = rtc_buffer[0x04]
@@ -652,9 +731,7 @@ class DMG_MBC3(DMG_Mapper):
         # if rtc_carry: rtc_d += 256
         if rtc_h > 24 or rtc_m > 60 or rtc_s > 60:
             try:
-                dprint(
-                    f"Invalid RTC state: {rtc_d:d} days, {rtc_h:02d}:{rtc_m:02d}:{rtc_s:02d}"
-                )
+                dprint(f"Invalid RTC state: {rtc_d:d} days, {rtc_h:02d}:{rtc_m:02d}:{rtc_s:02d}")
             except Exception:
                 logger.exception("Failed to format an invalid RTC state")
             s = __("Invalid RTC state")
@@ -678,14 +755,14 @@ class DMG_MBC3(DMG_Mapper):
         return d
 
     def GetRTCString(self):
-        return self.GetRTCDict()["string"]
+        return str(self.GetRTCDict()["string"])
 
-    def GetMaxROMSize(self):
+    def GetMaxROMSize(self) -> int:
         return 4 * 1024 * 1024
 
 
 class DMG_MBC5(DMG_Mapper):
-    def GetName(self):
+    def GetName(self) -> str:
         return "MBC5"
 
     def SelectBankROM(self, index):
@@ -702,7 +779,7 @@ class DMG_MBC5(DMG_Mapper):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self):
+    def GetMaxROMSize(self) -> int:
         return 8 * 1024 * 1024
 
 
@@ -886,8 +963,8 @@ class DMG_MMM01(DMG_Mapper):
 
     def CalcChecksum(self, buffer):
         chk = 0
-        temp_data = buffer[0:-0x8000]
-        temp_menu = buffer[-0x8000:]
+        temp_data = bytes(buffer[0:-0x8000])
+        temp_menu = bytes(buffer[-0x8000:])
         temp_dump = temp_menu + temp_data
         for i in range(0, len(temp_dump), 2):
             if i != 0x14E:
@@ -1020,6 +1097,7 @@ class DMG_GMMC1(DMG_MBC5):
 
     def ReadHiddenSector(self):
         hp = 5
+        hs = bytearray()
         while hp > 0:
             self.EnableMapper()
             rom = self.CartRead(0, 128)
@@ -1261,7 +1339,8 @@ class DMG_HuC3(DMG_Mapper):
     def WriteRTC(self, buffer, advance=False):
         if advance:
             try:
-                dt_now = datetime.datetime.fromtimestamp(time.time())
+                local_timezone = _local_timezone()
+                dt_now = datetime.datetime.now(local_timezone)
                 dprint(buffer)
                 if buffer == bytearray([0x00] * len(buffer)):  # Reset
                     hours = 0
@@ -1277,26 +1356,19 @@ class DMG_HuC3(DMG_Mapper):
                     timestamp_now = int(time.time())
                     dprint(hours, minutes, days)
                     if timestamp_then < timestamp_now:
-                        dt_then = datetime.datetime.fromtimestamp(timestamp_then)
-                        dt_buffer1 = datetime.datetime.strptime(
-                            f"{1:04d}-{1:02d}-{1:02d} {0:02d}:{0:02d}:{0:02d}",
-                            "%Y-%m-%d %H:%M:%S",
-                        )
-                        dt_buffer2 = datetime.datetime.strptime(
-                            f"{1:04d}-{1:02d}-{1:02d} {hours:02d}:{minutes:02d}:{0:02d}",
-                            "%Y-%m-%d %H:%M:%S",
-                        )
+                        dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
+                        dt_buffer1 = datetime.datetime(1, 1, 1, tzinfo=local_timezone)
+                        dt_buffer2 = datetime.datetime(1, 1, 1, hours, minutes, tzinfo=local_timezone)
                         dt_buffer2 += datetime.timedelta(days=days)
                         rd = relativedelta(dt_now, dt_then)
                         dt_new = dt_buffer2 + rd
-                        dprint(
-                            dt_then, dt_now, dt_buffer1, dt_buffer2, dt_new, sep="\n"
-                        )
+                        dprint(dt_then, dt_now, dt_buffer1, dt_buffer2, dt_new, sep="\n")
                         minutes = dt_new.minute
                         hours = dt_new.hour
-                        temp = datetime.date.fromtimestamp(
-                            timestamp_now
-                        ) - datetime.date.fromtimestamp(timestamp_then)
+                        temp = (
+                            datetime.datetime.fromtimestamp(timestamp_now, local_timezone).date()
+                            - datetime.datetime.fromtimestamp(timestamp_then, local_timezone).date()
+                        )
                         days = temp.days + days
                         dprint(minutes, hours, days)
 
@@ -1304,16 +1376,10 @@ class DMG_HuC3(DMG_Mapper):
                 self.WriteRTCDict(d)
 
             except Exception as e:
-                print(
-                    __("Error: Couldn’t update the RTC register values.")
-                    + "\n"
-                    + str(e)
-                )
+                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
 
     def GetRTCDict(self):
-        if self.RTC_BUFFER is None:
-            self.ReadRTC()
-        rtc_buffer = struct.unpack("<I", self.RTC_BUFFER[0:4])[0]
+        rtc_buffer = struct.unpack("<I", self._get_rtc_buffer()[0:4])[0]
         rtc_h = math.floor((rtc_buffer & 0xFFF) / 60)
         rtc_m = (rtc_buffer & 0xFFF) % 60
         rtc_d = (rtc_buffer >> 12) & 0xFFF
@@ -1332,7 +1398,7 @@ class DMG_HuC3(DMG_Mapper):
         return d
 
     def GetRTCString(self):
-        return self.GetRTCDict()["string"]
+        return str(self.GetRTCDict()["string"])
 
     def GetMaxROMSize(self):
         return 2 * 1024 * 1024
@@ -1346,9 +1412,7 @@ class DMG_TAMA5(DMG_Mapper):
         tama5_check = self.CartRead(0xA000)
         lives = 20
         while (tama5_check & 3) != 1:
-            dprint(
-                f"- Current value is 0x{tama5_check:X}, now writing 0xA001=0x{0x0A:X}"
-            )
+            dprint(f"- Current value is 0x{tama5_check:X}, now writing 0xA001=0x{0x0A:X}")
             self.CartWrite([[0xA001, 0x0A]], sram=True)
             tama5_check = self.CartRead(0xA000)
             lives -= 1
@@ -1435,12 +1499,8 @@ class DMG_TAMA5(DMG_Mapper):
         buffer[0x01] = BCD.encode(rtc_dict["rtc_i"])
         buffer[0x02] = BCD.encode(rtc_dict["rtc_h"])
         buffer[0x03] = ((BCD.encode(rtc_dict["rtc_d"]) & 0xF) << 4) | 6  # weekday?
-        buffer[0x04] = (BCD.encode(rtc_dict["rtc_d"]) >> 4) | (
-            (BCD.encode(rtc_dict["rtc_m"]) & 0xF) << 4
-        )
-        buffer[0x05] = (BCD.encode(rtc_dict["rtc_m"]) >> 4) | (
-            (BCD.encode(rtc_dict["rtc_y"]) & 0xF) << 4
-        )
+        buffer[0x04] = (BCD.encode(rtc_dict["rtc_d"]) >> 4) | ((BCD.encode(rtc_dict["rtc_m"]) & 0xF) << 4)
+        buffer[0x05] = (BCD.encode(rtc_dict["rtc_m"]) >> 4) | ((BCD.encode(rtc_dict["rtc_y"]) & 0xF) << 4)
         buffer[0x06] = BCD.encode(rtc_dict["rtc_y"]) >> 4
         buffer[0x0D] = rtc_dict["rtc_leap_year_state"] << 4 | 1  # 24h flag
 
@@ -1503,9 +1563,8 @@ class DMG_TAMA5(DMG_Mapper):
     def WriteRTC(self, buffer, advance=False):
         if advance:
             try:
-                dt_now = datetime.datetime.fromtimestamp(
-                    time.time(), tz=datetime.UTC
-                )
+                local_timezone = _local_timezone()
+                dt_now = datetime.datetime.now(local_timezone)
                 if buffer == bytearray([0x00] * len(buffer)):  # Reset
                     seconds = 0
                     minutes = 0
@@ -1534,11 +1593,11 @@ class DMG_TAMA5(DMG_Mapper):
                     timestamp_then = struct.unpack("<Q", buffer[-8:])[0]
                     timestamp_now = int(time.time())
                     if timestamp_then < timestamp_now:
-                        dt_then = datetime.datetime.fromtimestamp(timestamp_then)
+                        dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
                         dt_buffer = datetime.datetime.strptime(
                             f"{2000 + leap_year_state:04d}-{months:02d}-{days:02d} {hours % 24:02d}:{minutes % 60:02d}:{seconds % 60:02d}",
                             "%Y-%m-%d %H:%M:%S",
-                        )
+                        ).replace(tzinfo=local_timezone)
                         rd = relativedelta(dt_now, dt_then)
                         dt_new = dt_buffer + rd
 
@@ -1561,21 +1620,12 @@ class DMG_TAMA5(DMG_Mapper):
                         seconds = dt_new.second
                         dt_buffer_notime = dt_buffer.replace(hour=0, minute=0, second=0)
                         dt_new_notime = dt_new.replace(hour=0, minute=0, second=0)
-                        days_passed = int(
-                            (dt_new_notime.timestamp() - dt_buffer_notime.timestamp())
-                            / 60
-                            / 60
-                            / 24
-                        )
+                        days_passed = int((dt_new_notime.timestamp() - dt_buffer_notime.timestamp()) / 60 / 60 / 24)
                         weekday += days_passed % 7
                         leap_year_state = (leap_year_state + year_new) % 4
 
             except Exception as e:
-                print(
-                    __("Error: Couldn’t update the RTC register values.")
-                    + "\n"
-                    + str(e)
-                )
+                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
                 return
 
             d = {
@@ -1617,9 +1667,7 @@ class DMG_TAMA5(DMG_Mapper):
                     value1 = self.CartRead(0xA000)
 
     def GetRTCDict(self):
-        if self.RTC_BUFFER is None:
-            self.ReadRTC()
-        rtc_buffer = self.RTC_BUFFER
+        rtc_buffer = self._get_rtc_buffer()
         seconds = BCD.decode(rtc_buffer[0x00])
         minutes = BCD.decode(rtc_buffer[0x01])
         hours = BCD.decode(rtc_buffer[0x02])
@@ -1652,9 +1700,7 @@ class DMG_TAMA5(DMG_Mapper):
                 years=year_count,
             )
         else:
-            years_label = ___(
-                "{years} year", "{years} years", n=year_count, years=year_count
-            )
+            years_label = ___("{years} year", "{years} years", n=year_count, years=year_count)
         d["string"] = __(
             "{years_label}, {month}-{day}, {hours}:{minutes}:{seconds}",
             years_label=years_label,
@@ -1667,7 +1713,7 @@ class DMG_TAMA5(DMG_Mapper):
         return d
 
     def GetRTCString(self):
-        return self.GetRTCDict()["string"]
+        return str(self.GetRTCDict()["string"])
 
     def ReadWithCSPulse(self):
         return False
@@ -1692,7 +1738,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
 
         if self.CURRENT_FLASH_BANK != flash_bank:
             dprint("Power cycling now")
-            self.CART_POWERCYCLE_FNCPTR()
+            self._power_cycle()
             self.CURRENT_FLASH_BANK = flash_bank
 
         commands = [[0x7000, 0x00], [0x7001, 0x00], [0x7002, 0x80 + flash_bank]]
@@ -1810,7 +1856,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         dprint(self.GetName(), "|", index)
         if index == 0:
             self.CartRead(0x0102, 1)
-            self.CART_POWERCYCLE_FNCPTR()
+            self._power_cycle()
             self.CartRead(0x0102, 1)
         self.CartWrite([[0x0006, index & 0xFF]])
         self.CURRENT_ROM_BANK = index
@@ -1821,7 +1867,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         dprint(self.GetName(), "|", index)
         if index == 0:
             self.CartRead(0x0102, 1)
-            self.CART_POWERCYCLE_FNCPTR()
+            self._power_cycle()
             self.CartRead(0x0102, 1)
         return self.SelectBankROM(index + 8)
 
@@ -1916,68 +1962,84 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
 
 
 class AGB_GPIO:
-    CART_WRITE_FNCPTR = None
-    CART_READ_FNCPTR = None
-    CLK_TOGGLE_FNCPTR = None
-    RTC = False
-    RTC_BUFFER = None
+    CART_WRITE_FNCPTR: CartWriteCallback | None
+    CART_READ_FNCPTR: CartReadCallback | None
+    CART_POWERCYCLE_FNCPTR: Callable[[], object] | None
+    CLK_TOGGLE_FNCPTR: Callable[[int], object] | None
+    RTC: bool
+    RTC_BUFFER: bytearray | None
 
     # Addresses
-    GPIO_REG_DAT = 0xC4  # Data
-    GPIO_REG_CNT = 0xC6  # IO Select
-    GPIO_REG_RE = 0xC8  # Read Enable Flag Register
+    GPIO_REG_DAT: ClassVar[int] = 0xC4  # Data
+    GPIO_REG_CNT: ClassVar[int] = 0xC6  # IO Select
+    GPIO_REG_RE: ClassVar[int] = 0xC8  # Read Enable Flag Register
 
     # Commands
-    RTC_RESET = 0x60
-    RTC_WRITE_STATUS = 0x62
-    RTC_READ_STATUS = 0x63
-    RTC_WRITE_DATE = 0x64
-    RTC_READ_DATE = 0x65
-    RTC_WRITE_TIME = 0x66
-    RTC_READ_TIME = 0x67
-    RTC_WRITE_ALARM = 0x68
-    RTC_READ_ALARM = 0x69
+    RTC_RESET: ClassVar[int] = 0x60
+    RTC_WRITE_STATUS: ClassVar[int] = 0x62
+    RTC_READ_STATUS: ClassVar[int] = 0x63
+    RTC_WRITE_DATE: ClassVar[int] = 0x64
+    RTC_READ_DATE: ClassVar[int] = 0x65
+    RTC_WRITE_TIME: ClassVar[int] = 0x66
+    RTC_READ_TIME: ClassVar[int] = 0x67
+    RTC_WRITE_ALARM: ClassVar[int] = 0x68
+    RTC_READ_ALARM: ClassVar[int] = 0x69
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
-    ):
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
+    ) -> None:
         if args is None:
             args = {}
+        self.RTC = False
+        self.RTC_BUFFER = None
         self.CART_WRITE_FNCPTR = cart_write_fncptr
         self.CART_READ_FNCPTR = cart_read_fncptr
         self.CART_POWERCYCLE_FNCPTR = cart_powercycle_fncptr
         self.CLK_TOGGLE_FNCPTR = clk_toggle_fncptr
         if "rtc" in args:
-            self.RTC = args["rtc"]
+            self.RTC = bool(args["rtc"])
 
-    def CartRead(self, address, length=0):
+    @overload
+    def CartRead(self, address: int) -> int: ...
+
+    @overload
+    def CartRead(self, address: int, length: int) -> bytearray: ...
+
+    def CartRead(self, address: int, length: int = 0) -> int | bytearray:
+        read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
         if length == 0:  # auto size:
             address = address * 2
-            data = self.CART_READ_FNCPTR(address)
-            data = struct.pack(">H", data)
+            result = read(address)
+            if not isinstance(result, int):
+                raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+            data = struct.pack(">H", result)
             data = struct.unpack("<H", data)[0]
             # dprint("0x{:X} is 0x{:X}".format(address, data))
         else:
-            data = self.CART_READ_FNCPTR(address, length)
+            result = read(address, length)
+            if not isinstance(result, bytearray):
+                raise RuntimeError(f"Cartridge read failed at 0x{address:X}")
+            data = result
             # dprint("0x{:X} is".format(address), data)
 
         return data
 
-    def CartWrite(self, commands, delay=False):
+    def CartWrite(self, commands: CartCommands, delay: float | bool = False) -> None:
+        write = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
         for command in commands:
             address = command[0]
             value = command[1]
             # dprint("0x{:X} = 0x{:X}".format(address, value))
-            self.CART_WRITE_FNCPTR(address, value)
+            write(address, value)
             if delay is not False:
                 time.sleep(delay)
 
-    def RTCCommand(self, command):
+    def RTCCommand(self, command: int) -> None:
         for i in range(8):
             bit = (command >> (7 - i)) & 0x01
             self.CartWrite(
@@ -1989,7 +2051,7 @@ class AGB_GPIO:
                 ]
             )
 
-    def RTCReadData(self):
+    def RTCReadData(self) -> int:
         data = 0
         for _ in range(8):
             self.CartWrite(
@@ -2008,7 +2070,7 @@ class AGB_GPIO:
             # dprint("RTCReadData(): i={:d}/temp={:X}/bit={:x}/data={:x}".format(i, temp, bit, data))
         return data
 
-    def RTCWriteData(self, data):
+    def RTCWriteData(self, data: int) -> None:
         for i in range(8):
             bit = (data >> i) & 0x01
             self.CartWrite(
@@ -2020,7 +2082,7 @@ class AGB_GPIO:
                 ]
             )
 
-    def RTCReadStatus(self):
+    def RTCReadStatus(self) -> int:
         self.CartWrite(
             [
                 [self.GPIO_REG_RE, 1],  # Enable RTC Mapping
@@ -2045,7 +2107,7 @@ class AGB_GPIO:
         )
         return data
 
-    def RTCWriteStatus(self, value):
+    def RTCWriteStatus(self, value: int) -> None:
         self.CartWrite(
             [
                 [self.GPIO_REG_RE, 1],  # Enable RTC Mapping
@@ -2065,7 +2127,7 @@ class AGB_GPIO:
             ]
         )
 
-    def HasRTC(self, buffer=None):
+    def HasRTC(self, buffer: bytearray | None = None) -> bool | Literal[1, 2, 3]:
         if not self.RTC:
             return False
         if buffer is not None:
@@ -2078,9 +2140,7 @@ class AGB_GPIO:
 
         dprint("Status:", bin(status))
         if (status >> 7) == 1:
-            dprint(
-                "No RTC because of set RTC Status Register Power Flag:", status >> 7 & 1
-            )
+            dprint("No RTC because of set RTC Status Register Power Flag:", status >> 7 & 1)
             return 1
         if (status >> 6) != 1:
             dprint("Unexpected RTC Status Register 24h Flag:", status >> 6 & 1)
@@ -2114,7 +2174,7 @@ class AGB_GPIO:
 
         return True
 
-    def ReadRTC(self, buffer=None):
+    def ReadRTC(self, buffer: bytearray | None = None) -> bytearray | bool:
         if not self.RTC:
             return False
         if buffer is None:
@@ -2159,7 +2219,7 @@ class AGB_GPIO:
         self.RTC_BUFFER = buffer
         return buffer
 
-    def WriteRTCDict(self, rtc_dict):
+    def WriteRTCDict(self, rtc_dict: Mapping[str, int]) -> bool:
         buffer = bytearray(7)
         try:
             buffer[0] = BCD.encode(rtc_dict["rtc_y"])
@@ -2198,7 +2258,7 @@ class AGB_GPIO:
         )
         return True
 
-    def WriteRTC(self, buffer, advance=False):
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         rtc_status = None
         if buffer == bytearray([0xFF] * len(buffer)):  # Reset
             years = 0
@@ -2223,13 +2283,12 @@ class AGB_GPIO:
 
         if advance:
             try:
-                dt_now = datetime.datetime.fromtimestamp(time.time())
+                local_timezone = _local_timezone()
+                dt_now = datetime.datetime.now(local_timezone)
                 timestamp_then = struct.unpack("<Q", buffer[-8:])[0]
                 timestamp_now = int(time.time())
                 if timestamp_then < timestamp_now:
-                    dt_then = datetime.datetime.fromtimestamp(
-                        timestamp_then, local_timezone
-                    )
+                    dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
                     dt_buffer = datetime.datetime.strptime(
                         f"{years + 2000:04d}-{months % 13:02d}-{days % 32:02d} {hours % 60:02d}:{minutes % 60:02d}:{seconds % 60:02d}",
                         "%Y-%m-%d %H:%M:%S",
@@ -2241,12 +2300,7 @@ class AGB_GPIO:
                     days = dt_new.day
                     dt_buffer_notime = dt_buffer.replace(hour=0, minute=0, second=0)
                     dt_new_notime = dt_new.replace(hour=0, minute=0, second=0)
-                    days_passed = int(
-                        (dt_new_notime.timestamp() - dt_buffer_notime.timestamp())
-                        / 60
-                        / 60
-                        / 24
-                    )
+                    days_passed = int((dt_new_notime.timestamp() - dt_buffer_notime.timestamp()) / 60 / 60 / 24)
                     weekday += days_passed % 7
                     hours = dt_new.hour
                     minutes = dt_new.minute
@@ -2267,11 +2321,7 @@ class AGB_GPIO:
                 dprint(f"[{int(len(dstr) / 3) + 1:02X}] {dstr:s}")
 
             except Exception as e:
-                print(
-                    __("Error: Couldn’t update the RTC register values.")
-                    + "\n"
-                    + str(e)
-                )
+                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
 
         d = {
             "rtc_y": years,
@@ -2288,7 +2338,7 @@ class AGB_GPIO:
         if rtc_status is not None:
             self.RTCWriteStatus(rtc_status)
 
-    def GetRTCDict(self, has_rtc=None):
+    def GetRTCDict(self, has_rtc: bool | Literal[1, 2, 3] | None = None) -> RTCDict:
         if has_rtc is None:
             has_rtc = self.HasRTC()
         if has_rtc is not True:
@@ -2297,9 +2347,12 @@ class AGB_GPIO:
             elif has_rtc == 1:
                 return {"string": __("Not available / Battery dry")}
 
-        if self.RTC_BUFFER is None:
-            self.ReadRTC()
         rtc_buffer = self.RTC_BUFFER
+        if rtc_buffer is None:
+            result = self.ReadRTC()
+            if not isinstance(result, bytearray):
+                raise RuntimeError("Could not read AGB RTC data")
+            rtc_buffer = result
 
         # weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
         rtc_y = (rtc_buffer[0] & 0x0F) + ((rtc_buffer[0] >> 4) * 10)
@@ -2310,7 +2363,7 @@ class AGB_GPIO:
         rtc_i = (rtc_buffer[5] & 0x0F) + ((rtc_buffer[5] >> 4) * 10)
         rtc_s = (rtc_buffer[6] & 0x0F) + ((rtc_buffer[6] >> 4) * 10)
 
-        d = {
+        d: RTCDict = {
             "rtc_y": rtc_y,
             "rtc_m": rtc_m,
             "rtc_d": rtc_d,
@@ -2321,14 +2374,7 @@ class AGB_GPIO:
             "rtc_24h": rtc_buffer[0] >> 6 & 1,
         }
 
-        if (
-            rtc_y == 0
-            and rtc_m == 0
-            and rtc_d == 0
-            and rtc_h == 0
-            and rtc_i == 0
-            and rtc_s == 0
-        ):
+        if rtc_y == 0 and rtc_m == 0 and rtc_d == 0 and rtc_h == 0 and rtc_i == 0 and rtc_s == 0:
             d["string"] = __("Invalid RTC data")
             d["rtc_valid"] = False
         else:
@@ -2345,5 +2391,5 @@ class AGB_GPIO:
 
         return d
 
-    def GetRTCString(self, has_rtc=None):
-        return self.GetRTCDict(has_rtc=has_rtc)["string"]
+    def GetRTCString(self, has_rtc: bool | Literal[1, 2, 3] | None = None) -> str:
+        return str(self.GetRTCDict(has_rtc=has_rtc)["string"])
