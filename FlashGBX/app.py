@@ -1,20 +1,130 @@
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from __future__ import annotations
+
 import importlib
 import platform
 import re
 import sys
-from typing import ClassVar
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
+
+if TYPE_CHECKING:
+    from types import ModuleType, TracebackType
+
+
+class _WindowsVersion(Protocol):
+    major: int
+    minor: int
+    build: int
+
+
+class _RegistryKey(Protocol):
+    def __enter__(self) -> object: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None: ...
+
+
+class _RegistryModule(Protocol):
+    HKEY_LOCAL_MACHINE: object
+
+    def OpenKey(self, key: object, sub_key: str) -> _RegistryKey: ...
+
+    def QueryValueEx(self, key: object, value_name: str) -> tuple[object, int]: ...
+
+
+class SettingsReader(Protocol):
+    def value(self, key: str, default: str) -> object: ...
+
+
+FilenameHeader = Mapping[str, object]
+CartridgeMode = Literal["DMG", "AGB"]
+_INVALID_FILENAME_CHARS = re.compile(r"[<>:\"/\\|\?\*]")
+
+
+def _get_windows_version() -> _WindowsVersion:
+    getter = getattr(sys, "getwindowsversion", None)
+    if not callable(getter):
+        msg = "sys.getwindowsversion is unavailable"
+        raise OSError(msg)
+    return cast("Callable[[], _WindowsVersion]", getter)()
+
+
+def _required_text(values: Mapping[str, object], key: str) -> str:
+    value = values[key]
+    if not isinstance(value, str):
+        msg = f"Header field {key!r} must be a string"
+        raise TypeError(msg)
+    return value
+
+
+def _required_int(values: Mapping[str, object], key: str) -> int:
+    value = values[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"Header field {key!r} must be an integer"
+        raise TypeError(msg)
+    return value
+
+
+def _registry_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        msg = "Registry value must be an integer or an integer string"
+        raise TypeError(msg)
+    return int(value)
+
+
+def _setting_text(settings: SettingsReader | None, key: str, default: str) -> str:
+    if settings is None:
+        return default
+    value = settings.value(key=key, default=default)
+    return value if isinstance(value, str) else default
+
+
+def _gbmemory_cart_id(value: object) -> str | None:
+    entry: Mapping[object, object]
+    if isinstance(value, Mapping):
+        entry = value
+    elif isinstance(value, list) and value and isinstance(value[0], Mapping):
+        entry = value[0]
+    else:
+        return None
+
+    cart_id = entry.get("cart_id")
+    return cart_id if isinstance(cart_id, str) and cart_id else None
+
+
+def _database_filename(
+    header: FilenameHeader,
+    extension: str,
+    *,
+    gbmemory_cart_id: str | None,
+) -> str | None:
+    database = header.get("db")
+    if database is None:
+        return None
+    if gbmemory_cart_id is not None:
+        return f"NP GB-Memory Cartridge ({gbmemory_cart_id}).{extension}"
+    if not isinstance(database, Mapping):
+        msg = "Header field 'db' must be a mapping or None"
+        raise TypeError(msg)
+    game_name = _required_text(database, "gn")
+    edition_name = _required_text(database, "ne")
+    return f"{game_name} {edition_name}.{extension}"
 
 
 class AppInfo:
-    NAME = "FlashGBX"
-    VERSION_PEP440 = "5.0.1"
-    VERSION = f"v{VERSION_PEP440:s}"
-    VERSION_TIMESTAMP = 1780697375
+    NAME: ClassVar[str] = "FlashGBX"
+    VERSION_PEP440: ClassVar[str] = "5.0.1"
+    VERSION: ClassVar[str] = f"v{VERSION_PEP440:s}"
+    VERSION_TIMESTAMP: ClassVar[int] = 1780697375
 
     @classmethod
     def os_string(cls) -> str:
@@ -22,7 +132,7 @@ class AppInfo:
             return platform.platform()
 
         try:
-            w = sys.getwindowsversion()
+            w = _get_windows_version()
             if w.major == 10 and w.build >= 22000:
                 name = "Windows 11"
             elif w.major == 10:
@@ -43,7 +153,7 @@ class AppInfo:
             display_version = None
             ubr = None
             try:
-                import winreg
+                winreg = cast("_RegistryModule", importlib.import_module("winreg"))
 
                 with winreg.OpenKey(
                     winreg.HKEY_LOCAL_MACHINE,
@@ -66,7 +176,7 @@ class AppInfo:
                         except Exception:
                             logger.exception("Failed to read the Windows release ID: {}", e)
                     try:
-                        ubr = int(winreg.QueryValueEx(key, "UBR")[0])
+                        ubr = _registry_int(winreg.QueryValueEx(key, "UBR")[0])
                     except Exception:
                         logger.exception("Failed to read the Windows update build revision")
             except Exception:
@@ -86,45 +196,54 @@ class AppInfo:
 
 
 class AppContext:
-    DEBUG: bool = False
-    APP_PATH: str = ""
-    CONFIG_PATH: str = ""
-    LAUNCH_TIMESTAMP: float = 0.0
+    DEBUG: ClassVar[bool] = False
+    APP_PATH: ClassVar[str] = ""
+    CONFIG_PATH: ClassVar[str] = ""
+    LAUNCH_TIMESTAMP: ClassVar[float] = 0.0
     DEBUG_LOG: ClassVar[list[str]] = []
     PRINT_LOG: ClassVar[list[str]] = []
 
 
-def generate_filename(mode, header, settings=None):
+def generate_filename(
+    mode: CartridgeMode | None,
+    header: FilenameHeader,
+    settings: SettingsReader | None = None,
+) -> str:
     from .Mapper import get_mbc_name
 
-    fe_ni = True
-    if settings is not None:
-        fe_ni = settings.value(key="UseNoIntroFilenames", default="enabled").lower() == "enabled"
+    use_no_intro_filename = _setting_text(settings, "UseNoIntroFilenames", "enabled").lower() == "enabled"
 
     path = "ROM"
     path_extension = "bin"
+    gbmemory_cart_id: str | None = None
 
     if mode == "DMG":
-        path_title = header["game_title"]
+        path_title = _required_text(header, "game_title")
         path_code = ""
         path_revision = str(header["version"])
+        mapper_raw = _required_int(header, "mapper_raw")
+        mapper_name = get_mbc_name(mapper_raw)
+        if mapper_name == "G-MMC1":
+            gbmemory_cart_id = _gbmemory_cart_id(header.get("gbmem_parsed"))
         path = "%TITLE%-%REVISION%"
-        fe_sgb = "enabled"
-        if settings is not None:
-            path = settings.value(key="FileNameFormatDMG", default=path)
-            fe_sgb = settings.value(key="AutoFileExtensionSGB", default="enabled")
+        path = _setting_text(settings, "FileNameFormatDMG", path)
+        auto_sgb_extension = _setting_text(settings, "AutoFileExtensionSGB", "enabled")
 
-        if len(header["game_code"]) > 0:
-            path_code = header["game_code"]
+        game_code = _required_text(header, "game_code")
+        if game_code:
+            path_code = game_code
             path = "%TITLE%_%CODE%-%REVISION%"
-            if settings is not None:
-                path = settings.value(key="FileNameFormatCGB", default=path)
+            path = _setting_text(settings, "FileNameFormatCGB", path)
 
-        if header["mapper_raw"] >= 0x200:
+        if mapper_raw >= 0x200:
             path = "%TITLE%"
-        if header["cgb"] in (0xC0, 0x80):
+        if _required_int(header, "cgb") in (0xC0, 0x80):
             path_extension = "gbc"
-        elif header["old_lic"] == 0x33 and header["sgb"] == 0x03 and fe_sgb.lower() == "enabled":
+        elif (
+            _required_int(header, "old_lic") == 0x33
+            and _required_int(header, "sgb") == 0x03
+            and auto_sgb_extension.lower() == "enabled"
+        ):
             path_extension = "sgb"
         else:
             path_extension = "gb"
@@ -134,25 +253,16 @@ def generate_filename(mode, header, settings=None):
             path = path.replace("%TITLE%", path_title.strip())
             path = path.replace("%CODE%", path_code.strip())
             path = path.replace("%REVISION%", path_revision)
-            path = path.replace("%MAPPER%", get_mbc_name(header["mapper_raw"]))
-            path = re.sub(r"[<>:\"/\\|\?\*]", "_", path)
-            if (
-                get_mbc_name(header["mapper_raw"]) == "G-MMC1"
-                and "gbmem_parsed" in header
-                and "cart_id" in header["gbmem_parsed"]
-                and header["gbmem_parsed"]["cart_id"] is not None
-            ):
-                if isinstance(header["gbmem_parsed"], list):
-                    path += "_{:s}".format(header["gbmem_parsed"][0]["cart_id"])
-                else:
-                    path += "_{:s}".format(header["gbmem_parsed"]["cart_id"])
+            path = path.replace("%MAPPER%", mapper_name)
+            path = _INVALID_FILENAME_CHARS.sub("_", path)
+            if gbmemory_cart_id is not None:
+                path += f"_{gbmemory_cart_id}"
             path += f".{path_extension:s}"
     elif mode == "AGB":
         path = "%TITLE%_%CODE%-%REVISION%"
-        if settings is not None:
-            path = settings.value(key="FileNameFormatAGB", default=path)
-        path_title = header["game_title"]
-        path_code = header["game_code"]
+        path = _setting_text(settings, "FileNameFormatAGB", path)
+        path_title = _required_text(header, "game_title")
+        path_code = _required_text(header, "game_code")
         path_revision = str(header["version"])
         path_extension = "gba"
         if path_title == "" and path_code == "":
@@ -161,27 +271,27 @@ def generate_filename(mode, header, settings=None):
             path = path.replace("%TITLE%", path_title.strip())
             path = path.replace("%CODE%", path_code.strip())
             path = path.replace("%REVISION%", path_revision)
-            path = re.sub(r"[<>:\"/\\|\?\*]", "_", path)
+            path = _INVALID_FILENAME_CHARS.sub("_", path)
         path += "." + path_extension
 
-    if fe_ni and header.get("db") is not None:
-        if mode == "DMG" and get_mbc_name(header["mapper_raw"]) == "G-MMC1" and "gbmem_parsed" in header:
-            if isinstance(header["gbmem_parsed"], list):
-                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(header["gbmem_parsed"][0]["cart_id"], path_extension)
-            else:
-                path = "NP GB-Memory Cartridge ({:s}).{:s}".format(header["gbmem_parsed"]["cart_id"], path_extension)
-        else:
-            path = "{:s} {:s}.{:s}".format(header["db"]["gn"], header["db"]["ne"], path_extension)
+    if use_no_intro_filename:
+        database_path = _database_filename(
+            header,
+            path_extension,
+            gbmemory_cart_id=gbmemory_cart_id,
+        )
+        if database_path is not None:
+            path = database_path
 
     return path
 
 
 # Hardware device backends
-_hw_devices = []
-HW_DEVICE_MODULES = ["hw_GBxCartRW", "hw_GBFlash", "hw_JoeyJr", "hw_GameBub"]
+_hw_devices: list[ModuleType] = []
+HW_DEVICE_MODULES: list[str] = ["hw_GBxCartRW", "hw_GBFlash", "hw_JoeyJr", "hw_GameBub"]
 for _name in HW_DEVICE_MODULES:
     try:
         _hw_devices.append(importlib.import_module(f"{__package__}.{_name}"))
     except Exception:
         logger.exception("Failed to load hardware backend: {}", _name)
-HW_DEVICES = _hw_devices
+HW_DEVICES: list[ModuleType] = _hw_devices

@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
 import pytest
 
 import FlashGBX.app as app_module
 from FlashGBX.app import AppInfo, generate_filename
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def dmg_header(**overrides: object) -> dict[str, object]:
@@ -55,11 +51,14 @@ def test_generate_filename_honors_settings_database_and_gbmemory_ids() -> None:
             return self.values.get(key, default)
 
     settings = Settings({"UseNoIntroFilenames": "disabled", "AutoFileExtensionSGB": "disabled"})
-    assert generate_filename(
-        "DMG",
-        dmg_header(cgb=0, old_lic=0x33, sgb=3, game_code=""),
-        settings,
-    ) == "POKEMON_RED-2.gb"
+    assert (
+        generate_filename(
+            "DMG",
+            dmg_header(cgb=0, old_lic=0x33, sgb=3, game_code=""),
+            settings,
+        )
+        == "POKEMON_RED-2.gb"
+    )
 
     db_header = dmg_header(db={"gn": "Pokemon Red", "ne": "USA"})
     assert generate_filename("DMG", db_header) == "Pokemon Red USA.gbc"
@@ -82,6 +81,54 @@ def test_generate_filename_accepts_list_gbmemory_data() -> None:
     )
 
     assert generate_filename("DMG", header) == "NP GB-Memory Cartridge (LISTID).gbc"
+
+
+def test_generate_filename_appends_list_gbmemory_id_without_database() -> None:
+    header = dmg_header(
+        mapper_raw=0x105,
+        game_title="MENU",
+        game_code="",
+        gbmem_parsed=[{"cart_id": "LISTID"}],
+    )
+
+    assert generate_filename("DMG", header) == "MENU-2_LISTID.gbc"
+
+    header["db"] = {"gn": "Database", "ne": "Entry"}
+    header["gbmem_parsed"] = []
+    assert generate_filename("DMG", header) == "Database Entry.gbc"
+
+
+def test_generate_filename_validates_headers_and_ignores_non_string_settings() -> None:
+    class Settings:
+        def value(self, key: str, default: str) -> object:
+            del key, default
+            return object()
+
+    assert generate_filename("AGB", agb_header(), Settings()) == "TEST_GAME_ABCD-3.gba"
+
+    with pytest.raises(TypeError, match="game_title"):
+        generate_filename("AGB", agb_header(game_title=123))
+    with pytest.raises(TypeError, match="mapper_raw"):
+        generate_filename("DMG", dmg_header(mapper_raw=True))
+    with pytest.raises(TypeError, match="must be a mapping"):
+        generate_filename("AGB", agb_header(db="invalid"))
+
+
+def test_generate_filename_custom_mapper_pattern_and_unknown_mode() -> None:
+    class Settings:
+        def __init__(self) -> None:
+            self.values = {
+                "UseNoIntroFilenames": "disabled",
+                "FileNameFormatDMG": "%TITLE%_%MAPPER%",
+                "AutoFileExtensionSGB": "enabled",
+            }
+
+        def value(self, key: str, default: str) -> str:
+            return self.values.get(key, default)
+
+    header = dmg_header(cgb=0, old_lic=0x33, sgb=3, game_code="")
+    assert generate_filename("DMG", header, Settings()) == "POKEMON_RED_MBC3.sgb"
+    assert generate_filename(None, {"db": {"gn": "Unknown", "ne": "Mode"}}) == "Unknown Mode.bin"
 
 
 def test_app_info_unknown_platform_falls_back_to_platform_label(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,11 +166,56 @@ def test_app_info_formats_supported_windows_versions(monkeypatch: pytest.MonkeyP
         assert AppInfo.os_string() == f"{expected} (Build {build})"
 
 
+def test_app_info_reads_windows_registry_version_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RegistryKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    values: dict[str, object] = {
+        "ProductName": "Windows 10 Pro",
+        "DisplayVersion": "24H2",
+        "UBR": "1234",
+    }
+
+    def query_value(_key: object, name: str) -> tuple[object, int]:
+        if name not in values:
+            raise FileNotFoundError(name)
+        return values[name], 1
+
+    fake_winreg = SimpleNamespace(
+        HKEY_LOCAL_MACHINE=object(),
+        OpenKey=lambda _root, _path: RegistryKey(),
+        QueryValueEx=query_value,
+    )
+    monkeypatch.setitem(app_module.sys.modules, "winreg", fake_winreg)
+    monkeypatch.setattr(app_module.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        app_module.sys,
+        "getwindowsversion",
+        lambda: SimpleNamespace(major=10, minor=0, build=26100),
+        raising=False,
+    )
+
+    assert AppInfo.os_string() == "Windows 11 (Version 24H2, Build 26100.1234)"
+
+    del values["DisplayVersion"]
+    values["ReleaseId"] = "2009"
+    assert AppInfo.os_string() == "Windows 11 (Version 2009, Build 26100.1234)"
+
+
 def test_app_info_windows_fallback_handles_version_lookup_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(app_module.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(app_module.sys, "getwindowsversion", lambda: (_ for _ in ()).throw(OSError("unsupported")), raising=False)
+    monkeypatch.setattr(
+        app_module.sys,
+        "getwindowsversion",
+        lambda: (_ for _ in ()).throw(OSError("unsupported")),
+        raising=False,
+    )
     monkeypatch.setattr(app_module.platform, "release", lambda: "10")
     monkeypatch.setattr(app_module.platform, "version", lambda: "build")
     assert AppInfo.os_string() == "Windows 10 (build)"
