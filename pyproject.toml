@@ -60,6 +60,10 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
+omit = [
+    "FlashGBX/hw_JoeyJr.py",
+    "FlashGBX/hw_GameBub.py",
+]
 source = [
     "FlashGBX.DumpReport",
     "FlashGBX.CartridgeTypes",
@@ -84,12 +88,20 @@ skip_covered = true
 
 [tool.pyright]
 include = ["FlashGBX"]
+exclude = [
+    "FlashGBX/hw_GameBub.py",
+    "FlashGBX/hw_JoeyJr.py",
+]
 typeCheckingMode = "standard"
 pythonVersion = "3.14"
 
 [tool.ruff]
 target-version = "py314"
 line-length = 121
+exclude = [
+    "FlashGBX/hw_GameBub.py",
+    "FlashGBX/hw_JoeyJr.py",
+]
 
 [tool.ruff.lint]
 # Add rule codes you want to ignore
