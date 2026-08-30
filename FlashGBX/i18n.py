@@ -1,7 +1,8 @@
 # FlashGBX
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import array
+from __future__ import annotations
+
 import ast
 import contextlib
 import gettext
@@ -14,15 +15,21 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal, Protocol, cast
 
 from loguru import logger
 
-OS_LANGUAGE = "en"
-CONFIGURED_LANGUAGE = None
-TRANSLATION_AUTHOR = None
+OS_LANGUAGE: str = "en"
+CONFIGURED_LANGUAGE: str | None = None
+TRANSLATION_AUTHOR: str | None = None
+
+
+class _TranslationApplication(Protocol):
+    def installTranslator(self, translator: object, /) -> bool: ...
+
 
 # ISO 639-1 language codes: code -> (English name, native name)
-LANGUAGES = {
+LANGUAGES: dict[str, tuple[str, str]] = {
     "aa": ("Afar", "Qafar af"),
     "ab": ("Abkhazian", "Аԥсшәа"),
     "ae": ("Avestan", "Avesta"),
@@ -210,7 +217,7 @@ LANGUAGES = {
 }
 
 
-def set_locale(language=None):
+def set_locale(language: str | None = None) -> bool:
     target = language or OS_LANGUAGE or ""
     if not target:
         return False
@@ -241,86 +248,91 @@ def set_locale(language=None):
         return True
 
 
-def loadTranslation(language):
+def _application_path() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent
+
+
+def loadTranslation(language: str) -> gettext.GNUTranslations:
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
-    messages = {}
-    section = None
-    msgctxt = None
+    messages: dict[bytes, bytes] = {}
+    section: Literal["CTXT", "ID", "STR"] | None = None
+    msgctxt: bytes | None = None
     msgid = b""
     msgstr = b""
-    fuzzy = 0
+    fuzzy = False
     is_plural = False
 
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        app_path = Path(sys.executable).parent
-    else:
-        app_path = Path(__file__).resolve().parent
-
-    filename = app_path / "locale" / f"{language}.po"
+    filename = _application_path() / "locale" / f"{language}.po"
     if not filename.exists():
         msg = f"{filename} not found"
         raise FileNotFoundError(msg)
 
-    with filename.open(encoding="utf-8") as f:
-        lines = f.readlines()
+    with filename.open(encoding="utf-8") as translation_file:
+        for raw_line in translation_file:
+            line = raw_line.strip()
+            if not line:
+                continue
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+            if line.startswith("#,") and "fuzzy" in line:
+                fuzzy = True
 
-        if line.startswith("#,") and "fuzzy" in line:
-            fuzzy = 1
+            if line.startswith("#"):
+                if section == "STR":
+                    key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
+                    if not fuzzy and msgstr:
+                        messages[key] = msgstr
+                section = msgctxt = None
+                fuzzy = False
+                continue
 
-        if line.startswith("#"):
-            if section == "STR":
-                key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
-                if not fuzzy and msgstr:
-                    messages[key] = msgstr
-            section = msgctxt = None
-            fuzzy = 0
-            continue
+            value_source = line
+            if line.startswith("msgctxt"):
+                section = "CTXT"
+                msgctxt = b""
+                value_source = line[7:].strip()
+            elif line.startswith("msgid") and not line.startswith("msgid_plural"):
+                if section == "STR":
+                    key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
+                    if not fuzzy and msgstr:
+                        messages[key] = msgstr
+                section = "ID"
+                msgid = msgstr = b""
+                is_plural = False
+                value_source = line[5:].strip()
+            elif line.startswith("msgid_plural"):
+                msgid += b"\0"
+                is_plural = True
+                value_source = line[12:].strip()
+            elif line.startswith("msgstr"):
+                section = "STR"
+                if line.startswith("msgstr["):
+                    if not is_plural:
+                        msg = "Plural msgstr found without msgid_plural"
+                        raise ValueError(msg)
+                    value_source = line.split("]", 1)[1].strip()
+                    if msgstr:
+                        msgstr += b"\0"
+                else:
+                    if is_plural:
+                        msg = "Non-indexed msgstr found for plural"
+                        raise ValueError(msg)
+                    value_source = line[6:].strip()
 
-        if line.startswith("msgctxt"):
-            section = "CTXT"
-            msgctxt = b""
-            line = line[7:].strip()
-        elif line.startswith("msgid") and not line.startswith("msgid_plural"):
-            if section == "STR":
-                key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
-                if not fuzzy and msgstr:
-                    messages[key] = msgstr
-            section = "ID"
-            msgid = msgstr = b""
-            is_plural = False
-            line = line[5:].strip()
-        elif line.startswith("msgid_plural"):
-            msgid += b"\0"
-            is_plural = True
-            line = line[12:].strip()
-        elif line.startswith("msgstr"):
-            section = "STR"
-            if line.startswith("msgstr["):
-                if not is_plural:
-                    msg = "Plural msgstr found without msgid_plural"
-                    raise ValueError(msg)
-                line = line.split("]", 1)[1].strip()
-                if msgstr:
-                    msgstr += b"\0"
-            else:
-                if is_plural:
-                    msg = "Non-indexed msgstr found for plural"
-                    raise ValueError(msg)
-                line = line[6:].strip()
+            value = ast.literal_eval(value_source)
+            if not isinstance(value, str):
+                msg = f"Expected a quoted string in {filename}: {value_source}"
+                raise TypeError(msg)
+            encoded_value = value.encode()
 
-        val = ast.literal_eval(line).encode("utf-8")
-
-        if section == "CTXT":
-            msgctxt += val
-        elif section == "ID":
-            msgid += val
-        elif section == "STR":
-            msgstr += val
+            if section == "CTXT":
+                assert msgctxt is not None
+                msgctxt += encoded_value
+            elif section == "ID":
+                msgid += encoded_value
+            elif section == "STR":
+                msgstr += encoded_value
 
     if section == "STR":
         key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
@@ -328,7 +340,7 @@ def loadTranslation(language):
             messages[key] = msgstr
 
     keys = sorted(messages.keys())
-    offsets = []
+    offsets: list[tuple[int, int, int, int]] = []
     ids = bytearray()
     strs = bytearray()
     for k in keys:
@@ -338,74 +350,87 @@ def loadTranslation(language):
 
     keystart = 28 + 16 * len(keys)
     valuestart = keystart + len(ids)
-    koffsets = []
-    voffsets = []
+    koffsets: list[int] = []
+    voffsets: list[int] = []
     for o1, l1, o2, l2 in offsets:
         koffsets += [l1, o1 + keystart]
         voffsets += [l2, o2 + valuestart]
 
-    mo = struct.pack("Iiiiiii", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
-    mo += array.array("i", koffsets + voffsets).tobytes()
-    mo += ids + strs
+    mo_header = struct.pack("<7I", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
+    table_values = koffsets + voffsets
+    mo_tables = struct.pack(f"<{len(table_values)}I", *table_values)
+    mo = b"".join((mo_header, mo_tables, ids, strs))
 
     return gettext.GNUTranslations(fp=io.BytesIO(mo))
 
 
-def __(msgid, **kwargs):
+def __(msgid: str, **kwargs: object) -> str:  # noqa: N807
     msg = lang.gettext(msgid)
     try:
         return msg.format(**kwargs)
-    except KeyError, IndexError:
+    except (
+        KeyError,
+        IndexError,
+    ):
         return msgid.format(**kwargs)
 
 
-def ___(singular, plural, n=1, **kwargs):
+def ___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:  # noqa: N807
     msg = lang.ngettext(singular, plural, n)
     try:
         return msg.format(n=n, **kwargs)
-    except KeyError, IndexError:
+    except (
+        KeyError,
+        IndexError,
+    ):
         fallback = singular if n == 1 else plural
         return fallback.format(n=n, **kwargs)
 
 
-def c__(context, msgid, **kwargs):
+def c__(context: str, msgid: str, **kwargs: object) -> str:
     try:
         msg = lang.pgettext(context, msgid)
     except AttributeError:
         msg = lang.gettext(msgid)
     try:
         return msg.format(**kwargs)
-    except KeyError, IndexError:
+    except (
+        KeyError,
+        IndexError,
+    ):
         return msgid.format(**kwargs)
 
 
-def c___(context, singular, plural, n=1, **kwargs):
+def c___(context: str, singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
     try:
         msg = lang.npgettext(context, singular, plural, n)
     except AttributeError:
         msg = lang.ngettext(singular, plural, n)
     try:
         return msg.format(n=n, **kwargs)
-    except KeyError, IndexError:
+    except (
+        KeyError,
+        IndexError,
+    ):
         fallback = singular if n == 1 else plural
         return fallback.format(n=n, **kwargs)
 
 
-def format_number(n):
+def format_number(n: int) -> str:
     return locale.format_string("%d", n, grouping=False)
 
 
-def format_decimal(value, precision=2, grouping=False, localized=True):
+def format_decimal(value: float, precision: int = 2, grouping: bool = False, localized: bool = True) -> str:
     if localized:
         return locale.format_string(f"%.{precision}f", value, grouping=grouping)
     return "{:.{}f}".format(value, precision)
 
 
-def loadQtTranslation(app=None, language=None):
-    global _qt_translator
+def loadQtTranslation(app: object | None = None, language: str | None = None) -> bool:
+    global _qt_translator  # noqa: PLW0603
     try:
         from PySide6 import QtCore
-    except Exception:
+    except ImportError:
         return False
 
     if language is None:
@@ -423,33 +448,28 @@ def loadQtTranslation(app=None, language=None):
         logger.exception("Failed to set the default Qt locale")
     set_locale(qt_locale.name())
 
-    try:
-        translations_path = QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.TranslationsPath)
-    except AttributeError:
-        translations_path = QtCore.QLibraryInfo.location(QtCore.QLibraryInfo.TranslationsPath)
+    translations_path = QtCore.QLibraryInfo.path(QtCore.QLibraryInfo.LibraryPath.TranslationsPath)
 
-    translator = QtCore.QTranslator(app)
+    translator = QtCore.QTranslator()
     for catalog in ("qtbase", "qt"):
         if translator.load(qt_locale, catalog, "_", translations_path):
             if app is not None:
-                app.installTranslator(translator)
+                cast("_TranslationApplication", app).installTranslator(translator)
             _qt_translator = translator
             return True
 
     return False
 
 
-def init_language(config_path, override=None):
-    global lang, CONFIGURED_LANGUAGE, LANGUAGES, TRANSLATION_AUTHOR
+def init_language(config_path: str | os.PathLike[str], override: str | None = None) -> None:
+    global lang, CONFIGURED_LANGUAGE, TRANSLATION_AUTHOR  # noqa: PLW0603
 
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        app_path = Path(sys.executable).parent
-    else:
-        app_path = Path(__file__).resolve().parent
+    app_path = _application_path()
     available_langs = ["en"]  # Always include English
     available_langs += [language_file.stem for language_file in (app_path / "locale").glob("*.po")]
     filtered_langs = {code: name for code, name in LANGUAGES.items() if code in available_langs}
-    LANGUAGES = dict(sorted(filtered_langs.items(), key=lambda x: x[1][1]))
+    LANGUAGES.clear()
+    LANGUAGES.update(sorted(filtered_langs.items(), key=lambda item: item[1][1]))
 
     try:
         from .IniSettings import IniSettings
@@ -461,11 +481,12 @@ def init_language(config_path, override=None):
         language_setting = override
         settings.SetValue("Language", override)
     else:
-        language_setting = settings.GetValue("Language", default="auto")
+        configured_value = settings.GetValue("Language", default="auto")
+        language_setting = configured_value if isinstance(configured_value, str) else "auto"
 
     system_language = OS_LANGUAGE.split("_")[0].split("-")[0].lower()
 
-    if language_setting and language_setting.lower() != "auto":
+    if language_setting.lower() != "auto":
         CONFIGURED_LANGUAGE = language_setting
         lang_code = language_setting.split("_")[0].split("-")[0].lower()
     else:
@@ -475,7 +496,8 @@ def init_language(config_path, override=None):
     if lang_code not in LANGUAGES:
         CONFIGURED_LANGUAGE = lang_code = "en"
 
-    if lang_code and lang_code != "en":
+    TRANSLATION_AUTHOR = None
+    if lang_code != "en":
         try:
             lang = loadTranslation(lang_code)
             empty = ""
@@ -484,9 +506,9 @@ def init_language(config_path, override=None):
                 if line.lower().startswith("last-translator:"):
                     TRANSLATION_AUTHOR = line.split(":", 1)[1].strip()
                     break
-        except Exception as e:
+        except Exception as exc:
             lang = gettext.NullTranslations()
-            print(f"Could not load translation for '{lang_code}': {e}")
+            print(f"Could not load translation for '{lang_code}': {exc}")
     else:
         lang = gettext.NullTranslations()
 
@@ -498,42 +520,44 @@ def init_language(config_path, override=None):
 with contextlib.suppress(locale.Error):
     locale.setlocale(locale.LC_ALL, "")
 
-lang_country = None
+lang_country: str | None = None
 try:
     lang_country, _ = locale.getlocale()
-except TypeError, ValueError:
+except (
+    TypeError,
+    ValueError,
+):
     lang_country = None
 
-OS_LANGUAGE = lang_country
+detected_language = lang_country
 
-if not OS_LANGUAGE and platform.system() == "Darwin":
+if not detected_language and platform.system() == "Darwin":
     try:
         defaults_output = subprocess.check_output(
-            ["defaults", "read", "-g", "AppleLanguages"],
+            ["/usr/bin/defaults", "read", "-g", "AppleLanguages"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        apple_languages = []
+        apple_languages: list[str] = []
         for raw_line in defaults_output.splitlines():
             cleaned = raw_line.strip().strip(",").strip().strip('"')
             if cleaned and cleaned not in ("(", ")"):
                 apple_languages.append(cleaned)
         if apple_languages:
-            OS_LANGUAGE = apple_languages[0]
+            detected_language = apple_languages[0]
     except Exception:
         logger.exception("Failed to read the preferred macOS language")
 
-if not OS_LANGUAGE:
+if not detected_language:
     for env_name in ("LC_ALL", "LC_MESSAGES", "LANG"):
         env_value = os.environ.get(env_name)
         if env_value:
             candidate = re.split(r"[.@]", env_value, maxsplit=1)[0].strip()
             if candidate:
-                OS_LANGUAGE = candidate
+                detected_language = candidate
                 break
 
-if not OS_LANGUAGE:
-    OS_LANGUAGE = "en"
+OS_LANGUAGE = detected_language or "en"
 
-_qt_translator = None
-lang = gettext.NullTranslations()
+_qt_translator: object | None = None
+lang: gettext.NullTranslations = gettext.NullTranslations()

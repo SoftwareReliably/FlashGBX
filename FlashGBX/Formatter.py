@@ -43,10 +43,13 @@ class Formatter:
     @classmethod
     def progress_time(cls, seconds, as_float=False, localized=True):
         if not localized:
-            def t___(singular, plural, **kwargs):
-                return (singular if kwargs.get("n", 1) == 1 else plural).format(**kwargs)
-            def tc__(_context, text, **kwargs):
-                return text.format(**kwargs)
+
+            def t___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
+                return (singular if n == 1 else plural).format(n=n, **kwargs)
+
+            def tc__(context: str, msgid: str, **kwargs: object) -> str:
+                del context
+                return msgid.format(**kwargs)
         else:
             t___ = ___
             tc__ = c__
