@@ -48,7 +48,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.main_layout = QtWidgets.QVBoxLayout()
         self.main_layout.setContentsMargins(8, 8, 8, 8)
 
-        mono_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
+        mono_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
         mono_font.setStyleHint(QtGui.QFont.StyleHint.TypeWriter)
 
         self.txtOutput = QtWidgets.QPlainTextEdit()
