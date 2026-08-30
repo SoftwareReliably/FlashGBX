@@ -3,7 +3,7 @@ name = "FlashGBX"
 version = "5.0.1"
 description = "Reads and writes Game Boy and Game Boy Advance cartridge data"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 
@@ -28,6 +28,7 @@ classifiers = [
     "Topic :: Terminals :: Serial",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: Developers"
 ]
@@ -99,10 +100,10 @@ exclude = [
     "FlashGBX/hw_JoeyJr.py",
 ]
 typeCheckingMode = "standard"
-pythonVersion = "3.14"
+pythonVersion = "3.12"
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 121
 force-exclude = true
 exclude = [

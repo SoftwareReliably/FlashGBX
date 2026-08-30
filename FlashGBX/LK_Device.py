@@ -633,7 +633,7 @@ class LK_Device(ABC):
                         self.DEVICE_CMD["SET_VOLTAGE_3_3V"],
                         wait=firmware.get("fw_ver", 0) >= 12,
                     )
-        except ConnectionError, OSError, SerialException:
+        except (ConnectionError, OSError, SerialException):
             logger.exception("Failed to shut down the cartridge reader cleanly")
         finally:
             self.DEVICE = None
@@ -641,7 +641,7 @@ class LK_Device(ABC):
             try:
                 if device is not None and device.is_open:
                     device.close()
-            except OSError, SerialException:
+            except (OSError, SerialException):
                 logger.exception("Failed to close the cartridge reader serial port")
 
     def GetName(self) -> str:
@@ -1980,7 +1980,7 @@ class LK_Device(ABC):
             if self.MODE == "DMG":
                 try:
                     save_type = DmgSaveTypes(size=save_size).GetMbc()
-                except KeyError, TypeError, ValueError:
+                except (KeyError, TypeError, ValueError):
                     save_size = 0
                     save_type = 0
 
@@ -5412,7 +5412,7 @@ class LK_Device(ABC):
         cart_type: Any = copy.deepcopy(supported_carts[args["cart_type"]])
         try:
             cart_name = cart_type["names"][0]
-        except IndexError, KeyError, TypeError:
+        except (IndexError, KeyError, TypeError):
             cart_name = c__("Flashcart Profile", "Unknown")
 
         if not isinstance(cart_type, dict):
@@ -6032,7 +6032,7 @@ class LK_Device(ABC):
                         with json_file.open("rb") as f:
                             try:
                                 delta_state_old = json.loads(f.read().decode("UTF-8-SIG"))
-                            except json.JSONDecodeError, UnicodeDecodeError:
+                            except (json.JSONDecodeError, UnicodeDecodeError):
                                 delta_state_old = []
                             if len(delta_state_old) > 0:
                                 for x in delta_state_old:

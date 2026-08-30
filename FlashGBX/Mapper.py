@@ -1,7 +1,7 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 # ruff: noqa: UP007, UP017, UP040, UP047
-# Keep syntax compatible with the project's declared Python 3.10 minimum.
+# Keep syntax compatible with the project's declared Python 3.12 minimum.
 
 from __future__ import annotations
 

@@ -233,7 +233,7 @@ class FlashGBX_CLI:
             else:
                 try:
                     selection = int(args.action)
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     print(__("Canceled."))
                     return 0
                 if not 1 <= selection <= n:
@@ -1003,7 +1003,7 @@ class FlashGBX_CLI:
 
             try:
                 rows.append((__("ROM Size:"), RomSizes().GetString(index=data["rom_size_raw"])))
-            except KeyError, TypeError, ValueError, IndexError:
+            except (KeyError, TypeError, ValueError, IndexError):
                 rows.append(
                     (
                         __("ROM Size:"),
@@ -1028,13 +1028,13 @@ class FlashGBX_CLI:
                     save_type_str = DmgSaveTypes(mbc=0x104).GetString()
                 else:
                     save_type_str = DmgSaveTypes(mbc=data["ram_size_raw"]).GetString()
-            except KeyError, TypeError, ValueError, IndexError:
+            except (KeyError, TypeError, ValueError, IndexError):
                 save_type_str = c__("Game Data", "Not detected")
             rows.append((__("Save Type:"), save_type_str))
 
             try:
                 rows.append((__("Mapper Type:"), DMG_Mapper().GetMapperName(data["mapper_raw"])))
-            except KeyError, TypeError, ValueError, IndexError:
+            except (KeyError, TypeError, ValueError, IndexError):
                 rows.append(
                     (
                         __("Mapper Type:"),
@@ -1932,7 +1932,7 @@ class FlashGBX_CLI:
                         save_type = 0x104
                     else:
                         save_type = header["ram_size_raw"]
-                except KeyError, TypeError, ValueError, IndexError:
+                except (KeyError, TypeError, ValueError, IndexError):
                     save_type = 0
             elif args.dmg_savetype == "batteryless":
                 save_type = 0x205
@@ -2461,7 +2461,7 @@ class FlashGBX_CLI:
             try:
                 with Path(path).open("ab+"):
                     pass
-            except PermissionError, FileNotFoundError:
+            except (PermissionError, FileNotFoundError):
                 print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
                 return
             print()
@@ -2506,7 +2506,7 @@ class FlashGBX_CLI:
             try:
                 with Path(path).open("rb+"):
                     pass
-            except PermissionError, FileNotFoundError:
+            except (PermissionError, FileNotFoundError):
                 print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
                 return
         elif erase:

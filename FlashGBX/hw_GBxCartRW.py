@@ -245,7 +245,7 @@ class GbxDevice(LK_Device):
         try:
             if device is not None and device.is_open:
                 device.close()
-        except OSError, SerialException:
+        except (OSError, SerialException):
             logger.exception("Failed to close the GBxCart RW serial connection")
 
     def Initialize(
@@ -466,7 +466,7 @@ class GbxDevice(LK_Device):
                     device.reset_input_buffer()
                     device.reset_output_buffer()
                     device.close()
-            except OSError, SerialException:
+            except (OSError, SerialException):
                 logger.exception("Failed to close GBxCart RW after an initialization error")
             finally:
                 self.DEVICE = None
@@ -519,7 +519,7 @@ class GbxDevice(LK_Device):
                     device.reset_input_buffer()
                     device.reset_output_buffer()
                     device.close()
-            except OSError, SerialException:
+            except (OSError, SerialException):
                 logger.exception("Failed to close GBxCart RW after a connection error")
             finally:
                 self.DEVICE = None
@@ -687,7 +687,7 @@ class FirmwareUpdater:
                     buffer1 = bytearray(f.read())
                 with archive.open("fw.bin") as f:
                     buffer2 = bytearray(f.read())
-        except OSError, zipfile.BadZipFile, KeyError:
+        except (OSError, zipfile.BadZipFile, KeyError):
             fncSetStatus(__("The firmware update file is corrupted."))
             return 3
         if not buffer1 or len(buffer2) < 0x20:
@@ -724,7 +724,7 @@ class FirmwareUpdater:
         fncSetStatus(text=__("Connecting..."))
         try:
             dev = serial.Serial(port=port, baudrate=57600, timeout=1)
-        except OSError, SerialException:
+        except (OSError, SerialException):
             fncSetStatus(text=__("Device not accessible."), enableUI=True)
             return 2
         try:
@@ -1347,7 +1347,7 @@ try:
                     time.sleep(0.3 + delay)
                     dev.reset_input_buffer()
                     dev.reset_output_buffer()
-            except OSError, SerialException:
+            except (OSError, SerialException):
                 return False
             return True
 
@@ -1506,7 +1506,7 @@ try:
             while True:
                 try:
                     dev = serial.Serial(port=port, baudrate=9600 * 4, timeout=1)
-                except OSError, SerialException:
+                except (OSError, SerialException):
                     fncSetStatus(text=__("Device access error."), enableUI=True)
                     return 2
                 dev.reset_input_buffer()
