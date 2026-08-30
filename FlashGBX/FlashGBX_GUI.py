@@ -4590,7 +4590,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 loc_index = locs.index(detected["bl_offset"])
                 len_index = lens.index(detected["bl_size"])
                 intro_msg = "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\nThe previously detected parameters have been pre-selected. Please adjust if necessary, then click “OK” to continue."
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 detected = False
         if detected is False:
             intro_msg = "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\n"
@@ -5196,7 +5196,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self._device.SetMode("AGB")
             if self._device.GetMode() is not None:
                 self.mnuTools.actions()[1].setEnabled(True)
-        except (BrokenPipeError, SerialException):
+        except BrokenPipeError, SerialException:
             msg = (
                 __("Failed to turn on the cartridge power.")
                 + "\n"
@@ -5252,7 +5252,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         try:
             data = self._device.ReadHeader()
-        except (BrokenPipeError, SerialException):
+        except BrokenPipeError, SerialException:
             self.LimitBaudRateGBxCartRW()
             self.DisconnectDevice()
             QtWidgets.QMessageBox.critical(
@@ -5820,7 +5820,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 elif self._device.GetMode() == "DMG":
                     try:
                         temp = f"{DmgSaveTypes(mbc=save_type).GetString():s}"
-                    except (IndexError, KeyError, TypeError, ValueError):
+                    except IndexError, KeyError, TypeError, ValueError:
                         temp = "Unknown"
                 elif self._device.GetMode() == "AGB":
                     temp = f"{AgbSaveTypes().GetStringList()[save_type]:s}"
@@ -6753,7 +6753,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.TBPROG.setRange(0, 100)
                 taskbar_button.setWindow(self.windowHandle())
                 self.TBPROG.setVisible(False)
-            except (ImportError, AttributeError, RuntimeError):
+            except ImportError, AttributeError, RuntimeError:
                 pass
 
         qt_app.exec()
@@ -6768,7 +6768,7 @@ if platform.system() == "Linux":
         QtGui.QGuiApplication.setDesktopFileName(desktop_id)
         qt_app.setApplicationName(desktop_id)
         qt_app.setApplicationDisplayName(AppInfo.NAME)
-    except (AttributeError, TypeError):
+    except AttributeError, TypeError:
         qt_app.setApplicationName(AppInfo.NAME)
 else:
     qt_app.setApplicationName(AppInfo.NAME)

@@ -100,7 +100,7 @@ def _enable_windows_ansi() -> None:
         console_mode = ctypes.c_uint()
         if output_handle not in (0, -1) and kernel32.GetConsoleMode(output_handle, ctypes.byref(console_mode)):
             kernel32.SetConsoleMode(output_handle, console_mode.value | 0x0004)
-    except (AttributeError, OSError):
+    except AttributeError, OSError:
         logger.exception("Failed to enable Windows virtual-terminal output")
 
 

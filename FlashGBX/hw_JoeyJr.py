@@ -664,7 +664,7 @@ try:
                         ).strftime("%x"),
                     )
                     self.FW_JOEYGUI_TEXT = "<ul><li>" + __("For use with the JoeyGUI software") + "</li></ul>"
-            except (FileNotFoundError, zipfile.BadZipFile, KeyError, ValueError):
+            except FileNotFoundError, zipfile.BadZipFile, KeyError, ValueError:
                 QtWidgets.QMessageBox.critical(self, __("Error"), __("The firmware update file is corrupted."))
                 self.reject()
                 return

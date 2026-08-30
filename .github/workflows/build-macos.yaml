@@ -35,14 +35,14 @@ jobs:
         with:
           path: |
             ${{ github.workspace }}/venv
-          key: flashgbx-macos-${{ matrix.arch }}-python-3.12-dependencies-20260207
+          key: flashgbx-macos-${{ matrix.arch }}-python-3.14-dependencies-20260207
           restore-keys: |
-            flashgbx-macos-${{ matrix.arch }}-python-3.12-dependencies-
+            flashgbx-macos-${{ matrix.arch }}-python-3.14-dependencies-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
 
       - name: Install Python packages
         if: steps.cache-pip.outputs.cache-hit != 'true'
@@ -50,7 +50,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m venv ${{ github.workspace }}/venv
           source ${{ github.workspace }}/venv/bin/activate
-          python -m pip install pyinstaller==6.11.0 Pillow==10.3.0 PySide6==6.7.2 pyserial==3.5 python-dateutil==2.9.0.post0 requests==2.32.3 packaging==25.0
+          python -m pip install pyinstaller==6.18.0 Pillow==12.1.0 PySide6==6.10.2 pyserial==3.5 python-dateutil==2.9.0.post0 requests==2.32.5 packaging==26.0
 
       - name: Build FlashGBX
         run: |

@@ -29,9 +29,9 @@ jobs:
         with:
           path: |
             cache
-          key: flashgbx-windows-x64-prerequisites-20260210
+          key: flashgbx-windows-x64-python-3.14.7-prerequisites-20260210
           restore-keys: |
-            flashgbx-windows-x64-prerequisites-
+            flashgbx-windows-x64-python-3.14.7-prerequisites-
 
       - name: Get TDM-GCC 9.2.0
         if: steps.cache-prerequisites.outputs.cache-hit != 'true'
@@ -63,10 +63,10 @@ jobs:
           Write-Host "✓ Driver signature verified successfully"
           Write-Host "  Signer: $($signature.SignerCertificate.SubjectName.Name)"
 
-      - name: Set up embedded Python 3.12.10
+      - name: Set up embedded Python 3.14.7
         if: steps.cache-prerequisites.outputs.cache-hit != 'true'
         run: |
-          $url = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
+          $url = "https://www.python.org/ftp/python/3.14.7/python-3.14.7-embed-amd64.zip"
           Invoke-WebRequest $url -OutFile python.zip
           Expand-Archive python.zip -DestinationPath cache\embedded-python
           $py = Get-ChildItem cache\embedded-python -Filter python.exe -Recurse | Select-Object -First 1
@@ -76,7 +76,7 @@ jobs:
 
           $pth = Get-ChildItem cache\embedded-python -Filter "*._pth" | Select-Object -First 1
           $newContent = @"
-          python312.zip
+          python314.zip
           .
           ..
           import site

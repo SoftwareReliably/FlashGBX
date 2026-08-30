@@ -39,14 +39,14 @@ jobs:
         with:
           path: |
             ${{ github.workspace }}/venv
-          key: flashgbx-linux-appimage-${{ matrix.arch }}-python-dependencies-20260205
+          key: flashgbx-linux-appimage-${{ matrix.arch }}-python-3.14-dependencies-20260205
           restore-keys: |
-            flashgbx-linux-appimage-${{ matrix.arch }}-python-dependencies-
+            flashgbx-linux-appimage-${{ matrix.arch }}-python-3.14-dependencies-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
 
       - name: Install Python packages
         if: steps.cache-pip.outputs.cache-hit != 'true'

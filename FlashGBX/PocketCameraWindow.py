@@ -30,7 +30,7 @@ def _parse_palette_setting(value: object) -> Palette | None:
         return None
     try:
         parsed = json.loads(value)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None
     if (
         not isinstance(parsed, list)
@@ -224,7 +224,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         zoom_setting = self.APP.SETTINGS.value("PocketCameraZoom", default="2")
         try:
             self.spnZoom.setValue(int(zoom_setting) if isinstance(zoom_setting, (int, str)) else 2)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self.spnZoom.setValue(2)
         self.chkFrame.setChecked(self.APP.SETTINGS.value("PocketCameraFrame", default="disabled") == "enabled")
 

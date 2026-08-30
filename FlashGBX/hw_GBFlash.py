@@ -331,7 +331,7 @@ class FirmwareUpdater:
             if temp is False:
                 temp = b""
             values = struct.unpack(">IBHHH", temp)
-        except (struct.error, TypeError):
+        except struct.error, TypeError:
             return {
                 "clone": True,
                 "error": "Bootloader error! " + "".join(format(x, "02X") for x in temp),
@@ -430,7 +430,7 @@ class FirmwareUpdater:
         try:
             with zipfile.ZipFile(zipfn) as archive, archive.open("fw.bin") as f:
                 fw_data = bytearray(f.read())
-        except (zipfile.BadZipFile, KeyError):
+        except zipfile.BadZipFile, KeyError:
             fncSetStatus(__("The firmware update file is corrupted."))
             return 2
 

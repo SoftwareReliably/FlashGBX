@@ -198,7 +198,7 @@ class RomFileAGB:
 
         try:
             logo_data = diff_16_bit_unfilter(huff_uncomp(data))
-        except (IndexError, struct.error):
+        except IndexError, struct.error:
             return False
 
         img = Image.new(mode="P", size=(104, 16))
