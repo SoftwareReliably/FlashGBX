@@ -3,6 +3,8 @@
 #
 # Terminal output, debug logging, and Python exception hook.
 
+from __future__ import annotations
+
 import datetime
 import platform
 import re
@@ -10,85 +12,112 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast
 
-from loguru import logger
+from loguru import logger as _loguru_logger  # pyright: ignore[reportMissingImports]
 
 from . import i18n
 from .app import AppContext, AppInfo
 from .i18n import __
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
+_PRINT_LOG_LIMIT = 16 * 1024
+_DEBUG_LOG_LIMIT = 64 * 1024
+_ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+
+class _LoguruLogger(Protocol):
+    def exception(self, message: str, *args: object, **kwargs: object) -> _LoguruLogger: ...
+
+    def remove(self, handler_id: int | None = None) -> None: ...
+
+    def add(self, sink: object, **kwargs: object) -> int: ...
+
+
+logger = cast("_LoguruLogger", _loguru_logger)
+
+
+def _format_message(args: tuple[object, ...], kwargs: dict[str, object]) -> str:
+    separator = kwargs.get("sep", " ")
+    if separator is None:
+        separator = " "
+    return str(separator).join(map(str, args))
+
+
+def _append_capped(log: list[str], message: str, limit: int) -> None:
+    log.append(message)
+    if len(log) > limit:
+        del log[:-limit]
+
 
 class ANSI:
-    BOLD = "\033[1m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[33m"
-    DARK_GRAY = "\033[90m"
-    RESET = "\033[0m"
-    CLEAR_LINE = "\033[2K"
+    BOLD: ClassVar[str] = "\033[1m"
+    RED: ClassVar[str] = "\033[91m"
+    GREEN: ClassVar[str] = "\033[92m"
+    YELLOW: ClassVar[str] = "\033[33m"
+    DARK_GRAY: ClassVar[str] = "\033[90m"
+    RESET: ClassVar[str] = "\033[0m"
+    CLEAR_LINE: ClassVar[str] = "\033[2K"
 
 
 class Logger:
-    LOG_ERROR = False
-
-    def __init__(self):
-        AppContext.PRINT_LOG.append(
+    def __init__(self) -> None:
+        self.LOG_ERROR: bool = False
+        _append_capped(
+            AppContext.PRINT_LOG,
             "FlashGBX {version}\n© 2020–{year} Lesserkuma".format(
                 version=AppInfo.VERSION,
                 year=time.strftime("%Y"),
             ),
+            _PRINT_LOG_LIMIT,
         )
 
-    def write(self, *args, **kwargs):
-        msg = "{:s}".format(" ".join(map(str, args)), **kwargs)
-        if len(msg.strip()) > 0:
+    def write(self, *args: object, **kwargs: object) -> int:
+        msg = _format_message(args, kwargs)
+        if msg.strip():
             if ANSI.RED in msg:
                 self.LOG_ERROR = True
-            AppContext.PRINT_LOG.append(re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", msg.strip()))
-            if len(AppContext.PRINT_LOG) > 16 * 1024:
-                AppContext.PRINT_LOG.pop(0)
-        sys.__stdout__.write(msg)
+            _append_capped(AppContext.PRINT_LOG, _ANSI_ESCAPE_RE.sub("", msg.strip()), _PRINT_LOG_LIMIT)
+        output_stream = sys.__stdout__
+        if output_stream is not None and output_stream is not self:
+            output_stream.write(msg)
+        return len(msg)
 
-    def flush(self):
-        sys.__stdout__.flush()
+    def flush(self) -> None:
+        output_stream = sys.__stdout__
+        if output_stream is not None and output_stream is not self:
+            output_stream.flush()
 
     @classmethod
-    def _write_debug_message(cls, msg):
-        AppContext.DEBUG_LOG.append(msg)
-        if len(AppContext.DEBUG_LOG) > 64 * 1024:
-            AppContext.DEBUG_LOG.pop(0)
+    def _write_debug_message(cls, msg: str) -> None:
+        _append_capped(AppContext.DEBUG_LOG, msg, _DEBUG_LOG_LIMIT)
         if AppContext.DEBUG:
             msg = ANSI.CLEAR_LINE + msg
-            if isinstance(sys.stdout, Logger):
-                temp = sys.stdout
-                sys.stdout = sys.__stdout__
-                print(msg)
-                sys.stdout = temp
+            output_stream = sys.__stdout__
+            if isinstance(sys.stdout, Logger) and output_stream is not None:
+                output_stream.write(msg + "\n")
 
     @classmethod
-    def dprint(cls, *args, **kwargs):
-        stack = traceback.extract_stack()
-        stack = stack[len(stack) - 2]
-        msg = "[{:s}] [{:s}:{:d}] {:s}(): {:s}".format(
-            str(datetime.datetime.now().astimezone()),
-            Path(stack.filename).name,
-            stack.lineno,
-            stack.name,
-            " ".join(map(str, args)),
-            **kwargs,
-        )
+    def dprint(cls, *args: object, **kwargs: object) -> None:
+        stack = traceback.extract_stack(limit=2)[0]
+        timestamp = datetime.datetime.now().astimezone()
+        filename = Path(stack.filename).name
+        message = _format_message(args, kwargs)
+        msg = f"[{timestamp!s}] [{filename}:{stack.lineno}] {stack.name}(): {message}"
         cls._write_debug_message(msg)
 
     @classmethod
-    def write_debug_log(cls, device=False):
+    def write_debug_log(cls, device: str | Literal[False] | None = False) -> bool:
         cls.dprint("Now writing debug log file")
         msg = "\n\n\n---- Debug Log ----\n"
         msg += f"{AppInfo.NAME:s} version: {AppInfo.VERSION_PEP440:s} ({AppInfo.VERSION_TIMESTAMP:d})\n"
-        msg += f"Language: {i18n.CONFIGURED_LANGUAGE:s}\n"
+        msg += f"Language: {i18n.CONFIGURED_LANGUAGE or 'unknown'}\n"
         msg += "Platform: {:s}\n".format(AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.OS_LANGUAGE)
         if device is not False:
             if device is not None:
-                msg += f"Connected device: {device:s}\n"
+                msg += f"Connected device: {device!s}\n"
             else:
                 msg += "No device connected\n"
 
@@ -105,33 +134,35 @@ class Logger:
         msg += f"Log generated: {now.isoformat():s}\n"
         msg += f"Runtime: {days}d {hours}h {minutes}m {seconds}s\n\n"
 
+        log_path = Path(AppContext.CONFIG_PATH) / "debug.log"
+        line_separator = "\r\n" if platform.system() == "Windows" else "\n"
+        content = line_separator.join(AppContext.PRINT_LOG)
+        content += msg.replace("\n", line_separator)
+        content += line_separator.join(AppContext.DEBUG_LOG)
         try:
-            fn = Path(AppContext.CONFIG_PATH) / "debug.log"
-            with fn.open("wb") as f:
-                f.write("".encode("UTF-8-SIG"))
-                if platform.system() == "Windows":
-                    f.write("\r\n".join(AppContext.PRINT_LOG).encode("UTF-8"))
-                    f.write(msg.replace("\n", "\r\n").encode("UTF-8"))
-                    f.write("\r\n".join(AppContext.DEBUG_LOG).encode("UTF-8"))
-                else:
-                    f.write("\n".join(AppContext.PRINT_LOG).encode("UTF-8"))
-                    f.write(msg.encode("UTF-8"))
-                    f.write("\n".join(AppContext.DEBUG_LOG).encode("UTF-8"))
-                print(__("The debug log was written to {logfile}", logfile=str(fn)))
-            return True
-        except:
+            log_path.write_bytes(content.encode("utf-8-sig"))
+            print(__("The debug log was written to {logfile}", logfile=str(log_path)))
+        except OSError:
             return False
+        except ValueError:
+            return False
+        else:
+            return True
 
     @classmethod
-    def exception_hook(cls, exc_type, exc_value, exc_traceback):
+    def exception_hook(
+        cls,
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        s = "EXCEPTION OCCURED\n"
-        lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
-        for line in lines:
-            s += f"{line:s}"
-        print(s)
+        exception_text = "EXCEPTION OCCURRED\n" + "".join(
+            traceback.format_exception(exc_type, exc_value, exc_traceback),
+        )
+        print(exception_text)
         cls.write_debug_log()
         if isinstance(sys.stdout, Logger):
             sys.stdout.LOG_ERROR = True
@@ -141,7 +172,7 @@ class Logger:
 dprint = Logger.dprint
 
 
-def _loguru_sink(message):
+def _loguru_sink(message: object) -> None:
     Logger._write_debug_message(str(message).rstrip())
 
 
