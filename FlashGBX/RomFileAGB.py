@@ -1,7 +1,8 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-import copy
+from __future__ import annotations
+
 import hashlib
 import json
 import re
@@ -9,41 +10,72 @@ import string
 import struct
 import zlib
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from .app import AppContext
 from .i18n import __
-from .Logging import dprint, logger
+from .Logging import dprint, logger  # pyright: ignore[reportAttributeAccessIssue]
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PillowImage  # pyright: ignore[reportMissingImports]
 
 try:
-    Image = None
-    from PIL import Image
-except Exception:
+    from PIL import Image  # pyright: ignore[reportMissingImports]
+except ImportError:
+    Image = None  # pyright: ignore[reportAssignmentType]
     logger.exception("Pillow image support is unavailable for Game Boy Advance ROMs")
+
+AGBHeader = dict[str, Any]
+AGBDatabaseEntry = dict[str, Any]
+RomSource = str | Path | bytes | bytearray | None
+
+_PRINTABLE_CHARS = frozenset(string.printable)
+_TRAILING_NULLS = re.compile(r"(\x00+)$")
+_REPEATED_HEADER_CHARS = re.compile(r"((_)_+|(\x00)\x00+|(\s)\s+)")
+_NO_CARTRIDGE_HEADER_DIGESTS = (
+    bytes.fromhex("4FE93EEEBC5593FE2E231A3986CE86C95C1100DD"),
+    bytes.fromhex("A503A1B5F5DDBEFC87C79B1359F7E1A5CFE0AC9F"),
+    bytes.fromhex("4686E381B24A2DB07DE83D452FA31E8A044B3A50"),
+)
+_NO_CARTRIDGE_LOGO_DIGESTS = (
+    bytes.fromhex("2BDC7DEF6C481FBFEEB880B1D0FDF6575D6A39BE"),
+    bytes.fromhex("09B90E535E8550F890A4F477137E4559A5C0A445"),
+)
+_NINTENDO_LOGO_DIGEST = bytes.fromhex("17DAA0FEC02FC33C0F6ABB549A8B80B6613B48EE")
+_VAST_FAME_SIGNATURE = bytes.fromhex("B4009FE59910A0E30010C0E5AC009FE5")
+
+
+def _clean_header_text(raw: bytes | bytearray, *, remove_newlines: bool = False) -> str:
+    text = bytes(raw).decode("ascii", "replace")
+    text = _TRAILING_NULLS.sub("", text)
+    text = _REPEATED_HEADER_CHARS.sub(r"\2\3\4", text).replace("\x00", "_")
+    text = "".join(character for character in text if character in _PRINTABLE_CHARS)
+    return text.replace("\n", "") if remove_newlines else text
 
 
 class RomFileAGB:
-    ROMFILE_PATH: Path | None = None
-    ROMFILE = bytearray()
-    DATA = None
+    def __init__(self, file: RomSource = None) -> None:
+        self.ROMFILE_PATH: Path | None = None
+        self.ROMFILE: bytearray = bytearray()
+        self.DATA: AGBHeader | None = None
 
-    def __init__(self, file=None):
         if isinstance(file, (str, Path)):
-            self.ROMFILE_PATH = Path(file)
-            self.Load()
+            self.Open(file)
         elif isinstance(file, bytearray):
             self.ROMFILE = file
+        elif isinstance(file, bytes):
+            self.ROMFILE = bytearray(file)
 
-    def Open(self, file):
+    def Open(self, file: str | Path) -> None:
         self.ROMFILE_PATH = Path(file)
         self.Load()
 
-    def Load(self):
+    def Load(self) -> None:
         if self.ROMFILE_PATH is None:
             return
-        with self.ROMFILE_PATH.open("rb") as f:
-            self.ROMFILE = bytearray(f.read())
+        self.ROMFILE = bytearray(self.ROMFILE_PATH.read_bytes())
 
-    def CalcChecksumHeader(self, fix=False):
+    def CalcChecksumHeader(self, fix: bool = False) -> int:
         checksum = 0
         for i in range(0xA0, 0xBD):
             checksum = checksum - self.ROMFILE[i]
@@ -53,21 +85,27 @@ class RomFileAGB:
             self.ROMFILE[0xBD] = checksum
         return checksum
 
-    def CalcChecksumGlobal(self):
+    def CalcChecksumGlobal(self) -> int:
         return zlib.crc32(self.ROMFILE) & 0xFFFFFFFF
 
-    def FixHeader(self):
+    def FixHeader(self) -> bytearray:
         self.CalcChecksumHeader(True)
         return self.ROMFILE[0:0x200]
 
-    def LogoToImage(self, data, valid=True):
+    def LogoToImage(
+        self,
+        data: bytes | bytearray,
+        valid: bool = True,
+    ) -> PillowImage | Literal[False]:
         if Image is None:
             return False
-        if data in (bytearray([0] * len(data)), bytearray([0xFF] * len(data))):
+        if len(data) != 0x9C:
+            return False
+        if data in (bytes(len(data)), bytes([0xFF]) * len(data)):
             return False
 
         # Based on a HuffUnComp function provided by Winter1760, thank you!
-        def HuffUnComp(data):
+        def huff_uncomp(compressed_data: bytes | bytearray) -> bytes:
             BITS = 4
             OUT_SIZE = 0xD4
             TREE = bytes(
@@ -105,26 +143,33 @@ class RomFileAGB:
                     0x09,
                 ],
             )
-            data = bytes([0x20 | BITS]) + OUT_SIZE.to_bytes(3, "little") + bytes([len(TREE) // 2]) + TREE + data
-            bits = data[0] & 15
-            out_size = int.from_bytes(data[1:4], "little") & 0xFFFF
-            i = 6 + data[4] * 2
+            encoded_data = (
+                bytes([0x20 | BITS])
+                + OUT_SIZE.to_bytes(3, "little")
+                + bytes([len(TREE) // 2])
+                + TREE
+                + bytes(compressed_data)
+            )
+            bits = encoded_data[0] & 15
+            out_size = int.from_bytes(encoded_data[1:4], "little") & 0xFFFF
+            i = 6 + encoded_data[4] * 2
             node_offs = 5
             out_units = 0
             out_ready = 0
             out = b""
             while len(out) < out_size:
                 in_unit = (
-                    int.from_bytes(data[i : i + 2], "little") | int.from_bytes(data[i ^ 2 : (i ^ 2) + 2], "little") << 16
+                    int.from_bytes(encoded_data[i : i + 2], "little")
+                    | int.from_bytes(encoded_data[i ^ 2 : (i ^ 2) + 2], "little") << 16
                 )
                 i += 4
                 for b in range(31, -1, -1):
-                    node = data[node_offs]
+                    node = encoded_data[node_offs]
                     node_offs &= ~1
                     node_offs += (node & 0x3F) * 2 + 2 + (in_unit >> b & 1)
                     if node << (in_unit >> b & 1) & 0x80:
                         out_ready >>= bits
-                        out_ready |= data[node_offs] << 32 - bits
+                        out_ready |= encoded_data[node_offs] << 32 - bits
                         out_ready &= 0xFFFFFFFF
                         out_units += 1
                         if out_units == bits % 8 + 4:
@@ -136,232 +181,72 @@ class RomFileAGB:
                         node_offs = 5
             return out
 
-        def Diff16BitUnFilter(data):
-            header = struct.unpack("I", data[0:4])[0]
+        def diff_16_bit_unfilter(filtered_data: bytes) -> bytearray:
+            header = struct.unpack_from("<I", filtered_data)[0]
             out_size = (header >> 8) & 0xFFFF
             pos = 4
             prev = 0
             dest = bytearray()
             while pos < out_size:
-                if pos + 2 > len(data):
+                if pos + 2 > len(filtered_data):
                     break
-                temp = (struct.unpack("H", data[pos : pos + 2])[0] + prev) & 0xFFFF
-                dest += struct.pack("H", temp)
+                temp = (struct.unpack_from("<H", filtered_data, pos)[0] + prev) & 0xFFFF
+                dest.extend(struct.pack("<H", temp))
                 pos += 2
                 prev = temp
             return dest
 
-        data = HuffUnComp(data)
-        data = Diff16BitUnFilter(data)
+        try:
+            logo_data = diff_16_bit_unfilter(huff_uncomp(data))
+        except IndexError, struct.error:
+            return False
 
         img = Image.new(mode="P", size=(104, 16))
         img.info["transparency"] = 0
-        img.putpalette([255, 255, 255, 0, 0, 0])
+        img.putpalette([255, 255, 255, 0 if valid else 255, 0, 0])
         pixels = img.load()
+        if pixels is None:
+            return False
 
         for tile_row in range(2):
             for tile_w in range(13):
                 for tile_h in range(8):
                     for bit in range(8):
                         pos = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
-                        if pos >= len(data):
+                        if pos >= len(logo_data):
                             break
-                        pixel = (data[pos] >> bit) & 1
+                        pixel = (logo_data[pos] >> bit) & 1
                         x = tile_w * 8 + bit
                         y = tile_row * 8 + tile_h
                         pixels[x, y] = pixel
         return img
 
-    def GetHeader(self, unchanged=False):
+    def GetHeader(self, unchanged: bool = False) -> AGBHeader:
         buffer = bytearray(self.ROMFILE)
-        data = {}
+        data: AGBHeader = {}
         if len(buffer) < 0x180:
             return {}
-        hash = hashlib.sha1(buffer[0:0x180]).digest()
-        nocart_hashes = []
-        nocart_hashes.append(
-            bytearray(
-                [
-                    0x4F,
-                    0xE9,
-                    0x3E,
-                    0xEE,
-                    0xBC,
-                    0x55,
-                    0x93,
-                    0xFE,
-                    0x2E,
-                    0x23,
-                    0x1A,
-                    0x39,
-                    0x86,
-                    0xCE,
-                    0x86,
-                    0xC9,
-                    0x5C,
-                    0x11,
-                    0x00,
-                    0xDD,
-                ],
-            ),
-        )  # Method 0
-        nocart_hashes.append(
-            bytearray(
-                [
-                    0xA5,
-                    0x03,
-                    0xA1,
-                    0xB5,
-                    0xF5,
-                    0xDD,
-                    0xBE,
-                    0xFC,
-                    0x87,
-                    0xC7,
-                    0x9B,
-                    0x13,
-                    0x59,
-                    0xF7,
-                    0xE1,
-                    0xA5,
-                    0xCF,
-                    0xE0,
-                    0xAC,
-                    0x9F,
-                ],
-            ),
-        )  # Method 1
-        nocart_hashes.append(
-            bytearray(
-                [
-                    0x46,
-                    0x86,
-                    0xE3,
-                    0x81,
-                    0xB2,
-                    0x4A,
-                    0x2D,
-                    0xB0,
-                    0x7D,
-                    0xE8,
-                    0x3D,
-                    0x45,
-                    0x2F,
-                    0xA3,
-                    0x1E,
-                    0x8A,
-                    0x04,
-                    0x4B,
-                    0x3A,
-                    0x50,
-                ],
-            ),
-        )  # Method 2
-        data["empty_nocart"] = hash in nocart_hashes
+        header_digest = hashlib.sha1(buffer[0:0x180]).digest()
+        data["empty_nocart"] = header_digest in _NO_CARTRIDGE_HEADER_DIGESTS
         if not data["empty_nocart"]:
-            nocart_hashes.append(
-                bytearray(
-                    [
-                        0x2B,
-                        0xDC,
-                        0x7D,
-                        0xEF,
-                        0x6C,
-                        0x48,
-                        0x1F,
-                        0xBF,
-                        0xEE,
-                        0xB8,
-                        0x80,
-                        0xB1,
-                        0xD0,
-                        0xFD,
-                        0xF6,
-                        0x57,
-                        0x5D,
-                        0x6A,
-                        0x39,
-                        0xBE,
-                    ],
-                ),
-            )
-            nocart_hashes.append(
-                bytearray(
-                    [
-                        0x09,
-                        0xB9,
-                        0x0E,
-                        0x53,
-                        0x5E,
-                        0x85,
-                        0x50,
-                        0xF8,
-                        0x90,
-                        0xA4,
-                        0xF4,
-                        0x77,
-                        0x13,
-                        0x7E,
-                        0x45,
-                        0x59,
-                        0xA5,
-                        0xC0,
-                        0xA4,
-                        0x45,
-                    ],
-                ),
-            )
-            data["empty_nocart"] = hashlib.sha1(buffer[0x10:0x50]).digest() in nocart_hashes
+            logo_digest = hashlib.sha1(buffer[0x10:0x50]).digest()
+            data["empty_nocart"] = logo_digest in _NO_CARTRIDGE_LOGO_DIGESTS
 
-        data["empty"] = (buffer[0x04:0xA0] == bytearray([buffer[0x04]] * 0x9C)) or data["empty_nocart"]
+        data["empty"] = buffer[0x04:0xA0] == bytes([buffer[0x04]]) * 0x9C or data["empty_nocart"]
         if data["empty_nocart"]:
-            buffer = bytearray([0x00] * len(buffer))
-        data["logo_correct"] = hashlib.sha1(buffer[0x04:0xA0]).digest() == bytearray(
-            [
-                0x17,
-                0xDA,
-                0xA0,
-                0xFE,
-                0xC0,
-                0x2F,
-                0xC3,
-                0x3C,
-                0x0F,
-                0x6A,
-                0xBB,
-                0x54,
-                0x9A,
-                0x8B,
-                0x80,
-                0xB6,
-                0x61,
-                0x3B,
-                0x48,
-                0xEE,
-            ],
-        )
+            buffer = bytearray(len(buffer))
+        data["logo_correct"] = hashlib.sha1(buffer[0x04:0xA0]).digest() == _NINTENDO_LOGO_DIGEST
         temp = self.LogoToImage(buffer[0x04:0xA0], data["logo_correct"])
         if temp is not False and not data["empty"]:
             data["logo"] = temp
 
         data["game_title_raw"] = bytearray(buffer[0xA0:0xAC]).decode("ascii", "replace")
-        game_title = data["game_title_raw"]
-        game_title = re.sub(r"(\x00+)$", "", game_title)
-        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
-        game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-        data["game_title"] = game_title.replace("\n", "")
+        game_title = _clean_header_text(buffer[0xA0:0xAC], remove_newlines=True)
+        data["game_title"] = game_title
         data["game_code_raw"] = bytearray(buffer[0xAC:0xB0]).decode("ascii", "replace")
-        game_code = data["game_code_raw"]
-        game_code = re.sub(r"(\x00+)$", "", game_code)
-        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
-        game_code = "".join(filter(lambda x: x in set(string.printable), game_code))
+        game_code = _clean_header_text(buffer[0xAC:0xB0])
         data["game_code"] = game_code
-        maker_code = bytearray(buffer[0xB0:0xB2]).decode("ascii", "replace")
-        maker_code = re.sub(r"(\x00+)$", "", maker_code)
-        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
-        maker_code = "".join(filter(lambda x: x in set(string.printable), maker_code))
-
-        data["maker_code"] = maker_code
+        data["maker_code"] = _clean_header_text(buffer[0xB0:0xB2])
         data["header_checksum"] = int(buffer[0xBD])
         data["header_checksum_calc"] = self.CalcChecksumHeader()
         data["header_checksum_correct"] = data["header_checksum"] == data["header_checksum_calc"]
@@ -377,28 +262,8 @@ class RomFileAGB:
         data["save_size"] = 0
 
         # Vast Fame (unlicensed protected carts)
-        data["vast_fame"] = False
-        if buffer[0x15C:0x16C] == bytearray(
-            [
-                0xB4,
-                0x00,
-                0x9F,
-                0xE5,
-                0x99,
-                0x10,
-                0xA0,
-                0xE3,
-                0x00,
-                0x10,
-                0xC0,
-                0xE5,
-                0xAC,
-                0x00,
-                0x9F,
-                0xE5,
-            ],
-        ):  # Initialization code always present in Vast Fame carts
-            data["vast_fame"] = True
+        # Initialization code always present in Vast Fame carts.
+        data["vast_fame"] = buffer[0x15C:0x16C] == _VAST_FAME_SIGNATURE
 
         # 8M FLASH DACS
         data["dacs_8m"] = False
@@ -415,42 +280,54 @@ class RomFileAGB:
             data["ereader"] = True
 
         if unchanged:
-            data["unchanged"] = copy.copy(data)
+            data["unchanged"] = data.copy()
 
         self.DATA = data
         data["db"] = self.GetDatabaseEntry()
 
         # 3D Memory (GBA Video 64 MB)
-        data["3d_memory"] = False
-        if data["db"] is not None and "3d" in data["db"]:
-            data["3d_memory"] = data["db"]["3d"]
+        database_entry = data["db"]
+        data["3d_memory"] = bool(database_entry.get("3d", False)) if database_entry is not None else False
 
         return data
 
-    def GetDatabaseEntry(self):
+    def GetDatabaseEntry(self) -> AGBDatabaseEntry | None:
         data = self.DATA
-        db_entry = None
+        if data is None or not isinstance(data.get("header_sha1"), str):
+            return None
+
+        db_entry: AGBDatabaseEntry | None = None
         database_path = Path(AppContext.CONFIG_PATH) / "db_AGB.json"
         if database_path.exists():
-            with database_path.open(encoding="UTF-8") as f:
-                db = f.read()
+            with database_path.open(encoding="utf-8") as database_file:
                 try:
-                    db = json.loads(db)
+                    raw_database: object = json.load(database_file)
                 except (json.JSONDecodeError, ValueError) as e:
                     print(__("Error: Database for Game Boy Advance titles is corrupted.") + "\n" + str(e))
                     return None
-                if data["header_sha1"] in db:
-                    db_entry = db[data["header_sha1"]]
-                    if db_entry["gc"] in ("ZMAJ", "ZMBJ", "ZMDE"):
-                        db_entry["gc"] = "AGS-{:s}".format(db_entry["gc"])
-                    elif db_entry["gc"] == "ZBBJ":
-                        db_entry["gc"] = "NTR-{:s}".format(db_entry["gc"])
-                    elif db_entry["gc"] == "PEAJ":
-                        db_entry["gc"] = "PEC-{:s}".format(db_entry["gc"])
-                    elif db_entry["gc"] in ("PSAJ", "PSAE"):
-                        db_entry["gc"] = "PES-{:s}".format(db_entry["gc"])
+                if not isinstance(raw_database, dict):
+                    print(__("Error: Database for Game Boy Advance titles is corrupted."))
+                    return None
+
+                raw_entry = raw_database.get(data["header_sha1"])
+                if isinstance(raw_entry, dict):
+                    raw_game_code = raw_entry.get("gc")
+                    if not isinstance(raw_game_code, str):
+                        print(__("Error: Database for Game Boy Advance titles is corrupted."))
+                        return None
+
+                    db_entry = cast("AGBDatabaseEntry", raw_entry)
+                    if raw_game_code in ("ZMAJ", "ZMBJ", "ZMDE"):
+                        prefix = "AGS-"
+                    elif raw_game_code == "ZBBJ":
+                        prefix = "NTR-"
+                    elif raw_game_code == "PEAJ":
+                        prefix = "PEC-"
+                    elif raw_game_code in ("PSAJ", "PSAE"):
+                        prefix = "PES-"
                     else:
-                        db_entry["gc"] = "AGB-{:s}".format(db_entry["gc"])
+                        prefix = "AGB-"
+                    db_entry["gc"] = prefix + raw_game_code
                 else:
                     dprint(
                         __(

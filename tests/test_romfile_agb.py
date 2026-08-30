@@ -63,6 +63,32 @@ def test_agb_fix_header_and_logo_rejects_empty_data() -> None:
     assert header[0xBD] == rom.CalcChecksumHeader()
     assert rom.LogoToImage(bytearray(16)) is False
     assert rom.LogoToImage(bytearray([0xFF] * 16)) is False
+    assert rom.LogoToImage(b"\x01") is False
+
+
+def test_agb_instances_have_independent_buffers_and_accept_immutable_bytes() -> None:
+    first = RomFileAGB()
+    second = RomFileAGB()
+    first.ROMFILE.extend(b"first")
+
+    assert bytearray() == second.ROMFILE
+    assert bytearray(b"immutable") == RomFileAGB(b"immutable").ROMFILE
+
+
+def test_agb_header_text_fields_are_sanitized_consistently(monkeypatch: pytest.MonkeyPatch) -> None:
+    header = make_agb_header()
+    header[0xA0:0xAC] = b"BAD__  TITLE"
+    header[0xAC:0xB0] = b"A__B"
+    header[0xB0:0xB2] = b"__"
+    header[0xBD] = RomFileAGB(header).CalcChecksumHeader()
+    rom = RomFileAGB(header)
+    monkeypatch.setattr(rom, "GetDatabaseEntry", lambda: None)
+
+    data = rom.GetHeader()
+
+    assert data["game_title"] == "BAD_ TITLE"
+    assert data["game_code"] == "A_B"
+    assert data["maker_code"] == "_"
 
 
 @pytest.mark.parametrize(
@@ -165,3 +191,25 @@ def test_agb_load_open_and_parser_error_paths(
     (tmp_path / "db_AGB.json").write_text("{invalid", encoding="utf-8")
     full_rom.DATA = {"header_sha1": "header"}
     assert full_rom.GetDatabaseEntry() is None
+
+
+@pytest.mark.parametrize(
+    "database",
+    [
+        [],
+        {"header": []},
+        {"header": {"gc": 123}},
+    ],
+)
+def test_agb_database_rejects_invalid_structures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    database: object,
+) -> None:
+    monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
+    (tmp_path / "db_AGB.json").write_text(json.dumps(database), encoding="utf-8")
+    rom = RomFileAGB(bytearray(0x200))
+    rom.DATA = {"header_sha1": "header"}
+
+    assert rom.GetDatabaseEntry() is None
+    assert RomFileAGB().GetDatabaseEntry() is None
