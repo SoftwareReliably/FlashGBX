@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from PIL import Image
@@ -77,6 +78,17 @@ def test_convert_picture_rejects_truncated_camera_tiles(last_seen: bool) -> None
 
     with pytest.raises(ValueError, match=f"expected at least {required_size} bytes"):
         PocketCamera().ConvertPicture(bytes(required_size - 1), lastseen=last_seen)
+
+
+def test_convert_picture_reports_image_allocation_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    image = Mock()
+    image.load.return_value = None
+    monkeypatch.setattr("FlashGBX.PocketCamera.Image.new", Mock(return_value=image))
+
+    with pytest.raises(RuntimeError, match="could not allocate"):
+        PocketCamera().ConvertPicture(bytes(0x1000))
+
+    image.putpalette.assert_called_once_with(PocketCamera.DEFAULT_PALETTE)
 
 
 def test_extract_picture_requires_loaded_data_and_valid_index() -> None:
