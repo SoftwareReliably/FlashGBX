@@ -73,6 +73,7 @@ source = [
     "FlashGBX.GBMemory",
     "FlashGBX.IniSettings",
     "FlashGBX.InteractiveConsole",
+    "FlashGBX.InteractiveConsoleWindow",
     "FlashGBX.i18n",
     "FlashGBX.Mapper",
     "FlashGBX.PocketCamera",

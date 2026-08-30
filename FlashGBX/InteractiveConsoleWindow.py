@@ -1,105 +1,129 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
 
 from .app import AppInfo
 from .i18n import __, c__
 from .InteractiveConsole import InteractiveConsole
 from .Logging import logger
 
+if TYPE_CHECKING:
+    from .FlashGBX_GUI import FlashGBX_GUI
+    from .LK_Device import DeviceMode, LK_Device
+
 
 class InteractiveConsoleWindow(QtWidgets.QDialog):
-    APP = None
-    CONN = None
-    MODE = None
-    IM = None
-
-    def __init__(self, app, icon=None):
-        QtWidgets.QDialog.__init__(self, app)
+    def __init__(self, app: FlashGBX_GUI, icon: QtGui.QIcon | None = None) -> None:
+        super().__init__(app)
         if icon is not None:
             self.setWindowIcon(QtGui.QIcon(icon))
         self.setWindowTitle(AppInfo.NAME + " – " + __("Interactive Console"))
         flags = self.windowFlags()
         flags = (
-            (flags & ~QtCore.Qt.WindowContextHelpButtonHint)
-            | QtCore.Qt.WindowCloseButtonHint
-            | QtCore.Qt.WindowMaximizeButtonHint
+            (flags & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint)
+            | QtCore.Qt.WindowType.WindowCloseButtonHint
+            | QtCore.Qt.WindowType.WindowMaximizeButtonHint
         )
         self.setWindowFlags(flags)
         self.resize(700, 400)
 
         self.APP = app
-        self.CONN = app.CONN
-        self.MODE = self.CONN.GetMode()
+        connection = app.CONN
+        if connection is None:
+            msg = "The interactive console requires an active device connection"
+            raise RuntimeError(msg)
+        self.CONN: LK_Device = connection
+        mode = self.CONN.GetMode()
+        if mode is None:
+            msg = "The interactive console requires an active cartridge mode"
+            raise RuntimeError(msg)
+        self.MODE: DeviceMode = mode
         self.IM = InteractiveConsole(self.CONN, on_output=self.AppendOutput, on_error=self.AppendOutput)
 
-        self.layout = QtWidgets.QVBoxLayout()
-        self.layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout = QtWidgets.QVBoxLayout()
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
 
         mono_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-        mono_font.setStyleHint(QtGui.QFont.TypeWriter)
+        mono_font.setStyleHint(QtGui.QFont.StyleHint.TypeWriter)
 
         self.txtOutput = QtWidgets.QPlainTextEdit()
         self.txtOutput.setReadOnly(True)
         self.txtOutput.setFont(mono_font)
-        self.txtOutput.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
-        self.layout.addWidget(self.txtOutput)
+        self.txtOutput.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        self.main_layout.addWidget(self.txtOutput)
 
-        rowInput = QtWidgets.QHBoxLayout()
+        row_input = QtWidgets.QHBoxLayout()
         self.lblPrompt = QtWidgets.QLabel(">")
         self.lblPrompt.setFont(mono_font)
         self.txtInput = QtWidgets.QLineEdit()
         self.txtInput.setFont(mono_font)
         self.txtInput.returnPressed.connect(self.OnSubmit)
-        rowInput.addWidget(self.lblPrompt)
-        rowInput.addWidget(self.txtInput)
-        self.layout.addLayout(rowInput)
+        row_input.addWidget(self.lblPrompt)
+        row_input.addWidget(self.txtInput)
+        self.main_layout.addLayout(row_input)
 
-        rowButtons = QtWidgets.QHBoxLayout()
-        rowButtons.addStretch()
+        row_buttons = QtWidgets.QHBoxLayout()
+        row_buttons.addStretch()
         self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
         self.btnClose.setStyleSheet("padding: 5px 15px;")
         self.btnClose.setAutoDefault(False)
         self.btnClose.setDefault(False)
         self.btnClose.clicked.connect(self.reject)
-        rowButtons.addWidget(self.btnClose)
-        self.layout.addLayout(rowButtons)
+        row_buttons.addWidget(self.btnClose)
+        self.main_layout.addLayout(row_buttons)
 
-        self.setLayout(self.layout)
+        self.setLayout(self.main_layout)
 
-        self.History = []
+        self.History: list[str] = []
         self.HistoryIndex = 0
         self.txtInput.installEventFilter(self)
 
-    def run(self):
+    def run(self) -> None:
         self.CONN.SetAutoPowerOff(value=0)
-        self.CONN.CartPowerOn()
-        self.IM.print_help()
-        self.txtInput.setFocus()
-        self.layout.update()
-        self.layout.activate()
-        screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
-        x = (screenGeometry.width() - self.width()) / 2
-        y = (screenGeometry.height() - self.height()) / 2
-        self.move(x, y)
-        self.show()
+        try:
+            self.CONN.CartPowerOn()
+            self.IM.print_help()
+            self.txtInput.setFocus()
+            self.main_layout.update()
+            self.main_layout.activate()
+            screen = self.screen() or QtGui.QGuiApplication.primaryScreen()
+            if screen is not None:
+                geometry = screen.availableGeometry()
+                x = geometry.x() + (geometry.width() - self.width()) // 2
+                y = geometry.y() + (geometry.height() - self.height()) // 2
+                self.move(x, y)
+            self.show()
+        except Exception:
+            self._restore_auto_power_off()
+            raise
 
-    def hideEvent(self, event):
+    def _restore_auto_power_off(self) -> None:
         try:
             self.APP.SetAutoPowerOff()
         except Exception:
             logger.exception("Failed to restore automatic power-off settings")
-        self.APP.activateWindow()
 
-    def eventFilter(self, obj, event):
-        if obj is self.txtInput and event.type() == QtCore.QEvent.KeyPress:
-            if event.key() == QtCore.Qt.Key_Up:
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        self._restore_auto_power_off()
+        try:
+            self.APP.activateWindow()
+        except Exception:
+            logger.exception("Failed to reactivate the main application window")
+        super().hideEvent(event)
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if obj is self.txtInput and isinstance(event, QtGui.QKeyEvent):
+            if event.key() == QtCore.Qt.Key.Key_Up:
                 if self.History and self.HistoryIndex > 0:
                     self.HistoryIndex -= 1
                     self.txtInput.setText(self.History[self.HistoryIndex])
                 return True
-            if event.key() == QtCore.Qt.Key_Down:
+            if event.key() == QtCore.Qt.Key.Key_Down:
                 if self.History and self.HistoryIndex < len(self.History) - 1:
                     self.HistoryIndex += 1
                     self.txtInput.setText(self.History[self.HistoryIndex])
@@ -109,11 +133,12 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
                 return True
         return super().eventFilter(obj, event)
 
-    def AppendOutput(self, text):
+    def AppendOutput(self, text: str) -> None:
         self.txtOutput.appendPlainText(text)
-        self.txtOutput.verticalScrollBar().setValue(self.txtOutput.verticalScrollBar().maximum())
+        scrollbar = self.txtOutput.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
-    def OnSubmit(self):
+    def OnSubmit(self) -> None:
         line = self.txtInput.text().strip()
         self.txtInput.clear()
         if not line:
