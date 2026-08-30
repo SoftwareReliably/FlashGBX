@@ -14,7 +14,7 @@ class DataTransfer(QtCore.QThread):
     CONFIG = None
     FINISHED = False
 
-    updateProgress = QtCore.Signal(object)
+    updateProgress = QtCore.Signal(object)  # noqa: N815
 
     def __init__(self, config=None):
         QtCore.QThread.__init__(self)
