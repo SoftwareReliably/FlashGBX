@@ -67,9 +67,6 @@ class CLIConfig(TypedDict):
     debug: NotRequired[bool]
 
 
-prog_bar_part_char: tuple[str, ...]
-
-
 class FlashGBX_CLI:
     """Command-line frontend for cartridge and firmware operations."""
 
@@ -87,11 +84,10 @@ class FlashGBX_CLI:
         self.INI: IniSettings | None = None
         self.RETVAL = 0
 
-        global prog_bar_part_char
         if platform.system() == "Windows":
-            prog_bar_part_char = (" ", " ", " ", " ", "▌", "▌", "▌", "▌")
+            self.prog_bar_part_chars = (" ", " ", " ", " ", "▌", "▌", "▌", "▌")
         else:
-            prog_bar_part_char = (" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
+            self.prog_bar_part_chars = (" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
 
     @staticmethod
     def _GetPlatformName(mode: str) -> str:
@@ -606,7 +602,7 @@ class FlashGBX_CLI:
                 remainder_width = (progress * prog_width) % 1
                 part_width = math.floor(remainder_width * 8)
                 try:
-                    part_char = prog_bar_part_char[part_width]
+                    part_char = self.prog_bar_part_chars[part_width]
                     if (prog_width - whole_width - 1) < 0:
                         part_char = ""
                     prog_bar = "█" * whole_width + part_char + " " * (prog_width - whole_width - 1)
@@ -2862,7 +2858,11 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                ports = [comports[i].device for i in range(len(comports)) if comports[i].vid == 0x483 and comports[i].pid == 0x5740]
+                ports = [
+                    comports[i].device
+                    for i in range(len(comports))
+                    if comports[i].vid == 0x483 and comports[i].pid == 0x5740
+                ]
                 if len(ports) == 0:
                     print(
                         __(

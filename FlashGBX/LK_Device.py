@@ -427,6 +427,7 @@ class LK_Device(ABC):
         else:
             self.LAST_CHECK_ACTIVE = time.time()
             return True
+
     def IsSupportedMbc(self, mbc: int) -> bool:
         return mbc in (
             0x00,

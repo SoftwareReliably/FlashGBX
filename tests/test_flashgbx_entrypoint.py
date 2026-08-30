@@ -71,10 +71,7 @@ def test_load_config_extracts_and_validates_profiles_and_archive_paths(
     config_path = tmp_path / "config"
     resources = app_path / "res"
     resources.mkdir(parents=True)
-    profile = (
-        '{"type": "DMG", "names": ["Test Cart", "Alias"], '
-        '"flash_ids": [[0xab, 0xCD]], "command": 0x10}'
-    )
+    profile = '{"type": "DMG", "names": ["Test Cart", "Alias"], "flash_ids": [[0xab, 0xCD]], "command": 0x10}'
     with zipfile.ZipFile(resources / "config.zip", "w") as archive:
         archive.writestr("fc_DMG_Test.txt", profile)
         archive.writestr("fc_DMG_Invalid.txt", '{"type": "DMG", "names": "not-a-list"}')

@@ -118,12 +118,10 @@ class Formatter:
     @classmethod
     def validate_datetime(cls, string, fmt):
         try:
-            if string != datetime.datetime.strptime(string, fmt).replace(tzinfo=datetime.UTC).strftime(fmt):
-                raise ValueError
+            formatted = datetime.datetime.strptime(string, fmt).replace(tzinfo=datetime.UTC).strftime(fmt)
         except ValueError:
             return False
-        else:
-            return True
+        return string == formatted
 
     @classmethod
     def title(cls, title):

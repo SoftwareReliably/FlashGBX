@@ -17,7 +17,13 @@ def test_gbmemory_static_helpers_cover_mapper_sizes_and_encoding() -> None:
     assert GBMemoryMap._fixed_ascii("abc", 5) == b"abc\xff\xff"
     assert GBMemoryMap._fixed_ascii("abcdef", 3) == b"abc"
     assert len(GBMemoryMap._timestamp()) == 18
-    assert [GBMemoryMap._rom_size_type(size) for size in (0x20000, 0x20001, 0x40000, 0x80000, 0x80001)] == [2, 3, 3, 4, 5]
+    assert [GBMemoryMap._rom_size_type(size) for size in (0x20000, 0x20001, 0x40000, 0x80000, 0x80001)] == [
+        2,
+        3,
+        3,
+        4,
+        5,
+    ]
     assert GBMemoryMap._sram_type(2, 0) == 2
     assert GBMemoryMap._sram_type(0, 0x03) == 3
     assert GBMemoryMap._sram_type(0, 0xFFFF) == 0

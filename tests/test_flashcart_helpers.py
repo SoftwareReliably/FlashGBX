@@ -29,7 +29,7 @@ def callbacks() -> tuple[dict[str, list[Any]], dict[str, Any]]:
     functions: dict[str, Any] = {
         "cart_write_fncptr": lambda *args, **kwargs: calls["write"].append((args, kwargs)),
         "cart_write_fast_fncptr": lambda *args, **kwargs: calls["fast"].append((args, kwargs)),
-        "cart_read_fncptr": lambda *args: (calls["read"].append(args) or bytearray(args[1])),
+        "cart_read_fncptr": lambda *args: calls["read"].append(args) or bytearray(args[1]),
         "cart_powercycle_fncptr": lambda: calls["progress"].append("power"),
         "progress_fncptr": record_progress,
         "set_we_pin_wr": lambda: calls["progress"].append("wr"),

@@ -64,7 +64,7 @@ jobs:
               'FlashGBX.hw_JoeyJr',
               'FlashGBX.hw_GameBub',
           ]
-          
+
           a = Analysis(
             ['run.py'],
             pathex=[],
@@ -125,7 +125,7 @@ jobs:
           mkdir dist/FlashGBX.app/Contents/MacOS/locale
           cp -r FlashGBX/res/* dist/FlashGBX.app/Contents/MacOS/res
           cp -r FlashGBX/locale/* dist/FlashGBX.app/Contents/MacOS/locale
-          
+
           # Remove unnecessary files
           rm -rf dist/FlashGBX.app/Contents/Resources/PySide6/Qt/lib/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}.framework*
           rm -rf dist/FlashGBX.app/Contents/Resources/Qt{Pdf*,Quick*,Qml*,Network*,OpenGL*}

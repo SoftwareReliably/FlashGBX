@@ -403,6 +403,27 @@ uv sync --group dev
 uv run pytest
 ```
 
+Install the Git pre-commit and pre-push hooks after syncing the development dependencies:
+
+```shell
+uv run pre-commit install
+```
+
+The pre-commit hook validates repository files and the dependency lock, checks GitHub Actions
+workflows, fixes Ruff lint violations where possible, formats staged Python files, and runs
+Pyright on staged application modules. The pre-push hook runs the pytest suite. Run every
+pre-commit hook across the repository with:
+
+```shell
+uv run pre-commit run --all-files
+```
+
+Run the pre-push checks manually with:
+
+```shell
+uv run pre-commit run --all-files --hook-stage pre-push
+```
+
 Run the branch-coverage report and enforce the current 64% floor with:
 
 ```shell
