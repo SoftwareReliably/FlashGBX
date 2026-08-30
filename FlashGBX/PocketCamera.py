@@ -1,198 +1,217 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from __future__ import annotations
+
 import email.utils
 import hashlib
 import io
 import math
+from os import PathLike
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from .app import AppInfo
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+CameraSource: TypeAlias = bytes | bytearray | memoryview | str | PathLike[str]  # noqa: UP040
+FrameData: TypeAlias = bytes | bytearray | memoryview | Literal[False] | None  # noqa: UP040
+Palette: TypeAlias = tuple[int, ...]  # noqa: UP040
+
 
 class PocketCamera:
-    DATA = None
-    PALETTES = [
-        [255, 255, 255, 176, 176, 176, 104, 104, 104, 0, 0, 0],  # Grayscale
-        [208, 217, 60, 120, 164, 106, 84, 88, 84, 36, 70, 36],  # Game Boy
-        [255, 255, 255, 181, 179, 189, 84, 83, 103, 9, 7, 19],  # Super Game Boy
-        [240, 240, 240, 218, 196, 106, 112, 88, 52, 30, 30, 30],  # Game Boy Color (JPN)
-        [
-            240,
-            240,
-            240,
-            220,
-            160,
-            160,
-            136,
-            78,
-            78,
-            30,
-            30,
-            30,
-        ],  # Game Boy Color (USA Gold)
-        [
-            240,
-            240,
-            240,
-            134,
-            200,
-            100,
-            58,
-            96,
-            132,
-            30,
-            30,
-            30,
-        ],  # Game Boy Color (USA/EUR)
-    ]
-    # CLI / argparse identifiers for PALETTES (parallel list, same order).
-    PALETTE_NAMES = ["grayscale", "dmg", "sgb", "cgb1", "cgb2", "cgb3"]
+    SAVE_SIZE: ClassVar[int] = 128 * 1024
+    PHOTO_COUNT: ClassVar[int] = 30
+    IMAGE_COUNT: ClassVar[int] = 32
+    GAME_FACE_INDEX: ClassVar[int] = 30
+    LAST_SEEN_INDEX: ClassVar[int] = 31
+    PALETTES: ClassVar[tuple[Palette, ...]] = (
+        (255, 255, 255, 176, 176, 176, 104, 104, 104, 0, 0, 0),  # Grayscale
+        (208, 217, 60, 120, 164, 106, 84, 88, 84, 36, 70, 36),  # Game Boy
+        (255, 255, 255, 181, 179, 189, 84, 83, 103, 9, 7, 19),  # Super Game Boy
+        (240, 240, 240, 218, 196, 106, 112, 88, 52, 30, 30, 30),  # Game Boy Color (JPN)
+        (240, 240, 240, 220, 160, 160, 136, 78, 78, 30, 30, 30),  # Game Boy Color (USA Gold)
+        (240, 240, 240, 134, 200, 100, 58, 96, 132, 30, 30, 30),  # Game Boy Color (USA/EUR)
+    )
+    # CLI / argparse identifiers for PALETTES (parallel sequence, same order).
+    PALETTE_NAMES: ClassVar[tuple[str, ...]] = ("grayscale", "dmg", "sgb", "cgb1", "cgb2", "cgb3")
     # Output file formats accepted by ExportPicture().
-    OUTPUT_FORMATS = ["png", "bmp", "gif", "jpg"]
-    PALETTE = [240, 240, 240, 218, 196, 106, 112, 88, 52, 30, 30, 30]  # default
-    IMAGES = [None] * 32
-    IMAGES_DELETED = []
-    ORDER = None
+    OUTPUT_FORMATS: ClassVar[tuple[str, ...]] = ("png", "bmp", "gif", "jpg")
+    DEFAULT_PALETTE: ClassVar[Palette] = PALETTES[3]
+    _EMPTY_IMAGE_SHA1: ClassVar[bytes] = bytes.fromhex("ef58a812a81ab14549d8f4fb86e9ecb54a5fb723")
 
-    def __init__(self):
-        pass
+    DATA: bytes | None
+    PALETTE: Palette
+    IMAGES: list[Image.Image]
+    IMAGES_DELETED: list[int]
+    ORDER: list[int]
 
-    def LoadFile(self, savefile):
-        if isinstance(savefile, bytearray):
-            self.DATA = savefile
-        else:
-            save_path = Path(savefile)
-            if save_path.stat().st_size != 128 * 1024:
-                return False
-            with save_path.open("rb") as file:
-                self.DATA = file.read()
+    def __init__(self) -> None:
+        self.DATA = None
+        self.PALETTE = self.DEFAULT_PALETTE
+        self.IMAGES = []
+        self.IMAGES_DELETED = []
+        self.ORDER = []
 
-        # if self.DATA[0x1FFB1:0x1FFB6] != b'Magic':
-        # 	self.DATA = None
-        # 	return False
+    def LoadFile(self, savefile: CameraSource) -> bool:
+        """Load and decode one 128 KiB Game Boy Camera save."""
+        self.DATA = None
+        self.IMAGES = []
+        self.IMAGES_DELETED = []
+        self.ORDER = []
 
-        order_raw = self.DATA[0x11D7:0x11F5]
-        order = [None] * 30
-        deleted = []
-        seen_indicies = []
-        for i in range(30):
-            if order_raw[i] == 0xFF or order_raw[i] in seen_indicies:
-                deleted.append(i)
-            else:
-                order[order_raw[i]] = i
-            seen_indicies.append(order_raw[i])
+        data = bytes(savefile) if isinstance(savefile, (bytes, bytearray, memoryview)) else Path(savefile).read_bytes()
 
-        while None in order:
-            order.remove(None)
-        order.extend(deleted)
-        self.ORDER = order
-        self.IMAGES_DELETED = deleted
+        if len(data) != self.SAVE_SIZE:
+            return False
 
-        for i in range(30):
-            self.IMAGES[i] = self.ExtractPicture(i)
-        self.IMAGES[30] = self.ExtractGameFace()
-        self.IMAGES[31] = self.ExtractLastSeen()
+        self.DATA = data
+
+        # The album table maps physical slots to display positions. Deleted,
+        # duplicate, and malformed entries are kept at the end of the album.
+        order_raw = data[0x11D7:0x11F5]
+        ordered_slots: list[int | None] = [None] * self.PHOTO_COUNT
+        deleted_slots: list[int] = []
+        seen_positions: set[int] = set()
+        for slot, position in enumerate(order_raw):
+            if position >= self.PHOTO_COUNT or position in seen_positions:
+                deleted_slots.append(slot)
+                continue
+            ordered_slots[position] = slot
+            seen_positions.add(position)
+
+        self.ORDER = [slot for slot in ordered_slots if slot is not None]
+        self.ORDER.extend(deleted_slots)
+        self.IMAGES_DELETED = deleted_slots
+        self.IMAGES = [self.ExtractPicture(index) for index in range(self.IMAGE_COUNT)]
         return True
 
-    def SetPalette(self, palette):
-        if isinstance(palette, int):
-            palette = self.PALETTES[palette]
-        for p in range(len(self.IMAGES)):
-            self.IMAGES[p].putpalette(palette)
-        self.PALETTE = palette
+    def SetPalette(self, palette: int | Sequence[int]) -> None:
+        selected = self.PALETTES[palette] if isinstance(palette, int) else tuple(palette)
+        if len(selected) != 12 or any(
+            isinstance(channel, bool) or not isinstance(channel, int) or not 0 <= channel <= 255 for channel in selected
+        ):
+            msg = "A Game Boy Camera palette must contain 12 integer channels in the range 0–255"
+            raise ValueError(msg)
 
-    def GetPicture(self, index):
+        for image in self.IMAGES:
+            image.putpalette(selected)
+        self.PALETTE = selected
+
+    def GetPicture(self, index: int) -> Image.Image:
         return self.IMAGES[index]
 
-    def IsEmpty(self, index):
-        return (
-            hashlib.sha1(self.IMAGES[index].tobytes()).digest()
-            == b"\xefX\xa8\x12\xa8\x1a\xb1EI\xd8\xf4\xfb\x86\xe9\xec\xb5J_\xb7#"
-        )
+    def IsEmpty(self, index: int) -> bool:
+        return hashlib.sha1(self.GetPicture(index).tobytes()).digest() == self._EMPTY_IMAGE_SHA1
 
-    def IsDeleted(self, index):
-        index = self.ORDER[index]
-        return index in self.IMAGES_DELETED
+    def IsDeleted(self, index: int) -> bool:
+        return self.ORDER[index] in self.IMAGES_DELETED
 
-    def ConvertPicture(self, buffer, lastseen=False):
+    def ConvertPicture(self, buffer: bytes | bytearray | memoryview, lastseen: bool = False) -> Image.Image:
         tile_width = 16
-        tile_height = 14 if not lastseen else 16
+        tile_height = 16 if lastseen else 14
+        required_size = tile_width * tile_height * 16
+        if len(buffer) < required_size:
+            msg = f"Camera image data is too short: expected at least {required_size} bytes"
+            raise ValueError(msg)
 
-        img = Image.new(mode="P", size=(128, 112 if not lastseen else 128))
-        img.putpalette(self.PALETTE)
-        pixels = img.load()
-        for h in range(tile_height):
-            for w in range(tile_width):
-                tile_pos = 16 * ((h * tile_width) + w)
-                tile = buffer[tile_pos : tile_pos + 16]
-                for i in range(8):
-                    for j in range(8):
-                        hi = (tile[i * 2] >> (7 - j)) & 1
-                        lo = (tile[i * 2 + 1] >> (7 - j)) & 1
-                        pixels[(w * 8) + j, (h * 8) + i] = lo << 1 | hi
+        image_height = 128 if lastseen else 112
+        image = Image.new(mode="P", size=(128, image_height))
+        image.putpalette(self.PALETTE)
+        pixels = image.load()
+        if pixels is None:
+            msg = "Pillow could not allocate the camera image buffer"
+            raise RuntimeError(msg)
+        for tile_y in range(tile_height):
+            for tile_x in range(tile_width):
+                tile_position = 16 * ((tile_y * tile_width) + tile_x)
+                tile = buffer[tile_position : tile_position + 16]
+                for pixel_y in range(8):
+                    for pixel_x in range(8):
+                        high_bit = (tile[pixel_y * 2] >> (7 - pixel_x)) & 1
+                        low_bit = (tile[pixel_y * 2 + 1] >> (7 - pixel_x)) & 1
+                        pixels[(tile_x * 8) + pixel_x, (tile_y * 8) + pixel_y] = (low_bit << 1) | high_bit
 
-        return img.crop((0, 0, 128, 112 if not lastseen else 123))
+        return image.crop((0, 0, 128, 123 if lastseen else 112))
 
-    def ExtractGameFace(self):
+    def ExtractGameFace(self) -> Image.Image:
+        data = self._loaded_data()
         offset = 0x11FC
-        imgbuffer = self.DATA[offset : offset + 0x1000]
-        return self.ConvertPicture(imgbuffer)
+        return self.ConvertPicture(data[offset : offset + 0x1000])
 
-    def ExtractLastSeen(self):
-        offset = 0
-        imgbuffer = self.DATA[offset : offset + 0x1000]
-        return self.ConvertPicture(imgbuffer, lastseen=True)
+    def ExtractLastSeen(self) -> Image.Image:
+        data = self._loaded_data()
+        return self.ConvertPicture(data[:0x1000], lastseen=True)
 
-    def ExtractPicture(self, index):
-        if index < 30:
-            index = self.ORDER[index]
-            offset = 0x2000 + (index * 0x1000)
-        elif index == 30:
-            offset = 0x11FC
-        else:
-            offset = 0
-        imgbuffer = self.DATA[offset : offset + 0x1000]
-        return self.ConvertPicture(imgbuffer)
+    def ExtractPicture(self, index: int) -> Image.Image:
+        if not 0 <= index < self.IMAGE_COUNT:
+            raise IndexError(index)
+        if index == self.GAME_FACE_INDEX:
+            return self.ExtractGameFace()
+        if index == self.LAST_SEEN_INDEX:
+            return self.ExtractLastSeen()
 
-    def ExportPicture(self, index, path, scale=1.0, frame=False):
+        data = self._loaded_data()
+        slot = self.ORDER[index]
+        offset = 0x2000 + (slot * 0x1000)
+        return self.ConvertPicture(data[offset : offset + 0x1000])
+
+    def ExportPicture(
+        self,
+        index: int,
+        path: str | PathLike[str],
+        scale: float = 1.0,
+        frame: FrameData = False,
+    ) -> None:
         pnginfo = PngInfo()
         pnginfo.add_text("Software", AppInfo.NAME)
         pnginfo.add_text("Creation Time", email.utils.formatdate())
 
-        if index == 30:
-            pic = self.GetPicture(30)
+        picture = self.GetPicture(index)
+        if index == self.GAME_FACE_INDEX:
             pnginfo.add_text("Title", "Game Face")
-        elif index == 31:
-            pic = self.GetPicture(31)
+        elif index == self.LAST_SEEN_INDEX:
             pnginfo.add_text("Title", "Last Seen Image")
         else:
-            pic = self.GetPicture(index)
             pnginfo.add_text("Title", f"Photo {index + 1:02d}")
 
-        if frame is not False:
-            frame = Image.open(io.BytesIO(frame)).convert("RGB")
-            if frame.width >= 160 and frame.height >= 144:
-                left = math.floor(frame.width / 2) - 64
-                top = math.floor(frame.height / 2) - 56
-                frame.paste(pic, (left, top))
-                pic = frame
+        if frame is not False and frame is not None:
+            with Image.open(io.BytesIO(bytes(frame))) as frame_image:
+                framed_picture = frame_image.convert("RGB")
+            if framed_picture.width >= 160 and framed_picture.height >= 144:
+                left = math.floor(framed_picture.width / 2) - 64
+                top = math.floor(framed_picture.height / 2) - 56
+                framed_picture.paste(picture, (left, top))
+                picture = framed_picture
 
-        pic = pic.resize((pic.width * scale, pic.height * scale), Image.Resampling.NEAREST)
+        scale_value = float(scale)
+        if not math.isfinite(scale_value) or scale_value <= 0:
+            msg = "Picture scale must be a positive finite number"
+            raise ValueError(msg)
+        output_size = (round(picture.width * scale_value), round(picture.height * scale_value))
+        if min(output_size) < 1:
+            msg = "Picture scale is too small to produce an image"
+            raise ValueError(msg)
+        picture = picture.resize(output_size, Image.Resampling.NEAREST)
 
-        ext = Path(path).suffix
-        if ext == "" or ext.lower() == ".png":
-            outpic = pic
-            outpic.save(path, pnginfo=pnginfo)
-        elif ext.lower() == ".gif":
-            outpic = pic
-            outpic.save(path)
-        elif ext.lower() in (".jpg", ".jpeg"):
-            outpic = pic.convert("RGB")
-            outpic.save(path, quality=100, subsampling=0)
+        output_path = Path(path)
+        extension = output_path.suffix.lower()
+        if extension in ("", ".png"):
+            picture.save(output_path, format="PNG", pnginfo=pnginfo)
+        elif extension == ".gif":
+            picture.save(output_path)
+        elif extension in (".jpg", ".jpeg"):
+            picture.convert("RGB").save(output_path, quality=100, subsampling=0)
         else:
-            outpic = pic.convert("RGB")
-            outpic.save(path)
+            picture.convert("RGB").save(output_path)
+
+    def _loaded_data(self) -> bytes:
+        if self.DATA is None:
+            msg = "No Game Boy Camera save data is loaded"
+            raise RuntimeError(msg)
+        return self.DATA
