@@ -2814,8 +2814,7 @@ class FlashGBX_CLI:
             if ret == 3:
                 print(__("Please re-install the application."))
                 return False
-            else:
-                return False
+            return False
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)

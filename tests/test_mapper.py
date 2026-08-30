@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-import FlashGBX.Mapper as mapper_module
+import FlashGBX.Mapper as mapper_module  # noqa: N813
 from FlashGBX.Mapper import (
     AGB_GPIO,
     BCD,

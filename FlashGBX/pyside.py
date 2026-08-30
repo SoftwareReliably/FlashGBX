@@ -329,7 +329,7 @@ if _IS_WINDOWS:
 _QT_DBUS: Any = None
 if _IS_LINUX:
     with contextlib.suppress(ImportError):
-        from PySide6 import QtDBus as _QT_DBUS
+        from PySide6 import QtDBus as _QT_DBUS  # noqa: N814
 
 
 def _application_desktop_file() -> str:
@@ -471,11 +471,11 @@ def bitmap2pixmap(
     retain their intended logical size on high-DPI displays. ``False`` is
     returned when Pillow or Qt cannot perform the conversion.
     """
-    try:
-        if scale_factor <= 0:
-            msg = "scale_factor must be greater than zero"
-            raise ValueError(msg)
+    if scale_factor <= 0:
+        msg = "scale_factor must be greater than zero"
+        raise ValueError(msg)
 
+    try:
         from PIL import Image
         from PIL.ImageQt import ImageQt
 

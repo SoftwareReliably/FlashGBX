@@ -15,7 +15,8 @@ def prevent_real_hardware(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def unexpected_serial_access(*args: Any, **kwargs: Any) -> None:
         del args, kwargs
-        raise AssertionError("A test tried to open real serial hardware; inject MockSerial instead")
+        msg = "A test tried to open real serial hardware; inject MockSerial instead"
+        raise AssertionError(msg)
 
     monkeypatch.setattr(serial, "Serial", unexpected_serial_access)
     monkeypatch.setattr(serial.tools.list_ports, "comports", list)
