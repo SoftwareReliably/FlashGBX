@@ -53,3 +53,31 @@ def pokemon_red_header() -> bytearray:
     global_checksum = sum(header) & 0xFFFF
     header[0x14E:0x150] = global_checksum.to_bytes(2, byteorder="big")
     return header
+
+
+@pytest.fixture
+def game_boy_camera_header(pokemon_red_header: bytearray) -> bytearray:
+    """Return generated metadata matching the attached USA/EUR Pocket Camera.
+
+    Only public cartridge-header fields are retained from the hardware probe;
+    no ROM payload or camera save/photo data is part of this fixture.
+    """
+    header = bytearray(pokemon_red_header)
+    header[0x134:0x144] = b"GAMEBOYCAMERA".ljust(16, b"\x00")
+    header[0x144:0x146] = b"01"  # Nintendo new licensee code
+    header[0x146] = 0x03  # Super Game Boy enhanced
+    header[0x147] = 0xFC  # MAC-GBD + SRAM + battery
+    header[0x148] = 0x05  # 1 MiB ROM
+    header[0x149] = 0x04  # Camera's banked SRAM declaration
+    header[0x14A] = 0x01  # Non-Japanese destination
+    header[0x14B] = 0x33  # Use the new licensee code
+    header[0x14C] = 0x00
+
+    checksum = 0
+    for value in header[0x134:0x14D]:
+        checksum = (checksum - value - 1) & 0xFF
+    header[0x14D] = checksum
+    # Preserve the checksum declared by the observed cartridge. It describes
+    # the full ROM, so it intentionally cannot validate against this header-only fixture.
+    header[0x14E:0x150] = bytes.fromhex("BAF9")
+    return header

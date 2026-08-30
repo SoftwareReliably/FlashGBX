@@ -21,7 +21,7 @@ from FlashGBX.hw_GBxCartRW import (
     _parse_intel_hex,
 )
 
-from .fakes import EchoSerial, MockSerial
+from .fakes import EchoSerial, MockCameraCartridge, MockSerial
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -688,6 +688,61 @@ def test_read_header_identifies_synthetic_pokemon_red_without_hardware(
     device.ReadROM.assert_called_once_with(0, 0x180)
     device._write.assert_any_call(device.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
     device._write.assert_any_call(device.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=True)
+
+
+def test_read_header_collects_camera_calibration_without_hardware(
+    game_boy_camera_header: bytearray,
+) -> None:
+    # Captured through a read-only probe of an attached USA/EUR Pocket Camera.
+    calibration = bytes.fromhex("7E7D7D7E7C7A7C7A7A777368BB39")
+    cartridge = MockCameraCartridge(game_boy_camera_header, calibration)
+    device = GbxDevice()
+    device.DEVICE = MockSerial()  # type: ignore[assignment]
+    device.FW = modern_firmware()
+    device.MODE = "DMG"
+    device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
+    device._write = Mock(return_value=1)  # type: ignore[method-assign]
+    device._set_fw_variable = Mock()  # type: ignore[method-assign]
+    device.ReadROM = Mock(side_effect=cartridge.read_rom)  # type: ignore[method-assign]
+    device.ReadRAM = Mock(side_effect=cartridge.read_ram)  # type: ignore[method-assign]
+    device._cart_write = Mock(side_effect=cartridge.write_mapper)  # type: ignore[method-assign]
+
+    header = device.ReadHeader(checkRtc=False)
+
+    assert header["game_title"] == "GAMEBOYCAMERA"
+    assert header["mapper_raw"] == 0xFC
+    assert header["mapper"] == "MAC-GBD+SRAM+BATTERY"
+    assert header["rom_size_raw"] == 0x05
+    assert header["ram_size_raw"] == 0x04
+    assert header["header_checksum_correct"] is True
+    assert header["rom_checksum"] == 0xBAF9
+    assert header["rom_checksum_correct"] is False
+    assert header["gbcamera_calibration1"] == calibration
+    assert header["gbcamera_calibration2"] == calibration
+    assert cartridge.rom_reads == [(0, 0x180)]
+    assert cartridge.ram_reads == [(0xFF2, 0xE), (0x1FF2, 0xE)]
+    assert cartridge.mapper_writes == [(0x0000, 0x0A), (0x4000, 2), (0x4000, 8), (0x0000, 0x00)]
+
+
+def test_read_header_ignores_uninitialized_camera_calibration(
+    game_boy_camera_header: bytearray,
+) -> None:
+    cartridge = MockCameraCartridge(game_boy_camera_header, bytes([0xFF]) * 0xE)
+    device = GbxDevice()
+    device.DEVICE = MockSerial()  # type: ignore[assignment]
+    device.FW = modern_firmware()
+    device.MODE = "DMG"
+    device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
+    device._write = Mock(return_value=1)  # type: ignore[method-assign]
+    device._set_fw_variable = Mock()  # type: ignore[method-assign]
+    device.ReadROM = Mock(side_effect=cartridge.read_rom)  # type: ignore[method-assign]
+    device.ReadRAM = Mock(side_effect=cartridge.read_ram)  # type: ignore[method-assign]
+    device._cart_write = Mock(side_effect=cartridge.write_mapper)  # type: ignore[method-assign]
+
+    header = device.ReadHeader(checkRtc=False)
+
+    assert "gbcamera_calibration1" not in header
+    assert "gbcamera_calibration2" not in header
 
 
 def test_connection_guards_and_typed_read_helpers_reject_missing_data() -> None:

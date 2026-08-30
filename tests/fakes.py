@@ -8,6 +8,35 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
+class MockCameraCartridge:
+    """Read-only Pocket Camera model used behind mocked device methods."""
+
+    def __init__(self, header: bytes | bytearray, calibration: bytes) -> None:
+        self.header = bytearray(header)
+        self.calibration = bytearray(calibration)
+        self.rom_reads: list[tuple[int, int]] = []
+        self.ram_reads: list[tuple[int, int]] = []
+        self.mapper_writes: list[tuple[int, int]] = []
+
+    def read_rom(self, address: int, length: int) -> bytearray:
+        self.rom_reads.append((address, length))
+        if (address, length) != (0, 0x180):
+            msg = f"Unexpected mock camera ROM read: {address:#x}, {length:#x}"
+            raise AssertionError(msg)
+        return self.header[:]
+
+    def read_ram(self, address: int, length: int) -> bytearray:
+        self.ram_reads.append((address, length))
+        if address not in (0xFF2, 0x1FF2) or length != len(self.calibration):
+            msg = f"Unexpected mock camera RAM read: {address:#x}, {length:#x}"
+            raise AssertionError(msg)
+        return self.calibration[:]
+
+    def write_mapper(self, address: int, value: int, *_args: object, **_kwargs: object) -> int:
+        self.mapper_writes.append((address, value))
+        return 1
+
+
 class MockSerial:
     """Small pyserial stand-in with responses queued after each write.
 

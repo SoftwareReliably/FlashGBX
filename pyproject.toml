@@ -75,6 +75,7 @@ source = [
     "FlashGBX.InteractiveConsole",
     "FlashGBX.i18n",
     "FlashGBX.Mapper",
+    "FlashGBX.PocketCamera",
     "FlashGBX.Progress",
     "FlashGBX.RomFileAGB",
     "FlashGBX.RomFileDMG",

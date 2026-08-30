@@ -1607,7 +1607,7 @@ class LK_Device(ABC):
                     _mbc.EnableRAM(True)
                     _mbc.SelectBankRAM(2)
                     temp = self.ReadRAM(address=0xFF2, length=0xE)
-                    if temp != bytearray(temp[0] * len(temp)):
+                    if temp and temp != bytearray([temp[0]] * len(temp)):
                         data["gbcamera_calibration1"] = temp
                         dprint(
                             "Game Boy Camera calibration data 1:",
@@ -1615,7 +1615,7 @@ class LK_Device(ABC):
                         )
                     _mbc.SelectBankRAM(8)
                     temp = self.ReadRAM(address=0x1FF2, length=0xE)
-                    if temp != bytearray(temp[0] * len(temp)):
+                    if temp and temp != bytearray([temp[0]] * len(temp)):
                         data["gbcamera_calibration2"] = temp
                         dprint(
                             "Game Boy Camera calibration data 2:",
