@@ -2,6 +2,7 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 # pylint: disable=wildcard-import, unused-wildcard-import
+import contextlib
 import datetime
 import platform
 import struct
@@ -192,7 +193,7 @@ class GbxDevice(LK_Device):
             info = data[:8]
             keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
             values = struct.unpack(">cHBI", bytearray(info))
-            self.FW = dict(zip(keys, values))
+            self.FW = dict(zip(keys, values, strict=False))
             self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
             self.FW["fw_dt"] = (
                 datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
@@ -441,10 +442,8 @@ class FirmwareUpdater:
                 setProgress=percent,
             )
 
-        try:
+        with contextlib.suppress(OSError):
             f.close()
-        except OSError:
-            pass
 
         if b"Joey Jr. Firmware" not in buffer:
             hp = 5
