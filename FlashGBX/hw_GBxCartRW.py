@@ -458,7 +458,7 @@ class GbxDevice(LK_Device):
                 # Reset to bootloader support
                 firmware["bootloader_reset"] = self._read_byte() == 1
 
-            return True
+            return True  # noqa: TRY300
         except (OSError, SerialException, ConnectionError, UnicodeDecodeError) as exc:
             dprint("Disconnecting due to an error", exc, sep="\n")
             try:
@@ -1414,7 +1414,7 @@ try:
                 if path == "":
                     if archive_member is None:
                         msg_0 = "No bundled firmware file was selected"
-                        raise ValueError(msg_0)
+                        raise ValueError(msg_0)  # noqa: TRY301
                     with (
                         zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
                         archive.open(archive_member) as firmware_file,

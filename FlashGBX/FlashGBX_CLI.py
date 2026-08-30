@@ -1427,7 +1427,7 @@ class FlashGBX_CLI:
                     rom_size = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
                     if not isinstance(rom_size, int):
                         msg = "Invalid ROM size"
-                        raise TypeError(msg)
+                        raise TypeError(msg)  # noqa: TRY301
                 except TypeError:
                     print(
                         ANSI.YELLOW
@@ -2733,7 +2733,7 @@ class FlashGBX_CLI:
             if ret == 3:
                 print(__("Please re-install the application."))
                 return False
-            return False
+            return False  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)
@@ -2814,7 +2814,7 @@ class FlashGBX_CLI:
             if ret == 3:
                 print(__("Please re-install the application."))
                 return False
-            return False
+            return False  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)
@@ -2915,7 +2915,7 @@ class FlashGBX_CLI:
             if ret == 3:
                 print(__("Please re-install the application."))
                 return False
-            return False
+            return False  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)

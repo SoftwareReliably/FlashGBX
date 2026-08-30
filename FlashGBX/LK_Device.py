@@ -391,13 +391,13 @@ class LK_Device(ABC):
                     msg = (
                         f"Invalid firmware response (ping response was {response!s} instead of {(~challenge) & 0xFF!s})"
                     )
-                    raise ConnectionError(msg)
+                    raise ConnectionError(msg)  # noqa: TRY301
             else:
                 modes = self.GetSupprtedModes()
                 mode = self._get_fw_variable("CART_MODE")
                 if mode > len(modes):
                     msg_0 = f"Invalid firmware response (mode={mode - 1!s})"
-                    raise ConnectionError(msg_0)
+                    raise ConnectionError(msg_0)  # noqa: TRY301
         except Exception as e:
             if self.USER_ANSWER is not True:  # Called from CartPowerCycleOrAskReconnect()
                 print(
