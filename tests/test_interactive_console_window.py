@@ -30,7 +30,8 @@ class FakeFont:
 
 
 class FakeFontDatabase:
-    FixedFont = 1
+    SystemFont = SimpleNamespace(FixedFont=1)
+    FixedFont = SystemFont.FixedFont
 
     @staticmethod
     def systemFont(_font_type: object) -> FakeFont:
