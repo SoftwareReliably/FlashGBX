@@ -11,6 +11,7 @@ import os
 import platform
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -61,7 +62,7 @@ from .pyside import (
 )
 from .RomFileAGB import RomFileAGB
 from .RomFileDMG import RomFileDMG, from_isx
-from .UserInputDialog import UserInputDialog
+from .UserInputDialog import DialogArgs, UserInputDialog
 
 if TYPE_CHECKING:
     import argparse
@@ -156,6 +157,19 @@ def _format_device_initialization_error(error: Exception) -> str:
     message = __("The device could not be initialized. Reconnect it and try again.")
     details = str(error).strip()
     return f"{message}\n\n{details}" if details else message
+
+
+def _ignore_progress(_event: object) -> None:
+    """Discard progress events for the synchronous GUI stress test."""
+
+
+def _system_executable(name: str) -> str:
+    """Resolve a trusted system launcher to an absolute executable path."""
+    executable = shutil.which(name)
+    if executable is None:
+        message = f"System executable not found: {name}"
+        raise FileNotFoundError(message)
+    return executable
 
 
 class FlashGBX_GUI(QtWidgets.QMainWindow):
@@ -669,10 +683,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if platform.system() == "Windows":
             # Warm up fallback font rendering to prevent lag on first use later
-            l = QtGui.QTextLayout("⚠️")
-            l.beginLayout()
-            l.createLine()
-            l.endLayout()
+            text_layout = QtGui.QTextLayout("⚠️")
+            text_layout.beginLayout()
+            text_layout.createLine()
+            text_layout.endLayout()
 
         QtCore.QTimer.singleShot(
             1,
@@ -1583,7 +1597,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
     def OpenWebURL(self, url: str) -> None:
         try:
             if platform.system() == "Linux":
-                subprocess.Popen(["xdg-open", url], env=self.GetHostLauncherEnv())
+                subprocess.Popen(  # noqa: S603 - resolved system launcher; no shell
+                    [_system_executable("xdg-open"), url],
+                    env=self.GetHostLauncherEnv(),
+                )
             else:
                 webbrowser.open(url)
         except Exception:
@@ -1746,16 +1763,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if select_file and target_path.is_file():
                 abs_path = str(target_path)
                 if system == "Windows":
-                    subprocess.Popen(["explorer", "/select,", abs_path])
+                    subprocess.Popen(  # noqa: S603 - resolved system launcher; no shell
+                        [_system_executable("explorer"), "/select,", abs_path],
+                    )
                     return
                 if system == "Darwin":
-                    subprocess.Popen(["open", "-R", abs_path], env=env)
+                    subprocess.Popen(  # noqa: S603 - resolved system launcher; no shell
+                        [_system_executable("open"), "-R", abs_path],
+                        env=env,
+                    )
                     return
                 try:
                     file_uri = "file://" + urllib.parse.quote(abs_path)
-                    subprocess.check_call(
+                    subprocess.check_call(  # noqa: S603 - fixed system utility; no shell
                         [
-                            "dbus-send",
+                            _system_executable("dbus-send"),
                             "--session",
                             "--print-reply",
                             "--dest=org.freedesktop.FileManager1",
@@ -1769,17 +1791,24 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-                    return
                 except Exception:
                     target_path = target_path.parent
+                else:
+                    return
 
             path_uri = target_path.as_uri()
             if system == "Windows":
                 cast("Any", os).startfile(path_uri)
             elif system == "Darwin":
-                subprocess.Popen(["open", path_uri], env=env)
+                subprocess.Popen(  # noqa: S603 - resolved system launcher; no shell
+                    [_system_executable("open"), path_uri],
+                    env=env,
+                )
             else:
-                subprocess.Popen(["xdg-open", path_uri], env=env)
+                subprocess.Popen(  # noqa: S603 - resolved system launcher; no shell
+                    [_system_executable("xdg-open"), path_uri],
+                    env=env,
+                )
         except Exception:
             logger.exception("Failed to open path: {}", path)
             QtWidgets.QMessageBox.critical(
@@ -1796,7 +1825,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         ):
             return
 
-        device = False
+        device: Any = False
         try:
             device = self._device.GetFullNameExtended(more=True)
         except Exception:
@@ -1830,7 +1859,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         else:
             max_baud = 2000000
         try:
-            ret = dev.Initialize(self.FLASHCARTS, port=port, max_baud=max_baud)
+            flashcarts = cast("Mapping[str, Mapping[str, Any]]", self.FLASHCARTS)
+            ret = dev.Initialize(flashcarts, port=port, max_baud=max_baud)
         except Exception as exc:
             logger.exception("Failed to initialize the device on port {}", port)
             self.CONN = None
@@ -1852,7 +1882,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if isinstance(ret, list):
             for i in range(len(ret)):
                 status = ret[i][0]
-                text = ret[i][1]
+                text = str(ret[i][1])
                 if text in msg:
                     continue
                 if status == 0:
@@ -2087,7 +2117,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if self.CONN is None:
                 return False
 
-            modes = self._device.GetSupprtedModes()
+            modes = cast("Sequence[PlatformMode]", self._device.GetSupprtedModes())
             auto_mode = self._GetAutoPlatformMode(self.CONN, modes)
             if auto_mode == "DMG":
                 self.optDMG.setChecked(True)
@@ -2496,14 +2526,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     msgbox.exec()
 
             if msgbox.clickedButton() == button_dump_report:
-                if not (dump_report is not False and dumpinfo_file != "" and temp is True):
+                if dump_report is not False and dumpinfo_file:
                     try:
-                        with Path(dumpinfo_file).open("wb") as f:
-                            f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
-                            f.write(dump_report.encode("UTF-8"))
+                        if not temp:
+                            with Path(dumpinfo_file).open("wb") as f:
+                                f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
+                                f.write(dump_report.encode("UTF-8"))
+                        self.OpenPath(dumpinfo_file)
                     except Exception as e:
                         print(f"Error: {e!s:s}")
-                self.OpenPath(dumpinfo_file)
             elif msgbox.clickedButton() == button_open_dir:
                 self.OpenPath(self.STATUS["last_path"], select_file=True)
 
@@ -4161,7 +4192,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "cart_type": cart_type,
                 }
                 t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=None),
+                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                     args=[args],
                 )
                 t.start()
@@ -4185,7 +4216,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.lblStatus4a.setText(__("Testing ({pattern} 2/2)...", pattern=test_patterns_names[0]))
                 qt_app.processEvents()
                 t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=None),
+                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                     args=[args],
                 )
                 t.start()
@@ -4258,7 +4289,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         "cart_type": cart_type,
                     }
                     t = threading.Thread(
-                        target=lambda a: self._device.TransferData(args=a, signal=None),
+                        target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                         args=[args],
                     )
                     t.start()
@@ -4279,7 +4310,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         "cart_type": cart_type,
                     }
                     t = threading.Thread(
-                        target=lambda a: self._device.TransferData(args=a, signal=None),
+                        target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                         args=[args],
                     )
                     t.start()
@@ -4309,7 +4340,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "cart_type": cart_type,
                 }
                 t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=None),
+                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                     args=[args],
                 )
                 t.start()
@@ -4326,7 +4357,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "cart_type": cart_type,
                 }
                 t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=None),
+                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
                     args=[args],
                 )
                 t.start()
@@ -4595,8 +4626,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         bl_args = {}
         if loc_index is None:
             loc_index = 0
-            for l in locs:
-                if l + 0x40000 >= rom_size:
+            for location in locs:
+                if location + 0x40000 >= rom_size:
                     break
                 loc_index += 1
             if loc_index >= len(locs):
@@ -4618,7 +4649,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "loc",
                     "cmb_e",
                     __("Location:"),
-                    [f"0x{l:X}" for l in locs],
+                    [f"0x{location:X}" for location in locs],
                     loc_index,
                 ],
                 [
@@ -4645,10 +4676,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 ],
             )
 
-        dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+        dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             result = dlg.GetResult()
-            if result["loc"].currentText() not in [f"0x{l:X}" for l in locs]:
+            if result["loc"].currentText() not in [f"0x{location:X}" for location in locs]:
                 try:
                     bl_args["bl_offset"] = _parse_hex_address(result["loc"].currentText())
                 except ValueError:
@@ -4741,7 +4772,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         ],
                     ],
                 }
-                dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+                dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
                 if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
@@ -4807,7 +4838,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         ],
                     ],
                 }
-                dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+                dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
                 if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
@@ -4895,7 +4926,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         ],
                     ],
                 }
-                dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+                dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
                 if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     rtc_dict = {}
@@ -4997,7 +5028,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ],
                 ],
             }
-            dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+            dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
             if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 result = dlg.GetResult()
                 rtc_dict = {}
@@ -5247,18 +5278,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False
 
         if self._device.CheckROMStable() is False and resetStatus:
-            try:
-                if data != bytearray(data[0] * len(data)):
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        __("The cartridge connection is unstable!")
-                        + "\n"
-                        + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."),
-                        QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-            except Exception:
-                logger.exception("Failed to check whether the cartridge response is stable")
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("The cartridge connection is unstable!")
+                + "\n"
+                + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
 
         if self._device.GetMode() == "DMG":
             if self.cmbDMGHeaderMapperResult.count() == 0:
@@ -5711,16 +5738,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     logger.exception("Failed to select the detected save type")
 
             # Cart Type
+            mode = self._device.GetMode()
+            if mode not in ("DMG", "AGB"):
+                msgbox = _create_message_box(
+                    parent=self,
+                    icon=QtWidgets.QMessageBox.Icon.Critical,
+                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    text=__("An unknown error occured. Please try again."),
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                msgbox.exec()
+                self.LimitBaudRateGBxCartRW()
+                return
+
             try:
                 cart_type = None
                 msg_cart_type = ""
                 msg_cart_type_used = ""
-                if self._device.GetMode() == "DMG":
+                if mode == "DMG":
                     supp_cart_types = self._device.GetSupportedCartridgesDMG()
-                elif self._device.GetMode() == "AGB":
-                    supp_cart_types = self._device.GetSupportedCartridgesAGB()
                 else:
-                    raise NotImplementedError
+                    supp_cart_types = self._device.GetSupportedCartridgesAGB()
             except Exception as e:
                 msgbox = _create_message_box(
                     parent=self,
@@ -6496,8 +6534,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def SetProgressBars(
         self,
-        min: int = 0,
-        max: int = 100,
+        min: int = 0,  # noqa: A002 - retained as a stable keyword argument
+        max: int = 100,  # noqa: A002 - retained as a stable keyword argument
         value: int = 0,
         setPause: bool | None = None,
     ) -> None:
@@ -6533,7 +6571,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         ["dev_type", "cmb", __("Device Type:"), dev_types.keys(), 0],
                     ],
                 }
-                dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+                dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
                 if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                     result = dlg.GetResult()
                     FirmwareUpdater = list(dev_types.values())[result["dev_type"].currentIndex()][1]
@@ -6575,7 +6613,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self.SetMode()
             if self._device.GetMode() == "DMG":
                 header = self._device.ReadHeader()
-                if header["mapper_raw"] == 252:  # GBD
+                if header is not False and header["mapper_raw"] == 252:  # GBD
                     args = {
                         "path": None,
                         "mbc": 252,
