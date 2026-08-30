@@ -1,6 +1,8 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from __future__ import annotations
+
 import argparse
 import copy
 import datetime
@@ -13,7 +15,9 @@ import time
 import traceback
 import zipfile
 import zlib
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from .app import HW_DEVICES, AppContext, AppInfo
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
@@ -23,7 +27,36 @@ from .IniSettings import IniSettings
 from .Logging import ANSI, logger
 from .PocketCamera import PocketCamera
 
-STATIC_ACTIONS = [
+if TYPE_CHECKING:
+    from .Flashcart import FlashcartMap
+
+ConfigVersion = str | Literal[False] | None
+ConfigMessage = list[int | str]
+FlashcartProfile = dict[str, Any]
+PlatformMode = Literal["DMG", "AGB"]
+
+
+class BaseArgs(TypedDict):
+    app_path: str
+    config_path: str
+    argparsed: argparse.Namespace
+
+
+class ConfigLoadResult(TypedDict):
+    flashcarts: FlashcartMap
+    config_ret: list[ConfigMessage]
+
+
+class StartupArgs(BaseArgs, ConfigLoadResult):
+    pass
+
+
+class ConfigPaths(TypedDict):
+    subdir: str
+    appdata: str
+
+
+STATIC_ACTIONS: list[str] = [
     "info",
     "backup-rom",
     "flash-rom",
@@ -34,25 +67,89 @@ STATIC_ACTIONS = [
     "interactive",
     "debug-test-save",
 ]
-FWUPDATE_ACTIONS = []
-for _d in HW_DEVICES:
+
+
+def _get_firmware_update_actions() -> list[str]:
+    actions: list[str] = []
+    for hardware_module in HW_DEVICES:
+        try:
+            device = hardware_module.GbxDevice()
+            if device.SupportsFirmwareUpdates():
+                action = device.FirmwareUpdateAction()
+                if isinstance(action, str):
+                    actions.append(action)
+        except Exception as exc:
+            logger.exception("Failed to inspect a hardware backend for firmware-update support: {}", exc)
+    return actions
+
+
+def _parse_macos_version(version: str) -> tuple[int, ...]:
     try:
-        _dev = _d.GbxDevice()
-        if _dev.SupportsFirmwareUpdates():
-            _action = _dev.FirmwareUpdateAction()
-            if _action is not None:
-                FWUPDATE_ACTIONS.append(_action)
-    except Exception as e:
-        logger.exception(f"Failed to inspect a hardware backend for firmware-update support: {e}")
+        parsed = tuple(int(part) for part in version.split("."))
+    except ValueError:
+        return (0, 0)
+    return parsed or (0, 0)
+
+
+def _enable_windows_ansi() -> None:
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
+        output_handle = kernel32.GetStdHandle(-11)
+        console_mode = ctypes.c_uint()
+        if output_handle not in (0, -1) and kernel32.GetConsoleMode(output_handle, ctypes.byref(console_mode)):
+            kernel32.SetConsoleMode(output_handle, console_mode.value | 0x0004)
+    except (AttributeError, OSError):
+        logger.exception("Failed to enable Windows virtual-terminal output")
+
+
+def _configure_platform_environment(system: str | None = None) -> None:
+    current_system = platform.system() if system is None else system
+    if current_system == "Windows":
+        _enable_windows_ansi()
+    elif current_system == "Darwin" and _parse_macos_version(platform.mac_ver()[0]) < (12, 0):
+        os.environ["QT_MAC_WANTS_LAYER"] = "1"
+
+
+def _backup_path(path: Path) -> Path:
+    timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
+    return path.with_name(f"{path.name}_{timestamp}.bak")
+
+
+def _archive_destination(config_path: Path, member_name: str) -> Path | None:
+    destination = (config_path / member_name).resolve()
+    try:
+        destination.relative_to(config_path.resolve())
+    except ValueError:
+        return None
+    return destination
+
+
+def _flashcart_profile(raw_profile: object) -> tuple[PlatformMode, list[str], FlashcartProfile] | None:
+    if not isinstance(raw_profile, Mapping):
+        return None
+    cart_type = raw_profile.get("type")
+    raw_names = raw_profile.get("names")
+    if cart_type not in ("DMG", "AGB") or not isinstance(raw_names, list):
+        return None
+    names = [name for name in raw_names if isinstance(name, str) and name]
+    if not names:
+        return None
+    return cast("PlatformMode", cart_type), names, copy.deepcopy(dict(raw_profile))
+
+
+FWUPDATE_ACTIONS = _get_firmware_update_actions()
 ALL_ACTIONS = STATIC_ACTIONS + FWUPDATE_ACTIONS
 
 
-def ReadConfigFiles(args):
-    reset = args["argparsed"].reset
+def ReadConfigFiles(args: BaseArgs) -> tuple[ConfigVersion, list[Path]]:
+    reset = bool(args["argparsed"].reset)
     config_path = Path(args["config_path"])
     settings_path = config_path / "settings.ini"
     settings = IniSettings(path=settings_path)
-    config_version = settings.value("ConfigVersion")
+    raw_config_version = settings.value("ConfigVersion")
+    config_version: ConfigVersion = raw_config_version if isinstance(raw_config_version, str) else None
     config_path.mkdir(parents=True, exist_ok=True)
     fc_files = list(config_path.glob("fc_*.txt"))
     if config_version is not None and len(fc_files) == 0:
@@ -63,11 +160,8 @@ def ReadConfigFiles(args):
             ),
         )
         settings.clear()
-        settings_path.rename(
-            settings_path.with_name(
-                settings_path.name + "_" + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S") + ".bak",
-            ),
-        )
+        settings_path.rename(_backup_path(settings_path))
+        settings = IniSettings(path=settings_path)
         config_version = False  # extracts the config.zip again
     elif reset:
         settings.clear()
@@ -76,17 +170,17 @@ def ReadConfigFiles(args):
     if config_version != AppInfo.VERSION:
         settings.setValue("UpdateCheck", None, quiet=True)
     settings.setValue("ConfigVersion", AppInfo.VERSION, quiet=True)
-    return (config_version, fc_files)
+    return config_version, fc_files
 
 
-def LoadConfig(args):
+def LoadConfig(args: BaseArgs) -> ConfigLoadResult:
     app_path = Path(args["app_path"])
     config_path = Path(args["config_path"])
-    ret = []
+    ret: list[ConfigMessage] = []
     flashcarts = empty_flashcarts_map()
 
     # Settings and Config
-    (config_version, fc_files) = ReadConfigFiles(args=args)
+    config_version, fc_files = ReadConfigFiles(args=args)
     if config_version != AppInfo.VERSION:
         # Rename old files that have since been replaced/renamed/merged
         deprecated_files = [
@@ -118,43 +212,31 @@ def LoadConfig(args):
         for file in deprecated_files:
             deprecated_path = config_path / file
             if deprecated_path.exists():
-                deprecated_path.rename(
-                    deprecated_path.with_name(
-                        deprecated_path.name
-                        + "_"
-                        + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
-                        + ".bak",
-                    ),
-                )
+                deprecated_path.rename(_backup_path(deprecated_path))
 
-        rf_list = ""
+        replaced_files: list[str] = []
         config_zip_path = app_path / "res" / "config.zip"
         if config_zip_path.exists():
             try:
                 with zipfile.ZipFile(config_zip_path) as zips:
                     for zfile in zips.namelist():
-                        extracted_path = config_path / zfile
+                        extracted_path = _archive_destination(config_path, zfile)
+                        if extracted_path is None:
+                            ret.append([2, f"The configuration archive contains an unsafe path: {zfile}"])
+                            continue
                         if extracted_path.exists():
                             zfile_crc = zips.getinfo(zfile).CRC
-                            with extracted_path.open("rb") as ofile:
-                                buffer = ofile.read()
+                            buffer = extracted_path.read_bytes()
                             ofile_crc = zlib.crc32(buffer) & 0xFFFFFFFF
                             if zfile_crc == ofile_crc:
                                 continue
-                            extracted_path.rename(
-                                extracted_path.with_name(
-                                    extracted_path.name
-                                    + "_"
-                                    + datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d%H%M%S")
-                                    + ".bak",
-                                ),
-                            )
-                            rf_list += zfile + "\n"
+                            extracted_path.rename(_backup_path(extracted_path))
+                            replaced_files.append(zfile)
                         zips.extract(zfile, config_path)
             except zipfile.BadZipFile:
                 print(__("Warning: config.zip is corrupted and could not be read."))
 
-            if rf_list != "":
+            if replaced_files:
                 ret.append(
                     [
                         1,
@@ -164,7 +246,7 @@ def LoadConfig(args):
                         + "\n\n"
                         + __("Updated files:")
                         + "\n"
-                        + rf_list[:-1],
+                        + "\n".join(replaced_files),
                     ],
                 )
             fc_files = list(config_path.glob("fc_*.txt"))
@@ -180,31 +262,35 @@ def LoadConfig(args):
     for file in fc_files:
         file_path = Path(file)
         if file_path.exists():
-            with file_path.open(encoding="utf-8") as f:
-                data = f.read()
+            try:
+                data = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                ret.append([2, f"The flashchip type file “{file_path.name}” could not be read.\n\nError: {exc}"])
+                continue
+            else:
                 specs_int = re.sub(
-                    "(0x[0-9A-F]+)",
+                    r"(0x[0-9A-Fa-f]+)",
                     lambda m: str(int(m.group(1), 16)),
                     data,
                 )  # hex numbers to int numbers, otherwise not valid json
                 try:
-                    specs = json.loads(specs_int)
-                except Exception as e:
+                    raw_specs: object = json.loads(specs_int)
+                except (json.JSONDecodeError, ValueError) as exc:
                     ret.append(
                         [
                             2,
-                            f"The flashchip type file “{file_path.name:s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {e}",
+                            f"The flashchip type file “{file_path.name:s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {exc}",
                         ],
                     )
                     continue
-                if "names" not in specs:
+                profile_data = _flashcart_profile(raw_specs)
+                if profile_data is None:
                     continue
-                for name in specs["names"]:
-                    if specs["type"] not in flashcarts:
-                        continue  # only DMG and AGB are supported right now
+                cart_type, names, specs = profile_data
+                for name in names:
                     temp = copy.deepcopy(specs)
                     temp["names"] = [name]
-                    flashcarts[specs["type"]][name] = temp
+                    flashcarts[cart_type][name] = temp
 
     return {"flashcarts": flashcarts, "config_ret": ret}
 
@@ -213,20 +299,8 @@ class ArgParseCustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.R
     pass
 
 
-def main(portableMode=False):
-    if platform.system() == "Windows":
-        os.system("color")
-    elif platform.system() == "Darwin":
-        macos_version = tuple(map(int, platform.mac_ver()[0].split(".")))
-        try:
-            macos_version = tuple(map(int, platform.mac_ver()[0].split(".")))
-        except ValueError, IndexError:
-            macos_version = (0, 0)
-
-        # macOS above Big Sur don't need a compat layer fix in the environment
-        if macos_version < (12, 0):
-            os.environ["QT_MAC_WANTS_LAYER"] = "1"
-
+def main(portableMode: bool = False) -> int | None:
+    _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
 
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -235,9 +309,9 @@ def main(portableMode=False):
         app_path = str(Path(__file__).resolve().parent)
 
     try:
-        from PySide6 import QtCore
+        from PySide6 import QtCore  # pyright: ignore[reportMissingImports]
 
-        cp = {
+        cp: ConfigPaths = {
             "subdir": str(Path(app_path) / "config"),
             "appdata": str(
                 Path(
@@ -257,8 +331,8 @@ def main(portableMode=False):
 
     cfgdir_default = "subdir" if portableMode else "appdata"
 
-    config_path = None
-    language_choice = None
+    config_path: str | None = None
+    language_choice: str | None = None
     for i, arg in enumerate(sys.argv):
         if arg == "--cfgdir" and i + 1 < len(sys.argv):
             cfgdir_choice = sys.argv[i + 1].lower()
@@ -567,33 +641,35 @@ def main(portableMode=False):
         action="store_true",
         help=c__("Command Line Help", "wait for key press after the program has ended"),
     )
-    args = None
     try:
-        args, _ = parser.parse_known_args()
+        parsed_args, _ = parser.parse_known_args()
     except SystemExit:
-        if args is None or "--help" in sys.argv:
-            input("\n\n" + __("Press ENTER to exit.") + "\n")
-            return 0
+        input("\n\n" + __("Press ENTER to exit.") + "\n")
+        return 0
 
-    if "appdata" in cp and hasattr(args, "cfgdir"):
-        parsed_config_path = cp[args.cfgdir]
-        if parsed_config_path != config_path:
-            config_path = parsed_config_path
+    parsed_cfgdir = getattr(parsed_args, "cfgdir", None)
+    if parsed_cfgdir == "appdata":
+        parsed_config_path = cp["appdata"]
+    elif parsed_cfgdir == "subdir":
+        parsed_config_path = cp["subdir"]
+    else:
+        parsed_config_path = config_path
+    if parsed_config_path is not None and parsed_config_path != config_path:
+        config_path = parsed_config_path
 
-    if args.mode is not None or args.action is not None:
-        args.cli = True
+    if parsed_args.mode is not None or parsed_args.action is not None:
+        parsed_args.cli = True
 
-    if args.debug:
+    if parsed_args.debug:
         AppContext.DEBUG = True
 
-    args = {"app_path": app_path, "config_path": config_path, "argparsed": args}
+    base_args: BaseArgs = {"app_path": app_path, "config_path": config_path, "argparsed": parsed_args}
     while True:
         try:
             config_dir = Path(config_path)
-            config_dir.mkdir(exist_ok=True)
+            config_dir.mkdir(parents=True, exist_ok=True)
             tf = config_dir / "settings.ini"
-            with tf.open("ab"):
-                pass
+            tf.touch(exist_ok=True)
             break
         except PermissionError:
             print(
@@ -605,7 +681,7 @@ def main(portableMode=False):
                 )
                 + ANSI.RESET,
             )
-            if "appdata" in cp and args["argparsed"].cfgdir == "subdir":
+            if "appdata" in cp and parsed_args.cfgdir == "subdir":
                 answer = (
                     input(
                         __(
@@ -620,23 +696,24 @@ def main(portableMode=False):
                 if answer != "y":
                     return None
                 config_path = cp["appdata"]
-                args["config_path"] = config_path
+                base_args["config_path"] = config_path
                 continue
             input("")
-            if args["argparsed"].wait:
+            if parsed_args.wait:
                 input("\n\n" + __("Press ENTER to exit.") + "\n")
             return None
 
-    args.update(LoadConfig(args))
+    loaded_config = LoadConfig(base_args)
+    startup_args: StartupArgs = {**base_args, **loaded_config}
 
-    app = None
-    exc = None
+    app: Any = None
+    exc: str | None = None
     retval = -1
-    if not args["argparsed"].cli:
+    if not parsed_args.cli:
         try:
             from . import FlashGBX_GUI
 
-            app = FlashGBX_GUI.FlashGBX_GUI(args)
+            app = FlashGBX_GUI.FlashGBX_GUI(startup_args)
         except ModuleNotFoundError:
             exc = traceback.format_exc()
             app = None
@@ -648,25 +725,26 @@ def main(portableMode=False):
         if app is None:
             from . import FlashGBX_CLI
 
-            if args["argparsed"].action is None:
+            if parsed_args.action is None:
                 parser.print_help()
                 print(
-                    "\n\n{:s}"
+                    f"\n\n{ANSI.RED}"
                     + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.")
                     + "\n      "
                     + __("Optional command line switches are explained above.")
-                    + f"{ANSI.RED:s}\n",
+                    + f"{ANSI.RESET}\n",
                 )
                 if exc is not None:
                     print(ANSI.YELLOW + str(exc) + ANSI.RESET)
 
             print(__("Falling back to CLI mode.") + "\n")
-            app = FlashGBX_CLI.FlashGBX_CLI(args)
+            cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
+            app = FlashGBX_CLI.FlashGBX_CLI(cli_args)
             try:
                 retval = app.run()
             except KeyboardInterrupt:
                 print("\n\n" + __("Program stopped."))
-            if args["argparsed"].wait:
+            if parsed_args.wait:
                 input("\n" + __("Press ENTER to exit.") + "\n")
             sys.exit(retval)
 
@@ -676,12 +754,13 @@ def main(portableMode=False):
         from . import FlashGBX_CLI
 
         print("\n" + __("Now running in CLI mode."))
-        app = FlashGBX_CLI.FlashGBX_CLI(args)
+        cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
+        app = FlashGBX_CLI.FlashGBX_CLI(cli_args)
         try:
             retval = app.run()
         except KeyboardInterrupt:
             print("\n\n" + __("Program stopped."))
-        if args["argparsed"].wait:
+        if parsed_args.wait:
             input("\n" + __("Press ENTER to exit.") + "\n")
         sys.exit(retval)
     return None
