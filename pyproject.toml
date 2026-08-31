@@ -154,7 +154,6 @@ ignore = [
     "N801", #invalid-class-name
     "ANN202", #missing-return-type-private-function
     "ANN206", #missing-return-type-class-method
-    "PLR0913", #too-many-arguments
     "ANN401", #any-type
 
 ]
