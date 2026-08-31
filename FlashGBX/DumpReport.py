@@ -38,7 +38,9 @@ class DumpReport:
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
         file_name = Path(di["file_name"]).name if di["file_name"] else ""
         file_size_bytes = di["file_size"]
-        file_size_str = f"{Formatter.file_size(file_size_bytes, space=' ', localized=False)} ({file_size_bytes:d} bytes)"
+        file_size_str = (
+            f"{Formatter.file_size(file_size_bytes, space=' ', localized=False)} ({file_size_bytes:d} bytes)"
+        )
         logo_str = "OK" if header["logo_correct"] else "Invalid"
 
         lines = ["= FlashGBX Dump Report ="]

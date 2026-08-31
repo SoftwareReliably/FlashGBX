@@ -764,7 +764,9 @@ class CFI:
                 temp = {0x02: "As shown", 0x03: "Reversed"}
                 info["tb_boot_sector_raw"] = buffer[pri_address + 0x1E]
                 try:
-                    info["tb_boot_sector"] = f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
+                    info["tb_boot_sector"] = (
+                        f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
+                    )
                 except Exception:
                     info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
 

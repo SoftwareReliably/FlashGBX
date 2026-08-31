@@ -316,7 +316,9 @@ def main(portableMode: bool = False) -> int | None:
             "appdata": str(
                 Path(
                     QtCore.QDir.toNativeSeparators(
-                        QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.StandardLocation.AppConfigLocation),
+                        QtCore.QStandardPaths.writableLocation(
+                            QtCore.QStandardPaths.StandardLocation.AppConfigLocation
+                        ),
                     ),
                 )
                 / "FlashGBX",

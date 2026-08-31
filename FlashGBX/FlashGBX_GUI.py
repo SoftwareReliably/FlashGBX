@@ -874,7 +874,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             new_col_w = max(natural_label_w, row_w - reserved - text_w)
             new_col_w = min(new_col_w, default_col_w)
             avail = max(row_w - new_col_w - reserved, 0)
-            elided = fm.elidedText(full_text, QtCore.Qt.TextElideMode.ElideRight, avail) if text_w > avail else full_text
+            elided = (
+                fm.elidedText(full_text, QtCore.Qt.TextElideMode.ElideRight, avail) if text_w > avail else full_text
+            )
 
         if label.minimumWidth() != new_col_w or label.maximumWidth() != new_col_w:
             label.setMinimumWidth(new_col_w)
@@ -960,7 +962,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnBackupRAM.setText(c__("Button (& = Keyboard Shortcut)", "Backup &Save Data"))
         self.btnFlashROM.setText(c__("Button (& = Keyboard Shortcut)", "&Write ROM"))
         self.btnRestoreRAM.setText(c__("Button (& = Keyboard Shortcut)", "Writ&e Save Data"))
-        self.mnuRestoreRAM.actions()[0].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Restore from save data file"))
+        self.mnuRestoreRAM.actions()[0].setText(
+            c__("Menu Item (& = Keyboard Shortcut)", "&Restore from save data file")
+        )
         self.mnuRestoreRAM.actions()[1].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Erase cartridge save data"))
         self.mnuRestoreRAM.actions()[3].setText(c__("Menu Item (& = Keyboard Shortcut)", "Run stress &test"))
 
@@ -1483,7 +1487,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 ret = requests.get(url, allow_redirects=True, timeout=1.5)
             except requests.exceptions.ConnectTimeout as e:
                 print(
-                    __("Error: Update check failed due to a connection timeout. Please check your internet connection."),
+                    __(
+                        "Error: Update check failed due to a connection timeout. Please check your internet connection."
+                    ),
                     e,
                     sep="\n",
                 )
@@ -1946,7 +1952,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cast("Any", self._device).SetTimeout(float(str(self.SETTINGS.value("SerialTimeout", default="1"))))
             self.optDMG.setAutoExclusive(False)
             self.optAGB.setAutoExclusive(False)
-            device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+            device_auto_switch_only = (
+                self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+            )
             if "DMG" in self._device.GetSupprtedModes():
                 self.optDMG.setEnabled(not device_auto_switch_only)
                 self.optDMG.setChecked(False)
@@ -2437,7 +2445,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                                     "You can also try to change the read mode in the options.",
                                 )
                             )
-                            if self._device.GetMode() == "DMG" and self.cmbDMGHeaderMapperResult.currentText() == "MBC1":
+                            if (
+                                self._device.GetMode() == "DMG"
+                                and self.cmbDMGHeaderMapperResult.currentText() == "MBC1"
+                            ):
                                 msg += "\n\n" + __(
                                     "If this is a “{gb_memory_cartridge}”, try the “{label}” option.",
                                     gb_memory_cartridge="GB-Memory Cartridge",
@@ -2509,7 +2520,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
                         msgbox.exec()
                 else:
-                    self.lblAGBHeaderROMChecksumResult.setText("0x{:06X}".format(self._device.INFO.get("file_crc32", 0)))
+                    self.lblAGBHeaderROMChecksumResult.setText(
+                        "0x{:06X}".format(self._device.INFO.get("file_crc32", 0))
+                    )
                     self.lblAGBHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
                     self.lblStatus4a.setText(__("Done!"))
                     msg = __(
@@ -3427,7 +3440,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             or (
                 self._device.GetMode() == "DMG"
-                and "Unlicensed Photo!" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+                and "Unlicensed Photo!"
+                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
             )
         ):
             if self._device.GetFWBuildDate() == "":  # Legacy Mode
@@ -3665,7 +3679,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             or (
                 mode == "DMG"
-                and "Unlicensed Photo!" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+                and "Unlicensed Photo!"
+                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
             )
         ):
             if self._device.GetFWBuildDate() == "":  # Legacy Mode
@@ -3995,7 +4010,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 c__("Button (& = Keyboard Shortcut)", "&Keep existing calibration data"),
                 QtWidgets.QMessageBox.ButtonRole.ActionRole,
             )
-            if "Unlicensed Photo!" not in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString():
+            if (
+                "Unlicensed Photo!"
+                not in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+            ):
                 button_reset = msgbox.addButton(
                     c__("Button (& = Keyboard Shortcut)", "&Force recalibration"),
                     QtWidgets.QMessageBox.ButtonRole.ActionRole,
@@ -4466,7 +4484,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if bl_args is False:
                     return
 
-                if mode == "DMG" and self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode():
+                if (
+                    mode == "DMG"
+                    and self._device.CanSetVoltageByAutoswitch()
+                    and not self._device.CanSetVoltageByCode()
+                ):
                     bl_carts = self._device.GetSupportedCartridgesDMG()[1]
                     bl_profile = bl_carts[cart_type]
                     if isinstance(bl_profile, dict) and (
@@ -4593,7 +4615,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             except KeyError, TypeError, ValueError:
                 detected = False
         if detected is False:
-            intro_msg = "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\n"
+            intro_msg = (
+                "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\n"
+            )
             intro_msg2 = "⚠️ The required parameters could not be auto-detected. Please enter the ROM location and size manually below. Note that wrong values can corrupt your game upon writing, so having a full ROM backup is recommended."
 
             if mode == "DMG":
@@ -5293,14 +5317,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.cmbDMGHeaderMapperResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
             if self.cmbDMGCartridgeTypeResult.count() == 0:
                 self.cmbDMGCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesDMG()[0])
-                self.cmbDMGCartridgeTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                self.cmbDMGCartridgeTypeResult.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
             if "flash_type" in data:
                 self.cmbDMGCartridgeTypeResult.setCurrentIndex(data["flash_type"])
             else:
                 self.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
             if self.cmbDMGHeaderROMSizeResult.count() == 0:
                 self.cmbDMGHeaderROMSizeResult.addItems(RomSizes().GetStringList(mode="DMG"))
-                self.cmbDMGHeaderROMSizeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                self.cmbDMGHeaderROMSizeResult.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
             if self.cmbDMGHeaderSaveTypeResult.count() == 0:
                 self.cmbDMGHeaderSaveTypeResult.addItems(DmgSaveTypes().GetStringList())
                 self.cmbDMGHeaderSaveTypeResult.setSizeAdjustPolicy(
@@ -5439,14 +5467,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if resetStatus:
                 self.cmbAGBCartridgeTypeResult.clear()
                 self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
-                self.cmbAGBCartridgeTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                self.cmbAGBCartridgeTypeResult.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
                 if "flash_type" in data:
                     self.cmbAGBCartridgeTypeResult.setCurrentIndex(data["flash_type"])
                 else:
                     self.cmbAGBCartridgeTypeResult.setCurrentIndex(0)
             if self.cmbAGBHeaderROMSizeResult.count() == 0:
                 self.cmbAGBHeaderROMSizeResult.addItems(RomSizes().GetStringList())
-                self.cmbAGBHeaderROMSizeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                self.cmbAGBHeaderROMSizeResult.setSizeAdjustPolicy(
+                    QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents
+                )
                 self.cmbAGBHeaderROMSizeResult.setCurrentIndex(self.cmbAGBHeaderROMSizeResult.count() - 1)
             if self.cmbAGBSaveTypeResult.count() == 0:
                 self.cmbAGBSaveTypeResult.addItems(AgbSaveTypes().GetStringList())
@@ -5995,7 +6027,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         ""
                         "- "
                         + __("Write Timestamp:")
-                        + " {timestamp:s}<br>".format(timestamp=header["gbmem_parsed"][0]["timestamp"].replace("\0", ""))
+                        + " {timestamp:s}<br>".format(
+                            timestamp=header["gbmem_parsed"][0]["timestamp"].replace("\0", "")
+                        )
                         + "- "
                         + __("Write Kiosk ID:")
                         + " {kiosk_id:s}<br>".format(kiosk_id=header["gbmem_parsed"][0]["kiosk_id"].replace("\0", ""))

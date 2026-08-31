@@ -2694,7 +2694,9 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                ports.extend([comport.device for comport in comports if comport.vid == 0x1A86 and comport.pid == 0x7523])
+                ports.extend(
+                    [comport.device for comport in comports if comport.vid == 0x1A86 and comport.pid == 0x7523]
+                )
                 if len(ports) == 0:
                     print(__("No devices found."))
                     return False

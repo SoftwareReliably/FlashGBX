@@ -26,7 +26,9 @@ class Formatter:
         if size < 1024 * 1024:
             val = cls.round2(size / 1024)
             precision = 0 if as_int else 1
-            return format_decimal(val, precision=precision, localized=localized) + _translate(" KiB").replace(" ", space)
+            return format_decimal(val, precision=precision, localized=localized) + _translate(" KiB").replace(
+                " ", space
+            )
         val = cls.round2(size / 1024 / 1024)
         precision = 0 if as_int else 2
         return format_decimal(val, precision=precision, localized=localized) + _translate(" MiB").replace(" ", space)

@@ -278,7 +278,11 @@ class RomFileDMG:
 
             # MMM01 (Mani 4 in 1)
             elif (
-                (data["mapper_raw"] == 0x11 and data["game_title"] == "BOUKENJIMA2 SET" and data["header_checksum"] == 0)
+                (
+                    data["mapper_raw"] == 0x11
+                    and data["game_title"] == "BOUKENJIMA2 SET"
+                    and data["header_checksum"] == 0
+                )
                 or (
                     data["mapper_raw"] == 0x11
                     and data["game_title"] == "BUBBLEBOBBLE SET"

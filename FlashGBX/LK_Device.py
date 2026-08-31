@@ -5026,7 +5026,9 @@ class LK_Device(ABC):
                                         )
                                         return False
                         if sector_address < 0x1FFE000:
-                            dprint(f"DACS: Writing to area 0x{0x1F00000 + pos:X}–0x{0x1F00000 + pos + buffer_len - 1:X}")
+                            dprint(
+                                f"DACS: Writing to area 0x{0x1F00000 + pos:X}–0x{0x1F00000 + pos + buffer_len - 1:X}"
+                            )
                             self.WriteROM(
                                 address=0x1F00000 + pos,
                                 buffer=buffer[buffer_offset : buffer_offset + buffer_len],
