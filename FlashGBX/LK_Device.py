@@ -2662,7 +2662,7 @@ class LK_Device(ABC):
 
         self.NO_PROG_UPDATE = npu
 
-    def WriteROM(
+    def WriteROM(  # noqa: PLR0913, PLR0917
         self,
         address: int,
         buffer: bytes | bytearray | memoryview,
@@ -3030,7 +3030,7 @@ class LK_Device(ABC):
         buffer2 = self.ReadROM(0x80, 0x40)
         return buffer1 == buffer2
 
-    def CompareCRC32(
+    def CompareCRC32(  # noqa: PLR0913, PLR0917
         self,
         buffer: bytes | bytearray | memoryview,
         offset: int,
