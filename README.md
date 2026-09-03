@@ -424,7 +424,7 @@ Run the pre-push checks manually with:
 uv run pre-commit run --all-files --hook-stage pre-push
 ```
 
-Run the branch-coverage report and enforce the current 64% floor with:
+Run the branch-coverage report and enforce the current 60% floor with:
 
 ```shell
 uv run pytest --cov

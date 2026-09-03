@@ -71,6 +71,8 @@ source = [
     "FlashGBX.DumpReport",
     "FlashGBX.CartridgeTypes",
     "FlashGBX.Flashcart",
+    "FlashGBX.FlashGBX_CLI",
+    "FlashGBX.FlashGBX_GUI",
     "FlashGBX.Formatter",
     "FlashGBX.GBMemory",
     "FlashGBX.IniSettings",
@@ -81,14 +83,16 @@ source = [
     "FlashGBX.PocketCamera",
     "FlashGBX.PocketCameraWindow",
     "FlashGBX.Progress",
+    "FlashGBX.pyside",
     "FlashGBX.RomFileAGB",
     "FlashGBX.RomFileDMG",
+    "FlashGBX.UserInputDialog",
     "FlashGBX.hw_GBxCartRW",
     "FlashGBX.app",
 ]
 
 [tool.coverage.report]
-fail_under = 35
+fail_under = 58
 show_missing = true
 skip_covered = true
 
@@ -153,7 +157,6 @@ ignore = [
     "S324", #hashlib-insecure-hash-function
     "N801", #invalid-class-name
     "ANN202", #missing-return-type-private-function
-    "ANN206", #missing-return-type-class-method
     "ANN401", #any-type
 
 ]
