@@ -18,10 +18,11 @@ class RomSizes:
         else:
             self._size = None
 
-    def __contains__(self, size):
+    def __contains__(self, size) -> bool:
+        """Return whether the size is a supported ROM size."""
         return size in self.ROM_SIZES
 
-    def GetString(self, size=None, index=None, localized=True):
+    def GetString(self, size=None, index=None, localized=True) -> str:
         if index is not None:
             if not (0 <= index < len(self.ROM_SIZES)):
                 return ""
@@ -67,28 +68,28 @@ class RomSizes:
             return [self.GetString(index=index) for index in range(len(self.ROM_SIZES))]
         return []
 
-    def GetNumberOfTypes(self, mode="AGB"):
+    def GetNumberOfTypes(self, mode="AGB") -> int:
         if mode == "DMG":
             return len(self.ROM_SIZES_DMG)
         return len(self.ROM_SIZES)
 
     @classmethod
-    def _SizeToCLIName(cls, size):
+    def _SizeToCLIName(cls, size) -> str:
         if size >= 1024 * 1024:
             return f"{size // (1024 * 1024)}mb"
         return f"{size // 1024}kb"
 
     @classmethod
-    def GetCLINames(cls, mode="AGB", include_auto=True):
-        sizes = cls.ROM_SIZES_DMG if mode == "DMG" else cls.ROM_SIZES
-        names = [cls._SizeToCLIName(s) for s in sizes]
+    def GetCLINames(cls, mode="AGB", include_auto=True) -> list[str]:
+        sizes: list[int] = cls.ROM_SIZES_DMG if mode == "DMG" else cls.ROM_SIZES
+        names: list[str] = [cls._SizeToCLIName(s) for s in sizes]
         return (["auto", *names]) if include_auto else names
 
     @classmethod
-    def GetSizeFromCLIName(cls, name, mode="AGB"):
+    def GetSizeFromCLIName(cls, name, mode="AGB") -> int | None:
         if name == "auto":
             return None
-        sizes = cls.ROM_SIZES_DMG if mode == "DMG" else cls.ROM_SIZES
+        sizes: list[int] = cls.ROM_SIZES_DMG if mode == "DMG" else cls.ROM_SIZES
         for s in sizes:
             if cls._SizeToCLIName(s) == name:
                 return s
@@ -136,10 +137,11 @@ class AgbSaveTypes:
         0xFFFF: ("Unlicensed 0xFFFF", 0x20000),
     }
 
-    def __init__(self, index=None):
+    def __init__(self, index=None) -> None:
         self._index = index
 
-    def __contains__(self, size):
+    def __contains__(self, size) -> bool:
+        """Return whether the given size is a supported save type."""
         return size in [s[0] for s in self.SAVE_TYPES]
 
     def GetName(self, index=None):
@@ -181,13 +183,13 @@ class AgbSaveTypes:
             return f"{name} ({bytes_val >> 10}{kib})"
         return f"{name} ({bytes_val}{bytes_label})"
 
-    def GetIndexFromSize(self, size):
+    def GetIndexFromSize(self, size) -> int | None:
         for idx, (bytes_val, _) in enumerate(self.SAVE_TYPES):
             if bytes_val == size:
                 return idx
         return None
 
-    def GetStringFromSaveLib(self, savelib_string, localized=True):
+    def GetStringFromSaveLib(self, savelib_string, localized=True) -> str:
         if not savelib_string or savelib_string == "N/A":
             return __("None") if localized else "None"
         if "SRAM_F_" in savelib_string:
@@ -207,30 +209,30 @@ class AgbSaveTypes:
     def GetStringList(self):
         return [self.GetString(index) for index in range(len(self.SAVE_TYPES))]
 
-    def GetNumberOfTypes(self):
+    def GetNumberOfTypes(self) -> int:
         return len(self.SAVE_TYPES)
 
-    def GetFlashChipName(self, chip_index):
+    def GetFlashChipName(self, chip_index) -> str:
         if not self.IsValidFlashChipIndex(chip_index):
             return "Unknown"
         return self.AGB_FLASH_SAVE_CHIPS[chip_index][0]
 
-    def GetFlashChipSize(self, chip_index):
+    def GetFlashChipSize(self, chip_index) -> int:
         if not self.IsValidFlashChipIndex(chip_index):
             return 0
         return self.AGB_FLASH_SAVE_CHIPS[chip_index][1]
 
-    def IsValidFlashChipIndex(self, chip_index):
+    def IsValidFlashChipIndex(self, chip_index) -> bool:
         return chip_index in self.AGB_FLASH_SAVE_CHIPS
 
     @classmethod
-    def GetCLINames(cls, include_auto=True):
+    def GetCLINames(cls, include_auto=True) -> list[str]:
         out = ["auto"] if include_auto else []
         out.extend(name for name in cls.CLI_NAMES if name is not None)
         return out
 
     @classmethod
-    def GetIndexFromCLIName(cls, name):
+    def GetIndexFromCLIName(cls, name) -> int | None:
         if name == "auto":
             return None
         if name in cls.CLI_NAMES:
@@ -338,19 +340,20 @@ class DmgSaveTypes:
     def GetStringList(self):
         return [self.GetString(index=index) for index in range(len(self.RAM_TYPES))]
 
-    def GetNumberOfTypes(self):
+    def GetNumberOfTypes(self) -> int:
         return len(self.RAM_TYPES)
 
-    def __contains__(self, item):
+    def __contains__(self, item) -> bool:
+        """Check if an MBC type is contained in this save types collection."""
         mbc = item.GetMbc() if isinstance(item, DmgSaveTypes) else item
         return self._FindByMbc(mbc) is not None
 
     @classmethod
-    def GetCLINames(cls, include_auto=True, include_batteryless=True):
+    def GetCLINames(cls, include_auto=True, include_batteryless=True) -> list[str]:
         # Names are listed in RAM_TYPES order so the CLI menu is stable.
-        out = ["auto"] if include_auto else []
+        out: list[str] = ["auto"] if include_auto else []
         for entry in cls.RAM_TYPES:
-            mbc = entry[0]
+            mbc: int = entry[0]
             if mbc == 0x205 and not include_batteryless:
                 continue
             name = cls.CLI_NAMES.get(mbc)
@@ -359,7 +362,7 @@ class DmgSaveTypes:
         return out
 
     @classmethod
-    def GetMbcFromCLIName(cls, name):
+    def GetMbcFromCLIName(cls, name) -> int | None:
         if name == "auto":
             return None
         for mbc, n in cls.CLI_NAMES.items():
