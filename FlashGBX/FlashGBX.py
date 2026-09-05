@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
-from .app import HW_DEVICES, AppContext, AppInfo
+from .app import GBXCART_RW_BAUD_RATES, HW_DEVICES, AppContext, AppInfo
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
 from .Flashcart import empty_flashcarts_map
 from .i18n import __, c__, init_language
@@ -624,7 +624,17 @@ def main(portableMode: bool = False) -> int | None:
         help=c__("Command Line Help", "override device port"),
         default=None,
     )
-    ap_cli2.add_argument(
+    baudrate_group = ap_cli2.add_mutually_exclusive_group()
+    baudrate_group.add_argument(
+        "--gbxcartrw-baudrate",
+        "--device-baudrate",
+        dest="gbxcartrw_baudrate",
+        choices=GBXCART_RW_BAUD_RATES,
+        type=int,
+        default=None,
+        help=c__("Command Line Help", "set the GBxCart RW baud rate"),
+    )
+    baudrate_group.add_argument(
         "--device-limit-baudrate",
         action="store_true",
         help=c__("Command Line Help", "limit connection to a slower baud rate"),

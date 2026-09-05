@@ -399,7 +399,10 @@ class FakeSettings:
         return self.values.get(key, default)
 
     def setValue(self, key: str, value: object) -> None:
-        self.values[key] = value
+        if value is None:
+            self.values.pop(key, None)
+        else:
+            self.values[key] = value
         self.writes.append((key, value))
 
     def clear(self) -> None:
@@ -409,6 +412,7 @@ class FakeSettings:
 class FakeDevice:
     """Mock the shared cartridge-reader protocol used by the GUI."""
 
+    DEVICE_ID = "gbxcartrw"
     DEVICE_NAME = "GBxCart RW"
 
     def __init__(self, mode: str = "DMG") -> None:
@@ -903,13 +907,14 @@ def test_device_settings_and_platform_firmware_switch(
     assert mode_calls == ["set"]
 
 
-def test_limit_baud_update_preferences_and_language(
+def test_gbxcartrw_baudrate_update_preferences_and_language(
     gui_module: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
+    device.DEVICE_NAME = "Custom reader name"
     gui.CONN = device
     gui.CheckDeviceAlive = always_device_alive
     disconnects: list[bool] = []
@@ -917,12 +922,15 @@ def test_limit_baud_update_preferences_and_language(
     gui.DisconnectDevice = lambda: disconnects.append(True)
     gui.FindDevices = lambda **kwargs: scans.append(kwargs)
 
-    gui.SETTINGS.values["LimitBaudRate"] = "enabled"
-    gui.SetLimitBaudRate()
-    gui.SETTINGS.values["LimitBaudRate"] = "disabled"
-    gui.SetLimitBaudRate()
+    gui.SetGBxCartRWBaudRate(1_000_000)
+    gui.SetGBxCartRWBaudRate(1_500_000)
+    gui.SetGBxCartRWBaudRate(1_700_000)
     assert ("baud", 1_000_000) in device.calls
-    assert ("baud", 2_000_000) in device.calls
+    assert ("baud", 1_500_000) in device.calls
+    assert ("baud", 1_700_000) in device.calls
+    assert gui.SETTINGS.values["GBxCartRWBaudRate"] == "1700000"
+    assert gui.mnuConfigBaudRateActions[1_700_000].isChecked() is True
+    assert gui.mnuConfigBaudRateActions[1_000_000].isChecked() is False
     assert scans[-1] == {"connectToFirst": True, "mode": "DMG"}
 
     updates: list[bool] = []
@@ -943,6 +951,26 @@ def test_limit_baud_update_preferences_and_language(
     gui.ChangeLanguage("de")
     assert languages == ["de", "de"]
     assert disconnects
+
+
+def test_gbxcartrw_baudrate_setting_migrates_and_validates(gui_module: ModuleType) -> None:
+    settings = FakeSettings({"LimitBaudRate": "enabled"})
+    gui = make_gui(gui_module, SETTINGS=settings)
+
+    assert gui._GetGBxCartRWBaudRate() == 1_000_000
+    assert settings.values["GBxCartRWBaudRate"] == "1000000"
+    assert "LimitBaudRate" not in settings.values
+
+    settings.values["GBxCartRWBaudRate"] = "2000000"
+    assert gui._GetGBxCartRWBaudRate() == 1_500_000
+    assert settings.values["GBxCartRWBaudRate"] == "1500000"
+
+    settings.values["GBxCartRWBaudRate"] = "invalid"
+    assert gui._GetGBxCartRWBaudRate() == 1_500_000
+    assert settings.values["GBxCartRWBaudRate"] == "1500000"
+    with pytest.raises(ValueError, match="Unsupported"):
+        gui.SetGBxCartRWBaudRate(2_000_000)
+    assert gui._GetDeviceMaxBaudRate(SimpleNamespace(DEVICE_NAME="Other Reader")) == 2_000_000
 
 
 @pytest.mark.parametrize(
@@ -1065,7 +1093,7 @@ def test_connect_device_success_and_backend_failures(
 
     assert gui.ConnectDevice() is True
     assert gui.CONN is device
-    assert ("initialize", ("mock-port", 2_000_000)) in device.calls
+    assert ("initialize", ("mock-port", 1_500_000)) in device.calls
     assert gui.btnConnect.text().replace("&", "") == "Disconnect"
 
     gui.DisconnectDevice()
@@ -1364,13 +1392,18 @@ def test_detect_cartridge_and_baud_fallback_are_mocked(
     device = FakeDevice()
     gui.CONN = device
     gui.CheckDeviceAlive = always_device_alive
-    gui.SETTINGS.values.update(AutoDetectLimitVoltage="enabled", AutoLimitBaudRate="enabled", LimitBaudRate="disabled")
+    gui.SETTINGS.values.update(
+        AutoDetectLimitVoltage="enabled",
+        AutoLimitBaudRate="enabled",
+        GBxCartRWBaudRate="1500000",
+    )
 
     gui.DetectCartridge(checkSaveType=False)
     gui.LimitBaudRateGBxCartRW()
 
     assert ("detect", {"limitVoltage": True, "checkSaveType": False}) in device.calls
     assert ("baud", 1_000_000) in device.calls
+    assert gui.SETTINGS.values["GBxCartRWBaudRate"] == "1000000"
 
 
 def test_check_device_alive_covers_connection_states(

@@ -25,6 +25,7 @@ def make_args(**overrides: object) -> Namespace:
     values: dict[str, object] = {
         "action": "info",
         "device_port": None,
+        "gbxcartrw_baudrate": None,
         "device_limit_baudrate": False,
         "mode": "dmg",
         "ignore_bad_header": False,
@@ -71,6 +72,9 @@ def make_cli(tmp_path: Path, args: Namespace | None = None) -> FlashGBX_CLI:
 
 class FakeConnection:
     """Device protocol fake shared by CLI operation tests."""
+
+    DEVICE_ID = "gbxcartrw"
+    DEVICE_NAME = "GBxCart RW"
 
     def __init__(self, mode: str = "DMG") -> None:
         self.mode = mode
@@ -443,6 +447,21 @@ def test_find_and_connect_device_use_mock_backend(
     assert ("initialize", ("requested", 1_000_000)) in connected.calls
     assert cli.ConnectDevice() is True
     assert cli.CONN is connected
+
+
+def test_gbxcartrw_baudrate_only_changes_gbxcartrw_connections(tmp_path: Path) -> None:
+    cli = make_cli(tmp_path, make_args(gbxcartrw_baudrate=1_700_000))
+    gbxcartrw = FakeConnection()
+    gbxcartrw.DEVICE_NAME = "Custom reader name"
+    other_device = FakeConnection()
+    other_device.DEVICE_ID = "other"
+    other_device.DEVICE_NAME = "Other Reader"
+
+    assert cli._GetDeviceMaxBaudRate(gbxcartrw) == 1_700_000
+    assert cli._GetDeviceMaxBaudRate(other_device) == 2_000_000
+
+    cli = make_cli(tmp_path)
+    assert cli._GetDeviceMaxBaudRate(gbxcartrw) == 1_500_000
 
 
 @pytest.mark.parametrize("result", [False, [(3, "fatal")]])

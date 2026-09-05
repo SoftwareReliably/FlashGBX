@@ -7,7 +7,6 @@ import contextlib
 import datetime
 import hashlib
 import math
-import platform
 import random
 import re
 import struct
@@ -21,7 +20,7 @@ import serial
 import serial.tools.list_ports
 from serial import SerialException
 
-from .app import AppInfo
+from .app import GBXCART_RW_BAUD_RATES, GBXCART_RW_DEFAULT_BAUD_RATE, AppInfo
 from .i18n import __, c__, format_decimal
 from .IniSettings import IniSettings
 from .LK_Device import LK_Device
@@ -143,6 +142,7 @@ def _parse_intel_hex(contents: str) -> bytearray:
 
 
 class GbxDevice(LK_Device):
+    DEVICE_ID = "gbxcartrw"
     DEVICE_NAME = "GBxCart RW"
     DEVICE_MIN_FW = 1
     DEVICE_MAX_FW = 1
@@ -171,6 +171,7 @@ class GbxDevice(LK_Device):
     )
 
     BAUDRATE = 1000000
+    SUPPORTED_BAUD_RATES: ClassVar[tuple[int, ...]] = GBXCART_RW_BAUD_RATES
     MAX_BUFFER_READ = 0x1000
     MAX_BUFFER_WRITE = 0x400
     DEVICE_CMD: ClassVar[dict[str, int]] = LK_Device.DEVICE_CMD.copy()
@@ -181,6 +182,7 @@ class GbxDevice(LK_Device):
             "OFW_FW_VER": 0x56,
             "OFW_PCB_VER": 0x68,
             "OFW_USART_1_0M_SPEED": 0x3C,
+            "OFW_USART_HIGH_SPEED": 0x3E,
             "OFW_USART_1_5M_SPEED": 0x3E,
             "OFW_CART_PWR_ON": 0x2F,
             "OFW_CART_PWR_OFF": 0x2E,
@@ -252,14 +254,12 @@ class GbxDevice(LK_Device):
         self,
         flashcarts: FlashcartMap | None = None,
         port: str | None = None,
-        max_baud: int = 1_500_000,
+        max_baud: int = GBXCART_RW_DEFAULT_BAUD_RATE,
     ) -> InitializeResult:
         if self.DEVICE is not None:
             self._close_serial_device()
         self.FW = None
         self.PORT = ""
-        if platform.system() == "Darwin":
-            max_baud = 1_000_000
 
         conn_msg: list[ConnectionMessage] = []
         if port is not None:
@@ -275,7 +275,7 @@ class GbxDevice(LK_Device):
 
         for current_port in ports:
             self.FW = None
-            for baudrate in (1_000_000, 1_500_000):
+            for baudrate in self.SUPPORTED_BAUD_RATES:
                 if max_baud < baudrate:
                     continue
                 try:
@@ -312,13 +312,14 @@ class GbxDevice(LK_Device):
             if not self.FW or self.DEVICE is None:
                 self.FW = None
                 continue
+            target_baudrate = max(baudrate for baudrate in self.SUPPORTED_BAUD_RATES if baudrate <= max_baud)
             if (
-                max_baud >= 1_500_000
+                target_baudrate > min(self.SUPPORTED_BAUD_RATES)
                 and "pcb_ver" in self.FW
                 and self.FW["pcb_ver"] in (5, 6, 101)
-                and self.BAUDRATE < 1_500_000
+                and target_baudrate != self.BAUDRATE
             ):
-                self.ChangeBaudRate(baudrate=1_500_000)
+                self.ChangeBaudRate(baudrate=target_baudrate)
                 self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
 
             dprint(f"Found a {self.DEVICE_NAME}")
@@ -479,13 +480,11 @@ class GbxDevice(LK_Device):
         if not self.IsConnected():
             return
         dprint("Changing baud rate to", baudrate)
-        if baudrate == 1_500_000:
-            self._write(self.DEVICE_CMD["OFW_USART_1_5M_SPEED"])
-        elif baudrate == 1_000_000:
-            self._write(self.DEVICE_CMD["OFW_USART_1_0M_SPEED"])
-        else:
+        if baudrate not in self.SUPPORTED_BAUD_RATES:
             msg = f"Unsupported GBxCart RW baud rate: {baudrate}"
             raise ValueError(msg)
+        command = "OFW_USART_1_0M_SPEED" if baudrate == min(self.SUPPORTED_BAUD_RATES) else "OFW_USART_HIGH_SPEED"
+        self._write(self.DEVICE_CMD[command])
         self.BAUDRATE = baudrate
         self._serial_device().close()
 
@@ -772,7 +771,7 @@ class FirmwareUpdater:
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
 
-    def _message_box(
+    def _message_box(  # noqa: PLR0913
         *,
         parent: QtWidgets.QWidget,
         icon: QtWidgets.QMessageBox.Icon,

@@ -340,6 +340,11 @@ msgctxt "Command Line Help"
 msgid "limit connection to a slower baud rate"
 msgstr "将连接限制在较低的波特率"
 
+#: ../package/FlashGBX/FlashGBX.py:210
+msgctxt "Command Line Help"
+msgid "set the GBxCart RW baud rate"
+msgstr "设置 GBxCart RW 波特率"
+
 #: ../package/FlashGBX/FlashGBX.py:211
 msgctxt "Command Line Help"
 msgid ""
@@ -1831,6 +1836,11 @@ msgstr "分析 Game Boy 卡带时限制电压(&L)"
 msgctxt "Menu Item (& = Keyboard Shortcut)"
 msgid "Limit &baud rate to 1Mbps"
 msgstr "限制波特率为 1Mbps(&B)"
+
+#: ../package/FlashGBX/FlashGBX_GUI.py:670
+msgctxt "Menu Item (& = Keyboard Shortcut)"
+msgid "GBxCart RW &baud rate"
+msgstr "GBxCart RW 波特率(&B)"
 
 #: ../package/FlashGBX/FlashGBX_GUI.py:671
 msgctxt "Menu Item (& = Keyboard Shortcut)"

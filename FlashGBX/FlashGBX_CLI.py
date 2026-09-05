@@ -32,7 +32,7 @@ try:
 except Exception:
     logger.exception("Readline tab completion is unavailable")
 
-from .app import HW_DEVICES, AppContext, generate_filename
+from .app import GBXCART_RW_BAUD_RATES, GBXCART_RW_DEFAULT_BAUD_RATE, HW_DEVICES, AppContext, generate_filename
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
 from .Flashcart import FlashcartMap, has_3v_compatible_profile
 from .Formatter import Formatter
@@ -88,6 +88,22 @@ class FlashGBX_CLI:
             self.prog_bar_part_chars = (" ", " ", " ", " ", "▌", "▌", "▌", "▌")
         else:
             self.prog_bar_part_chars = (" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉")
+
+    def _GetDeviceMaxBaudRate(self, device: Device) -> int:
+        """Return the configured connection speed for a hardware backend."""
+        args = self.ARGS["argparsed"]
+        configured = getattr(args, "gbxcartrw_baudrate", None)
+        if getattr(args, "device_limit_baudrate", False):
+            return min(GBXCART_RW_BAUD_RATES)
+        if self._IsGBxCartRWDevice(device):
+            if configured in GBXCART_RW_BAUD_RATES:
+                return cast("int", configured)
+            return GBXCART_RW_DEFAULT_BAUD_RATE
+        return 2_000_000
+
+    @staticmethod
+    def _IsGBxCartRWDevice(device: Device) -> bool:
+        return getattr(device, "DEVICE_ID", "") == "gbxcartrw" or getattr(device, "DEVICE_NAME", "") == "GBxCart RW"
 
     @staticmethod
     def _GetPlatformName(mode: str) -> str:
@@ -824,7 +840,7 @@ class FlashGBX_CLI:
             ret = dev.Initialize(
                 self.FLASHCARTS,
                 port=port,
-                max_baud=1000000 if self.ARGS["argparsed"].device_limit_baudrate else 2000000,
+                max_baud=self._GetDeviceMaxBaudRate(dev),
             )
             if ret is False:
                 self.CONN = None
@@ -854,7 +870,7 @@ class FlashGBX_CLI:
         ret = dev.Initialize(
             self.FLASHCARTS,
             port=port,
-            max_baud=1000000 if self.ARGS["argparsed"].device_limit_baudrate else 2000000,
+            max_baud=self._GetDeviceMaxBaudRate(dev),
         )
 
         if ret is False:

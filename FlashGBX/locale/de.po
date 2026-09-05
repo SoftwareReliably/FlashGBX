@@ -365,6 +365,11 @@ msgctxt "Command Line Help"
 msgid "limit connection to a slower baud rate"
 msgstr "begrenzt die Verbindung auf eine langsamere Baudrate"
 
+#: ../package/FlashGBX/FlashGBX.py:210
+msgctxt "Command Line Help"
+msgid "set the GBxCart RW baud rate"
+msgstr "Baudrate des GBxCart RW festlegen"
+
 #: ../package/FlashGBX/FlashGBX.py:211
 msgctxt "Command Line Help"
 msgid ""
@@ -1937,6 +1942,11 @@ msgstr "Spannung beim Analysieren von Game-Boy-Modulen &begrenzen"
 msgctxt "Menu Item (& = Keyboard Shortcut)"
 msgid "Limit &baud rate to 1Mbps"
 msgstr "&Baudrate auf 1Mbps begrenzen"
+
+#: ../package/FlashGBX/FlashGBX_GUI.py:670
+msgctxt "Menu Item (& = Keyboard Shortcut)"
+msgid "GBxCart RW &baud rate"
+msgstr "GBxCart RW-&Baudrate"
 
 #: ../package/FlashGBX/FlashGBX_GUI.py:671
 msgctxt "Menu Item (& = Keyboard Shortcut)"

@@ -48,6 +48,8 @@ class SettingsReader(Protocol):
 FilenameHeader = Mapping[str, object]
 CartridgeMode = Literal["DMG", "AGB"]
 _INVALID_FILENAME_CHARS = re.compile(r"[<>:\"/\\|\?\*]")
+GBXCART_RW_BAUD_RATES = (1_000_000, 1_500_000, 1_700_000)
+GBXCART_RW_DEFAULT_BAUD_RATE = 1_500_000
 
 
 def _get_windows_version() -> _WindowsVersion:

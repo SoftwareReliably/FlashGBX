@@ -131,7 +131,11 @@ def test_main_dispatches_cli_with_typed_startup_data(
         "LoadConfig",
         lambda _args: {"flashcarts": {"DMG": {}, "AGB": {}}, "config_ret": []},
     )
-    monkeypatch.setattr(entrypoint.sys, "argv", ["FlashGBX", "--cli"])
+    monkeypatch.setattr(
+        entrypoint.sys,
+        "argv",
+        ["FlashGBX", "--cli", "--gbxcartrw-baudrate", "1700000"],
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         entrypoint.main(portableMode=True)
@@ -140,3 +144,4 @@ def test_main_dispatches_cli_with_typed_startup_data(
     assert len(received) == 1
     assert received[0]["config_path"] == str(tmp_path / "config")
     assert received[0]["argparsed"].cli is True
+    assert received[0]["argparsed"].gbxcartrw_baudrate == 1_700_000

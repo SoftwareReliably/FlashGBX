@@ -206,7 +206,6 @@ def test_initialize_filters_ports_and_uses_injected_serial(
 
     monkeypatch.setattr(gbxcartrw.serial.tools.list_ports, "comports", lambda: ports)
     monkeypatch.setattr(gbxcartrw.serial, "Serial", open_mock_serial)
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(device, "TryConnect", try_connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
 
@@ -236,7 +235,6 @@ def test_initialize_falls_back_to_high_speed_and_loads_flashcart_map(
             return True
         return False
 
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", try_connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
@@ -258,7 +256,6 @@ def test_initialize_closes_device_when_connection_validation_fails(
         device.FW = modern_firmware(pcb_ver=255)
         return True
 
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", try_connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
@@ -273,9 +270,7 @@ def test_initialize_closes_device_when_connection_validation_fails(
     assert serial_device.is_open is False
 
 
-def test_load_firmware_version_parses_mocked_protocol(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_load_firmware_version_parses_mocked_protocol() -> None:
     timestamp = 1_700_000_000
     device_name = b"GBxCart RW v1.4c"
     firmware_payload = (
@@ -291,7 +286,6 @@ def test_load_firmware_version_parses_mocked_protocol(
     )
     device = GbxDevice()
     device.DEVICE = serial_device  # type: ignore[assignment]
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
 
     assert device.LoadFirmwareVersion() is True
     assert device.FW is not None
@@ -464,27 +458,29 @@ def test_set_mode_configures_protocol_without_power_cycle(
     device.SetPin.assert_called_once_with(["PIN_AUDIO"], mode == "DMG")
 
 
-def test_change_baud_rate_sends_protocol_command_and_closes_port() -> None:
+@pytest.mark.parametrize("baudrate", [1_500_000, 1_700_000])
+def test_change_baud_rate_sends_protocol_command_and_closes_port(baudrate: int) -> None:
     serial_device = MockSerial()
     device = GbxDevice()
     device.DEVICE = serial_device  # type: ignore[assignment]
     device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
     device._write = Mock()  # type: ignore[method-assign]
 
-    device.ChangeBaudRate(1_500_000)
+    device.ChangeBaudRate(baudrate)
 
-    device._write.assert_called_once_with(device.DEVICE_CMD["OFW_USART_1_5M_SPEED"])
-    assert device.BAUDRATE == 1_500_000
+    device._write.assert_called_once_with(device.DEVICE_CMD["OFW_USART_HIGH_SPEED"])
+    assert baudrate == device.BAUDRATE
     assert serial_device.is_open is False
 
 
-def test_change_baud_rate_rejects_unsupported_speed() -> None:
+@pytest.mark.parametrize("baudrate", [115_200, 2_000_000])
+def test_change_baud_rate_rejects_unsupported_speed(baudrate: int) -> None:
     device = GbxDevice()
     device.DEVICE = MockSerial()  # type: ignore[assignment]
     device.IsConnected = Mock(return_value=True)  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match="Unsupported"):
-        device.ChangeBaudRate(115_200)
+        device.ChangeBaudRate(baudrate)
 
 
 def test_check_active_uses_legacy_firmware_query() -> None:
@@ -776,7 +772,6 @@ def test_initialize_reports_serial_open_errors(
     message: str,
 ) -> None:
     device = GbxDevice()
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(device, "TryConnect", Mock(side_effect=error))
 
     result = device.Initialize(port="mock-port", max_baud=1_000_000)
@@ -791,15 +786,16 @@ def test_initialize_ignores_disappearing_serial_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(device, "TryConnect", Mock(side_effect=FileNotFoundError("gone")))
 
     assert device.Initialize(port="mock-port", max_baud=1_000_000) == []
     assert device.FW is None
 
 
-def test_initialize_reopens_supported_device_at_high_speed(
+@pytest.mark.parametrize("baudrate", [1_500_000, 1_700_000])
+def test_initialize_reopens_supported_device_at_selected_high_speed(
     monkeypatch: pytest.MonkeyPatch,
+    baudrate: int,
 ) -> None:
     first_serial = MockSerial()
     second_serial = MockSerial()
@@ -819,17 +815,16 @@ def test_initialize_reopens_supported_device_at_high_speed(
         device.BAUDRATE = baudrate
         first_serial.close()
 
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(gbxcartrw.serial, "Serial", open_serial)
     monkeypatch.setattr(device, "TryConnect", connect)
     monkeypatch.setattr(device, "ChangeBaudRate", change_baud)
     monkeypatch.setattr(device, "IsConnected", lambda: True)
 
-    assert device.Initialize(port="mock-port", max_baud=1_500_000) == []
-    assert opens == [("mock-port", 1_000_000), ("mock-port", 1_500_000)]
+    assert device.Initialize(port="mock-port", max_baud=baudrate) == []
+    assert opens == [("mock-port", 1_000_000), ("mock-port", baudrate)]
     assert first_serial.is_open is False
     assert device.DEVICE is second_serial
-    assert device.BAUDRATE == 1_500_000
+    assert baudrate == device.BAUDRATE
 
 
 @pytest.mark.parametrize(
@@ -852,7 +847,6 @@ def test_initialize_warns_for_new_firmware_and_sizes_legacy_buffers(
         device.FW = firmware
         return True
 
-    monkeypatch.setattr(gbxcartrw.platform, "system", lambda: "Linux")
     monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
     monkeypatch.setattr(device, "TryConnect", connect)
     monkeypatch.setattr(device, "IsConnected", lambda: True)

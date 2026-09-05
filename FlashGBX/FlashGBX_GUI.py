@@ -26,7 +26,14 @@ from packaging import version
 from PySide6 import QtCore, QtGui, QtWidgets
 from serial import SerialException
 
-from .app import HW_DEVICES, AppContext, AppInfo, generate_filename
+from .app import (
+    GBXCART_RW_BAUD_RATES,
+    GBXCART_RW_DEFAULT_BAUD_RATE,
+    HW_DEVICES,
+    AppContext,
+    AppInfo,
+    generate_filename,
+)
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
 from .Flashcart import (
     FlashcartMap,
@@ -118,7 +125,7 @@ def _is_supported_drop(extension: str, mode: PlatformMode | None) -> bool:
     )
 
 
-def _create_message_box(
+def _create_message_box(  # noqa: PLR0913 - mirrors the Qt message-box arguments
     *,
     parent: QtWidgets.QWidget | None = None,
     icon: QtWidgets.QMessageBox.Icon = QtWidgets.QMessageBox.Icon.NoIcon,
@@ -428,19 +435,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 .replace("false", "disabled"),
             ),
         )
-        self.mnuConfig.addAction(
-            "",
-            lambda: [
-                self.SETTINGS.setValue(
-                    "LimitBaudRate",
-                    str(self.mnuConfig.actions()[5].isChecked())
-                    .lower()
-                    .replace("true", "enabled")
-                    .replace("false", "disabled"),
-                ),
-                self.SetLimitBaudRate(),
-            ],
-        )
+        self.mnuConfigBaudRate = QtWidgets.QMenu()
+        self.mnuConfigBaudRateActionGroup = QtGui.QActionGroup(self.mnuConfigBaudRate)
+        self.mnuConfigBaudRateActionGroup.setExclusive(True)
+        self.mnuConfigBaudRateActions: dict[int, QtGui.QAction] = {}
+        for baudrate in GBXCART_RW_BAUD_RATES:
+            action = self.mnuConfigBaudRate.addAction("")
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked=False, selected_baudrate=baudrate: self.SetGBxCartRWBaudRate(selected_baudrate)
+            )
+            self.mnuConfigBaudRateActionGroup.addAction(action)
+            self.mnuConfigBaudRateActions[baudrate] = action
+        self.mnuConfig.addMenu(self.mnuConfigBaudRate)
         self.mnuConfig.addAction(
             "",
             lambda: self.SETTINGS.setValue(
@@ -551,7 +558,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.actions()[2].setCheckable(True)
         self.mnuConfig.actions()[3].setCheckable(True)
         self.mnuConfig.actions()[4].setCheckable(True)
-        self.mnuConfig.actions()[5].setCheckable(True)
         self.mnuConfig.actions()[6].setCheckable(True)
         self.mnuConfig.actions()[7].setCheckable(True)
         self.mnuConfig.actions()[8].setCheckable(True)
@@ -566,7 +572,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.actions()[4].setChecked(
             self.SETTINGS.value("AutoDetectLimitVoltage", default="disabled") == "enabled",
         )
-        self.mnuConfig.actions()[5].setChecked(self.SETTINGS.value("LimitBaudRate", default="disabled") == "enabled")
+        self._UpdateGBxCartRWBaudRateActions(self._GetGBxCartRWBaudRate())
         self.mnuConfig.actions()[6].setChecked(
             self.SETTINGS.value("GenerateDumpReports", default="disabled") == "enabled",
         )
@@ -1013,7 +1019,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 "&Limit voltage when analyzing Game Boy carts",
             ),
         )
-        self.mnuConfig.actions()[5].setText(c__("Menu Item (& = Keyboard Shortcut)", "Limit &baud rate to 1Mbps"))
+        self.mnuConfigBaudRate.setTitle(c__("Menu Item (& = Keyboard Shortcut)", "GBxCart RW &baud rate"))
+        self.mnuConfigBaudRateActions[1_000_000].setText("1.0 Mbps")
+        self.mnuConfigBaudRateActions[1_500_000].setText("1.5 Mbps")
+        self.mnuConfigBaudRateActions[1_700_000].setText("1.7 Mbps")
         self.mnuConfig.actions()[6].setText(
             c__("Menu Item (& = Keyboard Shortcut)", "Always &generate ROM dump reports"),
         )
@@ -1392,17 +1401,59 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         elif method == 0:
             self.mnuConfigReadModeAGB.actions()[1].setChecked(True)
 
-    def SetLimitBaudRate(self) -> None:
-        if not self.CheckDeviceAlive():
+    def _GetGBxCartRWBaudRate(self) -> int:
+        configured = self.SETTINGS.value("GBxCartRWBaudRate")
+        legacy_limit = self.SETTINGS.value("LimitBaudRate")
+        if configured is None:
+            configured = (
+                min(GBXCART_RW_BAUD_RATES) if str(legacy_limit).lower() == "enabled" else GBXCART_RW_DEFAULT_BAUD_RATE
+            )
+        try:
+            baudrate = int(str(configured))
+        except ValueError:
+            baudrate = GBXCART_RW_DEFAULT_BAUD_RATE
+        if baudrate not in GBXCART_RW_BAUD_RATES:
+            baudrate = GBXCART_RW_DEFAULT_BAUD_RATE
+        if str(configured) != str(baudrate) or self.SETTINGS.value("GBxCartRWBaudRate") is None:
+            self.SETTINGS.setValue("GBxCartRWBaudRate", str(baudrate))
+        if legacy_limit is not None:
+            self.SETTINGS.setValue("LimitBaudRate", None)
+        return baudrate
+
+    def _UpdateGBxCartRWBaudRateActions(self, baudrate: int) -> None:
+        for action_baudrate, action in self.mnuConfigBaudRateActions.items():
+            action.setChecked(action_baudrate == baudrate)
+
+    @staticmethod
+    def _IsGBxCartRWDevice(device: Any) -> bool:
+        return getattr(device, "DEVICE_ID", "") == "gbxcartrw" or getattr(device, "DEVICE_NAME", "") == "GBxCart RW"
+
+    def _GetDeviceMaxBaudRate(self, device: Any) -> int:
+        if self._IsGBxCartRWDevice(device):
+            return self._GetGBxCartRWBaudRate()
+        return 2_000_000
+
+    def SetGBxCartRWBaudRate(self, baudrate: int) -> None:
+        if baudrate not in GBXCART_RW_BAUD_RATES:
+            msg = f"Unsupported GBxCart RW baud rate: {baudrate}"
+            raise ValueError(msg)
+        self.SETTINGS.setValue("GBxCartRWBaudRate", str(baudrate))
+        self._UpdateGBxCartRWBaudRateActions(baudrate)
+        if not self.CheckDeviceAlive() or not self._IsGBxCartRWDevice(self._device):
             return
         mode = self._device.GetMode()
-        limit_baudrate = self.SETTINGS.value("LimitBaudRate")
-        if limit_baudrate == "enabled":
-            self._device.ChangeBaudRate(baudrate=1000000)
-        else:
-            self._device.ChangeBaudRate(baudrate=2000000)
+        self._device.ChangeBaudRate(baudrate=baudrate)
         self.DisconnectDevice()
         self.FindDevices(connectToFirst=True, mode=mode)
+
+    def SetLimitBaudRate(self) -> None:
+        """Apply the legacy boolean baud-rate setting."""
+        baudrate = (
+            min(GBXCART_RW_BAUD_RATES)
+            if str(self.SETTINGS.value("LimitBaudRate")).lower() == "enabled"
+            else GBXCART_RW_DEFAULT_BAUD_RATE
+        )
+        self.SetGBxCartRWBaudRate(baudrate)
 
     def EnableUpdateCheck(self) -> None:
         update_check = self.SETTINGS.value("UpdateCheck")
@@ -1860,10 +1911,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         dev = self.DEVICES[index]
         port = dev.GetPort()
-        if str(self.SETTINGS.value("LimitBaudRate", default="disabled")).lower() == "enabled":
-            max_baud = 1000000
-        else:
-            max_baud = 2000000
+        max_baud = self._GetDeviceMaxBaudRate(dev)
         try:
             flashcarts = cast("Mapping[str, Mapping[str, Any]]", self.FLASHCARTS)
             ret = dev.Initialize(flashcarts, port=port, max_baud=max_baud)
@@ -1935,7 +1983,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.SetAutoPowerOff()
             self.SetDMGReadMethod()
             self.SetAGBReadMethod()
-            self.mnuConfig.actions()[5].setVisible(self._device.DEVICE_NAME == "GBxCart RW")  # Limit Baud Rate
+            self.mnuConfig.actions()[5].setVisible(self._IsGBxCartRWDevice(self._device))  # GBxCart RW baud rate
             self.mnuConfig.actions()[8].setVisible(
                 self._device.CanPowerCycleCart()
                 and self._device.CanPowerCycleCart()
@@ -2157,10 +2205,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             ports = []
             while True:  # for finding other devices of the same type
                 dev = hw_device.GbxDevice()
-                if str(self.SETTINGS.value("LimitBaudRate", default="disabled")).lower() == "enabled":
-                    max_baud = 1000000
-                else:
-                    max_baud = 2000000
+                max_baud = self._GetDeviceMaxBaudRate(dev)
                 try:
                     ret = dev.Initialize(self.FLASHCARTS, port=port, max_baud=max_baud)
                     is_active = dev.CheckActive()
@@ -5662,18 +5707,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def LimitBaudRateGBxCartRW(self) -> None:
         if (
-            self._device.GetName() == "GBxCart RW"
+            self._IsGBxCartRWDevice(self._device)
             and str(self.SETTINGS.value("AutoLimitBaudRate", default="enabled")).lower() == "enabled"
-            and str(self.SETTINGS.value("LimitBaudRate", default="disabled")).lower() == "disabled"
+            and self._GetGBxCartRWBaudRate() != min(GBXCART_RW_BAUD_RATES)
         ):
-            dprint("Setting “" + self.mnuConfig.actions()[5].text().replace("&", "") + "” to “enabled”")
-            self.mnuConfig.actions()[5].setChecked(True)
-            self.SETTINGS.setValue("LimitBaudRate", "enabled")
+            baudrate = min(GBXCART_RW_BAUD_RATES)
+            dprint(f"Setting “GBxCart RW baud rate” to “{baudrate:d}”")
+            self._UpdateGBxCartRWBaudRateActions(baudrate)
+            self.SETTINGS.setValue("GBxCartRWBaudRate", str(baudrate))
             dprint("Setting “" + self.mnuConfig.actions()[8].text().replace("&", "") + "” to “0”")
             self.mnuConfig.actions()[8].setChecked(False)
             self.SETTINGS.setValue("AutoPowerOff", "0")
             try:
-                self._device.ChangeBaudRate(baudrate=1000000)
+                self._device.ChangeBaudRate(baudrate=baudrate)
             except Exception:
                 logger.exception("Failed to change the device baud rate")
                 try:

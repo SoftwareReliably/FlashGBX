@@ -1,6 +1,7 @@
 # Release notes
 ### Unreleased
 - The GUI now uses PySide6 exclusively; PySide2 and Qt 5 are no longer supported
+- The GBxCart RW baud rate can now be set to 1.0, 1.5, or 1.7 Mbps in both GUI and CLI mode
 
 ### v5.0/v5.0.1 (released 2026-06-06)
 - Added support for the [Game Bub](https://gamebub.net/) hardware device *(thanks Eli)*
