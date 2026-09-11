@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -109,6 +110,8 @@ class FakeQtObject:
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def __getattr__(self, name: str):
+        """Return a callable mock method for unspecified attributes."""
+
         def method(*args: object, **_kwargs: object) -> FakeQtObject:
             self.calls.append((name, args))
             return self
@@ -201,7 +204,9 @@ def load_window_with_fake_qt(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setitem(sys.modules, "PySide6", fake_pyside)
 
     module_name = "FlashGBX._PocketCameraWindowFakeQt"
-    module_path = Path(camera_window_module.__file__)
+    module_file = camera_window_module.__file__
+    assert module_file is not None
+    module_path = Path(module_file)
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None
     assert spec.loader is not None
@@ -232,7 +237,7 @@ def bare_window(**overrides: object) -> SimpleNamespace:
     }
     values.update(overrides)
     window = SimpleNamespace(**values)
-    window._dragEventHover = lambda event: PocketCameraWindow._dragEventHover(window, event)
+    window._dragEventHover = lambda event: PocketCameraWindow._dragEventHover(window, event)  # type: ignore[arg-type]
     return window
 
 
@@ -413,32 +418,18 @@ def test_palette_and_mouse_actions_update_the_viewer() -> None:
     window.UpdateViewer.assert_called_once_with(0)
 
     window.UpdateViewer.reset_mock()
-    PocketCameraWindow.lblPhoto_Clicked(  # type: ignore[arg-type]
-        window,
-        FakeMouseEvent(QtCore.Qt.MouseButton.RightButton),
-        5,
-    )
+    PocketCameraWindow.lblPhoto_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.RightButton), 5)  # type: ignore[arg-type]
     assert window.CUR_INDEX == 0
-    PocketCameraWindow.lblPhoto_Clicked(  # type: ignore[arg-type]
-        window,
-        FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton),
-        5,
-    )
+    PocketCameraWindow.lblPhoto_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton), 5)  # type: ignore[arg-type]
     assert window.CUR_INDEX == 5
     window.UpdateViewer.assert_called_once_with(5)
 
-    PocketCameraWindow.lblPhotoViewer_Clicked(  # type: ignore[arg-type]
-        window,
-        FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton),
-    )
+    PocketCameraWindow.lblPhotoViewer_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton))  # type: ignore[arg-type]
     assert window.CUR_BICUBIC is True
     window.UpdateViewer.assert_called_with(5)
 
     window.UpdateViewer.reset_mock()
-    PocketCameraWindow.lblPhotoViewer_Clicked(  # type: ignore[arg-type]
-        window,
-        FakeMouseEvent(QtCore.Qt.MouseButton.RightButton),
-    )
+    PocketCameraWindow.lblPhotoViewer_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.RightButton))  # type: ignore[arg-type]
     window.UpdateViewer.assert_not_called()
 
     combo.index = 1
