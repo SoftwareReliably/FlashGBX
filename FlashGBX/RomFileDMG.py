@@ -8,11 +8,15 @@ import re
 import string
 import struct
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 from .app import AppContext
 from .CartridgeTypes import DmgSaveTypes, RomSizes
 from .i18n import __
 from .Logging import ANSI, dprint, logger
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
 
 try:
     from PIL import Image
@@ -26,24 +30,24 @@ class RomFileDMG:
     ROMFILE = bytearray()
     BATTERYLESS_SRAM_DB = None
 
-    def __init__(self, file=None):
+    def __init__(self, file=None) -> None:
         self.DATA: dict = {}
         if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):
             self.ROMFILE = file
 
-    def Open(self, file):
+    def Open(self, file) -> None:
         self.ROMFILE_PATH = Path(file)
         self.Load()
 
-    def Load(self):
+    def Load(self) -> None:
         if self.ROMFILE_PATH is None:
             return
         with self.ROMFILE_PATH.open("rb") as f:
             self.ROMFILE = bytearray(f.read(0x1000))
 
-    def CalcChecksumHeader(self, fix=False):
+    def CalcChecksumHeader(self, fix=False) -> int:
         checksum = 0
         for i in range(0x134, 0x14D):
             checksum = checksum - self.ROMFILE[i] - 1
@@ -53,7 +57,7 @@ class RomFileDMG:
             self.ROMFILE[0x14D] = checksum
         return checksum
 
-    def CalcChecksumGlobal(self, fix=False):
+    def CalcChecksumGlobal(self, fix=False) -> int:
         temp1 = self.ROMFILE[0x14E]
         temp2 = self.ROMFILE[0x14F]
         self.ROMFILE[0x14E] = 0
@@ -67,12 +71,12 @@ class RomFileDMG:
             self.ROMFILE[0x14F] = temp2
         return checksum
 
-    def FixHeader(self):
+    def FixHeader(self) -> bytearray:
         self.CalcChecksumHeader(True)
         self.CalcChecksumGlobal(True)
         return self.ROMFILE[0:0x200]
 
-    def LogoToImage(self, data, valid=True):
+    def LogoToImage(self, data, valid=True) -> PILImage | Literal[False]:
         if Image is None:
             return False
         img = Image.new(mode="P", size=(48, 8))
@@ -104,7 +108,7 @@ class RomFileDMG:
         return img
 
     def GetHeader(self, unchanged=False):
-        buffer = self.ROMFILE
+        buffer: bytearray = self.ROMFILE
         data = {}
         if len(buffer) < 0x180:
             return {}
@@ -177,7 +181,7 @@ class RomFileDMG:
 
         data["maker_code"] = format(int(buffer[0x14B]), "02X")
         if data["maker_code"] == "33":
-            maker_code = bytearray(buffer[0x144:0x146]).decode("ascii", "replace")
+            maker_code: str = bytearray(buffer[0x144:0x146]).decode("ascii", "replace")
             maker_code = "".join(filter(lambda x: x in set(string.printable), maker_code))
             data["maker_code_new"] = maker_code
         data["mapper_raw"] = int(buffer[0x147])
@@ -1243,7 +1247,7 @@ class RomFileDMG:
     def GetDatabaseEntry(self) -> dict | None:
         data = self.DATA
         db_entry = None
-        database_path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
+        database_path: Path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
         if database_path.exists():
             with database_path.open(encoding="UTF-8") as f:
                 db_raw = f.read()
@@ -1271,7 +1275,7 @@ class RomFileDMG:
         return db_entry
 
     @classmethod
-    def GetBatterylessSramConfig(cls, header):
+    def GetBatterylessSramConfig(cls, header) -> dict[str, Any] | None:
         if not isinstance(header, dict):
             return None
         if "game_title_raw" not in header:
@@ -1324,7 +1328,7 @@ class RomFileDMG:
         return None
 
 
-def from_isx(buffer):
+def from_isx(buffer) -> bytearray:
     import io
     import struct
 
