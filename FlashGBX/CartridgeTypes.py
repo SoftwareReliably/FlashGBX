@@ -10,7 +10,7 @@ class RomSizes:
     ROM_SIZES: ClassVar[list[int]] = [2**i for i in range(15, 30)]  # 32 KiB to 512 MiB
     ROM_SIZES_DMG: ClassVar[list[int]] = [2**i for i in range(15, 28)]  # 32 KiB to 128 MiB
 
-    def __init__(self, size=None, index=None):
+    def __init__(self, size=None, index=None) -> None:
         if index is not None:
             self._size = self.GetSize(index)
         elif size is not None:
@@ -278,7 +278,7 @@ class DmgSaveTypes:
         0x205: "batteryless",
     }
 
-    def __init__(self, size=None, index=None, mbc=None):
+    def __init__(self, size=None, index=None, mbc=None) -> None:
         if index is not None:
             self._entry = self.RAM_TYPES[index] if 0 <= index < len(self.RAM_TYPES) else None
         elif mbc is not None:

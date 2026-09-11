@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, call
 
 import pytest
@@ -18,6 +19,9 @@ from FlashGBX.PocketCamera import PocketCamera
 from FlashGBX.PocketCameraWindow import PocketCameraWindow, _parse_palette_setting
 
 from .test_pocket_camera import camera_save
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 camera_window_module = importlib.import_module("FlashGBX.PocketCameraWindow")
 
@@ -109,7 +113,7 @@ class FakeQtObject:
         self.checked = False
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Callable[..., FakeQtObject]:
         """Return a callable mock method for unspecified attributes."""
 
         def method(*args: object, **_kwargs: object) -> FakeQtObject:

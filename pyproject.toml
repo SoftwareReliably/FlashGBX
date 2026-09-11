@@ -151,7 +151,6 @@ ignore = [
     "CPY001", #missing-copyright-notice
     "PLR0911", #too-many-return-statements
     "FBT003", #boolean-positional-value-in-call
-    "ANN204", #missing-return-type-special-method
     "D100", #undocumented-public-module
     "PLC0415", #import-outside-top-level
     "S324", #hashlib-insecure-hash-function
