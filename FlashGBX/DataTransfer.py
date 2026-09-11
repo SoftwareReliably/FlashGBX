@@ -16,20 +16,20 @@ class DataTransfer(QtCore.QThread):
 
     updateProgress = QtCore.Signal(object)  # noqa: N815
 
-    def __init__(self, config=None):
+    def __init__(self, config=None) -> None:
         QtCore.QThread.__init__(self)
         if config is not None:
             self.CONFIG = config
         self.FINISHED = False
 
-    def setConfig(self, config):
+    def setConfig(self, config) -> None:
         self.CONFIG = config
         self.FINISHED = False
 
-    def isRunning(self):
+    def isRunning(self) -> bool:
         return not self.FINISHED
 
-    def run(self):
+    def run(self) -> None:
         tb = ""
         error = None
         try:
@@ -54,7 +54,7 @@ class DataTransfer(QtCore.QThread):
                 )
                 self.FINISHED = True
                 return
-            tb = traceback.format_exc()
+            tb: str = traceback.format_exc()
             error = e
 
         except Exception as e:
