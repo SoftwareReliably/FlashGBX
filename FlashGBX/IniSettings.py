@@ -14,7 +14,7 @@ class IniSettings:
     SETTINGS: configparser.RawConfigParser | None = None
     MAIN_SECTION = "General"
 
-    def __init__(self, path: str | Path = "", ini: str = "", main_section: str = "General"):
+    def __init__(self, path: str | Path = "", ini: str = "", main_section: str = "General") -> None:
         if path != "":
             settings_path = Path(path)
             try:
@@ -39,9 +39,9 @@ class IniSettings:
             self.SETTINGS.read_string(ini)
             self.SETTINGS.optionxform = lambda optionstr: optionstr
 
-        self.MAIN_SECTION = main_section
+        self.MAIN_SECTION: str = main_section
 
-    def reload(self):
+    def reload(self) -> None:
         if self.SETTINGS is None:
             return
         if self.FILENAME is not None:
@@ -60,7 +60,7 @@ class IniSettings:
             return default
         return self.SETTINGS[self.MAIN_SECTION][key]
 
-    def setValue(self, key, value, quiet=False):
+    def setValue(self, key, value, quiet=False) -> None:
         if self.SETTINGS is None:
             return
         self.reload()
@@ -75,7 +75,7 @@ class IniSettings:
             with self.FILENAME.open("w", encoding="UTF-8") as f:
                 self.SETTINGS.write(f)
 
-    def clear(self):
+    def clear(self) -> None:
         if self.SETTINGS is None:
             return
         self.SETTINGS.clear()
@@ -83,7 +83,7 @@ class IniSettings:
             with self.FILENAME.open("w", encoding="UTF-8") as f:
                 self.SETTINGS.write(f)
 
-    def get_string(self):
+    def get_string(self) -> str:
         if self.SETTINGS is None:
             return ""
         output = StringIO()
@@ -91,17 +91,17 @@ class IniSettings:
         return output.getvalue()
 
     # Legacy PascalCase aliases — drop in a follow-up consumer sweep.
-    def Reload(self):
+    def Reload(self) -> None:
         return self.reload()
 
     def GetValue(self, key, default=None):
         return self.value(key, default)
 
-    def SetValue(self, key, value, quiet=False):
+    def SetValue(self, key, value, quiet=False) -> None:
         return self.setValue(key, value, quiet)
 
-    def Clear(self):
+    def Clear(self) -> None:
         return self.clear()
 
-    def GetString(self):
+    def GetString(self) -> str:
         return self.get_string()
