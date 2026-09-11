@@ -2173,7 +2173,7 @@ class LK_Device(ABC):
             detected_size,
         )
 
-    def CheckBatterylessSRAM(self):
+    def CheckBatterylessSRAM(self) -> dict[str, int] | Literal[False]:
         bl_size = None
         bl_offset = None
         if self.MODE == "AGB":
@@ -2269,18 +2269,18 @@ class LK_Device(ABC):
         dprint(f"bl_offset=0x{bl_offset:X}, bl_size=0x{bl_size:X}")
         return {"bl_offset": bl_offset, "bl_size": bl_size}
 
-    def ReadFlashSaveID(self):
+    def ReadFlashSaveID(self) -> tuple[int, str] | Literal[False]:
         # Check if actually SRAM/FRAM
         dprint("Checking Flash ID of Save Memory")
-        test_data = self._cart_read(0, 0x10, agb_save_flash=True)
+        test_data: bytearray = self._cart_read(0, 0x10, agb_save_flash=True)
         if test_data is False or len(test_data) < 5:
             return False
-        test1 = test_data[4]
+        test1: int = test_data[4]
         self._cart_write_flash([[0x0004, test1 ^ 0xFF]])
         test_data = self._cart_read(0, 0x10, agb_save_flash=True)
         if test_data is False or len(test_data) < 5:
             return False
-        test2 = test_data[4]
+        test2: int = test_data[4]
         self._cart_write_flash([[0x0004, test1]])
         if test1 != test2:
             dprint(
@@ -4305,12 +4305,12 @@ class LK_Device(ABC):
         self.SetProgress({"action": "FINISHED"})
         return True
 
-    def WriteRTC(self, args):
+    def WriteRTC(self, args) -> bool | None:
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
         if self.MODE == "DMG":
-            _mbc = DMG_Mapper().GetInstance(
+            _mbc: DMG_Mapper = DMG_Mapper().GetInstance(
                 args=args,
                 cart_write_fncptr=self._cart_write,
                 cart_read_fncptr=self._mapper_cart_read,
