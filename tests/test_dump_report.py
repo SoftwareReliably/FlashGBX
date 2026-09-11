@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 from FlashGBX.DumpReport import DumpReport
 
@@ -35,7 +35,7 @@ class ReportDevice:
         return 2
 
 
-def dmg_header(**overrides: Any) -> dict[str, Any]:
+def dmg_header(**overrides: object) -> dict[str, Any]:
     header = {
         "game_title": "TEST GAME",
         "game_code": "",
