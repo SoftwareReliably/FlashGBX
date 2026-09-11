@@ -13,12 +13,12 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from PIL.Image import Image as PILImage
+    from PIL.Image import Image as PILImage  # pyright: ignore[reportMissingImports]
 
 
 _PLATFORM = platform.system()
@@ -134,13 +134,13 @@ class _NoopQtWin:
 
 def _check_hresult(result: int, operation: str) -> None:
     """Raise a useful error when a Windows COM call returns a failure HRESULT."""
-    unsigned_result = result & 0xFFFFFFFF
+    unsigned_result: int = result & 0xFFFFFFFF
     if result < 0 or unsigned_result >= 0x80000000:
-        msg = f"{operation} failed with HRESULT 0x{unsigned_result:08X}"
+        msg: str = f"{operation} failed with HRESULT 0x{unsigned_result:08X}"
         raise OSError(msg)
 
 
-def _debug_print(*args: Any, **kwargs: Any) -> None:
+def _debug_print(*args: object, **kwargs: object) -> None:
     """Log when the package logger is already initialized."""
     logging_module = sys.modules.get(f"{__package__}.Logging")
     if logging_module is None:
@@ -226,7 +226,7 @@ if _IS_WINDOWS:
                 msg_0 = "Windows function prototypes are unavailable"
                 raise RuntimeError(msg_0)
             _check_hresult(
-                int(self._call(3, winfunctype(ctypes.c_long, ctypes.c_void_p))),
+                cast("int", self._call(3, winfunctype(ctypes.c_long, ctypes.c_void_p))),
                 "ITaskbarList3::HrInit",
             )
             self._apply()
@@ -235,8 +235,8 @@ if _IS_WINDOWS:
             self,
             index: int,
             prototype: Callable[..., Any],
-            *args: Any,
-        ) -> Any:
+            *args: object,
+        ) -> object:
             taskbar = self._taskbar
             winfunctype = _WINFUNCTYPE
             if taskbar is None or winfunctype is None:
@@ -266,7 +266,8 @@ if _IS_WINDOWS:
             if winfunctype is None:
                 return
             _check_hresult(
-                int(
+                cast(
+                    "int",
                     self._call(
                         10,
                         winfunctype(
@@ -284,7 +285,8 @@ if _IS_WINDOWS:
             if state in (self._TBPF_NORMAL, self._TBPF_PAUSED):
                 span = self._maximum - self._minimum
                 _check_hresult(
-                    int(
+                    cast(
+                        "int",
                         self._call(
                             9,
                             winfunctype(
@@ -329,7 +331,7 @@ if _IS_WINDOWS:
 _QT_DBUS: Any = None
 if _IS_LINUX:
     with contextlib.suppress(ImportError):
-        from PySide6 import QtDBus as _QT_DBUS  # noqa: N814
+        from PySide6 import QtDBus as _QT_DBUS  # noqa: N814  # pyright: ignore[reportMissingImports]
 
 
 def _application_desktop_file() -> str:
@@ -476,8 +478,8 @@ def bitmap2pixmap(
         raise ValueError(msg)
 
     try:
-        from PIL import Image
-        from PIL.ImageQt import ImageQt
+        from PIL import Image  # pyright: ignore[reportMissingImports]
+        from PIL.ImageQt import ImageQt  # pyright: ignore[reportMissingImports]
 
         data_converted = data.convert("RGBA")
         scaled_image = data_converted.resize(
