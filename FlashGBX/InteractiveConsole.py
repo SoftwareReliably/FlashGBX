@@ -10,7 +10,7 @@ from .i18n import __
 
 
 class InteractiveConsole:
-    def __init__(self, conn, on_output, on_error=None):
+    def __init__(self, conn, on_output, on_error=None) -> None:
         self.CONN = conn
         self.MODE = conn.GetMode()
         self.on_output = on_output
@@ -40,24 +40,24 @@ class InteractiveConsole:
         lines.append("")
         return lines
 
-    def print_help(self):
+    def print_help(self) -> None:
         for line in self.get_help_lines():
             self.on_output(line)
 
-    def hexdump(self, base_addr, data):
+    def hexdump(self, base_addr, data) -> None:
         if isinstance(data, int):
             data = bytearray([data])
         for offset in range(0, len(data), 16):
             chunk = data[offset : offset + 16]
-            hex_part = " ".join(f"{b:02x}" for b in chunk)
-            ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
+            hex_part: str = " ".join(f"{b:02x}" for b in chunk)
+            ascii_part: str = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
             self.on_output(f"{base_addr + offset:08x}: {hex_part:<47}  {ascii_part:s}")
 
-    def execute_line(self, line):
+    def execute_line(self, line) -> bool:
         cmds = [c.strip() for c in line.split(",") if c.strip()]
         return all(self.execute_command(cmdline) for cmdline in cmds)
 
-    def execute_command(self, cmdline):
+    def execute_command(self, cmdline) -> bool:
         try:
             return self._execute_command_inner(cmdline)
         except Exception:
