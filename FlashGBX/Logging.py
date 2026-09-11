@@ -91,7 +91,7 @@ class Logger:
             output_stream.flush()
 
     @classmethod
-    def _write_debug_message(cls, msg: str) -> None:
+    def write_debug_message(cls, msg: str) -> None:
         _append_capped(AppContext.DEBUG_LOG, msg, _DEBUG_LOG_LIMIT)
         if AppContext.DEBUG:
             msg = ANSI.CLEAR_LINE + msg
@@ -106,7 +106,7 @@ class Logger:
         filename = Path(stack.filename).name
         message = _format_message(args, kwargs)
         msg = f"[{timestamp!s}] [{filename}:{stack.lineno}] {stack.name}(): {message}"
-        cls._write_debug_message(msg)
+        cls.write_debug_message(msg)
 
     @classmethod
     def write_debug_log(cls, device: str | Literal[False] | None = False) -> bool:
@@ -173,7 +173,7 @@ dprint = Logger.dprint
 
 
 def _loguru_sink(message: object) -> None:
-    Logger._write_debug_message(str(message).rstrip())
+    Logger.write_debug_message(str(message).rstrip())
 
 
 logger.remove()
