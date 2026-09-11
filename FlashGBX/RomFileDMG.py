@@ -107,9 +107,9 @@ class RomFileDMG:
                     break
         return img
 
-    def GetHeader(self, unchanged=False):
+    def GetHeader(self, unchanged=False) -> dict[str, Any]:
         buffer: bytearray = self.ROMFILE
-        data = {}
+        data: dict[str, Any] = {}
         if len(buffer) < 0x180:
             return {}
         data["empty"] = buffer[0x104:0x134] == bytearray([buffer[0x104]] * 0x30)
