@@ -13,7 +13,7 @@ from unittest.mock import Mock
 import pytest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
     from pathlib import Path
 
 
@@ -76,6 +76,9 @@ class FakeMetrics:
 class FakeQtObject:
     """Stateful, permissive stand-in for Qt widgets and layouts."""
 
+    SizeAdjustPolicy = SimpleNamespace(AdjustToContents=0)
+    DialogCode = SimpleNamespace(Accepted=1, Rejected=0)
+
     def __init__(self, *args: object, **_kwargs: object) -> None:
         self.clicked = FakeSignal()
         self.triggered = FakeSignal()
@@ -96,9 +99,10 @@ class FakeQtObject:
         self._spacing = 0
         self._stylesheet = ""
         self._result = 1
+        self.menu: FakeQtObject | None = None
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Callable[..., FakeQtObject]:
         """Return an inert callable for unsupported Qt methods."""
 
         def method(*args: object, **_kwargs: object) -> FakeQtObject:
@@ -266,10 +270,6 @@ class FakeQtObject:
         return 0
 
 
-FakeQtObject.SizeAdjustPolicy = SimpleNamespace(AdjustToContents=0)
-FakeQtObject.DialogCode = SimpleNamespace(Accepted=1, Rejected=0)
-
-
 class FakeColor:
     def toTuple(self) -> tuple[int, int, int, int]:
         return (0, 0, 0, 255)
@@ -413,7 +413,7 @@ class FakeDevice:
     """Mock the shared cartridge-reader protocol used by the GUI."""
 
     DEVICE_ID = "gbxcartrw"
-    DEVICE_NAME = "GBxCart RW"
+    DEVICE_NAME: str = "GBxCart RW"
 
     def __init__(self, mode: str = "DMG") -> None:
         self.mode = mode
@@ -635,14 +635,14 @@ def fake_qt_modules() -> tuple[ModuleType, object, object, object]:
 
 
 @pytest.fixture(scope="module")
-def gui_module() -> ModuleType:
+def gui_module() -> Generator[ModuleType]:
     """Load the GUI module once against inert Qt classes."""
     importlib.import_module("FlashGBX.InteractiveConsoleWindow")
     importlib.import_module("FlashGBX.PocketCameraWindow")
     importlib.import_module("FlashGBX.UserInputDialog")
     i18n_module = importlib.import_module("FlashGBX.i18n")
     original_translation_loader = i18n_module.loadQtTranslation
-    i18n_module.loadQtTranslation = lambda *_args, **_kwargs: True
+    cast("Any", i18n_module).loadQtTranslation = lambda *_args, **_kwargs: True
     original_pyside = sys.modules["PySide6"]
     original_gui = sys.modules.get("FlashGBX.FlashGBX_GUI")
     fake_pyside, _, _, _ = fake_qt_modules()
@@ -658,10 +658,10 @@ def gui_module() -> ModuleType:
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
-        module.IniSettings = FakeSettings
+        cast("Any", module).IniSettings = FakeSettings
         yield module
     finally:
-        i18n_module.loadQtTranslation = original_translation_loader
+        cast("Any", i18n_module).loadQtTranslation = original_translation_loader
         sys.modules["PySide6"] = original_pyside
         if original_gui is None:
             sys.modules.pop("FlashGBX.FlashGBX_GUI", None)
