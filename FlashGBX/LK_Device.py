@@ -21,9 +21,13 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, overload
 
-import serial
-import serial.tools.list_ports
-from serial import PortNotOpenError, SerialException, SerialTimeoutException
+import serial  # pyright: ignore[reportMissingModuleSource]
+import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
+from serial import (  # pyright: ignore[reportMissingModuleSource]
+    PortNotOpenError,
+    SerialException,
+    SerialTimeoutException,
+)
 
 from .app import AppContext, AppInfo, generate_filename
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
@@ -49,6 +53,7 @@ DeviceWriteResult = int | Literal[False] | None
 ProgressUpdate = dict[str, Any]
 FlashcartRegistry = Mapping[str, Mapping[str, Any]]
 FirmwareInfo = dict[str, Any]
+FirmwareUpdaterClasses = tuple[type[Any] | None, type[Any]] | None
 FirmwareVariable = Literal[
     "ADDRESS",
     "AUTO_POWEROFF_TIME",
@@ -84,6 +89,14 @@ class ProgressSignal(Protocol):
     """Structural cart_type for Qt-style progress signals."""
 
     def emit(self, update: ProgressUpdate) -> object: ...
+
+
+class MBC6FlashMapper(Protocol):
+    """Mapper operations required by the MBC6 flash writer."""
+
+    def GetROMBank(self) -> int: ...
+
+    def SelectBankFlash(self, index: int) -> object: ...
 
 
 ProgressCallback = Callable[[ProgressUpdate], object]
@@ -337,7 +350,7 @@ class LK_Device(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def GetFirmwareUpdaterClass(self) -> Any:
+    def GetFirmwareUpdaterClass(self) -> FirmwareUpdaterClasses:
         raise NotImplementedError
 
     @abstractmethod
@@ -393,10 +406,10 @@ class LK_Device(ABC):
                     )
                     raise ConnectionError(msg)  # noqa: TRY301
             else:
-                modes = self.GetSupprtedModes()
-                mode = self._get_fw_variable("CART_MODE")
+                modes: Sequence[str] = self.GetSupprtedModes()
+                mode: int | Literal[False] = self._get_fw_variable("CART_MODE")
                 if mode > len(modes):
-                    msg_0 = f"Invalid firmware response (mode={mode - 1!s})"
+                    msg_0: str = f"Invalid firmware response (mode={mode - 1!s})"
                     raise ConnectionError(msg_0)  # noqa: TRY301
         except Exception as e:
             if self.USER_ANSWER is not True:  # Called from CartPowerCycleOrAskReconnect()
@@ -510,14 +523,14 @@ class LK_Device(ABC):
     def SetPin(self, pins: Sequence[int | str], set_high: bool) -> DeviceWriteResult:
         if self._firmware_info().get("fw_ver", 0) < 12:
             return None
-        pin_names = ["CART_POWER", "PIN_CLK", "PIN_WR", "PIN_RD", "PIN_CS"]
+        pin_names: list[str] = ["CART_POWER", "PIN_CLK", "PIN_WR", "PIN_RD", "PIN_CS"]
         pin_names.extend([f"PIN_A{i}" for i in range(24)])
         pin_names += ["PIN_CS2", "PIN_AUDIO"]
         value = 0
         selected_pins: list[int] = []
         for pin in pins:
             if isinstance(pin, int):
-                pin_index = pin
+                pin_index: int = pin
                 if pin_index < 0 or pin_index >= len(pin_names):
                     print(__("Invalid pin index specified:"), pin)
                     continue
@@ -546,15 +559,15 @@ class LK_Device(ABC):
         return state if isinstance(state, int) else False
 
     def GetCartModeSwitchState(self) -> int | Literal[False]:
-        firmware = self._firmware_info()
+        firmware: FirmwareInfo = self._firmware_info()
         if firmware.get("fw_ver", 0) < 15:
             return False
         if not firmware.get("cart_mode_switch", False):
             return False
-        state = self._GetSwitchState()
+        state: int | Literal[False] = self._GetSwitchState()
         if state is False:
             return False
-        state_mode = (state >> 1) & 1
+        state_mode: int = (state >> 1) & 1
         if state_mode == 1:
             dprint("Cartridge Mode Switch: DMG")
             return 0
@@ -2537,7 +2550,7 @@ class LK_Device(ABC):
         self,
         address: int,
         buffer: bytes | bytearray | memoryview,
-        mapper: Any,
+        mapper: MBC6FlashMapper,
     ) -> bool | None:
         length = len(buffer)
         max_length = 128
@@ -3561,7 +3574,7 @@ class LK_Device(ABC):
                 break
         return offset
 
-    def GetDumpReport(self) -> Any:
+    def GetDumpReport(self) -> str:
         from .DumpReport import DumpReport
 
         return DumpReport.generate(self.INFO["dump_info"], self)
