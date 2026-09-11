@@ -158,5 +158,7 @@ ignore = [
     "N801", #invalid-class-name
     "ANN202", #missing-return-type-private-function
     "ANN401", #any-type
-
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["PLR0913", "PLR0917"]

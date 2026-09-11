@@ -81,7 +81,7 @@ def test_dmg_logo_rendering_and_unknown_header_sizes(
 
     image = rom.LogoToImage(bytearray(48), valid=False)
     assert image is not False
-    assert image.getpalette()[:6] == [255, 255, 255, 255, 0, 0]
+    assert image.getpalette()[:6] == [255, 255, 255, 255, 0, 0]  # pyright: ignore[reportOptionalSubscript]
 
     monkeypatch.setattr(dmg_module, "Image", None)
     assert rom.LogoToImage(bytearray(b"logo")) is False
