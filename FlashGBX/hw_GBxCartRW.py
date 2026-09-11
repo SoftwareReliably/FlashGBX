@@ -16,9 +16,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, TypedDict
 
-import serial
-import serial.tools.list_ports
-from serial import SerialException
+import serial  # pyright: ignore[reportMissingModuleSource]
+import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
+from serial import SerialException  # pyright: ignore[reportMissingModuleSource]
 
 from .app import GBXCART_RW_BAUD_RATES, GBXCART_RW_DEFAULT_BAUD_RATE, AppInfo
 from .i18n import __, c__, format_decimal
@@ -64,7 +64,7 @@ class StatusCallback(Protocol):
         text: str,
         enableUI: bool = False,
         setProgress: float | None = None,
-    ) -> Any: ...
+    ) -> object: ...
 
 
 FlashcartMap = Mapping[str, Mapping[str, Any]]
@@ -657,10 +657,10 @@ class GbxDevice(LK_Device):
     def SupportsAudioAsWe(self) -> bool:
         return True
 
-    def Close(self, cartPowerOff: bool = False) -> Any:
+    def Close(self, cartPowerOff: bool = False) -> None:
         with contextlib.suppress(OSError, SerialException, ConnectionError):
             self.ResetLEDs()
-        return super().Close(cartPowerOff)
+        super().Close(cartPowerOff)
 
     def SetTimeout(self, seconds: float = 1) -> None:
         seconds = max(seconds, 1)
@@ -769,7 +769,7 @@ class FirmwareUpdater:
 
 
 try:
-    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
 
     def _message_box(  # noqa: PLR0913
         *,
@@ -797,7 +797,7 @@ try:
 
         def __init__(
             self,
-            app: Any,
+            app: QtWidgets.QWidget,
             app_path: str | Path,
             file: str | None = None,
             icon: str | Path | QtGui.QIcon | None = None,
@@ -1119,7 +1119,7 @@ except ImportError:
 
 
 try:
-    from PySide6 import QtCore, QtGui, QtWidgets
+    from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
 
     class FirmwareUpdaterWindowV13(QtWidgets.QDialog):
         APP: Any
@@ -1134,7 +1134,7 @@ try:
 
         def __init__(
             self,
-            app: Any,
+            app: QtWidgets.QWidget,
             app_path: str | Path,
             file: str | None = None,
             icon: str | Path | QtGui.QIcon | None = None,
@@ -1288,8 +1288,8 @@ try:
             self.main_layout.update()
             self.main_layout.activate()
             screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
-            x = (screenGeometry.width() - self.width()) // 2
-            y = (screenGeometry.height() - self.height()) // 2
+            x: int = (screenGeometry.width() - self.width()) // 2
+            y: int = (screenGeometry.height() - self.height()) // 2
             self.move(x, y)
             self.show()
 
@@ -1304,7 +1304,7 @@ try:
 
         def CloseDialog(self) -> bool:
             if self.btnClose.isEnabled() is False:
-                text = (
+                text: str = (
                     __(
                         "<b>Warning:</b> If you close this window while a firmware update is still running, it might leave the device in an unbootable state.",
                     )
@@ -1319,13 +1319,13 @@ try:
                     standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
                 )
                 msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
-                answer = msgbox.exec()
+                answer: int = msgbox.exec()
                 if answer == QtWidgets.QMessageBox.StandardButton.No:
                     return False
             return True
 
         def ReadDeviceInfo(self) -> None:
-            device = self.DEVICE
+            device: GbxDevice | None = self.DEVICE
             if device is None:
                 msg = "The GBxCart RW connection was closed"
                 raise RuntimeError(msg)
@@ -1392,7 +1392,7 @@ try:
                 )
                 archive_member = None
 
-            text = __("The following firmware will now be written to your GBxCart RW device:") + f"\n- {fw}"
+            text: str = __("The following firmware will now be written to your GBxCart RW device:") + f"\n- {fw}"
             text += "\n\n" + __("Do you want to continue?")
             msgbox = _message_box(
                 parent=self,
@@ -1402,7 +1402,7 @@ try:
                 standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
             )
             msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
-            answer = msgbox.exec()
+            answer: int = msgbox.exec()
             if answer == QtWidgets.QMessageBox.StandardButton.No:
                 return None
             self.btnUpdate.setEnabled(False)
@@ -1418,11 +1418,11 @@ try:
                         zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
                         archive.open(archive_member) as firmware_file,
                     ):
-                        ihex = firmware_file.read().decode("ascii")
+                        ihex: str = firmware_file.read().decode("ascii")
                 else:
                     with Path(path).open("rb") as firmware_file:
                         ihex = firmware_file.read().decode("ascii")
-                buffer = _parse_intel_hex(ihex)
+                buffer: bytearray = _parse_intel_hex(ihex)
             except (
                 OSError,
                 UnicodeDecodeError,
@@ -1444,7 +1444,7 @@ try:
             self.APP.DisconnectDevice()
 
             while True:
-                ret = self.WriteFirmware(buffer, self.SetStatus)
+                ret: Literal[1, 2, 3] = self.WriteFirmware(buffer, self.SetStatus)
                 if ret == 1:
                     return True
                 if ret == 2:
@@ -1467,14 +1467,14 @@ try:
                 self.grpAvailableFwUpdates.setEnabled(True)
 
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
-            fw_buffer = data
-            port = self.PORT
+            fw_buffer: bytearray = data
+            port: str = self.PORT
 
             delay = 0
             lives = 10
             buffer = bytearray()
 
-            msgWarnBadResponse = __(
+            msgWarnBadResponse: str = __(
                 "Failed to update your GBxCart RW {pcb_version} ({fw_version})!\n\n"
                 "The firmware update failed as the device is not responding correctly. Please ensure you use a genuine GBxCart RW, re-connect using a different USB cable and try again.\n\n"
                 "⚠️ Please note that FlashGBX does not work with the “{flashboy}” series devices.",
@@ -1652,7 +1652,7 @@ try:
 
             # Write firmware
             fncSetStatus(__("Updating firmware... Do not unplug the device!"))
-            iterations = math.ceil(len(fw_buffer) / 0x40)
+            iterations: int = math.ceil(len(fw_buffer) / 0x40)
             if len(fw_buffer) < iterations * 0x40:
                 fw_buffer = fw_buffer + bytearray([0xFF] * ((iterations * 0x40) - len(fw_buffer)))
 
