@@ -3,6 +3,7 @@
 
 import platform
 from pathlib import Path
+from typing import Literal
 
 
 class DumpReport:
@@ -14,7 +15,7 @@ class DumpReport:
         from .Formatter import Formatter
         from .Mapper import ConvertMapperToMapperType, DMG_Mapper
 
-        def _fields_to_lines(fields, col=19):
+        def _fields_to_lines(fields, col=19) -> list[str]:
             return [f"* {label + ':':<{col}}{value}" for label, value in fields]
 
         # Resolve header into a shallow copy so we never mutate the caller's dict
@@ -36,14 +37,14 @@ class DumpReport:
 
         keys = list(device.SUPPORTED_CARTS[mode].keys())
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
-        file_name = Path(di["file_name"]).name if di["file_name"] else ""
+        file_name: str = Path(di["file_name"]).name if di["file_name"] else ""
         file_size_bytes = di["file_size"]
-        file_size_str = (
+        file_size_str: str = (
             f"{Formatter.file_size(file_size_bytes, space=' ', localized=False)} ({file_size_bytes:d} bytes)"
         )
-        logo_str = "OK" if header["logo_correct"] else "Invalid"
+        logo_str: Literal["OK", "Invalid"] = "OK" if header["logo_correct"] else "Invalid"
 
-        lines = ["= FlashGBX Dump Report ="]
+        lines: list[str] = ["= FlashGBX Dump Report ="]
 
         lines += ["", "== File Information =="]
         lines += _fields_to_lines(
@@ -58,7 +59,7 @@ class DumpReport:
         )
 
         lines += ["", "== General Information =="]
-        general_fields = [
+        general_fields: list[tuple[str, str]] = [
             (
                 "Hardware",
                 f"{device.GetFullName()} – Firmware {device.GetFirmwareVersion()}",
@@ -80,14 +81,14 @@ class DumpReport:
         lines += _fields_to_lines(general_fields)
 
         lines += ["", "== Dumping Settings =="]
-        dumping_fields = [
+        dumping_fields: list[tuple[str, str]] = [
             ("Mode", system_name),
             ("ROM Size", rom_size_str),
         ]
         if mode == "DMG":
             mapper_int: int = di["mapper_type"]
             if mapper_int in DMG_Mapper().GetAllMapperIds():
-                mapper_str = ConvertMapperToMapperType(mapper_int)[0]
+                mapper_str: str = ConvertMapperToMapperType(mapper_int)[0]
             else:
                 mapper_str = f"0x{mapper_int:02X}"
             dumping_fields += [
@@ -172,7 +173,7 @@ class DumpReport:
             lines += _fields_to_lines(parsed_fields)
 
             if "gbmem" in di and di["gbmem"] is not None:
-                raw_data = "\n                     ".join(
+                raw_data: str = "\n                     ".join(
                     "".join(f"{x:02X}" for x in di["gbmem"][i * 0x20 : i * 0x20 + 0x20]) for i in range(4)
                 )
                 if "gbmem_parsed" in di and di["gbmem_parsed"] is not None and len(di["gbmem_parsed"]) > 0:
@@ -193,9 +194,9 @@ class DumpReport:
                             entry = di["gbmem_parsed"][i]
                             if entry["menu_index"] == 0xFF or not entry["header"]["logo_correct"]:
                                 continue
-                            section = "Menu ROM" if i == 1 else f"Game {i - 1}"
+                            section: str = "Menu ROM" if i == 1 else f"Game {i - 1}"
                             entry_rom_bytes = entry["rom_size"]
-                            entry_size_str = f"{Formatter.file_size(entry_rom_bytes, space=' ', localized=False)} ({entry_rom_bytes:d} bytes)"
+                            entry_size_str: str = f"{Formatter.file_size(entry_rom_bytes, space=' ', localized=False)} ({entry_rom_bytes:d} bytes)"
                             entry_fields = [
                                 ("Game Code", entry["game_code"]),
                                 ("Game Title", entry["title"]),
@@ -273,13 +274,13 @@ class DumpReport:
         elif mode == "AGB":
             hdr_chk = header["header_checksum"]
             hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
-            header_checksum_str = (
+            header_checksum_str: str = (
                 f"OK (0x{hdr_chk:02X})"
                 if header["header_checksum_correct"]
                 else f"Invalid (0x{hdr_chk_calc:02X}≠0x{hdr_chk:02X})"
             )
 
-            savelib_str = AgbSaveTypes().GetStringFromSaveLib(di["agb_savelib"], localized=False)
+            savelib_str: str = AgbSaveTypes().GetStringFromSaveLib(di["agb_savelib"], localized=False)
             game_title_raw = (header.get("game_title_raw") or "").replace("\0", "␀")
             game_code_raw = (header.get("game_code_raw") or "").replace("\0", "␀")
 
@@ -295,7 +296,7 @@ class DumpReport:
                 chip_id, chip_name = di["agb_save_flash_id"]
                 parsed_fields.append(("Save Flash Chip", f"{chip_name} (0x{chip_id:04X})"))
             if "eeprom_data" in di:
-                eeprom_hex = "".join(f"{x:02X}" for x in di["eeprom_data"])
+                eeprom_hex: str = "".join(f"{x:02X}" for x in di["eeprom_data"])
                 parsed_fields.append(("EEPROM area", f"{eeprom_hex}"))
             lines += _fields_to_lines(parsed_fields)
 
@@ -338,5 +339,5 @@ class DumpReport:
                 lines += ["", "== Database Match =="]
                 lines += _fields_to_lines(db_fields)
 
-        newline = "\r\n" if platform.system() == "Windows" else "\n"
+        newline: Literal["\r\n", "\n"] = "\r\n" if platform.system() == "Windows" else "\n"
         return newline.join(lines)
