@@ -378,7 +378,7 @@ def main(portableMode: bool = False) -> int | None:
     parser = argparse.ArgumentParser(formatter_class=ArgParseCustomFormatter, epilog=examples)
     try:
         # pylint: disable=protected-access
-        parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")
+        parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")  # noqa: SLF001
     except Exception as e:
         logger.exception(f"Failed to customize the argparse action-group title: {e}")
     parser.add_argument(

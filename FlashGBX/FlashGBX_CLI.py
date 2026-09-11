@@ -1221,7 +1221,7 @@ class FlashGBX_CLI:
 
         header = self.CONN.ReadHeader()
         self.ReadCartridge(header)
-        self.CONN._DetectCartridge(args={"limitVoltage": limitVoltage, "checkSaveType": True})
+        self.CONN._DetectCartridge(args={"limitVoltage": limitVoltage, "checkSaveType": True})  # noqa: SLF001
         ret = self.CONN.INFO.get("detect_cart")
         if not ret or len(ret) < 11:
             print(ANSI.RED + __("Cartridge detection failed.") + ANSI.RESET)

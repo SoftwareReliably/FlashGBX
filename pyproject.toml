@@ -163,3 +163,4 @@ max-complexity = 271
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR0913", "PLR0917", "SLF001"]
+"InteractiveConsole.py" =["SLF001"]
