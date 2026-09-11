@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Self
 
 import pytest
 
@@ -168,7 +169,7 @@ def test_app_info_formats_supported_windows_versions(monkeypatch: pytest.MonkeyP
 
 def test_app_info_reads_windows_registry_version_details(monkeypatch: pytest.MonkeyPatch) -> None:
     class RegistryKey:
-        def __enter__(self):
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_args: object) -> None:
