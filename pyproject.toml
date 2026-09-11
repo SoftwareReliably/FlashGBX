@@ -137,7 +137,6 @@ ignore = [
     "ERA001", #commented-out-codes
     "FBT002", #boolean-default-value-positional-argument
     "D103", #undocumented-public-function
-    "C901", #complex-structure
     "D101", #undocumented-public-class
     "SLF001", #private-member-access
     "PLR0915", #too-many-statements
@@ -158,6 +157,10 @@ ignore = [
 
 [tool.ruff.lint.pylint]
 max-branches = 308
+
+[tool.ruff.lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds setting.
+max-complexity = 271
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR0913", "PLR0917"]
