@@ -4,6 +4,7 @@
 import re
 import shlex
 from pathlib import Path
+from typing import Literal
 
 from .i18n import __
 
@@ -62,15 +63,15 @@ class InteractiveConsole:
         except Exception:
             return False
 
-    def _execute_command_inner(self, cmdline):
+    def _execute_command_inner(self, cmdline) -> bool:
         try:
-            parts = shlex.split(cmdline)
+            parts: list[str] = shlex.split(cmdline)
         except ValueError:
             self.on_output(__("Invalid command syntax."))
             return True
         if not parts:
             return True
-        command = parts[0].lower()
+        command: str = parts[0].lower()
 
         if command == "q":
             return False
@@ -82,7 +83,7 @@ class InteractiveConsole:
         if command == "w" and len(parts) == 3:
             try:
                 address = int(parts[1], 16)
-                value = int(parts[2], 2) if re.fullmatch(r"[01]{8}|[01]{16}", parts[2]) else int(parts[2], 16)
+                value: int = int(parts[2], 2) if re.fullmatch(r"[01]{8}|[01]{16}", parts[2]) else int(parts[2], 16)
             except ValueError:
                 self.on_output(__("Invalid input. Use hexadecimal or 8/16-bit binary for the value."))
                 return True
@@ -107,7 +108,7 @@ class InteractiveConsole:
             if _raw is False or (isinstance(_raw, bytearray) and len(_raw) == 0):
                 self.on_error(__("ERROR"))
             else:
-                data = bytearray(_raw)[:size]
+                data: bytearray = bytearray(_raw)[:size]
                 self.last_read_data = data
                 self.hexdump(address, data)
             return True
@@ -116,14 +117,14 @@ class InteractiveConsole:
             if self.last_read_data is None:
                 self.on_output(__("No data available. Read data first with “r”, “rs” or “re”."))
                 return True
-            filepath = Path(parts[1]).resolve()
+            filepath: Path = Path(parts[1]).resolve()
             if filepath.is_dir():
                 self.on_output(__("Invalid file path. Path is a directory."))
                 return True
             if not filepath.parent.exists():
                 self.on_output(__("Invalid file path. Directory does not exist."))
                 return True
-            backup_path = filepath.with_name(filepath.name + ".bak")
+            backup_path: Path = filepath.with_name(filepath.name + ".bak")
             try:
                 if filepath.exists():
                     backup_path.unlink(missing_ok=True)
@@ -181,7 +182,7 @@ class InteractiveConsole:
                 if parts[1] not in ("4", "64"):
                     self.on_output(__("EEPROM type must be 4 or 64."))
                     return True
-                eeprom_type = 2 if parts[1] == "64" else 1
+                eeprom_type: Literal[2, 1] = 2 if parts[1] == "64" else 1
                 try:
                     address = int(parts[2], 16)
                     size = int(parts[3], 16)
