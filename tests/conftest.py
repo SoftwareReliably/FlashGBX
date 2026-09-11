@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-import serial
-import serial.tools.list_ports
+import pytest  # pyright: ignore[reportMissingImports]
+import serial  # pyright: ignore[reportMissingModuleSource]
+import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
 
 
 @pytest.fixture(autouse=True)
 def prevent_real_hardware(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail fast if a test tries to open serial hardware accidentally."""
 
-    def unexpected_serial_access(*args: Any, **kwargs: Any) -> None:
+    def unexpected_serial_access(*args: object, **kwargs: object) -> None:
         del args, kwargs
         msg = "A test tried to open real serial hardware; inject MockSerial instead"
         raise AssertionError(msg)
