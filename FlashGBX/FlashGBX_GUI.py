@@ -75,6 +75,8 @@ if TYPE_CHECKING:
     import argparse
     from collections.abc import Mapping, Sequence
 
+    from PIL.Image import Image as PILImage  # pyright: ignore[reportMissingImports]
+
     from .LK_Device import LK_Device
 
 SAVE_EXTS = (".sav", ".srm", ".fla", ".eep")
@@ -150,7 +152,7 @@ def _create_check_box(text: str, *, checked: bool = False) -> QtWidgets.QCheckBo
     return check_box
 
 
-def _set_bitmap(label: QtWidgets.QLabel, bitmap: Any) -> bool:
+def _set_bitmap(label: QtWidgets.QLabel, bitmap: PILImage) -> bool:
     """Convert and display a bitmap when conversion succeeds."""
     pixmap = bitmap2pixmap(bitmap)
     if pixmap is False:
@@ -1425,10 +1427,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             action.setChecked(action_baudrate == baudrate)
 
     @staticmethod
-    def _IsGBxCartRWDevice(device: Any) -> bool:
+    def _IsGBxCartRWDevice(device: object) -> bool:
         return getattr(device, "DEVICE_ID", "") == "gbxcartrw" or getattr(device, "DEVICE_NAME", "") == "GBxCart RW"
 
-    def _GetDeviceMaxBaudRate(self, device: Any) -> int:
+    def _GetDeviceMaxBaudRate(self, device: object) -> int:
         if self._IsGBxCartRWDevice(device):
             return self._GetGBxCartRWBaudRate()
         return 2_000_000
@@ -1495,7 +1497,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.DisconnectDevice()
 
     def UpdateCheck(self) -> None:
-        update_check = self.SETTINGS.value("UpdateCheck")
+        update_check: str | None = self.SETTINGS.value("UpdateCheck")
         if update_check is None:
             answer = QtWidgets.QMessageBox.question(
                 self,
@@ -1813,8 +1815,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if kbmod != QtCore.Qt.KeyboardModifier.ShiftModifier:
                 self.WriteDebugLog()
 
-        system = platform.system()
-        env = self.GetHostLauncherEnv()
+        system: str = platform.system()
+        env: dict[str, str] = self.GetHostLauncherEnv()
         try:
             target_path = Path(path).resolve()
             if select_file and target_path.is_file():
@@ -1831,7 +1833,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     )
                     return
                 try:
-                    file_uri = "file://" + urllib.parse.quote(abs_path)
+                    file_uri: str = "file://" + urllib.parse.quote(abs_path)
                     subprocess.check_call(  # noqa: S603 - fixed system utility; no shell
                         [
                             _system_executable("dbus-send"),
@@ -1853,7 +1855,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 else:
                     return
 
-            path_uri = target_path.as_uri()
+            path_uri: str = target_path.as_uri()
             if system == "Windows":
                 cast("Any", os).startfile(path_uri)
             elif system == "Darwin":
@@ -5767,7 +5769,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             args={"limitVoltage": limitVoltage, "checkSaveType": checkSaveType},
         )
 
-    def FinishDetectCartridge(self, ret: Any) -> None:
+    def FinishDetectCartridge(self, ret: object) -> None:
         self.lblStatus1aResult.setText("–")
         self.lblStatus2aResult.setText("–")
         self.lblStatus3aResult.setText("–")
