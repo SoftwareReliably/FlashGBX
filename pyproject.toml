@@ -141,7 +141,6 @@ ignore = [
     "D101", #undocumented-public-class
     "SLF001", #private-member-access
     "PLR0915", #too-many-statements
-    "PLR0912", #too-many-branches
     "FBT001", #boolean-type-hint-positional-argument
     "TRY003", #raise-vanilla-args
     "F405", #undefined-local-with-import-star-usage
@@ -156,6 +155,9 @@ ignore = [
     "S324", #hashlib-insecure-hash-function
     "N801", #invalid-class-name
 ]
+
+[tool.ruff.lint.pylint]
+max-branches = 308
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR0913", "PLR0917"]
