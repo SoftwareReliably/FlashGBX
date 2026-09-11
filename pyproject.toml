@@ -156,7 +156,6 @@ ignore = [
     "PLC0415", #import-outside-top-level
     "S324", #hashlib-insecure-hash-function
     "N801", #invalid-class-name
-    "ANN202", #missing-return-type-private-function
 ]
 
 [tool.ruff.lint.per-file-ignores]

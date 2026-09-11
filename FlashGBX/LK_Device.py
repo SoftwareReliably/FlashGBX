@@ -54,6 +54,8 @@ ProgressUpdate = dict[str, Any]
 FlashcartRegistry = Mapping[str, Mapping[str, Any]]
 FirmwareInfo = dict[str, Any]
 FirmwareUpdaterClasses = tuple[type[Any] | None, type[Any]] | None
+CartridgeDetectionResult = tuple[Any, ...] | Literal[False] | None
+ROMBackupResult = bool | int | None
 FirmwareVariable = Literal[
     "ADDRESS",
     "AUTO_POWEROFF_TIME",
@@ -1769,7 +1771,7 @@ class LK_Device(ABC):
 
         return data
 
-    def _DetectCartridge(self, args):  # Wrapper for thread call
+    def _DetectCartridge(self, args) -> bool:  # Wrapper for thread call
         self.SetProgress({"action": "INITIALIZE", "abortable": False, "method": "DETECT_CART"})
         signal = self.SIGNAL
         self.SIGNAL = None
@@ -1799,7 +1801,13 @@ class LK_Device(ABC):
         self.SetProgress({"action": "FINISHED"})
         return True
 
-    def _DetectCartridge_Worker(self, mbc=None, limitVoltage=False, checkSaveType=True, signal=None):
+    def _DetectCartridge_Worker(
+        self,
+        mbc=None,
+        limitVoltage=False,
+        checkSaveType=True,
+        signal=None,
+    ) -> CartridgeDetectionResult:
         self.SIGNAL = None
         self.CANCEL = False
         self.ERROR = False
@@ -3654,16 +3662,16 @@ class LK_Device(ABC):
 
     #################################################################
 
-    def _BackupROM(self, args):
+    def _BackupROM(self, args) -> ROMBackupResult:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._BackupROM_Worker(args)
         finally:
             self._thread_worker_auto_poweroff_finish()
 
-    def _BackupROM_Worker(self, args):
-        mode = self.MODE
-        if mode is None:
+    def _BackupROM_Worker(self, args) -> ROMBackupResult:
+        device_mode = self.MODE
+        if device_mode is None:
             msg = "Cartridge mode must be selected before reading ROM"
             raise RuntimeError(msg)
         file = None
@@ -3680,14 +3688,16 @@ class LK_Device(ABC):
         rom_bank_size = 0x2000000
         buffer_pos = 0
         pos = 0
-        supported_carts: list[Any] = list(self.SUPPORTED_CARTS[mode].values())
+        supported_carts: list[Any] = list(self.SUPPORTED_CARTS[device_mode].values())
         cart_type: Any = copy.deepcopy(supported_carts[args["cart_type"]])
         if not isinstance(cart_type, str):
             cart_type["_index"] = 0
-            for i in range(len(list(self.SUPPORTED_CARTS[mode].keys()))):
+            for i in range(len(list(self.SUPPORTED_CARTS[device_mode].keys()))):
                 if i == args["cart_type"]:
                     try:
-                        cart_type["_index"] = cart_type["names"].index(list(self.SUPPORTED_CARTS[mode].keys())[i])
+                        cart_type["_index"] = cart_type["names"].index(
+                            list(self.SUPPORTED_CARTS[device_mode].keys())[i],
+                        )
 
                         fc_fncptr: FlashcartCallbacks = {
                             "cart_write_fncptr": self._cart_write,
@@ -4325,15 +4335,15 @@ class LK_Device(ABC):
             raise NotImplementedError
         return ret
 
-    def _BackupRestoreRAM(self, args):
+    def _BackupRestoreRAM(self, args) -> bool | None:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._BackupRestoreRAM_Worker(args)
         finally:
             self._thread_worker_auto_poweroff_finish()
 
-    def _BackupRestoreRAM_Worker(self, args: dict[str, Any]):
-        mode = self.MODE
+    def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
+        mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
             msg = "Cartridge mode must be selected before accessing save data"
             raise RuntimeError(msg)
@@ -5309,15 +5319,15 @@ class LK_Device(ABC):
         self.SetProgress({"action": "FINISHED", "verified": verified})
         return True
 
-    def _FlashROM(self, args):
+    def _FlashROM(self, args) -> bool | None:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._FlashROM_Worker(args)
         finally:
             self._thread_worker_auto_poweroff_finish()
 
-    def _FlashROM_Worker(self, args: dict[str, Any]):
-        mode = self.MODE
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+        mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
             msg = "Cartridge mode must be selected before writing ROM"
             raise RuntimeError(msg)
