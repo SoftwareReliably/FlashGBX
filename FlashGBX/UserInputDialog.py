@@ -98,7 +98,7 @@ class UserInputDialog(QtWidgets.QDialog):
         self.btnOK.clicked.connect(self.accept)
         self.btnCancel.clicked.connect(self.reject)
 
-    def GetResult(self):
+    def GetResult(self) -> dict[Any, Any]:
         return self.paramWidgets
 
     def hideEvent(self, event) -> None:

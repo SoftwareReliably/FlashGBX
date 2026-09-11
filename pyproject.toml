@@ -129,7 +129,6 @@ ignore = [
     "PLR2004", #magic-value-comparison
     "T201", #print
     "ANN001", #missing-type-function-argument
-    "ANN201", #missing-return-type-undocumented-public-function
     "S101", #assert
     "E501", #line-too-long
     "RUF001", #ambiguous-unicode-character-string
@@ -162,5 +161,5 @@ max-statements = 929
 max-complexity = 271
 
 [tool.ruff.lint.per-file-ignores]
-"test_*.py" = ["PLR0913", "PLR0917", "SLF001"]
+"test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201"]
 "InteractiveConsole.py" =["SLF001"]
