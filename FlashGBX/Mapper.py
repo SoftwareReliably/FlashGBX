@@ -784,7 +784,7 @@ class DMG_MBC6(DMG_Mapper):
         cart_read_fncptr=None,
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
-    ):
+    ) -> None:
         if args is None:
             args = {}
         super().__init__(
@@ -1147,7 +1147,7 @@ class DMG_M161(DMG_Mapper):
         cart_read_fncptr=None,
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
-    ):
+    ) -> None:
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x8000
@@ -1787,7 +1787,7 @@ class DMG_Unlicensed_WisdomTree(DMG_Mapper):
         cart_read_fncptr=None,
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
-    ):
+    ) -> None:
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x8000
@@ -1820,7 +1820,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         cart_read_fncptr=None,
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
-    ):
+    ) -> None:
         if args is None:
             args = {}
         super().__init__(
@@ -1881,7 +1881,7 @@ class DMG_Unlicensed_DatelOrbitV2(DMG_Mapper):
         cart_read_fncptr=None,
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
-    ):
+    ) -> None:
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x2000
