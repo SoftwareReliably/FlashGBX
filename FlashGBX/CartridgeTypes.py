@@ -288,13 +288,13 @@ class DmgSaveTypes:
         else:
             self._entry = None
 
-    def _FindByMbc(self, mbc):
+    def _FindByMbc(self, mbc) -> tuple[int, int, str] | None:
         for entry in self.RAM_TYPES:
             if entry[0] == mbc:
                 return entry
         return None
 
-    def _FindBySize(self, size):
+    def _FindBySize(self, size) -> tuple[int, int, str] | None:
         for entry in self.RAM_TYPES:
             if entry[1] == size:
                 return entry
@@ -309,7 +309,7 @@ class DmgSaveTypes:
     def GetMbc(self):
         return self._entry[0] if self._entry else None
 
-    def GetIndex(self):
+    def GetIndex(self) -> int | None:
         if self._entry is None:
             return None
         for index, entry in enumerate(self.RAM_TYPES):
@@ -356,7 +356,7 @@ class DmgSaveTypes:
             mbc: int = entry[0]
             if mbc == 0x205 and not include_batteryless:
                 continue
-            name = cls.CLI_NAMES.get(mbc)
+            name: str | None = cls.CLI_NAMES.get(mbc)
             if name is not None:
                 out.append(name)
         return out
