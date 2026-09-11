@@ -6670,7 +6670,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             return False
         else:
-            FirmwareUpdater = self._device.GetFirmwareUpdaterClass()[1]
+            updater_classes = self._device.GetFirmwareUpdaterClass()
+            if updater_classes is None:
+                return False
+            FirmwareUpdater = updater_classes[1]
 
         firmware_window = FirmwareUpdater(self, app_path=AppContext.APP_PATH, icon=self.windowIcon(), device=self.CONN)
         self.FWUPWIN = firmware_window
