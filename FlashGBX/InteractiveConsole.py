@@ -4,7 +4,7 @@
 import re
 import shlex
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from .i18n import __
 
@@ -17,7 +17,7 @@ class InteractiveConsole:
         self.on_error = on_error if on_error is not None else on_output
         self.last_read_data = None
 
-    def get_help_lines(self):
+    def get_help_lines(self) -> list[Any]:
         lines = []
         lines.append(__("Interactive Console") + " – " + __("Commands:"))
         lines.append("  r <addr> <size>               " + __("Read from ROM region"))
