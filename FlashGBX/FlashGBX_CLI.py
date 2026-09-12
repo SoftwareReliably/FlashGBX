@@ -162,6 +162,74 @@ class FlashGBX_CLI:
             raise TypeError(msg)
         return value
 
+    @staticmethod
+    def _SelectMenuAction(menu_items: Sequence[tuple[str, str]]) -> str | None:
+        """Prompt for a menu item and return its action name."""
+        print(__("Select Operation:"))
+        for index, (_, label) in enumerate(menu_items, start=1):
+            print(f"{index:>3d}) {label}")
+        print()
+        item_count = len(menu_items)
+        answer = (
+            input(
+                __(
+                    "Enter number ({range}) [{default}]:",
+                    range=f"1-{item_count}",
+                    default="1",
+                )
+                + " ",
+            )
+            .lower()
+            .strip()
+        )
+        if answer == "":
+            return "info"
+        try:
+            selection = int(answer)
+        except TypeError, ValueError:
+            return None
+        if not 1 <= selection <= item_count:
+            return None
+        return menu_items[selection - 1][0]
+
+    @staticmethod
+    def _ExtractCameraPictures(args: argparse.Namespace) -> int:
+        """Extract all pictures from a Game Boy Camera save file."""
+        if args.path == "auto":
+            args.path = input(__("Enter file path of Game Boy Camera save data file:") + " ").strip().replace('"', "")
+            print()
+            if args.path == "":
+                print(__("Canceled."))
+                return 0
+
+        camera = PocketCamera()
+        if not camera.LoadFile(args.path):
+            print("\n" + ANSI.RED + __("Couldn't parse the save data file.") + ANSI.RESET)
+            return 0
+
+        camera.SetPalette(PocketCamera.PALETTE_NAMES.index(args.gbcamera_palette))
+        destination = Path(args.path).with_suffix("")
+        if destination.is_file():
+            print(
+                "\n"
+                + ANSI.RED
+                + __("Can't save pictures at location “{path}”.", path=str(destination.resolve()))
+                + ANSI.RESET,
+            )
+            return 1
+        destination.mkdir(parents=True, exist_ok=True)
+        for index in range(32):
+            file = destination / f"IMG_PC{index + 1:02d}.{args.gbcamera_outfile_format}"
+            camera.ExportPicture(index, file, scale=1)
+        print(
+            __(
+                "The pictures from “{save_file}” were extracted to “{destination}”.",
+                save_file=str(Path(args.path).resolve()),
+                destination=str(destination.resolve() / f"IMG_PC**.{args.gbcamera_outfile_format:s}"),
+            ),
+        )
+        return 0
+
     def run(self) -> int:
         sys.stdout = Logger()
         config_ret = self.ARGS["config_ret"]
@@ -227,35 +295,10 @@ class FlashGBX_CLI:
         # Ask interactively if no args set
         if args.action is None:
             self.ARGS["called_with_args"] = False
-            print(__("Select Operation:"))
-            for i, (_, label) in enumerate(menu_items, start=1):
-                print(f"{i:>3d}) {label}")
-            print()
-            n = len(menu_items)
-            args.action = (
-                input(
-                    __(
-                        "Enter number ({range}) [{default}]:",
-                        range=f"1-{n}",
-                        default="1",
-                    )
-                    + " ",
-                )
-                .lower()
-                .strip()
-            )
-            if args.action == "":
-                args.action = "info"
-            else:
-                try:
-                    selection = int(args.action)
-                except TypeError, ValueError:
-                    print(__("Canceled."))
-                    return 0
-                if not 1 <= selection <= n:
-                    print(__("Canceled."))
-                    return 0
-                args.action = menu_items[selection - 1][0]
+            args.action = self._SelectMenuAction(menu_items)
+            if args.action is None:
+                print(__("Canceled."))
+                return 0
         else:
             self.ARGS["called_with_args"] = True
 
@@ -301,45 +344,7 @@ class FlashGBX_CLI:
             self.CONN.SetAGBReadMethod(method=2)
 
         if args.action == "gbcamera-extract":
-            if args.path == "auto":
-                args.path = (
-                    input(__("Enter file path of Game Boy Camera save data file:") + " ").strip().replace('"', "")
-                )
-                print()
-                if args.path == "":
-                    print(__("Canceled."))
-                    return 0
-
-            pc = PocketCamera()
-            if pc.LoadFile(args.path):
-                pc.SetPalette(PocketCamera.PALETTE_NAMES.index(args.gbcamera_palette))
-                destination = Path(args.path).with_suffix("")
-                file = destination / "IMG_PC00.png"
-                if destination.is_file():
-                    print(
-                        "\n"
-                        + ANSI.RED
-                        + __(
-                            "Can't save pictures at location “{path}”.",
-                            path=str(destination.resolve()),
-                        )
-                        + ANSI.RESET,
-                    )
-                    return 1
-                destination.mkdir(parents=True, exist_ok=True)
-                for i in range(32):
-                    file = destination / f"IMG_PC{i + 1:02d}.{args.gbcamera_outfile_format}"
-                    pc.ExportPicture(i, file, scale=1)
-                print(
-                    __(
-                        "The pictures from “{save_file}” were extracted to “{destination}”.",
-                        save_file=str(Path(args.path).resolve()),
-                        destination=str(destination.resolve() / f"IMG_PC**.{args.gbcamera_outfile_format:s}"),
-                    ),
-                )
-            else:
-                print("\n" + ANSI.RED + __("Couldn't parse the save data file.") + ANSI.RESET)
-            return 0
+            return self._ExtractCameraPictures(args)
 
         if args.action in fwupdate_actions:
             for hw_mod in HW_DEVICES:

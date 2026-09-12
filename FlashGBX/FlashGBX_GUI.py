@@ -19,7 +19,7 @@ import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, TypedDict, cast
 
 import requests
 from packaging import version
@@ -101,6 +101,16 @@ class GuiArgs(TypedDict):
 class BatterylessSramInfo(TypedDict):
     bl_offset: int
     bl_size: int
+
+
+class _SaveWritePreparation(NamedTuple):
+    mode: PlatformMode
+    path: str
+    mbc: int
+    save_type: int
+    cart_type: int
+    file_size: int
+    buffer: bytearray | None
 
 
 def _format_batteryless_sram_details(save_size: int, info: BatterylessSramInfo) -> str:
@@ -2982,16 +2992,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
 
-    def FlashROM(self, dpath: str = "") -> None:
+    def _PrepareFlashCartSelection(
+        self,
+        dpath: str,
+    ) -> tuple[PlatformMode, str, str, str, list[Any], int, dict[str, Any]] | None:
+        """Resolve the device mode and selected flash-cart profile."""
         if not self.CheckDeviceAlive():
-            return
+            return None
 
         mode = self._device.GetMode()
         if mode not in ("DMG", "AGB"):
-            return
-        just_erase = False
+            return None
         path = ""
-        buffer = bytearray()
         if dpath != "":
             ext = Path(dpath).suffix
             if ext.lower() == ".isx":
@@ -3014,7 +3026,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
                 if "detected_cart_type" in self.STATUS:
                     del self.STATUS["detected_cart_type"]
-                return
+                return None
             path = dpath
 
         if mode == "DMG":
@@ -3043,13 +3055,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.STATUS["detect_cartridge_args"] = {"dpath": path}
                 self.STATUS["can_skip_message"] = True
                 self.DetectCartridge(checkSaveType=False)
-                return
+                return None
             cart_type = self.STATUS["detected_cart_type"]
             if "detected_cart_type" in self.STATUS:
                 del self.STATUS["detected_cart_type"]
 
             if cart_type is False:  # clicked Cancel button
-                return
+                return None
             if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
                 QtWidgets.QMessageBox.critical(
                     self,
@@ -3057,7 +3069,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     __("A compatible flashcart profile could not be auto-detected."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                return
+                return None
 
             if mode == "DMG":
                 self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
@@ -3075,8 +3087,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 __("The selected flashcart profile is invalid."),
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
-            return
+            return None
         cart_profile = cast("dict[str, Any]", cart_profile)
+
+        return mode, path, setting_name, last_dir, carts, cart_type, cart_profile
+
+    def FlashROM(self, dpath: str = "") -> None:
+        selection = self._PrepareFlashCartSelection(dpath)
+        if selection is None:
+            return
+        mode, path, setting_name, last_dir, carts, cart_type, cart_profile = selection
+        just_erase = False
+        buffer = bytearray()
 
         if mode == "DMG":
             self.SetDMGMapperResult(cart_profile)
@@ -3999,13 +4021,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return answer != QtWidgets.QMessageBox.StandardButton.No, None
 
-    def WriteRAM(
+    def _PrepareSaveWrite(
         self,
         dpath: str = "",
         erase: bool = False,
         test: bool = False,
         skip_warning: bool = False,
-    ) -> None:
+    ) -> _SaveWritePreparation | None:
         mode = self._device.GetMode() if self.CheckDeviceAlive() else None
         path = ""
         if erase is True:
@@ -4017,7 +4039,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             erase=erase,
             test=test,
         ):
-            return
+            return None
 
         if mode == "DMG":
             setting_name = "LastDirSaveDataDMG"
@@ -4028,14 +4050,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
             mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
             save_type = DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetMbc()
-            if save_type == 0:
+            if save_type in (None, 0):
                 QtWidgets.QMessageBox.critical(
                     self,
                     f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                     __("No save type was selected."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                return
+                return None
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
 
         elif mode == "AGB":
@@ -4054,12 +4076,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     __("No save type was selected."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                return
+                return None
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
         else:
-            return
+            return None
         if not self.CheckHeader():
-            return
+            return None
 
         filesize = 0
         if dpath != "":
@@ -4073,7 +4095,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return
+                    return None
             path = dpath
             self.SETTINGS.setValue(setting_name, str(Path(path).parent))
         elif erase:
@@ -4086,7 +4108,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.StandardButton.Cancel,
                 )
                 if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return
+                    return None
         elif test:
             path = None
             if self._device.GetFWBuildDate() == "":  # Legacy Mode
@@ -4098,7 +4120,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 msgbox.exec()
-                return
+                return None
 
             if (
                 (
@@ -4132,7 +4154,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     __("Stress test is not supported for this save type."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                return
+                return None
             msg = __(
                 "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
             )
@@ -4152,7 +4174,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
             if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                return
+                return None
         else:
             if path == "":
                 generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
@@ -4168,10 +4190,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if path != "":
                 self.SETTINGS.setValue(setting_name, str(Path(path).parent))
             if path == "":
-                return
+                return None
 
         if not isinstance(path, str):
-            return
+            return None
         if not erase and not test and len(path) > 0:
             filesize = Path(path).stat().st_size
             if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
@@ -4181,11 +4203,30 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     __("The size of this file is not supported."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                return
+                return None
 
         continue_write, buffer = self._prepare_save_calibration(mode=mode, path=path, erase=erase, test=test)
         if not continue_write:
+            return None
+
+        return _SaveWritePreparation(mode, path, mbc, save_type, cart_type, filesize, buffer)
+
+    def WriteRAM(
+        self,
+        dpath: str = "",
+        erase: bool = False,
+        test: bool = False,
+        skip_warning: bool = False,
+    ) -> None:
+        preparation = self._PrepareSaveWrite(
+            dpath=dpath,
+            erase=erase,
+            test=test,
+            skip_warning=skip_warning,
+        )
+        if preparation is None:
             return
+        mode, path, mbc, save_type, cart_type, filesize, buffer = preparation
 
         verify_write = self.SETTINGS.value("VerifyData", default="enabled")
         verify_write = bool(verify_write and verify_write.lower() == "enabled")

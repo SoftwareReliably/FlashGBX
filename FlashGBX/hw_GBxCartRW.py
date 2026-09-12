@@ -1475,6 +1475,61 @@ try:
                 self.btnClose.setEnabled(True)
                 self.grpAvailableFwUpdates.setEnabled(True)
 
+        def _VerifyFirmwareWrite(
+            self,
+            dev: serial.Serial,
+            fw_buffer: bytearray,
+            fncSetStatus: StatusCallback,
+        ) -> FirmwareUpdateResult | None:
+            """Read back an AVR firmware image and report verification failures."""
+            fncSetStatus(__("Verifying update..."))
+            readback = bytearray()
+            dev.write(b"f")
+            dev.flush()
+            time.sleep(0.00125)
+            for _ in range(0, 0x1DC0, 0x40):
+                self.APP.QT_APP.processEvents()
+                dev.write(b"!")
+                dev.flush()
+                time.sleep(0.00125)
+                read_deadline = time.monotonic() + 1
+                while dev.in_waiting == 0 and time.monotonic() < read_deadline:
+                    time.sleep(0.01)
+                if dev.in_waiting == 0:
+                    dev.close()
+                    fncSetStatus(text=__("Verification Error."), enableUI=True)
+                    return 2
+                readback += bytearray(dev.read(0x40))
+                self.prgStatus.setValue(round(len(readback) / 0x1DC0 * 100))
+            dev.read(1)
+
+            if fw_buffer == readback[: len(fw_buffer)]:
+                fncSetStatus(__("Verification OK."))
+                self.APP.QT_APP.processEvents()
+                time.sleep(0.2)
+                return None
+
+            fncSetStatus(text=__("Verification Error."), enableUI=True)
+            dev.write(b"?")
+            dev.flush()
+            time.sleep(0.00125)
+            dev.close()
+            msgbox = _message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=AppInfo.NAME,
+                text=__(
+                    "The firmware update was not successful (Verification Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                ),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+            answer = msgbox.exec()
+            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+                time.sleep(1)
+                return 3
+            return 2
+
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
             fw_buffer: bytearray = data
             port: str = self.PORT
@@ -1740,56 +1795,9 @@ try:
             time.sleep(0.00125)
             dev.read(1)
 
-            # verify flash
-            fncSetStatus(__("Verifying update..."))
-            buffer2 = bytearray()
-            dev.write(b"f")
-            dev.flush()
-            time.sleep(0.00125)
-            for _ in range(0, 0x1DC0, 0x40):
-                self.APP.QT_APP.processEvents()
-                dev.write(b"!")
-                dev.flush()
-                time.sleep(0.00125)
-                read_deadline = time.monotonic() + 1
-                while dev.in_waiting == 0 and time.monotonic() < read_deadline:
-                    time.sleep(0.01)
-                if dev.in_waiting == 0:
-                    dev.close()
-                    fncSetStatus(text=__("Verification Error."), enableUI=True)
-                    return 2
-                ret = bytearray(dev.read(0x40))
-                buffer2 += ret
-                self.prgStatus.setValue(round(len(buffer2) / 0x1DC0 * 100))
-            dev.read(1)
-
-            buffer2 = buffer2[: len(fw_buffer)]
-
-            if fw_buffer == buffer2:
-                fncSetStatus(__("Verification OK."))
-                self.APP.QT_APP.processEvents()
-                time.sleep(0.2)
-            else:
-                fncSetStatus(text=__("Verification Error."), enableUI=True)
-                dev.write(b"?")
-                dev.flush()
-                time.sleep(0.00125)
-                dev.close()
-                msgbox = _message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=AppInfo.NAME,
-                    text=__(
-                        "The firmware update was not successful (Verification Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
-                    ),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                    defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                )
-                answer = msgbox.exec()
-                if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                    time.sleep(1)
-                    return 3
-                return 2
+            verification_result = self._VerifyFirmwareWrite(dev, fw_buffer, fncSetStatus)
+            if verification_result is not None:
+                return verification_result
 
             # Change timeout to 1s
             fncSetStatus(__("Writing user data..."))
