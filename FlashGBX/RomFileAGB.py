@@ -89,7 +89,7 @@ class RomFileAGB:
         return zlib.crc32(self.ROMFILE) & 0xFFFFFFFF
 
     def FixHeader(self) -> bytearray:
-        self.CalcChecksumHeader(True)
+        self.CalcChecksumHeader(fix=True)
         return self.ROMFILE[0:0x200]
 
     def LogoToImage(
