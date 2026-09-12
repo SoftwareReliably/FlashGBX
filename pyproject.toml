@@ -141,7 +141,6 @@ ignore = [
     "N803", #invalid-argument-name
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
-    "FBT003", #boolean-positional-value-in-call
     "D100", #undocumented-public-module
     "PLC0415", #import-outside-top-level
     "S324", #hashlib-insecure-hash-function
@@ -158,5 +157,5 @@ max-returns = 34
 max-complexity = 271
 
 [tool.ruff.lint.per-file-ignores]
-"test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201"]
+"test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201", "FBT003"]
 "InteractiveConsole.py" =["SLF001"]

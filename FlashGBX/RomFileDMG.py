@@ -72,8 +72,8 @@ class RomFileDMG:
         return checksum
 
     def FixHeader(self) -> bytearray:
-        self.CalcChecksumHeader(True)
-        self.CalcChecksumGlobal(True)
+        self.CalcChecksumHeader(fix=True)
+        self.CalcChecksumGlobal(fix=True)
         return self.ROMFILE[0:0x200]
 
     def LogoToImage(self, data: bytearray, valid: bool = True) -> PILImage | Literal[False]:
