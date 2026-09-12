@@ -186,7 +186,7 @@ if _IS_WINDOWS:
             self._taskbar: ctypes.c_void_p | None = None
             self._window_handle: Any = None
 
-        def bind(self, window_handle: int) -> None:
+        def _bind(self, window_handle: int) -> None:
             self._window_handle = wintypes.HWND(window_handle)
             taskbar = ctypes.c_void_p()
             ole32: Any = getattr(ctypes, "windll").ole32  # noqa: B009
@@ -313,7 +313,7 @@ if _IS_WINDOWS:
 
         def setWindow(self, window: QtGui.QWindow | None) -> None:
             if window is not None:
-                self._progress.bind(int(window.winId()))
+                self._progress._bind(int(window.winId()))  # noqa: SLF001
 
     class _WindowsQtWin:
         @staticmethod

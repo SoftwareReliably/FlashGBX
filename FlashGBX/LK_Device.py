@@ -2881,6 +2881,7 @@ class LK_Device(ABC):
         buffer: bytes | bytearray | memoryview,
         bank: int,
     ) -> bool | None:
+        del bank
         length = len(buffer)
         max_length = 128
         num = math.ceil(length / max_length)

@@ -14,7 +14,7 @@ import time
 import zipfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypedDict
 
 import serial  # pyright: ignore[reportMissingModuleSource]
 import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
@@ -25,6 +25,9 @@ from .i18n import __, c__, format_decimal
 from .IniSettings import IniSettings
 from .LK_Device import LK_Device
 from .Logging import dprint, logger
+
+if TYPE_CHECKING:
+    from PySide6.QtCore import QRect
 
 
 class FirmwareInfo(TypedDict):
@@ -803,6 +806,7 @@ try:
             icon: str | Path | QtGui.QIcon | None = None,
             device: GbxDevice | None = None,
         ) -> None:
+            del file
             QtWidgets.QDialog.__init__(self, app)
             if icon is not None:
                 self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
@@ -960,15 +964,16 @@ try:
             try:
                 self.main_layout.update()
                 self.main_layout.activate()
-                screenGeometry = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
-                x = (screenGeometry.width() - self.width()) // 2
-                y = (screenGeometry.height() - self.height()) // 2
+                screenGeometry: QRect = (self.screen() or QtGui.QGuiApplication.primaryScreen()).geometry()
+                x: int = (screenGeometry.width() - self.width()) // 2
+                y: int = (screenGeometry.height() - self.height()) // 2
                 self.move(x, y)
                 self.show()
             except Exception:
                 return
 
         def hideEvent(self, event: QtGui.QHideEvent) -> None:
+            del event
             if self.DEVICE is None:
                 self.APP.ConnectDevice()
             self.APP.activateWindow()
@@ -1140,6 +1145,7 @@ try:
             icon: str | Path | QtGui.QIcon | None = None,
             device: GbxDevice | None = None,
         ) -> None:
+            del file
             QtWidgets.QDialog.__init__(self, app)
             if icon is not None:
                 self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
@@ -1279,9 +1285,11 @@ try:
             self.ReadDeviceInfo()
 
         def _select_cfw(self, event: QtGui.QMouseEvent) -> None:
+            del event
             self.optCFW.setChecked(True)
 
         def _select_ofw(self, event: QtGui.QMouseEvent) -> None:
+            del event
             self.optOFW.setChecked(True)
 
         def run(self) -> None:
@@ -1294,6 +1302,7 @@ try:
             self.show()
 
         def hideEvent(self, event: QtGui.QHideEvent) -> None:
+            del event
             if self.DEVICE is None:
                 self.APP.ConnectDevice()
             self.APP.activateWindow()

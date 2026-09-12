@@ -1585,6 +1585,7 @@ class FlashGBX_CLI:
         )
 
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
+        del header
         path = ""
         mbc = 0
 
@@ -2423,6 +2424,7 @@ class FlashGBX_CLI:
         save_type: int,
         path: str,
     ) -> None:
+        del save_type
         mode = self.CONN.GetMode()
 
         if args.action == "debug-test-save":
@@ -2653,6 +2655,7 @@ class FlashGBX_CLI:
         enableUI: bool = False,
         setProgress: float | None = None,
     ) -> None:
+        del enableUI
         if setProgress is not None:
             self.FWUPD_R = True
             print(f"\33[2K\r{text:s} ({int(setProgress):d}%)", flush=True, end="")

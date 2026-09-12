@@ -375,6 +375,7 @@ class Flashcart:
         return smallest_sector_size
 
     def GetSectorOffsets(self, rom_size: int = 0, rom_bank_size: int = 0x4000) -> list[list[int]]:
+        del rom_bank_size
         regions = self.GetSectorMap()
         pos = 0
         offsets: list[list[int]] = []
@@ -936,6 +937,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
         return True
 
     def ChipErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> bool:
+        del pos, buffer_pos, skip
         time_start = time.time()
         self._progress({"action": "ERASE", "time_start": time_start, "abortable": False})
 
@@ -984,6 +986,7 @@ class Flashcart_DMG_BUNG_16M(Flashcart):
         return True
 
     def Reset(self, full_reset: bool = False, max_address: int = 0x2000000) -> bool:
+        del full_reset, max_address
         self.CartWrite([[0x2000, 0x02]], fast_write=False)
         self.CartWrite([[0x6AAA, 0xAA]], fast_write=True)
         self.CartWrite([[0x2000, 0x01]], fast_write=False)
@@ -1022,6 +1025,7 @@ class Flashcart_DMG_MMSA(Flashcart):
         return True
 
     def EraseHiddenSector(self, buffer: bytes | bytearray) -> bool:
+        del buffer
         self._progress(
             {
                 "action": "SECTOR_ERASE",

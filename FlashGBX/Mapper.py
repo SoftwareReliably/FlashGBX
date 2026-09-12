@@ -429,6 +429,7 @@ class DMG_Mapper:
         self.START_BANK = index
 
     def SelectBankFlash(self, index: int) -> tuple[int, int] | None:
+        del index
         return
 
     def HasFlashBanks(self) -> bool:
@@ -465,6 +466,7 @@ class DMG_Mapper:
         return c__("Real Time Clock Feature", "Not available")
 
     def ResetBeforeBankChange(self, index: int) -> bool:
+        del index
         return False
 
     def ReadWithCSPulse(self) -> bool:
@@ -516,6 +518,7 @@ class DMG_MBC2(DMG_Mapper):
         return "MBC2"
 
     def SelectBankRAM(self, index) -> tuple[Literal[0], int]:
+        del index
         return (0, self.RAM_BANK_SIZE)
 
     def GetMaxROMSize(self) -> Literal[262144]:
@@ -785,6 +788,7 @@ class DMG_MBC6(DMG_Mapper):
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
     ) -> None:
+        del clk_toggle_fncptr
         if args is None:
             args = {}
         super().__init__(
@@ -833,6 +837,7 @@ class DMG_MBC6(DMG_Mapper):
         return (start_address, self.ROM_BANK_SIZE)
 
     def GetRAMBanks(self, ram_size) -> Literal[136]:  # 0x108000
+        del ram_size
         return 8 + 128
 
     def SelectBankRAM(self, index) -> tuple[Literal[0], int]:
@@ -919,6 +924,7 @@ class DMG_MBC7(DMG_Mapper):
         return "MBC7"
 
     def SelectBankRAM(self, index) -> tuple[Literal[0], Literal[512]]:
+        del index
         return (0, 0x200)
 
     def EnableRAM(self, enable=True) -> None:
@@ -1148,6 +1154,7 @@ class DMG_M161(DMG_Mapper):
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
     ) -> None:
+        del clk_toggle_fncptr
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x8000
@@ -1160,6 +1167,7 @@ class DMG_M161(DMG_Mapper):
         )
 
     def ResetBeforeBankChange(self, index) -> Literal[True]:
+        del index
         return True
 
     def SelectBankROM(self, index) -> tuple[Literal[0], Literal[32768]]:
@@ -1780,6 +1788,7 @@ class DMG_Unlicensed_WisdomTree(DMG_Mapper):
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
     ) -> None:
+        del clk_toggle_fncptr
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x8000
@@ -1813,6 +1822,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
     ) -> None:
+        del clk_toggle_fncptr
         if args is None:
             args = {}
         super().__init__(
@@ -1874,6 +1884,7 @@ class DMG_Unlicensed_DatelOrbitV2(DMG_Mapper):
         cart_powercycle_fncptr=None,
         clk_toggle_fncptr=None,
     ) -> None:
+        del clk_toggle_fncptr
         if args is None:
             args = {}
         self.ROM_BANK_SIZE = 0x2000

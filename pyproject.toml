@@ -141,7 +141,6 @@ ignore = [
     "TRY003", #raise-vanilla-args
     "F405", #undefined-local-with-import-star-usage
     "N803", #invalid-argument-name
-    "ARG002", #unused-method-argument
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
     "PLR0911", #too-many-return-statements
