@@ -499,7 +499,7 @@ class LK_Device(ABC):
         try:
             dev = serial.Serial(port, baudrate, timeout=0.1, exclusive=True)
         except (SerialException, OSError) as e:
-            dprint(f"Couldn’t connect to port {port:s} at baudrate {baudrate:d}:", e)
+            dprint(f"Couldn't connect to port {port:s} at baudrate {baudrate:d}:", e)
             return False
         try:
             self.DEVICE = dev
@@ -668,7 +668,7 @@ class LK_Device(ABC):
         return self.DEVICE_NAME
 
     def GetFullNameLabel(self) -> str:
-        return f"{self.GetFullName():s} – Firmware {self.GetFirmwareVersion():s}"
+        return f"{self.GetFullName():s} - Firmware {self.GetFirmwareVersion():s}"
 
     def GetPCBVersion(self) -> str:
         pcb_version = self._firmware_info().get("pcb_ver")
@@ -1253,7 +1253,7 @@ class LK_Device(ABC):
                             device.close()
                             self.DEVICE = None
                             self.ERROR = True
-                            msg = "Couldn’t power on the cartridge."
+                            msg = "Couldn't power on the cartridge."
                             raise BrokenPipeError(msg)
                     else:
                         self._write(self.DEVICE_CMD["CART_PWR_ON"], wait=True)
@@ -1482,7 +1482,7 @@ class LK_Device(ABC):
 
     def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
         if not self.IsConnected():
-            msg = "Couldn’t access the the device."
+            msg = "Couldn't access the the device."
             raise ConnectionError(msg)
         data = {}
         self.SIGNAL = None
@@ -2077,7 +2077,7 @@ class LK_Device(ABC):
                             print(
                                 ANSI.RED
                                 + __(
-                                    "Error: Couldn’t check save type with FLASH save ID {flash_save_id}",
+                                    "Error: Couldn't check save type with FLASH save ID {flash_save_id}",
                                     flash_save_id=f"0x{flash_save_id:04X}",
                                 )
                                 + ANSI.RESET
@@ -3047,7 +3047,7 @@ class LK_Device(ABC):
 
     def CheckROMStable(self) -> bool:
         if not self.IsConnected():
-            msg = "Couldn’t access the the device."
+            msg = "Couldn't access the the device."
             raise ConnectionError(msg)
         if self.CanPowerCycleCart():
             self.CartPowerOn()
@@ -4518,7 +4518,7 @@ class LK_Device(ABC):
                             {
                                 "action": "ABORT",
                                 "info_type": "msgbox_critical",
-                                "info_msg": __("Couldn’t detect the save data flash chip type."),
+                                "info_msg": __("Couldn't detect the save data flash chip type."),
                                 "abortable": False,
                             },
                         )
@@ -4550,7 +4550,7 @@ class LK_Device(ABC):
                                 "action": "ABORT",
                                 "info_type": "msgbox_critical",
                                 "info_msg": __(
-                                    "Couldn’t detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
+                                    "Couldn't detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
                                     flash_id=" ".join(format(x, "02X") for x in flash_id),
                                 ),
                                 "abortable": False,
@@ -4933,7 +4933,7 @@ class LK_Device(ABC):
                                 lives -= 1
                                 if lives == 0:
                                     errmsg = __(
-                                        "Error: Save data flash sector at {address} didn’t erase successfully (SR={status_register}).",
+                                        "Error: Save data flash sector at {address} didn't erase successfully (SR={status_register}).",
                                         address=f"0x{bank * 0x10000 + pos:X}",
                                         status_register=f"0x{sr:04X}",
                                     )
@@ -5056,7 +5056,7 @@ class LK_Device(ABC):
                                         return False
                         if sector_address < 0x1FFE000:
                             dprint(
-                                f"DACS: Writing to area 0x{0x1F00000 + pos:X}–0x{0x1F00000 + pos + buffer_len - 1:X}"
+                                f"DACS: Writing to area 0x{0x1F00000 + pos:X}-0x{0x1F00000 + pos + buffer_len - 1:X}"
                             )
                             self.WriteROM(
                                 address=0x1F00000 + pos,
@@ -5064,7 +5064,7 @@ class LK_Device(ABC):
                             )
                         else:
                             dprint(
-                                f"DACS: Skipping read-only area 0x{0x1F00000 + pos:X}–0x{0x1F00000 + pos + buffer_len - 1:X}",
+                                f"DACS: Skipping read-only area 0x{0x1F00000 + pos:X}-0x{0x1F00000 + pos + buffer_len - 1:X}",
                             )
                     else:
                         self.WriteRAM(
@@ -5258,7 +5258,7 @@ class LK_Device(ABC):
                                     "action": "ABORT",
                                     "info_type": "msgbox_critical",
                                     "info_msg": __(
-                                        "The save data was written completely, but didn’t pass the verification check.",
+                                        "The save data was written completely, but didn't pass the verification check.",
                                     ),
                                     "abortable": False,
                                 },
@@ -5279,8 +5279,8 @@ class LK_Device(ABC):
                             "action": "ABORT",
                             "info_type": "msgbox_critical",
                             "info_msg": ___(
-                                "The save data was written completely, but {count} byte ({percent}%) didn’t pass the verification check.",
-                                "The save data was written completely, but {count} bytes ({percent}%) didn’t pass the verification check.",
+                                "The save data was written completely, but {count} byte ({percent}%) didn't pass the verification check.",
+                                "The save data was written completely, but {count} bytes ({percent}%) didn't pass the verification check.",
                                 n=count,
                                 count=count,
                                 percent=f"{count / len(verified_data) * 100:.2f}",
@@ -5783,7 +5783,7 @@ class LK_Device(ABC):
                                 "action": "ABORT",
                                 "info_type": "msgbox_critical",
                                 "info_msg": __(
-                                    "The {gb_memory_cartridge} requires extra hidden sector data. As it couldn’t be auto-generated, please provide your own at the following path:",
+                                    "The {gb_memory_cartridge} requires extra hidden sector data. As it couldn't be auto-generated, please provide your own at the following path:",
                                     gb_memory_cartridge="NP GB-Memory cartridge",
                                 )
                                 + " "
@@ -6003,7 +6003,7 @@ class LK_Device(ABC):
                 print(
                     ANSI.YELLOW
                     + __(
-                        "Note: This cartridge’s Flash ID ({flash_id}) doesn’t match the flashcart profile selection.",
+                        "Note: This cartridge's Flash ID ({flash_id}) doesn't match the flashcart profile selection.",
                         flash_id=" ".join(format(x, "02X") for x in flash_id),
                     )
                     + ANSI.RESET,
@@ -6199,7 +6199,7 @@ class LK_Device(ABC):
                 {
                     "action": "ABORT",
                     "info_type": "msgbox_critical",
-                    "info_msg": __("Couldn’t start writing ROM because the flash cart couldn’t be detected properly."),
+                    "info_msg": __("Couldn't start writing ROM because the flash cart couldn't be detected properly."),
                     "abortable": False,
                 },
             )
@@ -6556,7 +6556,7 @@ class LK_Device(ABC):
                                     + __(
                                         "Troubleshooting advice:\n"
                                         "- Clean cartridge contacts\n"
-                                        "- Check soldering if it’s a DIY cartridge\n"
+                                        "- Check soldering if it's a DIY cartridge\n"
                                         "- Avoid passive USB hubs and try different USB ports/cables\n"
                                         "- Check flashcart profile selection",
                                     )
@@ -6587,7 +6587,7 @@ class LK_Device(ABC):
                                         + __(
                                             "Troubleshooting advice:\n"
                                             "- Clean cartridge contacts\n"
-                                            "- Check soldering if it’s a DIY cartridge\n"
+                                            "- Check soldering if it's a DIY cartridge\n"
                                             "- Avoid passive USB hubs and try different USB ports/cables",
                                         )
                                         + "\n\n"
@@ -6614,7 +6614,7 @@ class LK_Device(ABC):
                                         + __(
                                             "Troubleshooting advice:\n"
                                             "- Clean cartridge contacts\n"
-                                            "- Check soldering if it’s a DIY cartridge\n"
+                                            "- Check soldering if it's a DIY cartridge\n"
                                             "- Avoid passive USB hubs and try different USB ports/cables\n"
                                             "- Check cartridge ROM storage size (at least {rom_size} is required){errmsg}\n"
                                             "- Check flashcart profile used: {cart_name}{enable_pullup_wr_str}\n"
@@ -6967,7 +6967,7 @@ class LK_Device(ABC):
             except PermissionError:
                 print(
                     __(
-                        "Error: Couldn’t update write-protected file “{file}”",
+                        "Error: Couldn't update write-protected file “{file}”",
                         file=json_file,
                     ),
                 )

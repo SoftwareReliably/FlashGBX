@@ -749,7 +749,7 @@ def agb_header() -> dict[str, Any]:
 
 def test_gui_module_helpers(gui_module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     details = gui_module._format_batteryless_sram_details(0x2000, {"bl_offset": 0x100, "bl_size": 0x80})
-    assert "0x100–0x17F" in details
+    assert "0x100–0x17F" in details  # noqa: RUF001
     assert gui_module._parse_hex_address("0x20") == 0x20
     assert gui_module._parse_hex_address("20") == 0x20
     assert gui_module._is_supported_drop(".sav", None) is True

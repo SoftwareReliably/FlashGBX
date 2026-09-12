@@ -96,7 +96,7 @@ class PocketCamera:
         if len(selected) != 12 or any(
             isinstance(channel, bool) or not isinstance(channel, int) or not 0 <= channel <= 255 for channel in selected
         ):
-            msg = "A Game Boy Camera palette must contain 12 integer channels in the range 0–255"
+            msg = "A Game Boy Camera palette must contain 12 integer channels in the range 0-255"
             raise ValueError(msg)
 
         for image in self.IMAGES:

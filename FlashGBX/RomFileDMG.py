@@ -1361,6 +1361,6 @@ def from_isx(buffer: bytearray) -> bytearray:
             while temp < rom_size:
                 temp *= 2
         except Exception:
-            print(__("Error: Couldn’t convert ISX file correctly."))
+            print(__("Error: Couldn't convert ISX file correctly."))
             break
     return data_output[:temp]

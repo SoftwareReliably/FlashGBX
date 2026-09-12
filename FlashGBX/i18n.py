@@ -65,7 +65,7 @@ LANGUAGES: dict[str, tuple[str, str]] = {
     "de": ("German", "Deutsch"),
     "dv": ("Divehi", "ދިވެހިބަސް"),
     "dz": ("Dzongkha", "རྫོང་ཁ"),
-    "ee": ("Ewe", "Eʋegbe"),
+    "ee": ("Ewe", "Eʋegbe"),  # noqa: RUF001
     "el": ("Greek", "Ελληνικά"),
     "en": ("English", "English"),
     "eo": ("Esperanto", "Esperanto"),
@@ -202,7 +202,7 @@ LANGUAGES: dict[str, tuple[str, str]] = {
     "ug": ("Uighur", "ئۇيغۇرچە"),
     "uk": ("Ukrainian", "Українська"),
     "ur": ("Urdu", "اردو"),
-    "uz": ("Uzbek", "Oʻzbekcha"),
+    "uz": ("Uzbek", "Oʻzbekcha"),  # noqa: RUF001
     "ve": ("Venda", "Tshivenḓa"),
     "vi": ("Vietnamese", "Tiếng Việt"),
     "vo": ("Volapük", "Volapük"),

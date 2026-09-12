@@ -253,4 +253,4 @@ def test_isx_conversion_reports_unknown_and_truncated_records(
     assert "Unhandled ISX record type" in capsys.readouterr().out
 
     assert from_isx(b"\x01") == bytearray(0x8000)
-    assert "Couldn’t convert ISX" in capsys.readouterr().out
+    assert "Couldn't convert ISX" in capsys.readouterr().out

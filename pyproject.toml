@@ -129,7 +129,6 @@ ignore = [
     "PLR2004", #magic-value-comparison
     "T201", #print
     "E501", #line-too-long
-    "RUF001", #ambiguous-unicode-character-string
     "N806", #on-lowercase-variable-in-function
     "ERA001", #commented-out-codes
     "FBT002", #boolean-default-value-positional-argument

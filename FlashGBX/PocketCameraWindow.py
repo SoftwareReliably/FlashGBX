@@ -74,7 +74,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         if icon is not None:
             self.setWindowIcon(QtGui.QIcon(icon))
 
-        self.setWindowTitle(AppInfo.NAME + " – " + __("GB Camera Album Viewer"))
+        self.setWindowTitle(AppInfo.NAME + " - " + __("GB Camera Album Viewer"))
         self.setWindowFlags(
             (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
             & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
@@ -117,7 +117,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.lblZoom = QtWidgets.QLabel(__("Saved Picture Zoom:"))
         self.spnZoom = QtWidgets.QSpinBox()
         self.spnZoom.setRange(1, 10)
-        self.spnZoom.setSuffix("×")
+        self.spnZoom.setSuffix("x")
         self.rowOptions1.addWidget(self.lblZoom)
         self.rowOptions1.addWidget(self.spnZoom)
         self.rowOptions1.addStretch(1)
@@ -299,7 +299,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.critical(
                     self,
                     AppInfo.NAME,
-                    __("The save data file couldn’t be loaded."),
+                    __("The save data file couldn't be loaded."),
                     QtWidgets.QMessageBox.StandardButton.Ok,
                 )
                 return False

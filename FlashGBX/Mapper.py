@@ -697,7 +697,7 @@ class DMG_MBC3(DMG_Mapper):
                         dprint(seconds, minutes, hours, days, carry)
 
             except Exception as e:
-                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
+                print(__("Error: Couldn't update the RTC register values.") + "\n" + str(e))
 
         d: dict[str, int] = {
             "rtc_s": seconds % 60,
@@ -1364,7 +1364,7 @@ class DMG_HuC3(DMG_Mapper):
                 self.WriteRTCDict(d)
 
             except Exception as e:
-                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
+                print(__("Error: Couldn't update the RTC register values.") + "\n" + str(e))
 
     def GetRTCDict(self) -> dict[str, int | bool | str | bytearray]:
         rtc_buffer: int = struct.unpack("<I", self._get_rtc_buffer()[0:4])[0]
@@ -1407,7 +1407,7 @@ class DMG_TAMA5(DMG_Mapper):
             if lives < 0:
                 print(
                     __(
-                        "Error: Couldn’t enable the {mapper_name} mapper.",
+                        "Error: Couldn't enable the {mapper_name} mapper.",
                         mapper_name="TAMA5",
                     ),
                 )
@@ -1607,7 +1607,7 @@ class DMG_TAMA5(DMG_Mapper):
                         leap_year_state = (leap_year_state + year_new) % 4
 
             except Exception as e:
-                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
+                print(__("Error: Couldn't update the RTC register values.") + "\n" + str(e))
                 return
 
             d = {
@@ -2151,7 +2151,7 @@ class AGB_GPIO:
             " ".join(format(x, "02X") for x in rom2),
         )
         if rom1 == rom2:
-            dprint("No RTC because ROM data didn’t change:", rom1, rom2)
+            dprint("No RTC because ROM data didn't change:", rom1, rom2)
             return 3
 
         return True
@@ -2217,7 +2217,7 @@ class AGB_GPIO:
                 f"New values: RTC_Y=0x{buffer[0]:02X}, RTC_M=0x{buffer[1]:02X}, RTC_D=0x{buffer[2]:02X}, RTC_W=0x{buffer[3]:02X}, RTC_H=0x{buffer[4]:02X}, RTC_I=0x{buffer[5]:02X}, RTC_S=0x{buffer[6]:02X}",
             )
         except ValueError as e:
-            print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
+            print(__("Error: Couldn't update the RTC register values.") + "\n" + str(e))
 
         self.CartWrite(
             [
@@ -2303,7 +2303,7 @@ class AGB_GPIO:
                 dprint(f"[{int(len(dstr) / 3) + 1:02X}] {dstr:s}")
 
             except Exception as e:
-                print(__("Error: Couldn’t update the RTC register values.") + "\n" + str(e))
+                print(__("Error: Couldn't update the RTC register values.") + "\n" + str(e))
 
         d = {
             "rtc_y": years,

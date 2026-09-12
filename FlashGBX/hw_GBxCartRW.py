@@ -292,7 +292,7 @@ class GbxDevice(LK_Device):
                             [
                                 3,
                                 __(
-                                    "The device on port {port} couldn’t be accessed. Make sure your user account has permission to use it and it’s not already in use by another application.",
+                                    "The device on port {port} couldn't be accessed. Make sure your user account has permission to use it and it's not already in use by another application.",
                                     port=current_port,
                                 ),
                             ],
@@ -342,7 +342,7 @@ class GbxDevice(LK_Device):
                         [
                             0,
                             __(
-                                "Couldn’t communicate with the {device_name} on port {port}. Please disconnect and reconnect the device, then try again.",
+                                "Couldn't communicate with the {device_name} on port {port}. Please disconnect and reconnect the device, then try again.",
                                 device_name=self.DEVICE_NAME,
                                 port=current_port,
                             ),
@@ -544,7 +544,7 @@ class GbxDevice(LK_Device):
         firmware = self._firmware()
         if firmware["fw_ver"] == 0:  # old GBxCart RW
             return __(
-                "{device_name} – Firmware {fw_version} ({port})",
+                "{device_name} - Firmware {fw_version} ({port})",
                 device_name=self.GetFullName(),
                 fw_version=self.GetFirmwareVersion(),
                 port=self.GetPort(),
@@ -552,7 +552,7 @@ class GbxDevice(LK_Device):
 
         if more:
             return __(
-                "{device_name} – Firmware {fw_version} ({timestamp}) on {port} at {baudrate}M baud",
+                "{device_name} - Firmware {fw_version} ({timestamp}) on {port} at {baudrate}M baud",
                 device_name=self.GetFullName(),
                 fw_version=self.GetFirmwareVersion(),
                 timestamp=firmware["fw_dt"],
@@ -560,7 +560,7 @@ class GbxDevice(LK_Device):
                 baudrate=format_decimal(self.BAUDRATE / 1_000_000, precision=1),
             )
         return __(
-            "{device_name} – Firmware {fw_version} ({port})",
+            "{device_name} - Firmware {fw_version} ({port})",
             device_name=self.GetFullName(),
             fw_version=self.GetFirmwareVersion(),
             port=self.GetPort(),
@@ -812,7 +812,7 @@ try:
                 self.setWindowIcon(icon if isinstance(icon, QtGui.QIcon) else QtGui.QIcon(str(icon)))
             self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
             self.setWindowTitle(
-                AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"),
+                AppInfo.NAME + " - " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"),
             )
             self.setWindowFlags(
                 (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
@@ -1161,7 +1161,7 @@ try:
             self.PORT = device.GetPort()
 
             self.setWindowTitle(
-                AppInfo.NAME + " – " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"),
+                AppInfo.NAME + " - " + __("Firmware Updater for {device_name}", device_name="GBxCart RW"),
             )
             self.setWindowFlags(
                 (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
@@ -1401,7 +1401,7 @@ try:
                 )
                 archive_member = None
 
-            text: str = __("The following firmware will now be written to your GBxCart RW device:") + f"\n- {fw}"
+            text: str = __("The following firmware will now be written to your GBxCart RW device:") + f"\n- {fw}"
             text += "\n\n" + __("Do you want to continue?")
             msgbox = _message_box(
                 parent=self,
@@ -1489,7 +1489,7 @@ try:
                 "⚠️ Please note that FlashGBX does not work with the “{flashboy}” series devices.",
                 pcb_version=self.PCB_VER,
                 fw_version=self.FW_VER,
-                flashboy="FLASH BOY",
+                flashboy="FLASH BOY",
             )
 
             fncSetStatus(text=__("Waiting for bootloader..."), setProgress=0)
@@ -1500,7 +1500,7 @@ try:
                     parent=self,
                     icon=QtWidgets.QMessageBox.Icon.Critical,
                     windowTitle=AppInfo.NAME
-                    + " – "
+                    + " - "
                     + __(
                         "Firmware Updater for {device_name}",
                         device_name="GBxCart RW " + self.PCB_VER,
@@ -1544,7 +1544,7 @@ try:
                             parent=self,
                             icon=QtWidgets.QMessageBox.Icon.Critical,
                             windowTitle=AppInfo.NAME
-                            + " – "
+                            + " - "
                             + __(
                                 "Firmware Updater for {device_name}",
                                 device_name="GBxCart RW " + self.PCB_VER,
@@ -1561,7 +1561,7 @@ try:
                             parent=self,
                             icon=QtWidgets.QMessageBox.Icon.Critical,
                             windowTitle=AppInfo.NAME
-                            + " – "
+                            + " - "
                             + __(
                                 "Firmware Updater for {device_name}",
                                 device_name="GBxCart RW " + self.PCB_VER,
@@ -1686,7 +1686,7 @@ try:
                         parent=self,
                         icon=QtWidgets.QMessageBox.Icon.Critical,
                         windowTitle=AppInfo.NAME,
-                        text="The firmware update was not successful (Protocol Error). Do you want to try again?\n\nIf it doesn’t work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                        text="The firmware update was not successful (Protocol Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
                         standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
                         | QtWidgets.QMessageBox.StandardButton.No,
                         defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
@@ -1723,7 +1723,7 @@ try:
                         icon=QtWidgets.QMessageBox.Icon.Critical,
                         windowTitle=AppInfo.NAME,
                         text=__(
-                            "The firmware update was not successful (Write Error, {error_value}). Do you want to try again?\n\nIf it doesn’t work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                            "The firmware update was not successful (Write Error, {error_value}). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
                             error_value=str(ret),
                         ),
                         standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
@@ -1780,7 +1780,7 @@ try:
                     icon=QtWidgets.QMessageBox.Icon.Critical,
                     windowTitle=AppInfo.NAME,
                     text=__(
-                        "The firmware update was not successful (Verification Error). Do you want to try again?\n\nIf it doesn’t work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                        "The firmware update was not successful (Verification Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
                     ),
                     standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
                     defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,

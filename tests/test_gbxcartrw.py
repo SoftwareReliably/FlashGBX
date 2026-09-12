@@ -518,7 +518,7 @@ def test_device_capabilities_and_version_labels_are_derived_from_firmware() -> N
     assert device.GetFirmwareVersion() == "R31+L18"
     assert device.GetFirmwareVersion(more=True).endswith(" (2026-06-03T12:25:02+00:00)")
     assert device.GetFullName() == "GBxCart RW v1.4a/b/c"
-    assert device.GetFullNameExtended() == ("GBxCart RW v1.4a/b/c – Firmware R31+L18 (mock-port)")
+    assert device.GetFullNameExtended() == ("GBxCart RW v1.4a/b/c - Firmware R31+L18 (mock-port)")
     assert device.CanPowerCycleCart() is True
     assert device.GetSupprtedModes() == ["DMG", "AGB"]
     assert device.IsClkConnected() is True

@@ -492,7 +492,7 @@ def bitmap2pixmap(
         pixmap = QtGui.QPixmap.fromImage(ImageQt(scaled_image))
         pixmap.setDevicePixelRatio(scale_factor)
     except Exception as err:
-        _debug_print("Couldn’t convert bitmap to pixmap. Error: {error}", error=str(err))
+        _debug_print("Couldn't convert bitmap to pixmap. Error: {error}", error=str(err))
         return False
     else:
         return pixmap

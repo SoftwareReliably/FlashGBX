@@ -22,7 +22,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         super().__init__(app)
         if icon is not None:
             self.setWindowIcon(QtGui.QIcon(icon))
-        self.setWindowTitle(AppInfo.NAME + " – " + __("Interactive Console"))
+        self.setWindowTitle(AppInfo.NAME + " - " + __("Interactive Console"))
         flags = self.windowFlags()
         flags = (
             (flags & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint)

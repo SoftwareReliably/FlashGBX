@@ -264,10 +264,10 @@ class FlashGBX_CLI:
                 print(__("No devices found."))
                 return 1
             if not self.ConnectDevice():
-                print(__("Couldn’t connect to the device."))
+                print(__("Couldn't connect to the device."))
                 return 1
             if self.DEVICE is None:
-                print(__("Couldn’t connect to the device."))
+                print(__("Couldn't connect to the device."))
                 return 1
             dev = self.DEVICE[1]
             builddate = dev.GetFWBuildDate()
@@ -320,7 +320,7 @@ class FlashGBX_CLI:
                         "\n"
                         + ANSI.RED
                         + __(
-                            "Can’t save pictures at location “{path}”.",
+                            "Can't save pictures at location “{path}”.",
                             path=str(destination.resolve()),
                         )
                         + ANSI.RESET,
@@ -338,7 +338,7 @@ class FlashGBX_CLI:
                     ),
                 )
             else:
-                print("\n" + ANSI.RED + __("Couldn’t parse the save data file.") + ANSI.RESET)
+                print("\n" + ANSI.RED + __("Couldn't parse the save data file.") + ANSI.RESET)
             return 0
 
         if args.action in fwupdate_actions:
@@ -431,7 +431,7 @@ class FlashGBX_CLI:
         header = self.CONN.ReadHeader()
         (bad_read, s_header, header) = self.ReadCartridge(header)
         if s_header == "":
-            print("\n" + ANSI.RED + __("Couldn’t read cartridge header. Please try again.") + ANSI.RESET + "\n")
+            print("\n" + ANSI.RED + __("Couldn't read cartridge header. Please try again.") + ANSI.RESET + "\n")
             self.DisconnectDevice()
             return 1
         if (
@@ -446,7 +446,7 @@ class FlashGBX_CLI:
                 "\n"
                 + ANSI.RED
                 + __(
-                    "Invalid data was detected which usually means that the cartridge couldn’t be read correctly. Please make sure you selected the correct platform and that the cartridge contacts are clean. This check can be disabled with the command line switch “{switch}”.",
+                    "Invalid data was detected which usually means that the cartridge couldn't be read correctly. Please make sure you selected the correct platform and that the cartridge contacts are clean. This check can be disabled with the command line switch “{switch}”.",
                     switch="--ignore-bad-header",
                 )
                 + ANSI.RESET
@@ -734,7 +734,7 @@ class FlashGBX_CLI:
                             + ANSI.RESET,
                         )
                     else:
-                        msg = __("The ROM backup is complete, but the checksum doesn’t match the known database entry.")
+                        msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
                         if self.CONN.INFO["loop_detected"] is not False:
                             msg += "\n" + __(
                                 "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
@@ -776,7 +776,7 @@ class FlashGBX_CLI:
                         if base.is_file():
                             print(
                                 __(
-                                    "Can’t save pictures at location “{path}”.",
+                                    "Can't save pictures at location “{path}”.",
                                     path=str(base.resolve()),
                                 ),
                             )
@@ -807,7 +807,7 @@ class FlashGBX_CLI:
                             if destination.is_file():
                                 print(
                                     __(
-                                        "Can’t save pictures at location “{path}”.",
+                                        "Can't save pictures at location “{path}”.",
                                         path=str(destination.resolve()),
                                     ),
                                 )
@@ -1312,7 +1312,7 @@ class FlashGBX_CLI:
             msg_cart_type_s = (
                 __("Flashcart Profile:")
                 + " "
-                + __("Supported flash cartridge – compatible with:")
+                + __("Supported flash cartridge - compatible with:")
                 + "\n"
                 + msg_cart_type
                 + "\n\n"
@@ -1425,7 +1425,7 @@ class FlashGBX_CLI:
                     print(
                         ANSI.YELLOW
                         + __(
-                            "Couldn’t determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
+                            "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
                             switch="--dmg-mbc",
                         )
                         + ANSI.RESET,
@@ -1444,7 +1444,7 @@ class FlashGBX_CLI:
                     print(
                         ANSI.YELLOW
                         + __(
-                            "Couldn’t determine ROM size, will use 8{mib}. It can also be manually set with the “{switch}” command line switch.",
+                            "Couldn't determine ROM size, will use 8{mib}. It can also be manually set with the “{switch}” command line switch.",
                             mib=__(" MiB"),
                             switch="--dmg-romsize",
                         )
@@ -1487,10 +1487,10 @@ class FlashGBX_CLI:
             with Path(path).open("ab+"):
                 pass
         except PermissionError:
-            print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
             return
         except FileNotFoundError:
-            print(ANSI.RED + __("Couldn’t find file “{path}”.", path=path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
             return
 
         print(
@@ -1544,7 +1544,7 @@ class FlashGBX_CLI:
                     cart_type = i
                     break
             if cart_type == 0:
-                print(__("Error: Couldn’t select the flashcart profile.") + "\n")
+                print(__("Error: Couldn't select the flashcart profile.") + "\n")
         elif self.CONN.GetMode() == "AGB":
             cart_types = self.CONN.GetSupportedCartridgesAGB()
             if "flash_type" in header:
@@ -1644,7 +1644,7 @@ class FlashGBX_CLI:
             print(
                 ANSI.RED
                 + __(
-                    "Couldn’t find the selected flashcart profile “{profile}”. Please make sure the correct platform is selected and copy the exact name from the configuration files located in {config_path}.",
+                    "Couldn't find the selected flashcart profile “{profile}”. Please make sure the correct platform is selected and copy the exact name from the configuration files located in {config_path}.",
                     profile=args.flashcart_type,
                     config_path=AppContext.CONFIG_PATH,
                 )
@@ -1692,7 +1692,7 @@ class FlashGBX_CLI:
                 print(
                     ANSI.YELLOW
                     + __(
-                        "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}. You can still give it a try, but it’s possible that it’s too large which may cause the ROM writing to fail.",
+                        "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}. You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
                         max_size=Formatter.file_size(carts[cart_type]["flash_size"]),
                         file_size=Formatter.file_size(rom_size),
                     )
@@ -1705,10 +1705,10 @@ class FlashGBX_CLI:
                     return
 
         except PermissionError:
-            print(ANSI.RED + __("Couldn’t access file “{path}”.", path=args.path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=args.path) + ANSI.RESET)
             return
         except FileNotFoundError:
-            print(ANSI.RED + __("Couldn’t find file “{path}”.", path=args.path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=args.path) + ANSI.RESET)
             return
 
         override_voltage = False
@@ -1793,7 +1793,7 @@ class FlashGBX_CLI:
                 if answer != "n":
                     fix_bootlogo = bootlogo
             else:
-                dprint(__("Couldn’t find boot logo file in configuration folder."))
+                dprint(__("Couldn't find boot logo file in configuration folder."))
 
         if not hdr["header_checksum_correct"] and (
             self.CONN.GetMode() == "AGB" or (self.CONN.GetMode() == "DMG" and mbc not in (0x203, 0x205))
@@ -1921,7 +1921,7 @@ class FlashGBX_CLI:
                     print(
                         ANSI.YELLOW
                         + __(
-                            "Couldn’t determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
+                            "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
                             switch="--dmg-mbc",
                         )
                         + ANSI.RESET,
@@ -2034,7 +2034,7 @@ class FlashGBX_CLI:
             if not args.overwrite:
                 answer = (
                     input(
-                        __("Do you want to overwrite the existing save data that’s currently on the cartridge?")
+                        __("Do you want to overwrite the existing save data that's currently on the cartridge?")
                         + " [y/N]: ",
                     )
                     .strip()
@@ -2127,10 +2127,10 @@ class FlashGBX_CLI:
                 with Path(path).open("rb+"):
                     pass
         except PermissionError:
-            print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
             return
         except FileNotFoundError:
-            print(ANSI.RED + __("Couldn’t find file “{path}”.", path=path) + ANSI.RESET)
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
             return
 
         print()
@@ -2432,20 +2432,20 @@ class FlashGBX_CLI:
             return
 
         # Resolve Batteryless SRAM region (offset, size, layout for DMG)
-        bl_args = self._ResolveBLArgs(args, header)
+        bl_args: BatterylessArgs | None = self._ResolveBLArgs(args, header)
         if bl_args is None:
             return
-        bl_offset = bl_args["bl_offset"]
-        bl_size = bl_args["bl_size"]
+        bl_offset: int = bl_args["bl_offset"]
+        bl_size: int = bl_args["bl_size"]
 
         print(__("Batteryless SRAM Mode"))
         print(
             "- "
             + __("Location:")
-            + f" 0x{bl_offset:X}–0x{bl_offset + bl_size - 1:X} ({Formatter.file_size(bl_size, as_int=True):s})",
+            + f" 0x{bl_offset:X}-0x{bl_offset + bl_size - 1:X} ({Formatter.file_size(bl_size, as_int=True):s})",
         )
         if mode == "DMG":
-            layout_names = [
+            layout_names: list[str] = [
                 __("Continuous"),
                 __("First half of ROM bank"),
                 __("Second half of ROM bank"),
@@ -2480,7 +2480,7 @@ class FlashGBX_CLI:
                 with Path(path).open("ab+"):
                     pass
             except PermissionError, FileNotFoundError:
-                print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
+                print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
                 return
             print()
             targs = {
@@ -2517,7 +2517,7 @@ class FlashGBX_CLI:
                     print(__("Canceled."))
                     return
             print(
-                __("The following save data file will now be written to the cartridge’s Batteryless SRAM region:")
+                __("The following save data file will now be written to the cartridge's Batteryless SRAM region:")
                 + "\n"
                 + str(Path(path).resolve()),
             )
@@ -2525,7 +2525,7 @@ class FlashGBX_CLI:
                 with Path(path).open("rb+"):
                     pass
             except PermissionError, FileNotFoundError:
-                print(ANSI.RED + __("Couldn’t access file “{path}”.", path=path) + ANSI.RESET)
+                print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
                 return
         elif erase:
             if not args.overwrite:
@@ -2613,7 +2613,7 @@ class FlashGBX_CLI:
             print(
                 ANSI.RED
                 + __(
-                    "Couldn’t find the selected flashcart profile “{profile}”. Please make sure the correct platform is selected and copy the exact name from the configuration files located in {config_path}.",
+                    "Couldn't find the selected flashcart profile “{profile}”. Please make sure the correct platform is selected and copy the exact name from the configuration files located in {config_path}.",
                     profile=args.flashcart_type,
                     config_path=AppContext.CONFIG_PATH,
                 )
@@ -2734,7 +2734,7 @@ class FlashGBX_CLI:
                     ret = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
-                    port = input(__("Couldn’t access port {port}.\nEnter new port:", port=port) + " ").strip()
+                    port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
                     if len(port) == 0:
                         print(__("Canceled."))
                         return False
@@ -2775,7 +2775,7 @@ class FlashGBX_CLI:
                 f"{fw_ver:s} ({datetime.datetime.fromtimestamp(int(fw_buildts)).astimezone().replace(microsecond=0).isoformat():s})",
             ),
         )
-        text = __("Note: Cloned GBFlash hardware often don’t come with a firmware update feature.") + "\n\n"
+        text = __("Note: Cloned GBFlash hardware often don't come with a firmware update feature.") + "\n\n"
         text += (
             __("Please follow these steps to proceed with the firmware update:")
             + "\n\n"
@@ -2815,7 +2815,7 @@ class FlashGBX_CLI:
                     ret = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
-                    port = input(__("Couldn’t access port {port}.\nEnter new port:", port=port) + " ").strip()
+                    port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
                     if len(port) == 0:
                         print(__("Canceled."))
                         return False
@@ -2856,9 +2856,9 @@ class FlashGBX_CLI:
         print()
         print(
             __("Select the firmware to install:") + "\n"
-            "  1) " + __("Lesserkuma’s FlashGBX firmware") + "\n"
-            "  2) " + __("BennVenn’s Drag’n’Drop firmware") + "\n"
-            "  3) " + __("BennVenn’s JoeyGUI firmware") + "\n",
+            "  1) " + __("Lesserkuma's FlashGBX firmware") + "\n"
+            "  2) " + __("BennVenn's Drag'n'Drop firmware") + "\n"
+            "  3) " + __("BennVenn's JoeyGUI firmware") + "\n",
         )
         answer = input(__("Enter number ({range}):", range="1-3") + " ").lower().strip()
         print()
@@ -2887,7 +2887,7 @@ class FlashGBX_CLI:
                 if len(ports) == 0:
                     print(
                         __(
-                            "No devices found. If your Joey Jr is running the Drag’n’Drop firmware, you will have to use the JoeyGUI software to update the firmware.",
+                            "No devices found. If your Joey Jr is running the Drag'n'Drop firmware, you will have to use the JoeyGUI software to update the firmware.",
                         ),
                     )
                     return False
@@ -2919,7 +2919,7 @@ class FlashGBX_CLI:
                     ret = FWUPD.WriteFirmware(fw_data, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
-                    port = input(__("Couldn’t access port {port}.\nEnter new port:", port=port) + " ").strip()
+                    port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
                     if len(port) == 0:
                         print(__("Canceled."))
                         return False

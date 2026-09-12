@@ -109,7 +109,7 @@ def _format_batteryless_sram_details(save_size: int, info: BatterylessSramInfo) 
     end = start + size - 1
     location_label = __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM")
     detected_size = Formatter.file_size(size, as_int=True)
-    return f" ({save_size_text})<br><b>{location_label}</b> 0x{start:X}–0x{end:X} ({detected_size})"
+    return f" ({save_size_text})<br><b>{location_label}</b> 0x{start:X}-0x{end:X} ({detected_size})"
 
 
 def _parse_hex_address(text: str) -> int:
@@ -326,19 +326,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowStatus1a = QtWidgets.QHBoxLayout()
         self.lblStatus1a = QtWidgets.QLabel()
         rowStatus1a.addWidget(self.lblStatus1a)
-        self.lblStatus1aResult = QtWidgets.QLabel("–")
+        self.lblStatus1aResult = QtWidgets.QLabel("-")
         rowStatus1a.addWidget(self.lblStatus1aResult)
         grpStatusLayout.addLayout(rowStatus1a)
         rowStatus2a = QtWidgets.QHBoxLayout()
         self.lblStatus2a = QtWidgets.QLabel()
         rowStatus2a.addWidget(self.lblStatus2a)
-        self.lblStatus2aResult = QtWidgets.QLabel("–")
+        self.lblStatus2aResult = QtWidgets.QLabel("-")
         rowStatus2a.addWidget(self.lblStatus2aResult)
         grpStatusLayout.addLayout(rowStatus2a)
         rowStatus3a = QtWidgets.QHBoxLayout()
         self.lblStatus3a = QtWidgets.QLabel()
         rowStatus3a.addWidget(self.lblStatus3a)
-        self.lblStatus3aResult = QtWidgets.QLabel("–")
+        self.lblStatus3aResult = QtWidgets.QLabel("-")
         rowStatus3a.addWidget(self.lblStatus3aResult)
         grpStatusLayout.addLayout(rowStatus3a)
         rowStatus4a = QtWidgets.QHBoxLayout()
@@ -927,9 +927,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.cmbAGBHeaderROMSizeResult.clear()
         self.cmbAGBSaveTypeResult.clear()
         self.cmbAGBCartridgeTypeResult.clear()
-        self.lblStatus1aResult.setText("–")
-        self.lblStatus2aResult.setText("–")
-        self.lblStatus3aResult.setText("–")
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
         self.SetStatus4aResult("")
         self.SetDMGPlatformBadge(None)
 
@@ -1692,9 +1692,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblDevice.setText(__("Disconnected."))
         self.SetProgressBars(min=0, max=1, value=0)
         self.lblStatus4a.setText(__("Disconnected."))
-        self.lblStatus1aResult.setText("–")
-        self.lblStatus2aResult.setText("–")
-        self.lblStatus3aResult.setText("–")
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
         self.SetStatus4aResult("")
         self.lblStatus4a.setText(__("Disconnected."))
         self.grpStatus.setTitle(__("Transfer Status"))
@@ -1719,7 +1719,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         from . import i18n
 
         msg = "This software is being developed by Lesserkuma as a hobby project. There is no affiliation with Nintendo or any other company. This software is provided as-is and the developer is not responsible for any damage that is caused by the use of it. Use at your own risk!<br><br>"
-        msg += f"© 2020–{datetime.datetime.now(tz=datetime.UTC).year} Lesserkuma<br>"
+        msg += f"© 2020-{datetime.datetime.now(tz=datetime.UTC).year} Lesserkuma<br>"
         msg += '<a href="https://github.com/Lesserkuma/FlashGBX">https://github.com/Lesserkuma/FlashGBX</a><br>'
         msg += "<br>"
         if i18n.CONFIGURED_LANGUAGE and i18n.CONFIGURED_LANGUAGE != "en" and i18n.TRANSLATION_AUTHOR:
@@ -2364,7 +2364,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def FinishOperation(self) -> None:
         if self.lblStatus2aResult.text() == __("Pending..."):
-            self.lblStatus2aResult.setText("–")
+            self.lblStatus2aResult.setText("-")
         self.SetStatus4aResult("")
         self.grpDMGCartridgeInfo.setEnabled(True)
         self.grpAGBCartridgeInfo.setEnabled(True)
@@ -2552,7 +2552,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         )
                         self.lblAGBHeaderROMChecksumResult.setStyleSheet("QLabel { color: red; }")
                         self.lblStatus4a.setText(__("Done!"))
-                        msg = __("The ROM backup is complete, but the checksum doesn’t match the known database entry.")
+                        msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
                         if self._device.INFO["loop_detected"] is not False:
                             msg += "\n\n" + __(
                                 "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
@@ -2623,7 +2623,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 cbCameraSavePopup = _create_check_box(
                     c__(
                         "Check Box (& = Keyboard Shortcut)",
-                        "&Don’t show this message again",
+                        "&Don't show this message again",
                     ),
                     checked=dontShowAgain,
                 )
@@ -2718,7 +2718,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         + __(
                             "Troubleshooting advice:\n"
                             "- Clean cartridge contacts\n"
-                            "- Check soldering if it’s a DIY cartridge\n"
+                            "- Check soldering if it's a DIY cartridge\n"
                             "- Avoid passive USB hubs and try different USB ports/cables\n"
                             "- Check flashcart profile selection",
                         )
@@ -3166,7 +3166,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     file_size=Formatter.file_size(rom_size),
                 )
                 msg += " " + __(
-                    "You can still give it a try, but it’s possible that it’s too large which may cause the ROM writing to fail.",
+                    "You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
                 )
                 answer = QtWidgets.QMessageBox.warning(
                     self,
@@ -3337,7 +3337,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     elif msgbox.clickedButton() == button_2:
                         pass
                 else:
-                    dprint("Couldn’t find boot logo file in configuration folder")
+                    dprint("Couldn't find boot logo file in configuration folder")
                     msgbox = _create_message_box(
                         parent=self,
                         icon=QtWidgets.QMessageBox.Icon.Warning,
@@ -3614,7 +3614,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 rtc = False
             else:
                 msg = __(
-                    "A Real Time Clock cartridge was detected. Do you want the cartridge’s Real Time Clock register values also to be saved?",
+                    "A Real Time Clock cartridge was detected. Do you want the cartridge's Real Time Clock register values also to be saved?",
                 )
                 msgbox = _create_message_box(
                     parent=self,
@@ -3895,7 +3895,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return
             msg = __(
-                "The cartridge’s save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
+                "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
             )
             if not self._device.CanPowerCycleCart() and (
                 (mode == "AGB" and "SRAM" in self.cmbAGBSaveTypeResult.currentText())
@@ -3990,7 +3990,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         buffer = bytearray(f.read())
                     msg_text = (
                         __(
-                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file’s data. It is strongly recommended to keep the existing calibration data unless you actually need to restore it from a previous backup.",
+                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data. It is strongly recommended to keep the existing calibration data unless you actually need to restore it from a previous backup.",
                             cart_name=cart_name,
                         )
                         + "\n\n"
@@ -4100,7 +4100,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         with Path(path).open("rb") as f:
                             buffer = bytearray(f.read())
                         msg_text = __(
-                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file’s data.\n\nHow do you want to proceed?",
+                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data.\n\nHow do you want to proceed?",
                             cart_name=cart_name,
                         )
                         button_overwrite = msgbox.addButton(
@@ -4198,9 +4198,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.mnuLanguage.setEnabled(False)
             self.lblStatus4a.setText(__("Preparing..."))
             self.grpStatus.setTitle(__("Transfer Status"))
-            self.lblStatus1aResult.setText("–")
-            self.lblStatus2aResult.setText("–")
-            self.lblStatus3aResult.setText("–")
+            self.lblStatus1aResult.setText("-")
+            self.lblStatus2aResult.setText("-")
+            self.lblStatus3aResult.setText("-")
             self.SetStatus4aResult("")
             self.btnCancel.setEnabled(True)
             self.STATUS["stresstest_running"] = True
@@ -4617,9 +4617,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.mnuLanguage.setEnabled(False)
             self.lblStatus4a.setText(__("Preparing..."))
             self.grpStatus.setTitle(__("Transfer Status"))
-            self.lblStatus1aResult.setText("–")
-            self.lblStatus2aResult.setText("–")
-            self.lblStatus3aResult.setText("–")
+            self.lblStatus1aResult.setText("-")
+            self.lblStatus2aResult.setText("-")
+            self.lblStatus3aResult.setText("-")
             self.SetStatus4aResult("")
             qt_app.processEvents()
 
@@ -5220,7 +5220,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cb = _create_check_box(
                 c__(
                     "Check Box (& = Keyboard Shortcut)",
-                    "&Don’t show this message again",
+                    "&Don't show this message again",
                 ),
                 checked=False,
             )
@@ -5682,9 +5682,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     logger.exception("Failed to display the Game Boy Advance boot logo")
 
         if resetStatus:
-            self.lblStatus1aResult.setText("–")
-            self.lblStatus2aResult.setText("–")
-            self.lblStatus3aResult.setText("–")
+            self.lblStatus1aResult.setText("-")
+            self.lblStatus2aResult.setText("-")
+            self.lblStatus3aResult.setText("-")
             self.lblStatus4a.setText(__("Ready."))
             self.grpStatus.setTitle(__("Transfer Status"))
             self.FinishOperation()
@@ -5703,7 +5703,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self,
                 f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
                 __(
-                    "This cartridge may be protected against reading or writing a ROM. If you don’t want to risk this cartridge to render itself unusable, please do not try to write a new ROM to it.",
+                    "This cartridge may be protected against reading or writing a ROM. If you don't want to risk this cartridge to render itself unusable, please do not try to write a new ROM to it.",
                 ),
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
@@ -5755,9 +5755,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnBackupRAM.setEnabled(False)
         self.btnRestoreRAM.setEnabled(False)
         self.grpStatus.setTitle(__("Transfer Status"))
-        self.lblStatus1aResult.setText("–")
-        self.lblStatus2aResult.setText("–")
-        self.lblStatus3aResult.setText("–")
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
         self.SetStatus4aResult("")
         # self.lblStatus4a.setText("Analyzing Cartridge...")
         self.SetProgressBars(min=0, max=0, value=1)
@@ -5772,9 +5772,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
 
     def FinishDetectCartridge(self, ret: object) -> None:
-        self.lblStatus1aResult.setText("–")
-        self.lblStatus2aResult.setText("–")
-        self.lblStatus3aResult.setText("–")
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
 
         limitVoltage = str(self.SETTINGS.value("AutoDetectLimitVoltage", default="disabled")).lower() == "enabled"
         if ret is False or not isinstance(ret, (list, tuple)) or len(ret) < 11:
@@ -6315,7 +6315,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if args["user_action"] == "REINSERT_CART":
             title = f"{AppInfo.NAME:s} {AppInfo.VERSION:s}"
             if "title" in args:
-                title += " – " + args["title"]
+                title += " - " + args["title"]
             msg = args["msg"]
             answer = QtWidgets.QMessageBox.warning(
                 self,
@@ -6331,7 +6331,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         elif args["user_action"] == "RETRY_5V":
             title = f"{AppInfo.NAME:s} {AppInfo.VERSION:s}"
             if "title" in args:
-                title += " – " + args["title"]
+                title += " - " + args["title"]
             msg = args["msg"]
             answer = QtWidgets.QMessageBox.question(
                 self,
@@ -6478,9 +6478,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.btnCancel.setEnabled(args["abortable"])
                 self.SetProgressBars(min=0, max=size, value=pos)
             elif args["action"] == "ABORTING":
-                self.lblStatus1aResult.setText("–")
-                self.lblStatus2aResult.setText("–")
-                self.lblStatus3aResult.setText("–")
+                self.lblStatus1aResult.setText("-")
+                self.lblStatus2aResult.setText("-")
+                self.lblStatus3aResult.setText("-")
                 self.lblStatus4a.setText(__("Stopping... Please wait."))
                 self.SetStatus4aResult("")
                 self.btnCancel.setEnabled(args["abortable"])
@@ -6520,9 +6520,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.mnuConfig.setEnabled(True)
                 self.mnuLanguage.setEnabled(True)
                 self.grpStatus.setTitle(__("Transfer Status"))
-                self.lblStatus1aResult.setText("–")
-                self.lblStatus2aResult.setText("–")
-                self.lblStatus3aResult.setText("–")
+                self.lblStatus1aResult.setText("-")
+                self.lblStatus2aResult.setText("-")
+                self.lblStatus3aResult.setText("-")
                 self.lblStatus4a.setText(__("Stopped."))
                 self.SetStatus4aResult("")
                 self.btnCancel.setEnabled(False)

@@ -239,7 +239,7 @@ def test_tama5_enable_mapper_success_and_failure(capsys: pytest.CaptureFixture[s
         cart_read_fncptr=failure_cartridge.read,
     )
     assert failure.EnableMapper() is False
-    assert "Couldn’t enable" in capsys.readouterr().out
+    assert "Couldn't enable" in capsys.readouterr().out
 
 
 def test_tama5_read_rtc_and_mapper_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:

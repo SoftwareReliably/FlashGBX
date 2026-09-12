@@ -30,7 +30,7 @@ class UserInputDialog(QtWidgets.QDialog):
         if icon is not None:
             self.setWindowIcon(QtGui.QIcon(icon))
         self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
-        self.setWindowTitle(AppInfo.NAME + " – " + args["title"])
+        self.setWindowTitle(AppInfo.NAME + " - " + args["title"])
         self.setWindowFlags(
             (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
             & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,

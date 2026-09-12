@@ -69,7 +69,7 @@ class DumpReport:
         general_fields: list[tuple[str, str]] = [
             (
                 "Hardware",
-                f"{device.GetFullName()} – Firmware {device.GetFirmwareVersion()}",
+                f"{device.GetFullName()} - Firmware {device.GetFirmwareVersion()}",
             ),
             ("Software", f"{AppInfo.NAME} {AppInfo.VERSION}"),
             (
@@ -213,7 +213,7 @@ class DumpReport:
                                 ("Write Kiosk ID", entry["kiosk_id"]),
                                 (
                                     "Location",
-                                    f"0x{entry['rom_offset']:06X}–0x{entry['rom_offset'] + entry['rom_size'] - 1:06X}",
+                                    f"0x{entry['rom_offset']:06X}-0x{entry['rom_offset'] + entry['rom_size'] - 1:06X}",
                                 ),
                                 ("ROM Size", entry_size_str),
                             ]

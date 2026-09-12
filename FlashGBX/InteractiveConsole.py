@@ -31,7 +31,7 @@ class InteractiveConsole:
 
     def get_help_lines(self) -> list[Any]:
         lines = []
-        lines.append(__("Interactive Console") + " – " + __("Commands:"))
+        lines.append(__("Interactive Console") + " - " + __("Commands:"))
         lines.append("  r <addr> <size>               " + __("Read from ROM region"))
         lines.append("  s <filepath>                  " + __("Save last read data to file"))
         lines.append("  w <addr> <value>              " + __("Write to ROM region (e.g. mapper registers)"))

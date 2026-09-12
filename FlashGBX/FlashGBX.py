@@ -348,7 +348,7 @@ def main(portableMode: bool = False) -> int | None:
 
     init_language(config_path, override=language_choice)
 
-    print(f"FlashGBX {AppInfo.VERSION}\n© 2020–{time.strftime('%Y')} Lesserkuma")
+    print(f"FlashGBX {AppInfo.VERSION}\n© 2020-{time.strftime('%Y')} Lesserkuma")
     print("https://github.com/Lesserkuma/FlashGBX")
 
     examples = (
@@ -547,7 +547,7 @@ def main(portableMode: bool = False) -> int | None:
         action="store_true",
         help=c__(
             "Command Line Help",
-            "don’t stop if invalid data found in cartridge header data",
+            "don't stop if invalid data found in cartridge header data",
         ),
     )
     ap_cli2.add_argument(
@@ -741,7 +741,7 @@ def main(portableMode: bool = False) -> int | None:
                 parser.print_help()
                 print(
                     f"\n\n{ANSI.RED}"
-                    + __("Note: GUI mode couldn’t be launched, but the application can be run in CLI mode.")
+                    + __("Note: GUI mode couldn't be launched, but the application can be run in CLI mode.")
                     + "\n      "
                     + __("Optional command line switches are explained above.")
                     + f"{ANSI.RESET}\n",

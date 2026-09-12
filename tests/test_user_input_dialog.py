@@ -214,7 +214,7 @@ def test_default_dialog_connects_accept_and_reject_actions(dialog_module: Module
     dialog = dialog_module.UserInputDialog(None)
 
     assert dialog.APP is None
-    assert dialog.title.endswith(" – ")
+    assert dialog.title.endswith(" - ")
     assert dialog.paramWidgets == {}
     assert dialog.lblIntro.text == ""
     assert dialog.window_icon is None
@@ -245,7 +245,7 @@ def test_dialog_builds_all_supported_parameter_widgets(dialog_module: ModuleType
     result = dialog.GetResult()
 
     assert dialog.APP is app
-    assert dialog.title.endswith(" – Backup options")
+    assert dialog.title.endswith(" - Backup options")
     assert isinstance(dialog.window_icon, FakeIcon)
     assert dialog.window_icon.source is icon_source
     assert set(result) == {"reader", "single", "filename", "retries", "verify"}

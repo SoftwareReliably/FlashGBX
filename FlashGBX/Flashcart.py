@@ -240,7 +240,7 @@ class Flashcart:
             else:
                 cfi = self.ReadCFI()
                 if cfi is False:
-                    print(__("CFI Error: Couldn’t retrieve buffer size from the cartridge."))
+                    print(__("CFI Error: Couldn't retrieve buffer size from the cartridge."))
                     if "single_write" in self._config["commands"]:
                         del self._config["commands"]["buffer_write"]
                         print(__("Buffered write disabled."))
@@ -404,7 +404,7 @@ class Flashcart:
             else:
                 cfi = self.ReadCFI()
                 if cfi is False:
-                    print(__("CFI Error: Couldn’t retrieve sector size map from the cartridge."))
+                    print(__("CFI Error: Couldn't retrieve sector size map from the cartridge."))
                     if "chip_erase" in self._config["commands"]:
                         del self._config["commands"]["sector_erase"]
                         print(__("Sector erase mode disabled."))
@@ -816,7 +816,7 @@ class CFI:
         )
         s += (
             __(
-                "Voltage: {min_v}–{max_v} V",
+                "Voltage: {min_v}-{max_v} V",
                 min_v=format_decimal(info["vdd_min"], precision=1),
                 max_v=format_decimal(info["vdd_max"], precision=1),
             )
@@ -856,7 +856,7 @@ class CFI:
         if info["chip_erase"] and "chip_erase_time_avg" in info and "chip_erase_time_max" in info:
             s += (
                 __(
-                    "Chip erase: {avg}–{max} ms",
+                    "Chip erase: {avg}-{max} ms",
                     avg=str(info["chip_erase_time_avg"]),
                     max=str(info["chip_erase_time_max"]),
                 )
@@ -865,7 +865,7 @@ class CFI:
         if info["sector_erase"] and "sector_erase_time_avg" in info and "sector_erase_time_max" in info:
             s += (
                 __(
-                    "Sector erase: {avg}–{max} ms",
+                    "Sector erase: {avg}-{max} ms",
                     avg=str(info["sector_erase_time_avg"]),
                     max=str(info["sector_erase_time_max"]),
                 )
@@ -880,7 +880,7 @@ class CFI:
             esb = info["erase_sector_blocks"][i]
             if oversize:
                 s += "\n" + __(
-                    "Region {region}: {start}–{end} @ {size} × {count} (alternative)",
+                    "Region {region}: {start}-{end} @ {size} x {count} (alternative)",
                     region=str(i + 1),
                     start=f"0x{pos:07X}",
                     end=f"0x{pos + esb[2] - 1:07X}",
@@ -889,7 +889,7 @@ class CFI:
                 )
             else:
                 s += "\n" + __(
-                    "Region {region}: {start}–{end} @ {size} × {count}",
+                    "Region {region}: {start}-{end} @ {size} x {count}",
                     region=str(i + 1),
                     start=f"0x{pos:07X}",
                     end=f"0x{pos + esb[2] - 1:07X}",

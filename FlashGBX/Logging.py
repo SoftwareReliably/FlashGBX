@@ -67,7 +67,7 @@ class Logger:
         self.LOG_ERROR: bool = False
         _append_capped(
             AppContext.PRINT_LOG,
-            "FlashGBX {version}\n© 2020–{year} Lesserkuma".format(
+            "FlashGBX {version}\n© 2020-{year} Lesserkuma".format(
                 version=AppInfo.VERSION,
                 year=time.strftime("%Y"),
             ),
