@@ -130,6 +130,37 @@ class _FlashConfiguration(NamedTuple):
     buffer_size: int | Literal[False]
 
 
+class _AGBSaveConfiguration(NamedTuple):
+    buffer_len: int
+    save_size: int
+    ram_banks: int
+    flash_chip: int
+    sram_5: int
+    command: Any
+    empty_data_byte: int
+    extra_size: int
+
+
+class _DMGSaveConfiguration(NamedTuple):
+    mbc: Any
+    buffer_len: int
+    save_size: int
+    ram_banks: int
+    empty_data_byte: int
+    extra_size: int
+    audio_low: bool
+
+
+class _FlashSectorPlan(NamedTuple):
+    data_import: bytearray
+    smallest_sector_size: int | Literal[False]
+    sector_offsets: list[list[int]]
+    write_sectors: list[list[int]]
+    delta_state: list[list[int]] | None
+    state_path: str | Path
+    has_sector_map: bool
+
+
 class LK_Device(ABC):
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
@@ -4448,6 +4479,220 @@ class LK_Device(ABC):
             mbc.EnableMapper()
         return buffer_len, empty_data_byte, audio_low
 
+    def _configure_dmg_save_transfer(self, args: dict[str, Any]) -> _DMGSaveConfiguration | None:
+        self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)  # fixes Taobao FRAM cart save data
+        mbc = DMG_Mapper().GetInstance(
+            args=args,
+            cart_write_fncptr=self._cart_write,
+            cart_read_fncptr=self._mapper_cart_read,
+            cart_powercycle_fncptr=self.CartPowerCycleOrAskReconnect,
+            clk_toggle_fncptr=self._clk_toggle,
+        )
+        if not self.IsSupportedMbc(args["mbc"]):
+            msg = __(
+                "This cartridge uses a mapper that is not supported by FlashGBX using your {device_name}.",
+                device_name=self.GetFullName(),
+            )
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": msg,
+                    "abortable": False,
+                },
+            )
+            return None
+
+        save_size = args["save_size"] if "save_size" in args else DmgSaveTypes(mbc=args["save_type"]).GetSize()
+        if save_size is None:
+            return None
+
+        ram_banks = mbc.GetRAMBanks(save_size)
+        buffer_len = min(0x200, mbc.GetRAMBankSize())
+        self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
+        self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
+        self._set_fw_variable("DMG_READ_CS_PULSE", 0)
+
+        buffer_len, empty_data_byte, audio_low = self._configure_dmg_save_mapper(
+            args,
+            mbc,
+            save_size,
+            buffer_len,
+        )
+        extra_size = mbc.GetRTCBufferSize() if args["rtc"] is True else 0
+
+        # Check for DMG-MBC5-32M-FLASH
+        self._cart_write(0x2000, 0x00)
+        self._cart_write(0x4000, 0x90)
+        flash_id = self._cart_read(0x4000, 2)
+        if flash_id == bytearray([0xB0, 0x88]):
+            audio_low = True
+        self._cart_write(0x4000, 0xF0)
+        self._cart_write(0x4000, 0xFF)
+        self._cart_write(0x2000, 0x01)
+        if audio_low:
+            dprint("DMG-MBC5-32M-FLASH Development Cartridge detected")
+            self._set_fw_variable("FLASH_WE_PIN", 0x01)
+            self.SetPin(["PIN_AUDIO"], set_high=False)
+        self._cart_write(0x4000, 0x00)
+        mbc.EnableRAM(enable=True)
+
+        return _DMGSaveConfiguration(
+            mbc=mbc,
+            buffer_len=buffer_len,
+            save_size=save_size,
+            ram_banks=ram_banks,
+            empty_data_byte=empty_data_byte,
+            extra_size=extra_size,
+            audio_low=audio_low,
+        )
+
+    def _configure_agb_save_transfer(
+        self,
+        args: dict[str, Any],
+        cart_type: dict[str, Any] | None,
+    ) -> _AGBSaveConfiguration | None:
+        self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
+        self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
+        buffer_len = 0x2000
+        save_size = args["save_size"] if "save_size" in args else AgbSaveTypes().GetSize(args["save_type"])
+        if save_size is None:
+            return None
+
+        ram_banks = math.ceil(save_size / 0x10000)
+        agb_flash_chip = 0
+        empty_data_byte = 0x00
+        sram_5 = 0
+
+        if args["save_type"] in (1, 2):  # EEPROM
+            buffer_len = 64 if args["mode"] == 3 else 256
+        elif args["save_type"] in (4, 5):  # FLASH
+            empty_data_byte = 0xFF
+            ret = self.ReadFlashSaveID()
+            if ret is False:
+                if not args.get("detect"):
+                    self.SetProgress(
+                        {
+                            "action": "ABORT",
+                            "info_type": "msgbox_critical",
+                            "info_msg": __("Couldn't detect the save data flash chip type."),
+                            "abortable": False,
+                        },
+                    )
+                return None
+            buffer_len = 0x1000
+            (agb_flash_chip, _) = ret
+            if agb_flash_chip in (0xBF4B, 0xBF5B, 0xFFFF):  # Bootlegs
+                buffer_len = 0x800
+            elif agb_flash_chip == 0xBF6D:
+                buffer_len = 0x8000
+        elif args["save_type"] == 6:  # DACS
+            empty_data_byte = 0xFF
+            ram_banks = 1
+            self._cart_write(0, 0x90)
+            flash_id = self._cart_read(0, 4)
+            self._cart_write(0, 0x50)
+            self._cart_write(0, 0xFF)
+            if flash_id != bytearray([0xB0, 0x00, 0x9F, 0x00]):
+                dprint(
+                    "Warning: Unknown DACS flash chip ID ({:s})".format(
+                        " ".join(format(x, "02X") for x in flash_id),
+                    ),
+                )
+                if not args.get("detect"):
+                    self.SetProgress(
+                        {
+                            "action": "ABORT",
+                            "info_type": "msgbox_critical",
+                            "info_msg": __(
+                                "Couldn't detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
+                                flash_id=" ".join(format(x, "02X") for x in flash_id),
+                            ),
+                            "abortable": False,
+                        },
+                    )
+                return None
+            buffer_len = 0x2000
+
+            flash_cmds = [["PA", 0x70], ["PA", 0x10], ["PA", "PD"]]
+            self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
+            self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
+            self._write(0x02)  # FLASH_COMMAND_SET_INTEL
+            self._write(0x01)  # FLASH_METHOD_UNBUFFERED
+            self._write(0x00)  # unset
+            for i in range(6):
+                if i > len(flash_cmds) - 1:  # skip
+                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
+                else:
+                    address = flash_cmds[i][0]
+                    value = flash_cmds[i][1]
+                    if not isinstance(address, int):
+                        address = 0
+                    if not isinstance(value, int):
+                        value = 0
+                    address >>= 1
+                    dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
+                    self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
+            if self.FW["fw_ver"] >= 12:
+                self.wait_for_ack()
+
+        if cart_type is not None and cart_type.get("flash_bank_select_type") == 1:
+            sram_value = self._cart_read(address=5, length=1, agb_save_flash=True)
+            if sram_value is False:
+                return None
+            sram_5 = struct.unpack("B", sram_value)[0]
+            self._cart_write(address=5, value=1, sram=True)
+
+        commands = [
+            [[None], [None]],  # No save
+            [
+                bytearray([self.DEVICE_CMD["AGB_CART_READ_EEPROM"], 1]),
+                bytearray([self.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], 1]),
+            ],  # 4K EEPROM
+            [
+                bytearray([self.DEVICE_CMD["AGB_CART_READ_EEPROM"], 2]),
+                bytearray([self.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], 2]),
+            ],  # 64K EEPROM
+            [
+                self.DEVICE_CMD["AGB_CART_READ_SRAM"],
+                self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
+            ],  # 256K SRAM
+            [
+                self.DEVICE_CMD["AGB_CART_READ_SRAM"],
+                bytearray(
+                    [
+                        self.DEVICE_CMD["AGB_CART_WRITE_FLASH_DATA"],
+                        2 if agb_flash_chip == 0x1F3D else 1,
+                    ],
+                ),
+            ],  # 512K FLASH
+            [
+                self.DEVICE_CMD["AGB_CART_READ_SRAM"],
+                bytearray([self.DEVICE_CMD["AGB_CART_WRITE_FLASH_DATA"], 1]),
+            ],  # 1M FLASH
+            [False, False],  # 8M DACS
+            [
+                self.DEVICE_CMD["AGB_CART_READ_SRAM"],
+                self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
+            ],  # 512K SRAM
+            [
+                self.DEVICE_CMD["AGB_CART_READ_SRAM"],
+                self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
+            ],  # 1M SRAM
+        ]
+        command = commands[args["save_type"]][args["mode"] - 2]
+        extra_size = 0x10 if args["rtc"] is True else 0
+        return _AGBSaveConfiguration(
+            buffer_len=buffer_len,
+            save_size=save_size,
+            ram_banks=ram_banks,
+            flash_chip=agb_flash_chip,
+            sram_5=sram_5,
+            command=command,
+            empty_data_byte=empty_data_byte,
+            extra_size=extra_size,
+        )
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
@@ -4481,205 +4726,33 @@ class LK_Device(ABC):
         self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
 
         if self.MODE == "DMG":
-            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)  # fixes Taobao FRAM cart save data
-            _mbc = DMG_Mapper().GetInstance(
-                args=args,
-                cart_write_fncptr=self._cart_write,
-                cart_read_fncptr=self._mapper_cart_read,
-                cart_powercycle_fncptr=self.CartPowerCycleOrAskReconnect,
-                clk_toggle_fncptr=self._clk_toggle,
-            )
-            if not self.IsSupportedMbc(args["mbc"]):
-                msg = __(
-                    "This cartridge uses a mapper that is not supported by FlashGBX using your {device_name}.",
-                    device_name=self.GetFullName(),
-                )
-                self.SetProgress(
-                    {
-                        "action": "ABORT",
-                        "info_type": "msgbox_critical",
-                        "info_msg": msg,
-                        "abortable": False,
-                    },
-                )
+            configuration = self._configure_dmg_save_transfer(args)
+            if configuration is None:
                 return False
-            save_size = args["save_size"] if "save_size" in args else DmgSaveTypes(mbc=args["save_type"]).GetSize()
-            if save_size is None:
-                return False
-
-            ram_banks = _mbc.GetRAMBanks(save_size)
-
-            buffer_len = min(0x200, _mbc.GetRAMBankSize())
-            self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
-            self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
-            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-
-            buffer_len, empty_data_byte, audio_low = self._configure_dmg_save_mapper(
-                args,
+            (
                 _mbc,
-                save_size,
                 buffer_len,
-            )
-
-            if args["rtc"] is True:
-                extra_size = _mbc.GetRTCBufferSize()
-
-            # Check for DMG-MBC5-32M-FLASH
-            self._cart_write(0x2000, 0x00)
-            self._cart_write(0x4000, 0x90)
-            flash_id = self._cart_read(0x4000, 2)
-            if flash_id == bytearray([0xB0, 0x88]):
-                audio_low = True
-            self._cart_write(0x4000, 0xF0)
-            self._cart_write(0x4000, 0xFF)
-            self._cart_write(0x2000, 0x01)
-            if audio_low:
-                dprint("DMG-MBC5-32M-FLASH Development Cartridge detected")
-                self._set_fw_variable("FLASH_WE_PIN", 0x01)
-                self.SetPin(["PIN_AUDIO"], set_high=False)
-            self._cart_write(0x4000, 0x00)
-
-            _mbc.EnableRAM(enable=True)
+                save_size,
+                ram_banks,
+                empty_data_byte,
+                extra_size,
+                audio_low,
+            ) = configuration
 
         elif self.MODE == "AGB":
-            self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
-            self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
-            buffer_len = 0x2000
-            save_size = args["save_size"] if "save_size" in args else AgbSaveTypes().GetSize(args["save_type"])
-            if save_size is None:
+            configuration = self._configure_agb_save_transfer(args, cart_type)
+            if configuration is None:
                 return False
-            ram_banks = math.ceil(save_size / 0x10000)
-            agb_flash_chip = 0
-
-            if args["save_type"] in (1, 2):  # EEPROM
-                buffer_len = 64 if args["mode"] == 3 else 256
-            elif args["save_type"] in (4, 5):  # FLASH
-                empty_data_byte = 0xFF
-                ret = self.ReadFlashSaveID()
-                if ret is False:
-                    if not args.get("detect"):
-                        self.SetProgress(
-                            {
-                                "action": "ABORT",
-                                "info_type": "msgbox_critical",
-                                "info_msg": __("Couldn't detect the save data flash chip type."),
-                                "abortable": False,
-                            },
-                        )
-                    return False
-                buffer_len = 0x1000
-                (agb_flash_chip, _) = ret
-                if agb_flash_chip in (0xBF4B, 0xBF5B, 0xFFFF):  # Bootlegs
-                    buffer_len = 0x800
-                elif agb_flash_chip == 0xBF6D:
-                    buffer_len = 0x8000
-            elif args["save_type"] == 6:  # DACS
-                # self._write(self.DEVICE_CMD["AGB_BOOTUP_SEQUENCE"], wait=self.FW["fw_ver"] >= 12)
-                empty_data_byte = 0xFF
-                # Read Chip ID
-                ram_banks = 1
-                self._cart_write(0, 0x90)
-                flash_id = self._cart_read(0, 4)
-                self._cart_write(0, 0x50)
-                self._cart_write(0, 0xFF)
-                if flash_id != bytearray([0xB0, 0x00, 0x9F, 0x00]):
-                    dprint(
-                        "Warning: Unknown DACS flash chip ID ({:s})".format(
-                            " ".join(format(x, "02X") for x in flash_id),
-                        ),
-                    )
-                    if not args.get("detect"):
-                        self.SetProgress(
-                            {
-                                "action": "ABORT",
-                                "info_type": "msgbox_critical",
-                                "info_msg": __(
-                                    "Couldn't detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
-                                    flash_id=" ".join(format(x, "02X") for x in flash_id),
-                                ),
-                                "abortable": False,
-                            },
-                        )
-                    return False
-                buffer_len = 0x2000
-
-                # ↓↓↓ Load commands into firmware
-                flash_cmds = [["PA", 0x70], ["PA", 0x10], ["PA", "PD"]]
-                self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
-                self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
-                self._write(0x02)  # FLASH_COMMAND_SET_INTEL
-                self._write(0x01)  # FLASH_METHOD_UNBUFFERED
-                self._write(0x00)  # unset
-                for i in range(6):
-                    if i > len(flash_cmds) - 1:  # skip
-                        self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
-                    else:
-                        address = flash_cmds[i][0]
-                        value = flash_cmds[i][1]
-                        if not isinstance(address, int):
-                            address = 0
-                        if not isinstance(value, int):
-                            value = 0
-                        address >>= 1
-                        dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
-                        self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
-                if self.FW["fw_ver"] >= 12:
-                    self.wait_for_ack()
-                # ↑↑↑ Load commands into firmware
-
-            # Bootleg mapper
-            if (
-                cart_type is not None
-                and "flash_bank_select_type" in cart_type
-                and cart_type["flash_bank_select_type"] == 1
-            ):
-                sram_value = self._cart_read(address=5, length=1, agb_save_flash=True)
-                if sram_value is False:
-                    return False
-                sram_5 = struct.unpack("B", sram_value)[0]
-                self._cart_write(address=5, value=1, sram=True)
-
-            commands = [  # save type commands
-                [[None], [None]],  # No save
-                [
-                    bytearray([self.DEVICE_CMD["AGB_CART_READ_EEPROM"], 1]),
-                    bytearray([self.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], 1]),
-                ],  # 4K EEPROM
-                [
-                    bytearray([self.DEVICE_CMD["AGB_CART_READ_EEPROM"], 2]),
-                    bytearray([self.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], 2]),
-                ],  # 64K EEPROM
-                [
-                    self.DEVICE_CMD["AGB_CART_READ_SRAM"],
-                    self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
-                ],  # 256K SRAM
-                [
-                    self.DEVICE_CMD["AGB_CART_READ_SRAM"],
-                    bytearray(
-                        [
-                            self.DEVICE_CMD["AGB_CART_WRITE_FLASH_DATA"],
-                            2 if agb_flash_chip == 0x1F3D else 1,
-                        ],
-                    ),
-                ],  # 512K FLASH
-                [
-                    self.DEVICE_CMD["AGB_CART_READ_SRAM"],
-                    bytearray([self.DEVICE_CMD["AGB_CART_WRITE_FLASH_DATA"], 1]),
-                ],  # 1M FLASH
-                [False, False],  # 8M DACS
-                [
-                    self.DEVICE_CMD["AGB_CART_READ_SRAM"],
-                    self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
-                ],  # 512K SRAM
-                [
-                    self.DEVICE_CMD["AGB_CART_READ_SRAM"],
-                    self.DEVICE_CMD["AGB_CART_WRITE_SRAM"],
-                ],  # 1M SRAM
-            ]
-            command = commands[args["save_type"]][args["mode"] - 2]
-
-            if args["rtc"] is True:
-                extra_size = 0x10
+            (
+                buffer_len,
+                save_size,
+                ram_banks,
+                agb_flash_chip,
+                sram_5,
+                command,
+                empty_data_byte,
+                extra_size,
+            ) = configuration
 
         action = None
         if args["mode"] == 2:  # Backup
@@ -6190,6 +6263,119 @@ class LK_Device(ABC):
             buffer_size=flash_buffer_size,
         )
 
+    def _plan_flash_sectors(
+        self,
+        args: dict[str, Any],
+        flashcart: Flashcart,
+        data_import: bytearray,
+        rom_bank_size: int,
+        flash_offset: int,
+    ) -> _FlashSectorPlan | None:
+        smallest_sector_size: int | Literal[False] = 0x2000
+        sector_offsets: list[list[int]] = []
+        write_sectors: list[list[int]] = []
+        delta_state_new: list[list[int]] | None = None
+        json_file: str | Path = ""
+        sector_map = flashcart.GetSectorMap()
+        if sector_map is not None and sector_map is not False:
+            smallest_sector_size = flashcart.GetSmallestSectorSize()
+            sector_offsets = flashcart.GetSectorOffsets(
+                rom_size=flashcart.GetFlashSize(default=len(data_import)),
+                rom_bank_size=rom_bank_size,
+            )
+            if sector_offsets:
+                flash_capacity = sector_offsets[-1][0] + sector_offsets[-1][1]
+                if flash_capacity < len(data_import) and not (
+                    flashcart.SupportsChipErase() and args["prefer_chip_erase"]
+                ):
+                    sector_offsets = flashcart.GetSectorOffsets(
+                        rom_size=len(data_import),
+                        rom_bank_size=rom_bank_size,
+                    )
+
+            sector_offsets_hash = base64.urlsafe_b64encode(
+                hashlib.sha1(str(sector_offsets).encode("UTF-8")).digest(),
+            ).decode("ASCII", "ignore")[:4]
+
+            if len(sector_offsets) > 1:
+                delta_path = Path(args["path"])
+                source_path = delta_path.with_name(delta_path.stem.removesuffix(".delta") + delta_path.suffix)
+                if delta_path.stem.endswith(".delta") and source_path.exists():
+                    delta_state_new = []
+                    with source_path.open("rb") as source_file:
+                        for s_from, s_size in sector_offsets:
+                            s_to = s_from + s_size
+                            if data_import[s_from:s_to] != source_file.read(s_size):
+                                sector_state = [
+                                    s_from,
+                                    s_size,
+                                    zlib.crc32(data_import[s_from:s_to]) & 0xFFFFFFFF,
+                                ]
+                                delta_state_new.append(sector_state)
+                                dprint("Sector differs:", sector_state)
+                    write_sectors = copy.copy(delta_state_new)
+                    json_file = delta_path.with_name(f"{delta_path.stem}_{sector_offsets_hash}.json")
+                    if json_file.exists():
+                        with json_file.open("rb") as state_file:
+                            try:
+                                delta_state_old = json.loads(state_file.read().decode("UTF-8-SIG"))
+                            except json.JSONDecodeError, UnicodeDecodeError:
+                                delta_state_old = []
+                            for old_sector in delta_state_old:
+                                if old_sector in write_sectors:
+                                    write_sectors.remove(old_sector)
+                                    dprint("Skipping sector:", old_sector)
+                                else:
+                                    write_sector_ranges = [sector[:-1] for sector in write_sectors]
+                                    if old_sector[:-1] not in write_sector_ranges:
+                                        write_sectors.append(old_sector)
+                                        dprint("Forcing sector:", old_sector)
+
+                    if not write_sectors:
+                        self.SetProgress(
+                            {
+                                "action": "ABORT",
+                                "info_type": "msgbox_critical",
+                                "info_msg": __(
+                                    "No flash sectors were found that would need to be updated for delta flashing.",
+                                ),
+                                "abortable": False,
+                            },
+                        )
+                        return None
+
+                elif "flash_sectors" in args and len(args["flash_sectors"]) > 0:
+                    write_sectors = args["flash_sectors"]
+
+                elif flash_offset > 0:  # Batteryless SRAM
+                    flash_size = args.get("flash_size", len(data_import) - flash_offset)
+                    if "flash_size" in args:
+                        data_import = data_import[:flash_size]
+                    batteryless_sectors = []
+                    for sector in sector_offsets:
+                        if flash_offset > sector[0]:
+                            continue
+                        if flash_offset + flash_size < sector[0]:
+                            break
+                        batteryless_sectors.append(sector)
+                    write_sectors = batteryless_sectors
+                    if "bl_save" in args:
+                        data_import = bytearray([0] * batteryless_sectors[0][0]) + data_import
+                else:
+                    write_sectors = [sector for sector in sector_offsets if sector[0] < len(data_import)]
+
+            dprint("Sectors to update:", write_sectors)
+
+        return _FlashSectorPlan(
+            data_import=data_import,
+            smallest_sector_size=smallest_sector_size,
+            sector_offsets=sector_offsets,
+            write_sectors=write_sectors,
+            delta_state=delta_state_new,
+            state_path=json_file,
+            has_sector_map=sector_map is not False,
+        )
+
     def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
@@ -6355,108 +6541,26 @@ class LK_Device(ABC):
         # ↑↑↑ Read Flash ID
 
         # ↓↓↓ Read Sector Map
-        sector_map = flashcart.GetSectorMap()
-        smallest_sector_size = 0x2000
-        sector_offsets = []
-        write_sectors = []
+        sector_plan = self._plan_flash_sectors(
+            args,
+            flashcart,
+            data_import,
+            rom_bank_size,
+            flash_offset,
+        )
+        if sector_plan is None:
+            return False
+        (
+            data_import,
+            smallest_sector_size,
+            sector_offsets,
+            write_sectors,
+            delta_state_new,
+            json_file,
+            has_sector_map,
+        ) = sector_plan
         verify_sectors = []
         sector_pos = 0
-        delta_state_new = None
-        flash_capacity: int = len(data_import)
-        if sector_map is not None and sector_map is not False:
-            smallest_sector_size = flashcart.GetSmallestSectorSize()
-            sector_offsets = flashcart.GetSectorOffsets(
-                rom_size=flashcart.GetFlashSize(default=len(data_import)),
-                rom_bank_size=rom_bank_size,
-            )
-            if len(sector_offsets) > 0:
-                flash_capacity = sector_offsets[-1][0] + sector_offsets[-1][1]
-                if flash_capacity < len(data_import) and not (
-                    flashcart.SupportsChipErase() and args["prefer_chip_erase"]
-                ):
-                    sector_offsets = flashcart.GetSectorOffsets(rom_size=len(data_import), rom_bank_size=rom_bank_size)
-
-            sector_offsets_hash = base64.urlsafe_b64encode(
-                hashlib.sha1(str(sector_offsets).encode("UTF-8")).digest(),
-            ).decode("ASCII", "ignore")[:4]
-
-            # Delta flashing
-            if len(sector_offsets) > 1:
-                delta_path = Path(args["path"])
-                source_path = delta_path.with_name(delta_path.stem.removesuffix(".delta") + delta_path.suffix)
-                if delta_path.stem.endswith(".delta") and source_path.exists():
-                    delta_state_new = []
-                    with source_path.open("rb") as f:
-                        for i in range(len(sector_offsets)):
-                            s_from = sector_offsets[i][0]
-                            s_size = sector_offsets[i][1]
-                            s_to = s_from + s_size
-                            if data_import[s_from:s_to] != f.read(s_to - s_from):
-                                x = [
-                                    s_from,
-                                    s_size,
-                                    zlib.crc32(data_import[s_from:s_to]) & 0xFFFFFFFF,
-                                ]
-                                delta_state_new.append(x)
-                                dprint("Sector differs:", x)
-                    write_sectors = copy.copy(delta_state_new)
-                    json_file = delta_path.with_name(f"{delta_path.stem}_{sector_offsets_hash}.json")
-                    if json_file.exists():
-                        with json_file.open("rb") as f:
-                            try:
-                                delta_state_old = json.loads(f.read().decode("UTF-8-SIG"))
-                            except json.JSONDecodeError, UnicodeDecodeError:
-                                delta_state_old = []
-                            if len(delta_state_old) > 0:
-                                for x in delta_state_old:
-                                    if x in write_sectors:
-                                        del write_sectors[write_sectors.index(x)]
-                                        dprint("Skipping sector:", x)
-                                    else:
-                                        write_sectors2 = [y[:-1] for y in write_sectors]
-                                        if x[:-1] not in write_sectors2:
-                                            write_sectors.append(x)
-                                            dprint("Forcing sector:", x)
-
-                    if len(write_sectors) == 0:
-                        self.SetProgress(
-                            {
-                                "action": "ABORT",
-                                "info_type": "msgbox_critical",
-                                "info_msg": __(
-                                    "No flash sectors were found that would need to be updated for delta flashing.",
-                                ),
-                                "abortable": False,
-                            },
-                        )
-                        return False
-
-                elif "flash_sectors" in args and len(args["flash_sectors"]) > 0:
-                    write_sectors = args["flash_sectors"]
-
-                elif flash_offset > 0:  # Batteryless SRAM
-                    if "flash_size" not in args:
-                        flash_size = len(data_import) - flash_offset
-                    else:
-                        flash_size = args["flash_size"]
-                        data_import = data_import[:flash_size]
-                    bl_sectors = []
-                    for sector in sector_offsets:
-                        if flash_offset > sector[0]:
-                            continue
-                        if (flash_offset + flash_size) < sector[0]:
-                            break
-                        bl_sectors.append(sector)
-                    write_sectors = bl_sectors
-                    if "bl_save" in args:
-                        data_import = bytearray([0] * bl_sectors[0][0]) + data_import
-                else:
-                    write_sectors = []
-                    for item in sector_offsets:
-                        if item[0] < len(data_import):
-                            write_sectors.append(item)
-
-            dprint("Sectors to update:", write_sectors)
         # ↑↑↑ Read Sector Map
 
         # ↓↓↓ Set window title before chip erase so it appears during erase phase
@@ -6477,7 +6581,7 @@ class LK_Device(ABC):
         # ↓↓↓ Chip erase
         chip_erase = False
         if flashcart.SupportsChipErase() and not flash_offset > 0:
-            if flashcart.SupportsSectorErase() and args["prefer_chip_erase"] is False and sector_map is not False:
+            if flashcart.SupportsSectorErase() and args["prefer_chip_erase"] is False and has_sector_map:
                 chip_erase = False
             else:
                 chip_erase = True
