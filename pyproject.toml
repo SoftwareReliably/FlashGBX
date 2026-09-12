@@ -142,7 +142,6 @@ ignore = [
     "N803", #invalid-argument-name
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
-    "PLR0911", #too-many-return-statements
     "FBT003", #boolean-positional-value-in-call
     "D100", #undocumented-public-module
     "PLC0415", #import-outside-top-level
@@ -153,6 +152,7 @@ ignore = [
 [tool.ruff.lint.pylint]
 max-branches = 308
 max-statements = 929
+max-returns = 34
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds setting.
