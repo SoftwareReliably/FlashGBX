@@ -2651,7 +2651,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         app_path=AppContext.APP_PATH,
                     )
                     self.CAMWIN = camera_window
-                    camera_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+                    camera_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, on=True)
                     camera_window.setModal(True)
                     camera_window.run()
                     return
@@ -6677,7 +6677,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         firmware_window = FirmwareUpdater(self, app_path=AppContext.APP_PATH, icon=self.windowIcon(), device=self.CONN)
         self.FWUPWIN = firmware_window
-        firmware_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        firmware_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, on=True)
         firmware_window.setModal(True)
         firmware_window.run()
         return None
@@ -6719,7 +6719,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             app_path=AppContext.APP_PATH,
         )
         self.CAMWIN = camera_window
-        camera_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        camera_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, on=True)
         camera_window.setModal(True)
         camera_window.run()
 
@@ -6743,7 +6743,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         console_window = InteractiveConsoleWindow(self, icon=self.windowIcon())
         self.INTWIN = console_window
-        console_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        console_window.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, on=True)
         console_window.setModal(True)
         console_window.run()
         return None
@@ -6818,9 +6818,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         app_icon = QtGui.QIcon(str(Path(AppContext.APP_PATH) / "res" / icon_filename))
         qt_app.setWindowIcon(app_icon)
         self.setWindowIcon(app_icon)
-        self.setWindowFlag(QtCore.Qt.WindowType.WindowMaximizeButtonHint, False)
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowMaximizeButtonHint, on=False)
         if platform.system() == "Windows":
-            self.setWindowFlag(QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint, True)
+            self.setWindowFlag(QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint, on=True)
         self.show()
         self.setFixedSize(fixed_size)
         sys.stdout = Logger()
