@@ -128,7 +128,6 @@ ignore = [
     "N802", #invalid-function-name
     "PLR2004", #magic-value-comparison
     "T201", #print
-    "S101", #assert
     "E501", #line-too-long
     "RUF001", #ambiguous-unicode-character-string
     "N806", #on-lowercase-variable-in-function
@@ -157,5 +156,5 @@ max-returns = 34
 max-complexity = 271
 
 [tool.ruff.lint.per-file-ignores]
-"test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201", "FBT003"]
+"test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201", "FBT003", "S101"]
 "InteractiveConsole.py" =["SLF001"]

@@ -3125,10 +3125,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             path = False
 
         if not just_erase:
-            assert isinstance(path, str)
+            if not isinstance(path, str):
+                msg_0 = "ROM path must be a string when not erasing the cartridge."
+                raise TypeError(msg_0)
             rom_path = Path(path)
             self.SETTINGS.setValue(setting_name, str(rom_path.parent))
-            rom_size = rom_path.stat().st_size
+            rom_size: int = rom_path.stat().st_size
             if rom_size == 0:
                 QtWidgets.QMessageBox.critical(
                     self,

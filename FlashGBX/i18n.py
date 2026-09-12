@@ -327,7 +327,9 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
             encoded_value = value.encode()
 
             if section == "CTXT":
-                assert msgctxt is not None
+                if msgctxt is None:
+                    msg_0: str = f"Context found without a matching msgctxt in {filename}"
+                    raise ValueError(msg_0)
                 msgctxt += encoded_value
             elif section == "ID":
                 msgid += encoded_value
