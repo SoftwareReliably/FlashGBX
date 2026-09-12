@@ -45,7 +45,7 @@ class Formatter:
         return f"{int(hr):02d}:{int(minute):02d}:{int(sec):02d}"
 
     @classmethod
-    def progress_time(cls, seconds, as_float=False, localized=True) -> str:
+    def progress_time(cls, seconds: int, as_float: bool = False, localized: bool = True) -> str:
         if not localized:
 
             def t___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
@@ -128,7 +128,7 @@ class Formatter:
         return string == formatted
 
     @classmethod
-    def title(cls, title) -> str:
+    def title(cls, title: str | None) -> str:
         if title is None:
             return ""
         return str(title).replace("\r\n", "␤").replace("\n", "␤").replace("\r", "␤")
