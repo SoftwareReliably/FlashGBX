@@ -3697,7 +3697,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
 
-    def WriteRAM(
+    def WriteRAM(  # noqa: PLR0911 - GUI workflow exits early after validation and cancelled dialogs
         self,
         dpath: str = "",
         erase: bool = False,

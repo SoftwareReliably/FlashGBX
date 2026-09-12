@@ -148,7 +148,7 @@ ignore = [
 [tool.ruff.lint.pylint]
 max-branches = 250
 max-statements = 800
-max-returns = 25
+max-returns = 20
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds setting.

@@ -75,7 +75,7 @@ class InteractiveConsole:
         except Exception:
             return False
 
-    def _execute_command_inner(self, cmdline: str) -> bool:
+    def _execute_command_inner(self, cmdline: str) -> bool:  # noqa: PLR0911 - command dispatcher returns per command
         try:
             parts: list[str] = shlex.split(cmdline)
         except ValueError:

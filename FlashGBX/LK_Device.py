@@ -5608,7 +5608,7 @@ class LK_Device(ABC):
 
         return data_import, flash_offset
 
-    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:  # noqa: PLR0911 - transfer state machine aborts early
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
             msg = "Cartridge mode must be selected before writing ROM"
