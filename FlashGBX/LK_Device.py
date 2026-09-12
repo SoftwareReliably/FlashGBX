@@ -5374,6 +5374,152 @@ class LK_Device(ABC):
                 )
                 return None
 
+    def _load_flash_commands(
+        self,
+        cart_type: dict[str, Any],
+        flashcart: Flashcart,
+        flash_buffer_size: int | Literal[False],
+    ) -> tuple[str, int] | None:
+        flash_cmds: list[list[int | str | None]] = []
+        command_set_type = flashcart.GetCommandSetType()
+        flash_command_set = self._configure_flash_command_set(command_set_type)
+        if flash_command_set is None:
+            return None
+
+        self._set_fw_variable("FLASH_DOUBLE_DIE", int(flashcart.HasDoubleDie() and self.FW["fw_ver"] >= 5))
+
+        we = 0x00
+        if command_set_type == "GBMEMORY" and self.FW["fw_ver"] < 2:
+            self._set_fw_variable("FLASH_WE_PIN", 0x01)
+            dprint("Using legacy GB-Memory mode")
+        elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] < 12:
+            self._set_fw_variable("FLASH_WE_PIN", 0x02)
+        else:
+            self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
+            self._write(flash_command_set)
+
+            if flashcart.IsF2A():
+                self._write(0x05)  # FLASH_METHOD_AGB_FLASH2ADVANCE
+                flash_cmds = [
+                    ["SA", 0xE8],
+                    ["SA", "BS"],
+                    ["PA", "PD"],
+                    ["SA", 0xD0],
+                    ["SA", 0xFF],
+                ]
+                dprint(f"Using Flash2Advance mode with a buffer of {flash_buffer_size:d} bytes")
+            elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
+                self._write(0x03)  # FLASH_METHOD_DMG_MMSA
+                dprint("Using GB-Memory mode")
+            elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
+                self._write(0x09)  # FLASH_METHOD_DMG_DATEL_ORBITV2
+                dprint("Using Datel Orbit V2 mode")
+            elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] >= 12:
+                self._write(0x0A)  # FLASH_METHOD_DMG_E201264
+                dprint("Using E201264 mode")
+            elif command_set_type == "GBAMP" and self.FW["fw_ver"] >= 12:
+                self._write(0x0B)  # FLASH_METHOD_AGB_GBAMP
+                dprint("Using GBAMP mode")
+            elif command_set_type == "BUNG_16M" and self.FW["fw_ver"] >= 12:
+                self._write(0x0C)  # FLASH_METHOD_DMG_BUNG_16M
+                dprint("Using BUNG Doctor GB Card 16M mode")
+            elif flashcart.SupportsBufferWrite() and flash_buffer_size > 0:
+                self._write(0x02)  # FLASH_METHOD_BUFFERED
+                flash_cmds = flashcart.GetCommands("buffer_write")
+                dprint(f"Using buffered writing with a buffer of {flash_buffer_size:d} bytes")
+            elif flashcart.SupportsPageWrite() and flash_buffer_size > 0 and self.FW["fw_ver"] >= 12:
+                self._write(0x08)  # FLASH_METHOD_PAGED
+                flash_cmds = flashcart.GetCommands("page_write")
+                dprint(f"Using paged writing with a buffer of {flash_buffer_size:d} bytes")
+            elif flashcart.SupportsSingleWrite():
+                self._write(0x01)  # FLASH_METHOD_UNBUFFERED
+                flash_cmds = flashcart.GetCommands("single_write")
+                dprint("Using single writing")
+            else:
+                self.SetProgress(
+                    {
+                        "action": "ABORT",
+                        "info_type": "msgbox_critical",
+                        "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
+                        "abortable": False,
+                    },
+                )
+                return None
+
+            if flashcart.WEisWR():
+                we = 0x01  # FLASH_WE_PIN_WR
+                self._write(we)
+                dprint("Using WR as WE")
+            elif flashcart.WEisAUDIO():
+                we = 0x02  # FLASH_WE_PIN_AUDIO
+                self._write(we)
+                dprint("Using AUDIO as WE")
+            elif flashcart.WEisWR_RESET():
+                we = 0x03  # FLASH_WE_PIN_WR_RESET
+                self._write(we)
+                dprint("Using WR+RESET as WE")
+            else:
+                self._write(we)  # unset
+
+            for i in range(6):
+                if i > len(flash_cmds) - 1:  # skip
+                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
+                else:
+                    address = flash_cmds[i][0]
+                    value = flash_cmds[i][1]
+                    if not isinstance(address, int):
+                        address = 0
+                    if not isinstance(value, int):
+                        value = 0
+                    if self.MODE == "AGB":
+                        address >>= 1
+                    dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
+                    self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
+            if self.FW["fw_ver"] >= 12:
+                self.wait_for_ack()
+
+            if self.FW["fw_ver"] >= 6:
+                if "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
+                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
+                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
+                    if "bank_switch" in cart_type["commands"]:
+                        self._write(len(cart_type["commands"]["bank_switch"]))  # number of commands
+                        for command in cart_type["commands"]["bank_switch"]:
+                            address = command[0]
+                            value = command[1]
+                            if value == "ID":
+                                self._write(bytearray(struct.pack(">I", address)))  # address
+                                self._write(0)  # type = address
+                            else:
+                                self._write(bytearray(struct.pack(">I", value)))  # value
+                                self._write(1)  # type = value
+                        ret = self._read(1)
+                        if ret != 0x01:
+                            print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
+                    else:
+                        self._write(0, wait=True)
+                else:
+                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
+                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
+                    self._write(0, wait=True)
+            elif "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
+                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
+            else:
+                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
+
+            if self.FW["fw_ver"] >= 12:
+                if "status_register_mask" in cart_type:
+                    self._set_fw_variable("STATUS_REGISTER_MASK", cart_type["status_register_mask"])
+                    self._set_fw_variable("STATUS_REGISTER_VALUE", cart_type["status_register_value"])
+                else:
+                    self._set_fw_variable("STATUS_REGISTER_MASK", 0x80)
+                    self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
+
+        if self.FW["fw_ver"] >= 12:
+            self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
+
+        return command_set_type, we
+
     def _prepare_flash_data(self, args: dict[str, Any], mode: DeviceMode) -> tuple[bytearray, int]:
         if "buffer" in args:
             source_buffer = args["buffer"]
@@ -5840,146 +5986,10 @@ class LK_Device(ABC):
         # ↑↑↑ DMG-MMSA-JPN hidden sector
 
         # ↓↓↓ Load commands into firmware
-        flash_cmds = []
-        command_set_type = flashcart.GetCommandSetType()
-        flash_command_set = self._configure_flash_command_set(command_set_type)
-        if flash_command_set is None:
+        flash_commands = self._load_flash_commands(cart_type, flashcart, flash_buffer_size)
+        if flash_commands is None:
             return False
-
-        if flashcart.HasDoubleDie() and self.FW["fw_ver"] >= 5:
-            self._set_fw_variable("FLASH_DOUBLE_DIE", 1)
-        else:
-            self._set_fw_variable("FLASH_DOUBLE_DIE", 0)
-
-        if command_set_type == "GBMEMORY" and self.FW["fw_ver"] < 2:
-            self._set_fw_variable("FLASH_WE_PIN", 0x01)
-            dprint("Using legacy GB-Memory mode")
-        elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] < 12:
-            self._set_fw_variable("FLASH_WE_PIN", 0x02)
-        else:
-            self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
-            self._write(flash_command_set)
-
-            if flashcart.IsF2A():
-                self._write(0x05)  # FLASH_METHOD_AGB_FLASH2ADVANCE
-                flash_cmds = [
-                    ["SA", 0xE8],
-                    ["SA", "BS"],
-                    ["PA", "PD"],
-                    ["SA", 0xD0],
-                    ["SA", 0xFF],
-                ]
-                dprint(f"Using Flash2Advance mode with a buffer of {flash_buffer_size:d} bytes")
-            elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
-                self._write(0x03)  # FLASH_METHOD_DMG_MMSA
-                dprint("Using GB-Memory mode")
-            elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
-                self._write(0x09)  # FLASH_METHOD_DMG_DATEL_ORBITV2
-                dprint("Using Datel Orbit V2 mode")
-            elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] >= 12:
-                self._write(0x0A)  # FLASH_METHOD_DMG_E201264
-                dprint("Using E201264 mode")
-            elif command_set_type == "GBAMP" and self.FW["fw_ver"] >= 12:
-                self._write(0x0B)  # FLASH_METHOD_AGB_GBAMP
-                dprint("Using GBAMP mode")
-            elif command_set_type == "BUNG_16M" and self.FW["fw_ver"] >= 12:
-                self._write(0x0C)  # FLASH_METHOD_DMG_BUNG_16M
-                dprint("Using BUNG Doctor GB Card 16M mode")
-            elif flashcart.SupportsBufferWrite() and flash_buffer_size > 0:
-                self._write(0x02)  # FLASH_METHOD_BUFFERED
-                flash_cmds = flashcart.GetCommands("buffer_write")
-                dprint(f"Using buffered writing with a buffer of {flash_buffer_size:d} bytes")
-            elif flashcart.SupportsPageWrite() and flash_buffer_size > 0 and self.FW["fw_ver"] >= 12:
-                self._write(0x08)  # FLASH_METHOD_PAGED
-                flash_cmds = flashcart.GetCommands("page_write")
-                dprint(f"Using paged writing with a buffer of {flash_buffer_size:d} bytes")
-            elif flashcart.SupportsSingleWrite():
-                self._write(0x01)  # FLASH_METHOD_UNBUFFERED
-                flash_cmds = flashcart.GetCommands("single_write")
-                dprint("Using single writing")
-            else:
-                self.SetProgress(
-                    {
-                        "action": "ABORT",
-                        "info_type": "msgbox_critical",
-                        "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
-                        "abortable": False,
-                    },
-                )
-                return False
-
-            we = 0x00
-            if flashcart.WEisWR():
-                we = 0x01  # FLASH_WE_PIN_WR
-                self._write(we)
-                dprint("Using WR as WE")
-            elif flashcart.WEisAUDIO():
-                we = 0x02  # FLASH_WE_PIN_AUDIO
-                self._write(we)
-                dprint("Using AUDIO as WE")
-            elif flashcart.WEisWR_RESET():
-                we = 0x03  # FLASH_WE_PIN_WR_RESET
-                self._write(we)  # FLASH_WE_PIN_WR_RESET
-                dprint("Using WR+RESET as WE")
-            else:
-                self._write(we)  # unset
-
-            for i in range(6):
-                if i > len(flash_cmds) - 1:  # skip
-                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
-                else:
-                    address = flash_cmds[i][0]
-                    value = flash_cmds[i][1]
-                    if not isinstance(address, int):
-                        address = 0
-                    if not isinstance(value, int):
-                        value = 0
-                    if self.MODE == "AGB":
-                        address >>= 1
-                    dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
-                    self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
-            if self.FW["fw_ver"] >= 12:
-                self.wait_for_ack()
-
-            if self.FW["fw_ver"] >= 6:
-                if "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
-                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
-                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
-                    if "bank_switch" in cart_type["commands"]:
-                        self._write(len(cart_type["commands"]["bank_switch"]))  # number of commands
-                        for command in cart_type["commands"]["bank_switch"]:
-                            address = command[0]
-                            value = command[1]
-                            if value == "ID":
-                                self._write(bytearray(struct.pack(">I", address)))  # address
-                                self._write(0)  # type = address
-                            else:
-                                self._write(bytearray(struct.pack(">I", value)))  # value
-                                self._write(1)  # type = value
-                        ret = self._read(1)
-                        if ret != 0x01:
-                            print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
-                    else:
-                        self._write(0, wait=True)
-                else:
-                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
-                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
-                    self._write(0, wait=True)
-            elif "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
-                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
-            else:
-                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
-
-            if self.FW["fw_ver"] >= 12:
-                if "status_register_mask" in cart_type:
-                    self._set_fw_variable("STATUS_REGISTER_MASK", cart_type["status_register_mask"])
-                    self._set_fw_variable("STATUS_REGISTER_VALUE", cart_type["status_register_value"])
-                else:
-                    self._set_fw_variable("STATUS_REGISTER_MASK", 0x80)
-                    self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
-
-        if self.FW["fw_ver"] >= 12:
-            self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
+        command_set_type, we = flash_commands
         # ↑↑↑ Load commands into firmware
 
         # ↓↓↓ Preparations
