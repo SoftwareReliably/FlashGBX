@@ -128,7 +128,6 @@ ignore = [
     "N802", #invalid-function-name
     "PLR2004", #magic-value-comparison
     "T201", #print
-    "ANN001", #missing-type-function-argument
     "S101", #assert
     "E501", #line-too-long
     "RUF001", #ambiguous-unicode-character-string

@@ -30,14 +30,14 @@ class RomFileDMG:
     ROMFILE = bytearray()
     BATTERYLESS_SRAM_DB = None
 
-    def __init__(self, file=None) -> None:
+    def __init__(self, file: str | Path | bytearray | None = None) -> None:
         self.DATA: dict = {}
         if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):
             self.ROMFILE = file
 
-    def Open(self, file) -> None:
+    def Open(self, file: str | Path) -> None:
         self.ROMFILE_PATH = Path(file)
         self.Load()
 
@@ -47,22 +47,22 @@ class RomFileDMG:
         with self.ROMFILE_PATH.open("rb") as f:
             self.ROMFILE = bytearray(f.read(0x1000))
 
-    def CalcChecksumHeader(self, fix=False) -> int:
+    def CalcChecksumHeader(self, fix: bool = False) -> int:
         checksum = 0
         for i in range(0x134, 0x14D):
-            checksum = checksum - self.ROMFILE[i] - 1
+            checksum: int = checksum - self.ROMFILE[i] - 1
         checksum = checksum & 0xFF
 
         if fix:
             self.ROMFILE[0x14D] = checksum
         return checksum
 
-    def CalcChecksumGlobal(self, fix=False) -> int:
-        temp1 = self.ROMFILE[0x14E]
-        temp2 = self.ROMFILE[0x14F]
+    def CalcChecksumGlobal(self, fix: bool = False) -> int:
+        temp1: int = self.ROMFILE[0x14E]
+        temp2: int = self.ROMFILE[0x14F]
         self.ROMFILE[0x14E] = 0
         self.ROMFILE[0x14F] = 0
-        checksum = sum(self.ROMFILE) & 0xFFFF
+        checksum: int = sum(self.ROMFILE) & 0xFFFF
         if fix:
             self.ROMFILE[0x14E] = checksum >> 8
             self.ROMFILE[0x14F] = checksum & 0xFF
@@ -76,7 +76,7 @@ class RomFileDMG:
         self.CalcChecksumGlobal(True)
         return self.ROMFILE[0:0x200]
 
-    def LogoToImage(self, data, valid=True) -> PILImage | Literal[False]:
+    def LogoToImage(self, data: bytearray, valid: bool = True) -> PILImage | Literal[False]:
         if Image is None:
             return False
         img = Image.new(mode="P", size=(48, 8))
@@ -90,7 +90,7 @@ class RomFileDMG:
             return False
 
         for y in range(8):
-            i = int((y / 2) % 2) + int(y / 4) * 24
+            i: int = int((y / 2) % 2) + int(y / 4) * 24
             x = 0
             ix = 0
             while True:
@@ -107,7 +107,7 @@ class RomFileDMG:
                     break
         return img
 
-    def GetHeader(self, unchanged=False) -> dict[str, Any]:
+    def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
         buffer: bytearray = self.ROMFILE
         data: dict[str, Any] = {}
         if len(buffer) < 0x180:
@@ -1275,7 +1275,7 @@ class RomFileDMG:
         return db_entry
 
     @classmethod
-    def GetBatterylessSramConfig(cls, header) -> dict[str, Any] | None:
+    def GetBatterylessSramConfig(cls, header: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(header, dict):
             return None
         if "game_title_raw" not in header:
@@ -1328,7 +1328,7 @@ class RomFileDMG:
         return None
 
 
-def from_isx(buffer) -> bytearray:
+def from_isx(buffer: bytearray) -> bytearray:
     import io
     import struct
 
