@@ -3697,7 +3697,309 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
 
-    def WriteRAM(  # noqa: PLR0911 - GUI workflow exits early after validation and cancelled dialogs
+    def _prepare_save_write_cartridge(
+        self,
+        mode: PlatformMode,
+        dpath: str,
+        erase: bool,
+        test: bool,
+    ) -> bool:
+        needs_detection = not test and (
+            (
+                mode == "AGB"
+                and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
+            )
+            or (
+                mode == "DMG"
+                and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+            )
+            or (
+                mode == "DMG"
+                and "Unlicensed Photo!"
+                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+            )
+        )
+        if not needs_detection:
+            return True
+
+        if self._device.GetFWBuildDate() == "":  # Legacy Mode
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("This feature is not supported in Legacy Mode."),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return False
+
+        cart_type = (
+            self.cmbAGBCartridgeTypeResult.currentIndex()
+            if mode == "AGB"
+            else self.cmbDMGCartridgeTypeResult.currentIndex()
+        )
+        if cart_type != 0 and (
+            "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]
+        ):
+            return True
+
+        if "detected_cart_type" not in self.STATUS:
+            self.STATUS["detected_cart_type"] = ""
+        if self.STATUS["detected_cart_type"] == "":
+            self.STATUS["detected_cart_type"] = "WAITING_SAVE_WRITE"
+            self.STATUS["detect_cartridge_args"] = {
+                "dpath": dpath,
+                "erase": erase,
+            }
+            self.STATUS["can_skip_message"] = True
+            self.DetectCartridge(checkSaveType=True)
+            return False
+
+        cart_type = self.STATUS.pop("detected_cart_type")
+        if cart_type is False:  # clicked Cancel button
+            return False
+        if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("A compatible flashcart profile could not be auto-detected."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return False
+        if mode == "AGB":
+            self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
+        else:
+            self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
+        return True
+
+    def _prepare_save_calibration(
+        self,
+        mode: PlatformMode,
+        path: str,
+        erase: bool,
+        test: bool,
+    ) -> tuple[bool, bytearray | None]:
+        if mode == "AGB" and self._device.INFO.get("ereader") is True:
+            return self._prepare_ereader_save(path=path, erase=erase)
+        if mode == "DMG" and self._device.INFO.get("dump_info", {}).get("header", {}).get("mapper_raw") == 0xFC:
+            return self._prepare_camera_save(path=path, erase=erase, test=test)
+        return True, None
+
+    def _prepare_ereader_save(self, path: str, erase: bool) -> tuple[bool, bytearray | None]:
+        if self._device.GetFWBuildDate() == "":  # Legacy Mode
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("This cartridge is not supported in Legacy Mode."),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return False, None
+
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Question,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text="",
+        )
+        button_keep = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Keep existing calibration data"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        self._device.ReadHeader()
+        cart_name = "e-Reader"
+        if self._device.INFO["db"] is not None:
+            cart_name = self._device.INFO["db"]["gn"]
+        if "ereader_calibration" in self._device.INFO:
+            if erase:
+                buffer = bytearray([0xFF] * 0x20000)
+                msg_text = (
+                    __(
+                        "This {cart_name} cartridge currently has calibration data in place. It is strongly recommended to keep the existing calibration data.",
+                        cart_name=cart_name,
+                    )
+                    + "\n\n"
+                    + __("How do you want to proceed?")
+                )
+                button_overwrite = msgbox.addButton(
+                    c__("Button (& = Keyboard Shortcut)", "&Erase everything"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+            else:
+                with Path(path).open("rb") as file:
+                    buffer = bytearray(file.read())
+                msg_text = (
+                    __(
+                        "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data. It is strongly recommended to keep the existing calibration data unless you actually need to restore it from a previous backup.",
+                        cart_name=cart_name,
+                    )
+                    + "\n\n"
+                    + __(
+                        "Would you like to keep the existing calibration data, or overwrite it with data from the file you selected?",
+                    )
+                )
+                button_overwrite = msgbox.addButton(
+                    c__("Button (& = Keyboard Shortcut)", "&Restore from save data"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+            button_cancel = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "&Cancel"),
+                QtWidgets.QMessageBox.ButtonRole.RejectRole,
+            )
+            msgbox.setText(msg_text)
+            msgbox.setDefaultButton(button_keep)
+            msgbox.setEscapeButton(button_cancel)
+
+            if buffer[0xD000:0xF000] != self._device.INFO["ereader_calibration"]:
+                msgbox.exec()
+                if msgbox.clickedButton() == button_cancel:
+                    return False, None
+                if msgbox.clickedButton() == button_keep:
+                    buffer[0xD000:0xF000] = self._device.INFO["ereader_calibration"]
+                elif msgbox.clickedButton() == button_overwrite:
+                    pass
+            return True, buffer
+
+        msg_text = (
+            __(
+                "Warning: This {cart_name} cartridge may currently have calibration data in place. Erasing or overwriting this data may render the “{feature_name}” feature unusable. It is strongly recommended to create a backup of the original save data first and store it in a safe place. That way the calibration data can be restored later.",
+                cart_name=cart_name,
+                feature_name="Scan Card",
+            )
+            + "\n\n"
+            + __("Do you still want to continue?")
+        )
+        answer = QtWidgets.QMessageBox.warning(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            msg_text,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        return answer != QtWidgets.QMessageBox.StandardButton.No, None
+
+    def _prepare_camera_save(self, path: str, erase: bool, test: bool) -> tuple[bool, bytearray | None]:
+        if self._device.GetFWBuildDate() == "":  # Legacy Mode
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("This cartridge is not supported in Legacy Mode."),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return False, None
+
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Question,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text="",
+        )
+        button_keep = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Keep existing calibration data"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        if (
+            "Unlicensed Photo!"
+            not in DmgSaveTypes(
+                index=self.cmbDMGHeaderSaveTypeResult.currentIndex(),
+            ).GetString()
+        ):
+            button_reset = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "&Force recalibration"),
+                QtWidgets.QMessageBox.ButtonRole.ActionRole,
+            )
+        else:
+            button_reset = None
+        self._device.ReadHeader()
+        cart_name = "Game Boy Camera"
+        if self._device.INFO["db"] is not None:
+            cart_name = self._device.INFO["db"]["gn"]
+        if test:
+            return True, None
+
+        if "gbcamera_calibration1" in self._device.INFO:
+            if erase:
+                buffer = bytearray([0x00] * 0x20000)
+                if (
+                    "Unlicensed Photo!"
+                    in DmgSaveTypes(
+                        index=self.cmbDMGHeaderSaveTypeResult.currentIndex(),
+                    ).GetString()
+                ):
+                    buffer += bytearray([0xFF] * 0xE0000)
+                msg_text = (
+                    __(
+                        "This {cart_name} cartridge currently has calibration data in place.\n\nHow do you want to proceed?",
+                        cart_name=cart_name,
+                    )
+                    + "\n\n"
+                    + __(
+                        "It is recommended to keep the existing calibration data, but you can also choose to erase it or overwrite it with data from the file you selected.",
+                    )
+                )
+                button_overwrite = msgbox.addButton(
+                    c__("Button (& = Keyboard Shortcut)", "&Erase everything"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+            else:
+                with Path(path).open("rb") as file:
+                    buffer = bytearray(file.read())
+                msg_text = __(
+                    "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data.\n\nHow do you want to proceed?",
+                    cart_name=cart_name,
+                )
+                button_overwrite = msgbox.addButton(
+                    c__("Button (& = Keyboard Shortcut)", "&Restore from save data"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+            button_cancel = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "&Cancel"),
+                QtWidgets.QMessageBox.ButtonRole.RejectRole,
+            )
+            msgbox.setText(msg_text)
+            msgbox.setDefaultButton(button_keep)
+            msgbox.setEscapeButton(button_cancel)
+
+            if (
+                buffer[0x4FF2:0x5000] != self._device.INFO["gbcamera_calibration1"]
+                or buffer[0x11FF2:0x12000] != self._device.INFO["gbcamera_calibration2"]
+            ):
+                msgbox.exec()
+                if msgbox.clickedButton() == button_cancel:
+                    return False, None
+                if msgbox.clickedButton() == button_keep:
+                    buffer[0x4FF2:0x5000] = self._device.INFO["gbcamera_calibration1"]
+                    buffer[0x11FF2:0x12000] = self._device.INFO["gbcamera_calibration2"]
+                elif msgbox.clickedButton() == button_reset:
+                    buffer[0x4FF2:0x5000] = bytearray([0xAA] * 0xE)
+                    buffer[0x11FF2:0x12000] = bytearray([0xAA] * 0xE)
+                elif msgbox.clickedButton() == button_overwrite:
+                    pass
+            return True, buffer
+
+        msg_text = (
+            __(
+                "Warning: This {cart_name} cartridge may currently have calibration data in place. It is recommended to create a backup of the original save data first and store it in a safe place. That way the calibration data can be restored later.",
+                cart_name=cart_name,
+            )
+            + "\n\n"
+            + __("Do you still want to continue?")
+        )
+        answer = QtWidgets.QMessageBox.warning(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            msg_text,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        return answer != QtWidgets.QMessageBox.StandardButton.No, None
+
+    def WriteRAM(
         self,
         dpath: str = "",
         erase: bool = False,
@@ -3714,71 +4016,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if erase is True:
             dpath = ""
 
-        # Detect Cartridge needed?
-        if not test and (
-            (
-                mode == "AGB"
-                and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-            )
-            or (
-                mode == "DMG"
-                and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-            )
-            or (
-                mode == "DMG"
-                and "Unlicensed Photo!"
-                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-            )
-        ):
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return
-
-            if mode == "AGB":
-                cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
-            else:
-                cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
-            if cart_type == 0 or (
-                "dump_info" not in self._device.INFO or "batteryless_sram" not in self._device.INFO["dump_info"]
-            ):
-                if "detected_cart_type" not in self.STATUS:
-                    self.STATUS["detected_cart_type"] = ""
-                if self.STATUS["detected_cart_type"] == "":
-                    self.STATUS["detected_cart_type"] = "WAITING_SAVE_WRITE"
-                    self.STATUS["detect_cartridge_args"] = {
-                        "dpath": dpath,
-                        "erase": erase,
-                    }
-                    self.STATUS["can_skip_message"] = True
-                    self.DetectCartridge(checkSaveType=True)
-                    return
-                cart_type = self.STATUS["detected_cart_type"]
-                if "detected_cart_type" in self.STATUS:
-                    del self.STATUS["detected_cart_type"]
-
-                if cart_type is False:  # clicked Cancel button
-                    return
-                if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        __("A compatible flashcart profile could not be auto-detected."),
-                        QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-                    return
-                if mode == "AGB":
-                    self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
-                elif mode == "DMG":
-                    self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
+        if not self._prepare_save_write_cartridge(mode=mode, dpath=dpath, erase=erase, test=test):
+            return
 
         if mode == "DMG":
             setting_name = "LastDirSaveDataDMG"
@@ -3944,213 +4183,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return
 
-        buffer = None
-        if mode == "AGB" and "ereader" in self._device.INFO and self._device.INFO["ereader"] is True:
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This cartridge is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Question,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text="",
-            )
-            button_keep = msgbox.addButton(
-                c__("Button (& = Keyboard Shortcut)", "&Keep existing calibration data"),
-                QtWidgets.QMessageBox.ButtonRole.ActionRole,
-            )
-            self._device.ReadHeader()
-            cart_name = "e-Reader"
-            if self._device.INFO["db"] is not None:
-                cart_name = self._device.INFO["db"]["gn"]
-            if "ereader_calibration" in self._device.INFO:
-                if erase:
-                    buffer = bytearray([0xFF] * 0x20000)
-                    msg_text = (
-                        __(
-                            "This {cart_name} cartridge currently has calibration data in place. It is strongly recommended to keep the existing calibration data.",
-                            cart_name=cart_name,
-                        )
-                        + "\n\n"
-                        + __("How do you want to proceed?")
-                    )
-                    button_overwrite = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&Erase everything"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                else:
-                    with Path(path).open("rb") as f:
-                        buffer = bytearray(f.read())
-                    msg_text = (
-                        __(
-                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data. It is strongly recommended to keep the existing calibration data unless you actually need to restore it from a previous backup.",
-                            cart_name=cart_name,
-                        )
-                        + "\n\n"
-                        + __(
-                            "Would you like to keep the existing calibration data, or overwrite it with data from the file you selected?",
-                        )
-                    )
-                    button_overwrite = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&Restore from save data"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                button_cancel = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&Cancel"),
-                    QtWidgets.QMessageBox.ButtonRole.RejectRole,
-                )
-                msgbox.setText(msg_text)
-                msgbox.setDefaultButton(button_keep)
-                msgbox.setEscapeButton(button_cancel)
-
-                if buffer[0xD000:0xF000] != self._device.INFO["ereader_calibration"]:
-                    answer = msgbox.exec()
-                    if msgbox.clickedButton() == button_cancel:
-                        return
-                    if msgbox.clickedButton() == button_keep:
-                        buffer[0xD000:0xF000] = self._device.INFO["ereader_calibration"]
-                    elif msgbox.clickedButton() == button_overwrite:
-                        pass
-            else:
-                msg_text = (
-                    __(
-                        "Warning: This {cart_name} cartridge may currently have calibration data in place. Erasing or overwriting this data may render the “{feature_name}” feature unusable. It is strongly recommended to create a backup of the original save data first and store it in a safe place. That way the calibration data can be restored later.",
-                        cart_name=cart_name,
-                        feature_name="Scan Card",
-                    )
-                    + "\n\n"
-                    + __("Do you still want to continue?")
-                )
-                answer = QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    msg_text,
-                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                    QtWidgets.QMessageBox.StandardButton.No,
-                )
-                if answer == QtWidgets.QMessageBox.StandardButton.No:
-                    return
-
-        elif mode == "DMG" and self._device.INFO.get("dump_info", {}).get("header", {}).get("mapper_raw") == 0xFC:
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This cartridge is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Question,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text="",
-            )
-            button_keep = msgbox.addButton(
-                c__("Button (& = Keyboard Shortcut)", "&Keep existing calibration data"),
-                QtWidgets.QMessageBox.ButtonRole.ActionRole,
-            )
-            if (
-                "Unlicensed Photo!"
-                not in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-            ):
-                button_reset = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&Force recalibration"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-            else:
-                button_reset = None
-            self._device.ReadHeader()
-            cart_name = "Game Boy Camera"
-            if self._device.INFO["db"] is not None:
-                cart_name = self._device.INFO["db"]["gn"]
-            if not test:
-                if "gbcamera_calibration1" in self._device.INFO:
-                    if erase:
-                        buffer = bytearray([0x00] * 0x20000)
-                        if (
-                            "Unlicensed Photo!"
-                            in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-                        ):
-                            buffer += bytearray([0xFF] * 0xE0000)
-                        msg_text = (
-                            __(
-                                "This {cart_name} cartridge currently has calibration data in place.\n\nHow do you want to proceed?",
-                                cart_name=cart_name,
-                            )
-                            + "\n\n"
-                            + __(
-                                "It is recommended to keep the existing calibration data, but you can also choose to erase it or overwrite it with data from the file you selected.",
-                            )
-                        )
-                        button_overwrite = msgbox.addButton(
-                            c__("Button (& = Keyboard Shortcut)", "&Erase everything"),
-                            QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                        )
-                    else:
-                        with Path(path).open("rb") as f:
-                            buffer = bytearray(f.read())
-                        msg_text = __(
-                            "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data.\n\nHow do you want to proceed?",
-                            cart_name=cart_name,
-                        )
-                        button_overwrite = msgbox.addButton(
-                            c__(
-                                "Button (& = Keyboard Shortcut)",
-                                "&Restore from save data",
-                            ),
-                            QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                        )
-                    button_cancel = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&Cancel"),
-                        QtWidgets.QMessageBox.ButtonRole.RejectRole,
-                    )
-                    msgbox.setText(msg_text)
-                    msgbox.setDefaultButton(button_keep)
-                    msgbox.setEscapeButton(button_cancel)
-
-                    if (
-                        buffer[0x4FF2:0x5000] != self._device.INFO["gbcamera_calibration1"]
-                        or buffer[0x11FF2:0x12000] != self._device.INFO["gbcamera_calibration2"]
-                    ):
-                        answer = msgbox.exec()
-                        if msgbox.clickedButton() == button_cancel:
-                            return
-                        if msgbox.clickedButton() == button_keep:
-                            buffer[0x4FF2:0x5000] = self._device.INFO["gbcamera_calibration1"]
-                            buffer[0x11FF2:0x12000] = self._device.INFO["gbcamera_calibration2"]
-                        elif msgbox.clickedButton() == button_reset:
-                            buffer[0x4FF2:0x5000] = bytearray([0xAA] * 0xE)
-                            buffer[0x11FF2:0x12000] = bytearray([0xAA] * 0xE)
-                        elif msgbox.clickedButton() == button_overwrite:
-                            pass
-                else:
-                    msg_text = (
-                        __(
-                            "Warning: This {cart_name} cartridge may currently have calibration data in place. It is recommended to create a backup of the original save data first and store it in a safe place. That way the calibration data can be restored later.",
-                            cart_name=cart_name,
-                        )
-                        + "\n\n"
-                        + __("Do you still want to continue?")
-                    )
-                    answer = QtWidgets.QMessageBox.warning(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        msg_text,
-                        QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                        QtWidgets.QMessageBox.StandardButton.No,
-                    )
-                    if answer == QtWidgets.QMessageBox.StandardButton.No:
-                        return
+        continue_write, buffer = self._prepare_save_calibration(mode=mode, path=path, erase=erase, test=test)
+        if not continue_write:
+            return
 
         verify_write = self.SETTINGS.value("VerifyData", default="enabled")
         verify_write = bool(verify_write and verify_write.lower() == "enabled")

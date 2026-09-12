@@ -5608,7 +5608,130 @@ class LK_Device(ABC):
 
         return data_import, flash_offset
 
-    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:  # noqa: PLR0911 - transfer state machine aborts early
+    def _check_flashcart_firmware(self, cart_type: dict[str, Any]) -> bool:
+        if (
+            cart_type["type"] == "DMG"
+            and "write_pin" in cart_type
+            and cart_type["write_pin"] == "WR+RESET"
+            and self.FW["fw_ver"] < 2
+        ) or (
+            self.FW["fw_ver"] < 2
+            and ("pulse_reset_after_write" in cart_type and cart_type["pulse_reset_after_write"] is True)
+        ):
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": __("This flashcart profile requires at least firmware version L2."),
+                    "abortable": False,
+                },
+            )
+            return False
+
+        if (
+            self.FW["fw_ver"] < 3
+            and ("command_set" in cart_type and cart_type["command_set"] == "SHARP")
+            and ("buffer_write" in cart_type["commands"])
+        ):
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Note: Update your {device_name} firmware to version L3 or higher for a better transfer rate with this flashcart profile.",
+                    device_name=self.DEVICE_NAME,
+                )
+                + ANSI.RESET,
+            )
+            del cart_type["commands"]["buffer_write"]
+
+        if self.FW["fw_ver"] < 5 and (
+            "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True
+        ):
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": __("This flashcart profile requires at least firmware version L5."),
+                    "abortable": False,
+                },
+            )
+            return False
+        if self.FW["fw_ver"] < 5 and ("double_die" in cart_type and cart_type["double_die"] is True):
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Note: Update your {device_name} firmware to version L5 or higher for a better transfer rate with this flashcart profile.",
+                    device_name=self.DEVICE_NAME,
+                )
+                + ANSI.RESET,
+            )
+            del cart_type["commands"]["buffer_write"]
+
+        if self.FW["fw_ver"] < 8 and "enable_pullups" in cart_type and cart_type["enable_pullups"] is True:
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Note: This flashcart profile may not be fully compatible with your {device_name} running an old or legacy firmware version.",
+                    device_name=self.GetName(),
+                )
+                + ANSI.RESET,
+            )
+            del cart_type["enable_pullups"]
+
+        if self.FW["fw_ver"] < 12 and "set_irq_high" in cart_type and cart_type["set_irq_high"] is True:
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Note: This flashcart profile may not be fully compatible with your {device_name} until updated to a newer firmware version.",
+                    device_name=self.GetName(),
+                )
+                + ANSI.RESET,
+            )
+            del cart_type["set_irq_high"]
+        if self.FW["fw_ver"] < 12 and "status_register_mask" in cart_type:
+            if self.FW["pcb_name"] in ("GBxCart RW", ""):
+                message = __(
+                    "This flashcart profile requires a different firmware version. Please update your GBxCart RW firmware using the older FlashGBX v4.3 and try again.",
+                )
+            else:
+                message = __("This flashcart profile requires at least firmware version L12.")
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": message,
+                    "abortable": False,
+                },
+            )
+            return False
+
+        if self.FW["fw_ver"] < 14 and "set_audio_high" in cart_type and cart_type["set_audio_high"] is True:
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": __("This flashcart profile requires at least firmware version L14."),
+                    "abortable": False,
+                },
+            )
+            return False
+        return True
+
+    def _set_flashcart_profile_index(
+        self,
+        cart_type: dict[str, Any],
+        mode: DeviceMode,
+        selected_index: int,
+    ) -> None:
+        cart_type["_index"] = 0
+        profile_names = list(self.SUPPORTED_CARTS[mode])
+        if not 0 <= selected_index < len(profile_names):
+            return
+        try:
+            cart_type["_index"] = cart_type["names"].index(profile_names[selected_index])
+        except Exception:
+            logger.exception("Failed to resolve the selected flash-cart profile index")
+
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
             msg = "Cartridge mode must be selected before writing ROM"
@@ -5635,141 +5758,19 @@ class LK_Device(ABC):
         try:
             cart_name = cart_type["names"][0]
         except IndexError, KeyError, TypeError:
-            cart_name = c__("Flashcart Profile", "Unknown")
+            cart_name: str = c__("Flashcart Profile", "Unknown")
 
         if not isinstance(cart_type, dict):
             return False  # Generic ROM Cartridge is not flashable
 
-        # Firmware check L2
-        if (
-            cart_type["type"] == "DMG"
-            and "write_pin" in cart_type
-            and cart_type["write_pin"] == "WR+RESET"
-            and self.FW["fw_ver"] < 2
-        ) or (
-            self.FW["fw_ver"] < 2
-            and ("pulse_reset_after_write" in cart_type and cart_type["pulse_reset_after_write"] is True)
-        ):
-            self.SetProgress(
-                {
-                    "action": "ABORT",
-                    "info_type": "msgbox_critical",
-                    "info_msg": __("This flashcart profile requires at least firmware version L2."),
-                    "abortable": False,
-                },
-            )
+        if not self._check_flashcart_firmware(cart_type):
             return False
-        # Firmware check L2
-        # Firmware check L3
-        if (
-            self.FW["fw_ver"] < 3
-            and ("command_set" in cart_type and cart_type["command_set"] == "SHARP")
-            and ("buffer_write" in cart_type["commands"])
-        ):
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Note: Update your {device_name} firmware to version L3 or higher for a better transfer rate with this flashcart profile.",
-                    device_name=self.DEVICE_NAME,
-                )
-                + ANSI.RESET,
-            )
-            del cart_type["commands"]["buffer_write"]
-        # Firmware check L3
-        # Firmware check L5
-        if self.FW["fw_ver"] < 5 and (
-            "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True
-        ):
-            self.SetProgress(
-                {
-                    "action": "ABORT",
-                    "info_type": "msgbox_critical",
-                    "info_msg": __("This flashcart profile requires at least firmware version L5."),
-                    "abortable": False,
-                },
-            )
-            return False
-        if self.FW["fw_ver"] < 5 and ("double_die" in cart_type and cart_type["double_die"] is True):
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Note: Update your {device_name} firmware to version L5 or higher for a better transfer rate with this flashcart profile.",
-                    device_name=self.DEVICE_NAME,
-                )
-                + ANSI.RESET,
-            )
-            del cart_type["commands"]["buffer_write"]
-        # Firmware check L5
-        # Firmware check L8
-        if self.FW["fw_ver"] < 8 and "enable_pullups" in cart_type and cart_type["enable_pullups"] is True:
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Note: This flashcart profile may not be fully compatible with your {device_name} running an old or legacy firmware version.",
-                    device_name=self.GetName(),
-                )
-                + ANSI.RESET,
-            )
-            del cart_type["enable_pullups"]
-        # Firmware check L8
-        # Firmware check L12
-        if self.FW["fw_ver"] < 12 and "set_irq_high" in cart_type and cart_type["set_irq_high"] is True:
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Note: This flashcart profile may not be fully compatible with your {device_name} until updated to a newer firmware version.",
-                    device_name=self.GetName(),
-                )
-                + ANSI.RESET,
-            )
-            del cart_type["set_irq_high"]
-        if self.FW["fw_ver"] < 12 and "status_register_mask" in cart_type:
-            if self.FW["pcb_name"] in ("GBxCart RW", ""):
-                self.SetProgress(
-                    {
-                        "action": "ABORT",
-                        "info_type": "msgbox_critical",
-                        "info_msg": __(
-                            "This flashcart profile requires a different firmware version. Please update your GBxCart RW firmware using the older FlashGBX v4.3 and try again.",
-                        ),
-                        "abortable": False,
-                    },
-                )
-            else:
-                self.SetProgress(
-                    {
-                        "action": "ABORT",
-                        "info_type": "msgbox_critical",
-                        "info_msg": __("This flashcart profile requires at least firmware version L12."),
-                        "abortable": False,
-                    },
-                )
-            return False
-        # Firmware check L12
-        # Firmware check L14
-        if self.FW["fw_ver"] < 14 and "set_audio_high" in cart_type and cart_type["set_audio_high"] is True:
-            self.SetProgress(
-                {
-                    "action": "ABORT",
-                    "info_type": "msgbox_critical",
-                    "info_msg": __("This flashcart profile requires at least firmware version L14."),
-                    "abortable": False,
-                },
-            )
-            return False
-        # Firmware check L14
 
         # Ensure cart is powered
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
-        cart_type["_index"] = 0
-        for i in range(len(list(self.SUPPORTED_CARTS[mode].keys()))):
-            if i == args["cart_type"]:
-                try:
-                    cart_type["_index"] = cart_type["names"].index(list(self.SUPPORTED_CARTS[mode].keys())[i])
-                except Exception:
-                    logger.exception("Failed to resolve the selected flash-cart profile index")
+        self._set_flashcart_profile_index(cart_type, mode, args["cart_type"])
 
         fc_fncptr: FlashcartCallbacks = {
             "cart_write_fncptr": self._cart_write,
