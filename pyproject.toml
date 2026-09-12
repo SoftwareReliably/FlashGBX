@@ -141,13 +141,12 @@ ignore = [
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
     "D100", #undocumented-public-module
-    #"PLC0415", #import-outside-top-level
     "S324", #hashlib-insecure-hash-function
     "N801", #invalid-class-name
 ]
 
 [tool.ruff.lint.pylint]
-max-branches = 308
+max-branches = 300
 max-statements = 929
 max-returns = 34
 

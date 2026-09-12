@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, overload
 
 import serial  # pyright: ignore[reportMissingModuleSource]
-import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
 from serial import (  # pyright: ignore[reportMissingModuleSource]
     PortNotOpenError,
     SerialException,
@@ -516,7 +515,7 @@ class LK_Device(ABC):
             return
         if method < 0 or method >= len(self.DMG_READ_METHODS):
             method = 0
-        self.DMG_READ_METHOD = method
+        self.DMG_READ_METHOD: int = method
         self._set_fw_variable("DMG_READ_METHOD", self.DMG_READ_METHOD)
 
     def SetAGBReadMethod(self, method: int) -> None:
@@ -524,7 +523,7 @@ class LK_Device(ABC):
             return
         if method < 0 or method >= len(self.AGB_READ_METHODS):
             method = 0
-        self.AGB_READ_METHOD = method
+        self.AGB_READ_METHOD: int = method
         self._set_fw_variable("AGB_READ_METHOD", self.AGB_READ_METHOD)
 
     def SetPin(self, pins: Sequence[int | str], set_high: bool) -> DeviceWriteResult:
@@ -562,7 +561,7 @@ class LK_Device(ABC):
         if self._firmware_info().get("fw_ver", 0) < 15:
             return False
         self._write(self.DEVICE_CMD["GET_SWITCH_STATE"])
-        state = self._read(1)
+        state: int | Literal[False] = self._read(1)
         return state if isinstance(state, int) else False
 
     def GetCartModeSwitchState(self) -> int | Literal[False]:
@@ -587,10 +586,10 @@ class LK_Device(ABC):
             return False
         if not firmware.get("cart_presence_switch", False):
             return False
-        state = self._GetSwitchState()
+        state: int | Literal[False] = self._GetSwitchState()
         if state is False:
             return False
-        state_presence = state & 1
+        state_presence: int = state & 1
         if state_presence == 1:
             dprint("Cartridge Presence Switch: ON")
         else:
@@ -793,7 +792,6 @@ class LK_Device(ABC):
                 temp = self._read(1)
                 hp -= 1
                 dprint("Current response:", temp, ", HP:", hp)
-            # if hp == 0: break
         return False
 
     def _write(
@@ -811,11 +809,11 @@ class LK_Device(ABC):
 
         if AppContext.DEBUG:
             dprint("_write() thread_id:", threading.get_ident())
-            dstr = " ".join(format(x, "02X") for x in payload)
+            dstr: str = " ".join(format(x, "02X") for x in payload)
             cmd = ""
             if len(payload) < 32:
                 try:
-                    cmd = f"[{list(self.DEVICE_CMD.keys())[list(self.DEVICE_CMD.values()).index(payload[0])]:s}] "
+                    cmd: str = f"[{list(self.DEVICE_CMD.keys())[list(self.DEVICE_CMD.values()).index(payload[0])]:s}] "
                 except Exception:
                     logger.exception("Failed to identify the outgoing device command")
             dprint(f"[{int(len(dstr) / 3) + 1:02X}] {cmd:s}{dstr[:96]:s}")
@@ -855,7 +853,7 @@ class LK_Device(ABC):
         device = self._serial_device()
         if device.in_waiting > 1000:
             dprint(f"Warning: in_waiting={device.in_waiting:d} bytes")
-        buffer = device.read(count)
+        buffer: bytes = device.read(count)
 
         if len(buffer) != count:
             hp = 50
@@ -866,8 +864,8 @@ class LK_Device(ABC):
                 buffer += device.read(count - len(buffer))
 
         if len(buffer) != count:
-            tb_stack = traceback.extract_stack()
-            stack = tb_stack[len(tb_stack) - 2]  # caller only
+            tb_stack: traceback.StackSummary = traceback.extract_stack()
+            stack: traceback.FrameSummary = tb_stack[len(tb_stack) - 2]  # caller only
             if stack.name == "_read":
                 stack = tb_stack[len(tb_stack) - 3]
             dprint(
@@ -957,7 +955,7 @@ class LK_Device(ABC):
             if length == 0:
                 length = 1
                 if address < 0xA000:
-                    raw = self.ReadROM(address, 1, max_length=self.MAX_BUFFER_READ)
+                    raw: bytearray = self.ReadROM(address, 1, max_length=self.MAX_BUFFER_READ)
                 else:
                     raw = self.ReadRAM(address - 0xA000, 1, max_length=self.MAX_BUFFER_READ)
                 if raw is False or len(raw) < 1:
@@ -1145,10 +1143,10 @@ class LK_Device(ABC):
             )
             self.CANCEL = True
             return False
-        var_state = self.GetVarState()
+        var_state: bytearray = self.GetVarState()
 
-        title = __("Power cycle required")
-        msg = __(
+        title: str = __("Power cycle required")
+        msg: str = __(
             "To continue, please re-connect the USB cable of your {device_name} on port {device_port} now.",
             device_name=self.GetName(),
             device_port=self.PORT,
@@ -2668,7 +2666,7 @@ class LK_Device(ABC):
                 self.SetProgress({"action": "WRITE", "bytes_added": length})
 
     def WriteRAM_TAMA5(self, buffer: bytes | bytearray | memoryview) -> None:
-        npu = self.NO_PROG_UPDATE
+        npu: bool = self.NO_PROG_UPDATE
         self.NO_PROG_UPDATE = True
 
         for i in range(0x20):
@@ -2698,8 +2696,8 @@ class LK_Device(ABC):
         max_length: int = 0x400,
     ) -> bool | None:
         max_length = min(max_length, self.MAX_BUFFER_WRITE)
-        length = len(buffer)
-        num = math.ceil(length / max_length)
+        length: int = len(buffer)
+        num: int = math.ceil(length / max_length)
         dprint(f"Writing 0x{length:X} bytes to Flash ROM in {num:d} iteration(s)")
         if length == 0:
             dprint("Length is zero?")
@@ -2708,7 +2706,7 @@ class LK_Device(ABC):
 
         skip_write = False
         ret = 0
-        num_of_chunks = math.ceil(flash_buffer_size / length)
+        num_of_chunks: int = math.ceil(flash_buffer_size / length)
         pos = 0
 
         if not skip_init:
@@ -2767,9 +2765,9 @@ class LK_Device(ABC):
         buffer: bytes | bytearray | memoryview,
         bank: int,
     ) -> bool | None:
-        length = len(buffer)
+        length: int = len(buffer)
         max_length = 128
-        num = math.ceil(length / max_length)
+        num: int = math.ceil(length / max_length)
         length = min(length, max_length)
         dprint(f"Writing 0x{length:X} bytes to GB-Memory Flash ROM in {num:d} iteration(s)")
 
@@ -2887,9 +2885,9 @@ class LK_Device(ABC):
         bank: int,
     ) -> bool | None:
         del bank
-        length = len(buffer)
+        length: int = len(buffer)
         max_length = 128
-        num = math.ceil(length / max_length)
+        num: int = math.ceil(length / max_length)
         length = min(length, max_length)
         dprint(f"Writing 0x{length:X} bytes to Flash ROM in {num:d} iteration(s)")
 
@@ -2979,7 +2977,7 @@ class LK_Device(ABC):
         buffer: bytes | bytearray | memoryview,
         bank: int,
     ) -> bool:
-        length = len(buffer)
+        length: int = len(buffer)
         dprint(f"Writing 0x{length:X} bytes to Datel Orbit V2 cartridge")
         for i in range(length):
             self._cart_write(0x7FE1, 2)
@@ -2999,9 +2997,9 @@ class LK_Device(ABC):
         bank: int,
         eeprom_buffer_size: int = 0x80,
     ) -> bool | None:
-        length = len(buffer)
-        max_length = 256 if not self.CanPowerCycleCart() or self.BAUDRATE == 1000000 else 1024
-        num = math.ceil(length / max_length)
+        length: int = len(buffer)
+        max_length: Literal[256, 1024] = 256 if not self.CanPowerCycleCart() or self.BAUDRATE == 1000000 else 1024
+        num: int = math.ceil(length / max_length)
         length = min(length, max_length)
         dprint(f"Writing 0x{length:X} bytes to EEPROM in {num:d} iteration(s)")
 
@@ -3052,9 +3050,9 @@ class LK_Device(ABC):
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
-        buffer1 = self.ReadROM(0x80, 0x40)
+        buffer1: bytearray = self.ReadROM(0x80, 0x40)
         time.sleep(0.1)
-        buffer2 = self.ReadROM(0x80, 0x40)
+        buffer2: bytearray = self.ReadROM(0x80, 0x40)
         return buffer1 == buffer2
 
     def CompareCRC32(  # noqa: PLR0913, PLR0917
@@ -3068,18 +3066,18 @@ class LK_Device(ABC):
         reset: bool = False,
         mbc: DMG_Mapper | None = None,
         bank: int = 0,
-    ) -> bool | tuple[int, int | Literal[False]]:
-        left = length
+    ) -> bool | tuple[int, int]:
+        left: int = length
         chunk_pos = 0
         verified = False
         while left > 0:
-            chunk_len = min(left, max_length)
-            chunk_from = offset + chunk_pos
-            chunk_to = offset + chunk_pos + chunk_len
+            chunk_len: int = min(left, max_length)
+            chunk_from: int = offset + chunk_pos
+            chunk_to: int = offset + chunk_pos + chunk_len
             dprint(
                 f"Running CRC32 verification, comparing between source 0x{chunk_from:X}~0x{chunk_to:X} and target 0x{address + chunk_pos:X}~0x{address + chunk_pos + chunk_len:X}",
             )
-            crc32_expected = zlib.crc32(buffer[chunk_from:chunk_to])
+            crc32_expected: int = zlib.crc32(buffer[chunk_from:chunk_to])
 
             for i in range(2 if (reset is True and flashcart is not None) else 1):  # for retrying with reset
                 if self.MODE == "DMG":
@@ -3088,8 +3086,8 @@ class LK_Device(ABC):
                     self._set_fw_variable("ADDRESS", (address + chunk_pos) >> 1)
                 self._write(self.DEVICE_CMD["CALC_CRC32"])
                 self._write(bytearray(struct.pack(">I", chunk_len)))
-                temp = self._read(4)
-                crc32_calculated = False if temp is False else struct.unpack(">I", temp)[0]
+                temp: bytearray | Literal[False] = self._read(4)
+                crc32_calculated: int | Literal[False] = False if temp is False else struct.unpack(">I", temp)[0]
                 if crc32_expected != crc32_calculated:
                     if i == 0 and flashcart is not None:
                         flashcart.Reset(full_reset=True)
@@ -3133,21 +3131,22 @@ class LK_Device(ABC):
         flash_id_methods = []
         read_method = self.AGB_READ_METHOD
 
-        if self.MODE == "DMG":
-            if limitVoltage:
-                self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
-            else:
-                self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
-            self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
+        match self.MODE:
+            case "DMG":
+                if limitVoltage:
+                    self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
+                else:
+                    self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
+                self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
 
-        elif self.MODE == "AGB":
-            self.SetAGBReadMethod(0)
-            self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
+            case "AGB":
+                self.SetAGBReadMethod(0)
+                self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
 
-        else:
-            raise NotImplementedError
+            case _:
+                raise NotImplementedError
 
-        rom = self._cart_read(0, 8)
+        rom: bytearray = self._cart_read(0, 8)
         if rom is False:
             rom = bytearray()
 
@@ -3167,12 +3166,12 @@ class LK_Device(ABC):
                 continue
             if "m29w640" in cart_type:
                 self._cart_write_flash(cart_type["commands"]["reset"], flashcart=self.MODE == "AGB")
-                rom1 = self._cart_read(0, 8)
+                rom1: bytearray = self._cart_read(0, 8)
                 self._cart_write_flash(
                     cart_type["commands"]["read_identifier"],
                     flashcart=self.MODE == "AGB",
                 )
-                rom2 = self._cart_read(0, 8)
+                rom2: bytearray = self._cart_read(0, 8)
                 if rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]:
                     found = True
                     flash_types.append(f)
@@ -3324,24 +3323,26 @@ class LK_Device(ABC):
         flash_id_cmds = sorted(cmds, key=lambda x: x["read_identifier"][0][0])
         read_cfi_cmds = []
 
-        rom_s = " ".join(format(x, "02X") for x in rom)
+        rom_s: str = " ".join(format(x, "02X") for x in rom)
         if self.MODE == "DMG":
-            flash_id_s = "[     ROM     ] " + rom_s + "\n"
-            we_pins = ["WR", "AUDIO"]
+            flash_id_s: str = "[     ROM     ] " + rom_s + "\n"
+            we_pins: list[str] = ["WR", "AUDIO"]
         else:
             flash_id_s = "[    ROM    ] " + rom_s + "\n"
             we_pins = [""]
 
         if len(flash_types) == 0:
             dprint("Trying to find the Flash ID")
-            wes = {"DMG": [1, 2], "AGB": [0]} if self.SupportsAudioAsWe() else {"DMG": [1], "AGB": [0]}
+            wes: dict[str, list[int]] = (
+                {"DMG": [1, 2], "AGB": [0]} if self.SupportsAudioAsWe() else {"DMG": [1], "AGB": [0]}
+            )
             for we in wes[mode]:
                 if self.MODE == "DMG":
                     self._set_fw_variable("FLASH_WE_PIN", we)
                 for i in range(len(flash_id_cmds)):
                     self._cart_write_flash(flash_id_cmds[i]["reset"], flashcart=True)
                     self._cart_write_flash(flash_id_cmds[i]["read_identifier"], flashcart=True)
-                    cmp = self._cart_read(0, 8)
+                    cmp: bytearray = self._cart_read(0, 8)
                     self._cart_write_flash(flash_id_cmds[i]["reset"], flashcart=True)
 
                     if cmp is not False and rom != cmp:  # ROM data changed
@@ -3416,7 +3417,7 @@ class LK_Device(ABC):
                                     ),
                                 )
                             found = True
-                            flash_type = f
+                            flash_type: int = f
                             flash_types.append(flash_type)
                             if "commands" in cart_type and "reset" in cart_type["commands"]:
                                 self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
@@ -3449,7 +3450,7 @@ class LK_Device(ABC):
 
             found = False
             for o in ((0x20, 2), (0x10, 1)):
-                magic = f"{chr(cfi_buffer[o[0]]):s}{chr(cfi_buffer[o[0] + (1 * o[1])]):s}{chr(cfi_buffer[o[0] + (2 * o[1])]):s}"
+                magic: str = f"{chr(cfi_buffer[o[0]]):s}{chr(cfi_buffer[o[0] + (1 * o[1])]):s}{chr(cfi_buffer[o[0] + (2 * o[1])]):s}"
                 dprint(
                     "CFI magic:",
                     hex(o[0]),
@@ -5332,6 +5333,47 @@ class LK_Device(ABC):
         finally:
             self._thread_worker_auto_poweroff_finish()
 
+    @staticmethod
+    def _create_flashcart(cart_type: dict[str, Any], callbacks: FlashcartCallbacks) -> Flashcart:
+        match cart_type["command_set"]:
+            case "GBMEMORY":
+                return Flashcart_DMG_MMSA(config=cart_type, fncptr=callbacks)
+            case "GBAMP":
+                return Flashcart_AGB_GBAMP(config=cart_type, fncptr=callbacks)
+            case "BUNG_16M":
+                return Flashcart_DMG_BUNG_16M(config=cart_type, fncptr=callbacks)
+            case _:
+                return Flashcart(config=cart_type, fncptr=callbacks)
+
+    def _configure_flash_command_set(self, command_set_type: str) -> int | None:
+        match command_set_type:
+            case "AMD":
+                dprint("Using AMD command set")
+                return 0x01
+            case "INTEL":
+                self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 0)
+                dprint("Using Intel command set")
+                return 0x02
+            case "SHARP":
+                self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
+                dprint("Using Sharp/Intel command set")
+                return 0x02
+            case "GBMEMORY" | "DMG-MBC5-32M-FLASH":
+                dprint("Using GB-Memory command set")
+                return 0x00
+            case "BLAZE_XPLODER" | "DATEL_ORBITV2" | "EEPROM" | "GBAMP" | "BUNG_16M":
+                return 0x00
+            case _:
+                self.SetProgress(
+                    {
+                        "action": "ABORT",
+                        "info_type": "msgbox_critical",
+                        "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
+                        "abortable": False,
+                    },
+                )
+                return None
+
     def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
@@ -5589,16 +5631,9 @@ class LK_Device(ABC):
             "set_we_pin_wr": self._set_we_pin_wr,
             "set_we_pin_audio": self._set_we_pin_audio,
         }
-        if cart_type["command_set"] == "GBMEMORY":
-            flashcart = Flashcart_DMG_MMSA(config=cart_type, fncptr=fc_fncptr)
-        elif cart_type["command_set"] == "GBAMP":
-            flashcart = Flashcart_AGB_GBAMP(config=cart_type, fncptr=fc_fncptr)
-        elif cart_type["command_set"] == "BUNG_16M":
-            flashcart = Flashcart_DMG_BUNG_16M(config=cart_type, fncptr=fc_fncptr)
-        else:
-            flashcart = Flashcart(config=cart_type, fncptr=fc_fncptr)
+        flashcart = self._create_flashcart(cart_type, fc_fncptr)
 
-        rumble = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
+        rumble: bool = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
 
         # ↓↓↓ Set Voltage
         if args["override_voltage"] is not False:
@@ -5804,38 +5839,8 @@ class LK_Device(ABC):
         # ↓↓↓ Load commands into firmware
         flash_cmds = []
         command_set_type = flashcart.GetCommandSetType()
-        temp = 0
-        if command_set_type == "AMD":
-            temp = 0x01
-            dprint("Using AMD command set")
-        elif command_set_type == "INTEL":
-            temp = 0x02
-            self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 0)
-            dprint("Using Intel command set")
-        elif command_set_type == "SHARP":
-            temp = 0x02
-            self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
-            dprint("Using Sharp/Intel command set")
-        elif command_set_type in ("GBMEMORY", "DMG-MBC5-32M-FLASH"):
-            temp = 0x00
-            dprint("Using GB-Memory command set")
-        elif command_set_type in (
-            "BLAZE_XPLODER",
-            "DATEL_ORBITV2",
-            "EEPROM",
-            "GBAMP",
-            "BUNG_16M",
-        ):
-            temp = 0x00
-        else:
-            self.SetProgress(
-                {
-                    "action": "ABORT",
-                    "info_type": "msgbox_critical",
-                    "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
-                    "abortable": False,
-                },
-            )
+        flash_command_set = self._configure_flash_command_set(command_set_type)
+        if flash_command_set is None:
             return False
 
         if flashcart.HasDoubleDie() and self.FW["fw_ver"] >= 5:
@@ -5850,7 +5855,7 @@ class LK_Device(ABC):
             self._set_fw_variable("FLASH_WE_PIN", 0x02)
         else:
             self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
-            self._write(temp)
+            self._write(flash_command_set)
 
             if flashcart.IsF2A():
                 self._write(0x05)  # FLASH_METHOD_AGB_FLASH2ADVANCE
@@ -6020,7 +6025,7 @@ class LK_Device(ABC):
         verify_sectors = []
         sector_pos = 0
         delta_state_new = None
-        flash_capacity = len(data_import)
+        flash_capacity: int = len(data_import)
         if sector_map is not None and sector_map is not False:
             smallest_sector_size = flashcart.GetSmallestSectorSize()
             sector_offsets = flashcart.GetSectorOffsets(
@@ -6185,13 +6190,13 @@ class LK_Device(ABC):
             buffer_len = 0x2000
         dprint(f"Transfer buffer length is 0x{buffer_len:X}")
 
-        current_bank = 0
-        start_bank = 0
-        start_address = 0
-        buffer_pos = 0
-        retry_hp = 0
+        current_bank: int | None = 0
+        start_bank: int = 0
+        start_address: int = 0
+        buffer_pos: int = 0
+        retry_hp: int = 0
         first_sector_written = False
-        end_address = len(data_import)
+        end_address: int = len(data_import)
         dprint("ROM banks:", end_bank)
 
         if len(write_sectors) == 0:
@@ -6206,7 +6211,7 @@ class LK_Device(ABC):
             return False
 
         for sector in write_sectors:
-            sector_size = sector[1]
+            sector_size: int = sector[1]
             if chip_erase is False:
                 retry_hp = 15 if not first_sector_written else 100
 
@@ -6753,7 +6758,7 @@ class LK_Device(ABC):
                 with (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").open("wb") as f:
                     pass
 
-            current_bank = None
+            current_bank: int | None = None
             broken_sectors = []
 
             for sector in verify_sectors:
