@@ -455,7 +455,7 @@ def test_set_mode_configures_protocol_without_power_cycle(
     device._write.assert_any_call(device.DEVICE_CMD[expected_voltage], wait=True)
     device._set_fw_variable.assert_any_call("CART_MODE", expected_cart_mode)
     device._set_fw_variable.assert_any_call(key="ADDRESS", value=0)
-    device.SetPin.assert_called_once_with(["PIN_AUDIO"], mode == "DMG")
+    device.SetPin.assert_called_once_with(["PIN_AUDIO"], set_high=mode == "DMG")
 
 
 @pytest.mark.parametrize("baudrate", [1_500_000, 1_700_000])
