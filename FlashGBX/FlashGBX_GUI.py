@@ -4006,17 +4006,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         test: bool = False,
         skip_warning: bool = False,
     ) -> None:
-        if not self.CheckDeviceAlive():
-            return
-        mode = self._device.GetMode()
-        if mode not in ("DMG", "AGB"):
-            return
-
+        mode = self._device.GetMode() if self.CheckDeviceAlive() else None
         path = ""
         if erase is True:
             dpath = ""
 
-        if not self._prepare_save_write_cartridge(mode=mode, dpath=dpath, erase=erase, test=test):
+        if mode not in ("DMG", "AGB") or not self._prepare_save_write_cartridge(
+            mode=mode,
+            dpath=dpath,
+            erase=erase,
+            test=test,
+        ):
             return
 
         if mode == "DMG":

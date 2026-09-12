@@ -121,6 +121,15 @@ class _FlashVerificationContext(NamedTuple):
     buffer_len: int
 
 
+class _FlashConfiguration(NamedTuple):
+    mbc: Any
+    end_bank: int
+    rom_bank_size: int
+    enable_pullup_wr: int
+    error_message: str
+    buffer_size: int | Literal[False]
+
+
 class LK_Device(ABC):
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
@@ -4362,6 +4371,83 @@ class LK_Device(ABC):
         finally:
             self._thread_worker_auto_poweroff_finish()
 
+    def _prepare_save_cart_type(self, args: dict[str, Any], mode: DeviceMode) -> dict[str, Any] | None:
+        if "cart_type" not in args or not args["cart_type"] or args["cart_type"] < 0:
+            return None
+
+        supported_carts = list(self.SUPPORTED_CARTS[mode].values())
+        cart_type = copy.deepcopy(supported_carts[args["cart_type"]])
+        if self.FW["fw_ver"] >= 12 and mode == "DMG":
+            # Joey Jr bug workaround
+            enable_pullup_wr = (
+                2
+                if (
+                    ("enable_pullup_wr" in cart_type and cart_type["enable_pullup_wr"] is True)
+                    or ("force_wr_pullup" in args and args["force_wr_pullup"] is True)
+                )
+                else 0
+            )
+            self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
+        return cart_type
+
+    def _configure_dmg_save_mapper(
+        self,
+        args: dict[str, Any],
+        mbc: DMG_Mapper,
+        save_size: int,
+        buffer_len: int,
+    ) -> tuple[int, int, bool]:
+        empty_data_byte = 0x00
+        audio_low = False
+        mapper_name = mbc.GetName()
+        if mapper_name == "TAMA5":
+            self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
+            self._set_fw_variable("DMG_READ_CS_PULSE", 1)
+            mbc.EnableMapper()
+            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
+            buffer_len = 0x20
+        elif mapper_name == "MBC7":
+            buffer_len = save_size
+        elif mapper_name == "MBC6":
+            empty_data_byte = 0xFF
+            audio_low = True
+            self._set_fw_variable("FLASH_METHOD", 0x04)  # FLASH_METHOD_DMG_MBC6
+            self._set_fw_variable("FLASH_WE_PIN", 0x01)  # WR
+            mbc.EnableFlash(enable=True, enable_write=(args["mode"] == 3))
+        elif mapper_name == "Xploder GB":
+            empty_data_byte = 0xFF
+            self._set_fw_variable("FLASH_PULSE_RESET", 0)
+            self._set_fw_variable("FLASH_DOUBLE_DIE", 0)
+            self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
+            self._write(0x00)  # FLASH_COMMAND_SET_NONE
+            self._write(0x01)  # FLASH_METHOD_UNBUFFERED
+            self._write(0x01)  # FLASH_WE_PIN_WR
+            commands = [
+                [0x5555, 0xAA],
+                [0x2AAA, 0x55],
+                [0x5555, 0xA0],
+            ]
+            for i in range(6):
+                if i >= len(commands):
+                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
+                else:
+                    self._write(
+                        bytearray(struct.pack(">I", commands[i][0])) + bytearray(struct.pack(">H", commands[i][1])),
+                    )
+            if self.FW["fw_ver"] >= 12:
+                self.wait_for_ack()
+            self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
+            self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
+            self._write(1)  # number of commands
+            self._write(bytearray(struct.pack(">I", 0x0006)))  # address/value
+            self._write(0)  # type = address
+            ret = self._read(1)
+            if ret != 0x01:
+                print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
+        else:
+            mbc.EnableMapper()
+        return buffer_len, empty_data_byte, audio_low
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
@@ -4389,22 +4475,7 @@ class LK_Device(ABC):
         end_address = 0
         _mbc: Any = None
 
-        cart_type: Any = None
-        if "cart_type" in args and args["cart_type"] and args["cart_type"] >= 0:
-            supported_carts = list(self.SUPPORTED_CARTS[mode].values())
-            cart_type = copy.deepcopy(supported_carts[args["cart_type"]])
-
-            if self.FW["fw_ver"] >= 12 and self.MODE == "DMG":
-                # Joey Jr bug workaround
-                enable_pullup_wr = (
-                    2
-                    if (
-                        ("enable_pullup_wr" in cart_type and cart_type["enable_pullup_wr"] is True)
-                        or ("force_wr_pullup" in args and args["force_wr_pullup"] is True)
-                    )
-                    else 0
-                )
-                self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
+        cart_type = self._prepare_save_cart_type(args, mode)
 
         self._set_fw_variable("STATUS_REGISTER_MASK", 0x80)
         self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
@@ -4443,53 +4514,12 @@ class LK_Device(ABC):
             self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
             self._set_fw_variable("DMG_READ_CS_PULSE", 0)
 
-            # Enable mappers
-            if _mbc.GetName() == "TAMA5":
-                self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
-                self._set_fw_variable("DMG_READ_CS_PULSE", 1)
-                _mbc.EnableMapper()
-                self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-                buffer_len = 0x20
-            elif _mbc.GetName() == "MBC7":
-                buffer_len = save_size
-            elif _mbc.GetName() == "MBC6":
-                empty_data_byte = 0xFF
-                audio_low = True
-                self._set_fw_variable("FLASH_METHOD", 0x04)  # FLASH_METHOD_DMG_MBC6
-                self._set_fw_variable("FLASH_WE_PIN", 0x01)  # WR
-                _mbc.EnableFlash(enable=True, enable_write=(args["mode"] == 3))
-            elif _mbc.GetName() == "Xploder GB":
-                empty_data_byte = 0xFF
-                self._set_fw_variable("FLASH_PULSE_RESET", 0)
-                self._set_fw_variable("FLASH_DOUBLE_DIE", 0)
-                self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
-                self._write(0x00)  # FLASH_COMMAND_SET_NONE
-                self._write(0x01)  # FLASH_METHOD_UNBUFFERED
-                self._write(0x01)  # FLASH_WE_PIN_WR
-                commands = [
-                    [0x5555, 0xAA],
-                    [0x2AAA, 0x55],
-                    [0x5555, 0xA0],
-                ]
-                for i in range(6):
-                    if i >= len(commands):
-                        self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
-                    else:
-                        self._write(
-                            bytearray(struct.pack(">I", commands[i][0])) + bytearray(struct.pack(">H", commands[i][1])),
-                        )
-                if self.FW["fw_ver"] >= 12:
-                    self.wait_for_ack()
-                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
-                self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
-                self._write(1)  # number of commands
-                self._write(bytearray(struct.pack(">I", 0x0006)))  # address/value
-                self._write(0)  # type = address
-                ret = self._read(1)
-                if ret != 0x01:
-                    print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
-            else:
-                _mbc.EnableMapper()
+            buffer_len, empty_data_byte, audio_low = self._configure_dmg_save_mapper(
+                args,
+                _mbc,
+                save_size,
+                buffer_len,
+            )
 
             if args["rtc"] is True:
                 extra_size = _mbc.GetRTCBufferSize()
@@ -6034,60 +6064,18 @@ class LK_Device(ABC):
         # ↑↑↑ Flash verify
         return verified
 
-    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
-        mode: Literal["DMG", "AGB"] | None = self.MODE
-        if mode is None:
-            msg = "Cartridge mode must be selected before writing ROM"
-            raise RuntimeError(msg)
-        # Initialization
-        self.FAST_READ = True
-        temp: Any = None
-        rom_bank_size = 0
+    def _configure_flashcart_for_write(
+        self,
+        args: dict[str, Any],
+        cart_type: dict[str, Any],
+        flashcart: Flashcart,
+        data_import: bytearray,
+        mode: DeviceMode,
+    ) -> _FlashConfiguration | None:
+        enable_pullup_wr = 0
+        mbc_instance: Any = None
         end_bank = 0
-        enable_pullup_wr = False
-        _mbc: Any = None
-        flashcart: Any = None
-        data_map_import = bytearray()
-        json_file = ""
-        we = 0
-        pos = 0
-        sector_size = 0
-        data_import, flash_offset = self._prepare_flash_data(args, mode)
-
-        supported_carts = list(self.SUPPORTED_CARTS[mode].values())
-        cart_type: Any = copy.deepcopy(supported_carts[args["cart_type"]])
-        try:
-            cart_name = cart_type["names"][0]
-        except IndexError, KeyError, TypeError:
-            cart_name: str = c__("Flashcart Profile", "Unknown")
-
-        if not isinstance(cart_type, dict):
-            return False  # Generic ROM Cartridge is not flashable
-
-        if not self._check_flashcart_firmware(cart_type):
-            return False
-
-        # Ensure cart is powered
-        if self.CanPowerCycleCart():
-            self.CartPowerOn()
-
-        self._set_flashcart_profile_index(cart_type, mode, args["cart_type"])
-
-        fc_fncptr: FlashcartCallbacks = {
-            "cart_write_fncptr": self._cart_write,
-            "cart_write_fast_fncptr": self._cart_write_flash,
-            "cart_read_fncptr": self.ReadROM,
-            "cart_powercycle_fncptr": self.CartPowerCycleOrAskReconnect,
-            "progress_fncptr": self.SetProgress,
-            "set_we_pin_wr": self._set_we_pin_wr,
-            "set_we_pin_audio": self._set_we_pin_audio,
-        }
-        flashcart = self._create_flashcart(cart_type, fc_fncptr)
-
-        rumble: bool = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
-
-        active_voltage = self._set_flash_voltage(args, flashcart)
-        self._pad_flash_data_for_sector_erase(args, flashcart, data_import)
+        rom_bank_size = 0
 
         # ↓↓↓ Flashcart configuration
         if self.FW["fw_ver"] >= 8 and "enable_pullups" in cart_type:
@@ -6098,7 +6086,7 @@ class LK_Device(ABC):
                 self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
                 dprint("Pullups disabled")
         if self.FW["fw_ver"] >= 12:
-            if self.MODE == "DMG":
+            if mode == "DMG":
                 # Joey Jr bug workaround
                 enable_pullup_wr = (
                     2
@@ -6109,11 +6097,11 @@ class LK_Device(ABC):
                     else 0
                 )
                 self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
-            elif self.MODE == "AGB":
+            elif mode == "AGB":
                 self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
 
         errmsg_mbc_selection = ""
-        if self.MODE == "DMG":
+        if mode == "DMG":
             self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
             mbc = flashcart.GetMBC()
             if mbc is not False and isinstance(mbc, int):
@@ -6140,9 +6128,9 @@ class LK_Device(ABC):
                         "abortable": False,
                     },
                 )
-                return False
+                return None
 
-            _mbc = DMG_Mapper().GetInstance(
+            mbc_instance = DMG_Mapper().GetInstance(
                 args=args,
                 cart_write_fncptr=self._cart_write,
                 cart_read_fncptr=self._mapper_cart_read,
@@ -6152,17 +6140,17 @@ class LK_Device(ABC):
 
             self._set_fw_variable("FLASH_PULSE_RESET", 1 if flashcart.PulseResetAfterWrite() else 0)
 
-            end_bank = math.ceil(len(data_import) / _mbc.GetROMBankSize())
-            rom_bank_size = _mbc.GetROMBankSize()
+            end_bank = math.ceil(len(data_import) / mbc_instance.GetROMBankSize())
+            rom_bank_size = mbc_instance.GetROMBankSize()
 
-            _mbc.EnableMapper()
+            mbc_instance.EnableMapper()
 
             if flashcart.GetMBC() == "manual":
                 errmsg_mbc_selection += (
                     "\n"
                     + __("- Check mapper type used:")
                     + " "
-                    + _mbc.GetName()
+                    + mbc_instance.GetName()
                     + " ("
                     + c__("Mapper Type", "manual selection")
                     + ")"
@@ -6172,18 +6160,18 @@ class LK_Device(ABC):
                     "\n"
                     + __("- Check mapper type used:")
                     + " "
-                    + _mbc.GetName()
+                    + mbc_instance.GetName()
                     + " ("
                     + c__("Mapper Type", "forced by selected flashcart profile")
                     + ")"
                 )
-            if len(data_import) > _mbc.GetMaxROMSize():
+            if len(data_import) > mbc_instance.GetMaxROMSize():
                 errmsg_mbc_selection += "\n" + __(
                     "- Check mapper type ROM size limit: likely up to {max_size}",
-                    max_size=Formatter.file_size(_mbc.GetMaxROMSize()),
+                    max_size=Formatter.file_size(mbc_instance.GetMaxROMSize()),
                 )
 
-        elif self.MODE == "AGB":
+        elif mode == "AGB":
             self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
             if flashcart and "flash_bank_size" in cart_type:
                 end_bank = math.ceil(len(data_import) / cart_type["flash_bank_size"])
@@ -6193,6 +6181,80 @@ class LK_Device(ABC):
 
         flash_buffer_size = flashcart.GetBufferSize()
         # ↑↑↑ Flashcart configuration
+        return _FlashConfiguration(
+            mbc=mbc_instance,
+            end_bank=end_bank,
+            rom_bank_size=rom_bank_size,
+            enable_pullup_wr=enable_pullup_wr,
+            error_message=errmsg_mbc_selection,
+            buffer_size=flash_buffer_size,
+        )
+
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+        mode: Literal["DMG", "AGB"] | None = self.MODE
+        if mode is None:
+            msg = "Cartridge mode must be selected before writing ROM"
+            raise RuntimeError(msg)
+        # Initialization
+        self.FAST_READ = True
+        temp: Any = None
+        flashcart: Any = None
+        data_map_import = bytearray()
+        json_file = ""
+        we = 0
+        pos = 0
+        sector_size = 0
+        data_import, flash_offset = self._prepare_flash_data(args, mode)
+
+        supported_carts = list(self.SUPPORTED_CARTS[mode].values())
+        cart_type: Any = copy.deepcopy(supported_carts[args["cart_type"]])
+        try:
+            cart_name = cart_type["names"][0]
+        except IndexError, KeyError, TypeError:
+            cart_name: str = c__("Flashcart Profile", "Unknown")
+
+        if not isinstance(cart_type, dict) or not self._check_flashcart_firmware(cart_type):
+            return False
+
+        # Ensure cart is powered
+        if self.CanPowerCycleCart():
+            self.CartPowerOn()
+
+        self._set_flashcart_profile_index(cart_type, mode, args["cart_type"])
+
+        fc_fncptr: FlashcartCallbacks = {
+            "cart_write_fncptr": self._cart_write,
+            "cart_write_fast_fncptr": self._cart_write_flash,
+            "cart_read_fncptr": self.ReadROM,
+            "cart_powercycle_fncptr": self.CartPowerCycleOrAskReconnect,
+            "progress_fncptr": self.SetProgress,
+            "set_we_pin_wr": self._set_we_pin_wr,
+            "set_we_pin_audio": self._set_we_pin_audio,
+        }
+        flashcart = self._create_flashcart(cart_type, fc_fncptr)
+
+        rumble: bool = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
+
+        active_voltage = self._set_flash_voltage(args, flashcart)
+        self._pad_flash_data_for_sector_erase(args, flashcart, data_import)
+
+        configuration = self._configure_flashcart_for_write(
+            args,
+            cart_type,
+            flashcart,
+            data_import,
+            mode,
+        )
+        if configuration is None:
+            return False
+        (
+            _mbc,
+            end_bank,
+            rom_bank_size,
+            enable_pullup_wr,
+            errmsg_mbc_selection,
+            flash_buffer_size,
+        ) = configuration
 
         # ↓↓↓ DMG-MMSA-JPN hidden sector
         if self.MODE == "DMG" and _mbc.GetName() == "G-MMC1":
