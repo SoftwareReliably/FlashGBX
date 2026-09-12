@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, ClassVar, Literal, Protocol, TypeAlias, TypeVar, Union, overload
 
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta  # pyright: ignore[reportMissingModuleSource]
 
 from .i18n import __, ___, c__, c___
 from .Logging import ANSI, dprint, logger  # pyright: ignore[reportAttributeAccessIssue]
@@ -492,12 +492,12 @@ class DMG_MBC1(DMG_Mapper):
     def GetName(self) -> str:
         return "MBC1"
 
-    def EnableRAM(self, enable=True) -> None:
+    def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
         commands: list[list[int]] = [[24576, 1], [0, 10]] if enable else [[0, 0], [24576, 0]]
         self.CartWrite(commands)
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384, 0], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384, 0], int]:
         dprint(self.GetName(), "|", index, hex(index >> 5), hex(index & 0x1F))
         commands: list[list[int]] = [
             [0x6000, 1],
@@ -517,7 +517,7 @@ class DMG_MBC2(DMG_Mapper):
     def GetName(self) -> Literal["MBC2"]:
         return "MBC2"
 
-    def SelectBankRAM(self, index) -> tuple[Literal[0], int]:
+    def SelectBankRAM(self, index: int) -> tuple[Literal[0], int]:
         del index
         return (0, self.RAM_BANK_SIZE)
 
@@ -589,7 +589,7 @@ class DMG_MBC3(DMG_Mapper):
         self.RTC_BUFFER = buffer
         return buffer
 
-    def WriteRTCDict(self, rtc_dict) -> Literal[True]:
+    def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
         dprint("Writing RTC:", rtc_dict)
         self.EnableRAM(enable=True)
 
@@ -637,7 +637,7 @@ class DMG_MBC3(DMG_Mapper):
 
         return True
 
-    def WriteRTC(self, buffer, advance=False) -> None:
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         dprint("Writing RTC:", buffer)
         self.EnableRAM(enable=True)
         # Pre-initialize from buffer so advance=False path always has defined variables
@@ -646,7 +646,7 @@ class DMG_MBC3(DMG_Mapper):
         hours: int = buffer[0x08]
         days: int = buffer[0x0C] | buffer[0x10] << 8
         days = days & 0x1FF
-        carry = (buffer[0x10] & 0x80) != 0
+        carry: bool = (buffer[0x10] & 0x80) != 0
         if advance:
             try:
                 local_timezone: datetime.tzinfo = _local_timezone()
@@ -656,7 +656,7 @@ class DMG_MBC3(DMG_Mapper):
                     minutes = 0
                     hours = 0
                     days = 0
-                    carry = 0
+                    carry = False
                 else:
                     seconds = buffer[0x00]
                     minutes = buffer[0x04]
@@ -761,11 +761,11 @@ class DMG_MBC5(DMG_Mapper):
     def GetName(self) -> str:
         return "MBC5"
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
 
         self.CURRENT_ROM_BANK = index
-        commands = [
+        commands: list[list[int]] = [
             [0x3000, ((index >> 8) & 0xFF)],
             [0x2100, index & 0xFF],
         ]
@@ -782,11 +782,11 @@ class DMG_MBC5(DMG_Mapper):
 class DMG_MBC6(DMG_Mapper):
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
     ) -> None:
         del clk_toggle_fncptr
         if args is None:
@@ -805,11 +805,11 @@ class DMG_MBC6(DMG_Mapper):
     def GetName(self) -> Literal["MBC6"]:
         return "MBC6"
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 0x4000], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 0x4000], int]:
         dprint(self.GetName(), "|", index)
         self.CURRENT_ROM_BANK = index
         # index = index * 2
-        commands = [
+        commands: list[list[int]] = [
             [0x2800, 0],
             [0x3800, 0],
             [0x2000, index],  # ROM Bank A (0x4000-0x5FFF)
@@ -822,7 +822,7 @@ class DMG_MBC6(DMG_Mapper):
     def HasFlashBanks(self) -> Literal[True]:
         return True
 
-    def SelectBankFlash(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankFlash(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
         self.CURRENT_ROM_BANK = index
         # index = index * 2
@@ -836,11 +836,11 @@ class DMG_MBC6(DMG_Mapper):
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetRAMBanks(self, ram_size) -> Literal[136]:  # 0x108000
+    def GetRAMBanks(self, ram_size: int) -> Literal[136]:  # 0x108000
         del ram_size
         return 8 + 128
 
-    def SelectBankRAM(self, index) -> tuple[Literal[0], int]:
+    def SelectBankRAM(self, index: int) -> tuple[Literal[0], int]:
         dprint(self.GetName(), "|", index)
         # index = index * 2
         commands: list[list[int]] = [
@@ -851,7 +851,7 @@ class DMG_MBC6(DMG_Mapper):
         start_address = 0
         return (start_address, self.RAM_BANK_SIZE)
 
-    def EnableFlash(self, enable=True, enable_write=False) -> None:
+    def EnableFlash(self, enable: bool = True, enable_write: bool = False) -> None:
         if enable:
             self.CartWrite(
                 [
@@ -923,11 +923,11 @@ class DMG_MBC7(DMG_Mapper):
     def GetName(self) -> Literal["MBC7"]:
         return "MBC7"
 
-    def SelectBankRAM(self, index) -> tuple[Literal[0], Literal[512]]:
+    def SelectBankRAM(self, index: int) -> tuple[Literal[0], Literal[512]]:
         del index
         return (0, 0x200)
 
-    def EnableRAM(self, enable=True) -> None:
+    def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
         commands = [[0x0000, 0x0A if enable else 0x00], [0x4000, 0x40]]
         self.CartWrite(commands)
@@ -940,7 +940,7 @@ class DMG_MBC1M(DMG_MBC1):
     def GetName(self) -> Literal["MBC1M"]:
         return "MBC1M"
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384, 0], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384, 0], int]:
         dprint(self.GetName(), "|", index)
         commands = [
             [0x6000, 1],
@@ -960,7 +960,7 @@ class DMG_MMM01(DMG_Mapper):
     def GetName(self) -> Literal["MMM01"]:
         return "MMM01"
 
-    def CalcChecksum(self, buffer) -> int:
+    def CalcChecksum(self, buffer: Buffer) -> int:
         chk = 0
         temp_data = bytes(buffer[0:-0x8000])
         temp_menu = bytes(buffer[-0x8000:])
@@ -971,10 +971,10 @@ class DMG_MMM01(DMG_Mapper):
                 chk = chk + temp_dump[i]
         return chk & 0xFFFF
 
-    def ResetBeforeBankChange(self, index) -> bool:
+    def ResetBeforeBankChange(self, index: int) -> bool:
         return (index % 0x20) == 0
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
 
         start_address: Literal[0, 16384] = 0 if index == 0 else 0x4000
@@ -1008,7 +1008,7 @@ class DMG_GBD(DMG_MBC5):
     def GetName(self) -> Literal["MAC-GBD"]:
         return "MAC-GBD"
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
         commands = [
             [0x2000, index & 0xFF],
@@ -1027,7 +1027,7 @@ class DMG_GMMC1(DMG_MBC5):
     def GetName(self) -> Literal["G-MMC1"]:
         return "G-MMC1"
 
-    def lk_dmg_mmsa_flash_command(self, addr, data) -> list[list[int]]:
+    def lk_dmg_mmsa_flash_command(self, addr: int, data: int) -> list[list[int]]:
         return [
             [0x120, 0x0F],
             [0x125, addr >> 8],
@@ -1042,7 +1042,7 @@ class DMG_GMMC1(DMG_MBC5):
     def lk_dmg_mmsa_access_rom(self) -> list[list[int]]:
         return [[0x120, 0x08], [0x13F, 0xA5]]
 
-    def lk_dmg_mmsa_access_mbc(self, enable) -> list[list[int]]:
+    def lk_dmg_mmsa_access_mbc(self, enable: bool) -> list[list[int]]:
         return [[288, 17], [319, 165]] if enable else [[288, 16], [319, 165]]
 
     def lk_dmg_mmsa_disable_flash_write_protect(self) -> list[list[int]]:
@@ -1070,7 +1070,7 @@ class DMG_GMMC1(DMG_MBC5):
         self.CartWrite(self.lk_dmg_mmsa_access_rom())
         return True
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
         commands = [
             [0x2000, index & 0xFF],
@@ -1119,8 +1119,8 @@ class DMG_GMMC1(DMG_MBC5):
         )
         return False
 
-    def CalcChecksum(self, buffer) -> int:
-        header = RomFileDMG(buffer[:0x180]).GetHeader()
+    def CalcChecksum(self, buffer: Buffer) -> int:
+        header: dict[str, Any] = RomFileDMG(bytearray(buffer[:0x180])).GetHeader()
         target_chk_value = 0
         target_sha1_value = 0
         if header["game_title"] == "NP M-MENU MENU":
@@ -1148,11 +1148,11 @@ class DMG_M161(DMG_Mapper):
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
     ) -> None:
         del clk_toggle_fncptr
         if args is None:
@@ -1166,11 +1166,11 @@ class DMG_M161(DMG_Mapper):
             clk_toggle_fncptr=None,
         )
 
-    def ResetBeforeBankChange(self, index) -> Literal[True]:
+    def ResetBeforeBankChange(self, index: int) -> Literal[True]:
         del index
         return True
 
-    def SelectBankROM(self, index) -> tuple[Literal[0], Literal[32768]]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0], Literal[32768]]:
         dprint(self.GetName(), "|", index)
         commands = [[0x4000, (index & 0x7)]]
         self.CartWrite(commands)
@@ -1184,7 +1184,7 @@ class DMG_HuC1(DMG_MBC5):
     def GetName(self) -> Literal["HuC-1"]:
         return "HuC-1"
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
         commands = [
             [0x2100, index & 0xFF],
@@ -1195,7 +1195,7 @@ class DMG_HuC1(DMG_MBC5):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def EnableRAM(self, enable=True) -> None:
+    def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
         commands = [[0x0000, 0x0A if enable else 0x0E]]
         self.CartWrite(commands)
@@ -1264,7 +1264,7 @@ class DMG_HuC3(DMG_Mapper):
         self.RTC_BUFFER = buffer
         return buffer
 
-    def WriteRTCDict(self, rtc_dict) -> Literal[True]:
+    def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
         dprint("Writing RTC:", rtc_dict)
         self.EnableRAM(enable=True)
 
@@ -1324,7 +1324,7 @@ class DMG_HuC3(DMG_Mapper):
         dprint(f"[{int(len(dstr) / 3) + 1:02X}] {dstr:s}")
         return True
 
-    def WriteRTC(self, buffer, advance=False) -> None:
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         if advance:
             try:
                 local_timezone: datetime.tzinfo = _local_timezone()
@@ -1415,7 +1415,7 @@ class DMG_TAMA5(DMG_Mapper):
         dprint("Enabled TAMA5 successfully")
         return True
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
         commands: list[list[int]] = [
             [0xA001, 0x00],  # ROM bank (low)
@@ -1481,7 +1481,7 @@ class DMG_TAMA5(DMG_Mapper):
         self.RTC_BUFFER = buffer
         return buffer
 
-    def WriteRTCDict(self, rtc_dict) -> Literal[True]:
+    def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
         buffer = rtc_dict["rtc_buffer"]
         buffer[0x00] = BCD.encode(rtc_dict["rtc_s"])
         buffer[0x01] = BCD.encode(rtc_dict["rtc_i"])
@@ -1548,7 +1548,7 @@ class DMG_TAMA5(DMG_Mapper):
 
         return True
 
-    def WriteRTC(self, buffer, advance=False) -> None:
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         if advance:
             try:
                 local_timezone: datetime.tzinfo = _local_timezone()
@@ -1712,7 +1712,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
     def HasFlashBanks(self) -> Literal[True]:
         return True
 
-    def SelectBankFlash(self, index) -> None:
+    def SelectBankFlash(self, index: int) -> None:
         flash_bank = math.floor(index / 512)
         dprint(self.GetName(), "|SelectBankFlash()|", index, "->", flash_bank)
 
@@ -1725,7 +1725,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
         self.CURRENT_FLASH_BANK = flash_bank
         self.CartWrite(commands, delay=0.1)
 
-    def SelectBankROM(self, index) -> tuple[Literal[0, 16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), index)
 
         if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
@@ -1743,10 +1743,10 @@ class DMG_Unlicensed_256M(DMG_MBC5):
 
         return (start_address, self.ROM_BANK_SIZE)
 
-    def SelectBankRAM(self, index) -> tuple[Literal[0], int]:
+    def SelectBankRAM(self, index: int) -> tuple[Literal[0], int]:
         dprint(self.GetName(), "|", index)
 
-        flash_bank = math.floor(index / 0x10)
+        flash_bank: int = math.floor(index / 0x10)
 
         if index % 4 == 0:
             self.EnableRAM(enable=False)
@@ -1766,7 +1766,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
                 hex((0x40 * math.floor(index / 4)) & 0xFF),
             )
 
-        commands = [[0x4000, index % 4]]
+        commands: list[list[int]] = [[0x4000, index % 4]]
         start_address = 0
         self.CartWrite(commands)
 
@@ -1782,11 +1782,11 @@ class DMG_Unlicensed_WisdomTree(DMG_Mapper):
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
     ) -> None:
         del clk_toggle_fncptr
         if args is None:
@@ -1800,9 +1800,9 @@ class DMG_Unlicensed_WisdomTree(DMG_Mapper):
             clk_toggle_fncptr=None,
         )
 
-    def SelectBankROM(self, index) -> tuple[Literal[0], Literal[32768]]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[0], Literal[32768]]:
         dprint(self.GetName(), "|", index)
-        commands = [[index, 0]]
+        commands: list[list[int]] = [[index, 0]]
         self.CartWrite(commands)
         return (0, 0x8000)
 
@@ -1816,11 +1816,11 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
     ) -> None:
         del clk_toggle_fncptr
         if args is None:
@@ -1834,7 +1834,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         )
         self.RAM_BANK_SIZE = 0x4000
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
         if index == 0:
             self.CartRead(0x0102, 1)
@@ -1845,7 +1845,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
-    def SelectBankRAM(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankRAM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
         if index == 0:
             self.CartRead(0x0102, 1)
@@ -1861,9 +1861,9 @@ class DMG_Unlicensed_Sachen(DMG_Mapper):
     def GetName(self) -> Literal["Sachen"]:
         return "Sachen"
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
-        commands = [[0x2000, index + self.START_BANK]]
+        commands: list[list[int]] = [[0x2000, index + self.START_BANK]]
         self.CartWrite(commands)
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
@@ -1878,11 +1878,11 @@ class DMG_Unlicensed_DatelOrbitV2(DMG_Mapper):
 
     def __init__(
         self,
-        args=None,
-        cart_write_fncptr=None,
-        cart_read_fncptr=None,
-        cart_powercycle_fncptr=None,
-        clk_toggle_fncptr=None,
+        args: Mapping[str, Any] | None = None,
+        cart_write_fncptr: CartWriteCallback | None = None,
+        cart_read_fncptr: CartReadCallback | None = None,
+        cart_powercycle_fncptr: Callable[[], object] | None = None,
+        clk_toggle_fncptr: Callable[[int], object] | None = None,
     ) -> None:
         del clk_toggle_fncptr
         if args is None:
@@ -1896,7 +1896,7 @@ class DMG_Unlicensed_DatelOrbitV2(DMG_Mapper):
             clk_toggle_fncptr=None,
         )
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
         if index == 0:
             self.CartRead(0x0101, 1)
@@ -1917,14 +1917,14 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
     def HasFlashBanks(self) -> Literal[True]:
         return True
 
-    def SelectBankFlash(self, index) -> None:
+    def SelectBankFlash(self, index: int) -> None:
         dprint(self.GetName(), "|SelectBankFlash()|", index)
 
         commands = [[0x0000, 0x05], [0x4000, 0x82], [0xA000, index], [0x0000, 0x00]]
         self.CURRENT_FLASH_BANK = index
         self.CartWrite(commands, delay=0.1)
 
-    def SelectBankROM(self, index) -> tuple[Literal[16384], int]:
+    def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), index)
 
         if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
@@ -1932,7 +1932,7 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
         self.CURRENT_ROM_BANK = index
         index = index % 512
 
-        commands = [
+        commands: list[list[int]] = [
             [0x3000, ((index >> 8) & 0xFF)],
             [0x2100, index & 0xFF],
         ]
@@ -1997,7 +1997,7 @@ class AGB_GPIO:
         read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
         if length == 0:  # auto size:
             address = address * 2
-            result = read(address)
+            result: int | bytearray | bool | None = read(address)
             if not isinstance(result, int):
                 msg = f"Cartridge read failed at 0x{address:X}"
                 raise RuntimeError(msg)
@@ -2007,7 +2007,7 @@ class AGB_GPIO:
         else:
             result = read(address, length)
             if not isinstance(result, bytearray):
-                msg_0 = f"Cartridge read failed at 0x{address:X}"
+                msg_0: str = f"Cartridge read failed at 0x{address:X}"
                 raise RuntimeError(msg_0)
             data = result
             # dprint("0x{:X} is".format(address), data)
@@ -2017,8 +2017,8 @@ class AGB_GPIO:
     def CartWrite(self, commands: CartCommands, delay: float | bool = False) -> None:
         write = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
         for command in commands:
-            address = command[0]
-            value = command[1]
+            address: int = command[0]
+            value: int = command[1]
             # dprint("0x{:X} = 0x{:X}".format(address, value))
             write(address, value)
             if delay is not False:
@@ -2026,7 +2026,7 @@ class AGB_GPIO:
 
     def RTCCommand(self, command: int) -> None:
         for i in range(8):
-            bit = (command >> (7 - i)) & 0x01
+            bit: int = (command >> (7 - i)) & 0x01
             self.CartWrite(
                 [
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
