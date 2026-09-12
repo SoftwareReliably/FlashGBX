@@ -12,7 +12,7 @@ class RomSizes:
 
     def __init__(self, size=None, index=None) -> None:
         if index is not None:
-            self._size = self.GetSize(index)
+            self._size: int | None = self.GetSize(index)
         elif size is not None:
             self._size = size
         else:
@@ -45,23 +45,23 @@ class RomSizes:
             return f"{value}{kib}"
         return f"{size}{formatted_bytes}"
 
-    def GetNextLarger(self, size):
+    def GetNextLarger(self, size) -> int | None:
         for valid_size in self.ROM_SIZES:
             if valid_size >= size:
                 return valid_size
         return None
 
-    def GetSize(self, index):
+    def GetSize(self, index) -> int | None:
         if index < len(self.ROM_SIZES):
             return self.ROM_SIZES[index]
         return None
 
-    def GetIndex(self, size):
+    def GetIndex(self, size) -> int | None:
         if size in self.ROM_SIZES:
             return self.ROM_SIZES.index(size)
         return None
 
-    def GetStringList(self, mode="AGB"):
+    def GetStringList(self, mode="AGB") -> list[str]:
         if mode == "DMG":
             return [self.GetString(index=index) for index in range(len(self.ROM_SIZES_DMG))]
         if mode == "AGB":
@@ -144,21 +144,21 @@ class AgbSaveTypes:
         """Return whether the given size is a supported save type."""
         return size in [s[0] for s in self.SAVE_TYPES]
 
-    def GetName(self, index=None):
+    def GetName(self, index=None) -> str:
         if index is None:
             index = self._index
         if index is not None and 0 <= index < len(self.SAVE_TYPES):
             return self.SAVE_TYPES[index][1]
         return c__("Game Data", "Unknown")
 
-    def GetSize(self, index=None):
+    def GetSize(self, index=None) -> int | None:
         if index is None:
             index = self._index
         if index is not None and 0 <= index < len(self.SAVE_TYPES):
             return self.SAVE_TYPES[index][0]
         return None
 
-    def GetString(self, index=None, localized=True):
+    def GetString(self, index=None, localized=True) -> str:
         if index is None:
             index = self._index
 
@@ -173,9 +173,9 @@ class AgbSaveTypes:
         if bytes_val is None or bytes_val == 0:
             return name
 
-        bytes_label = __(" Bytes") if localized else " Bytes"
-        kib = __(" KiB") if localized else " KiB"
-        mib = __(" MiB") if localized else " MiB"
+        bytes_label: str = __(" Bytes") if localized else " Bytes"
+        kib: str = __(" KiB") if localized else " KiB"
+        mib: str = __(" MiB") if localized else " MiB"
 
         if bytes_val >= 1024 * 1024:
             return f"{name} ({bytes_val >> 20}{mib})"
@@ -206,7 +206,7 @@ class AgbSaveTypes:
             return f"8M DACS ({savelib_string:s})"
         return c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
 
-    def GetStringList(self):
+    def GetStringList(self) -> list[str]:
         return [self.GetString(index) for index in range(len(self.SAVE_TYPES))]
 
     def GetNumberOfTypes(self) -> int:
@@ -284,7 +284,7 @@ class DmgSaveTypes:
         elif mbc is not None:
             self._entry = self._FindByMbc(mbc)
         elif size is not None:
-            self._entry = self._FindBySize(size)
+            self._entry: tuple[int, int, str] | None = self._FindBySize(size)
         else:
             self._entry = None
 
@@ -300,13 +300,13 @@ class DmgSaveTypes:
                 return entry
         return None
 
-    def GetName(self):
+    def GetName(self) -> str:
         return self._entry[2] if self._entry else __("Unknown Save Type")
 
-    def GetSize(self):
+    def GetSize(self) -> int:
         return self._entry[1] if self._entry else 0
 
-    def GetMbc(self):
+    def GetMbc(self) -> int | None:
         return self._entry[0] if self._entry else None
 
     def GetIndex(self) -> int | None:
@@ -317,7 +317,7 @@ class DmgSaveTypes:
                 return index
         return None
 
-    def GetString(self, index=None, localized=True):
+    def GetString(self, index=None, localized=True) -> str:
         entry = self.RAM_TYPES[index] if (index is not None and 0 <= index < len(self.RAM_TYPES)) else self._entry
         name = entry[2] if entry else __("Unknown Save Type")
         size = entry[1] if entry else 0
@@ -325,9 +325,9 @@ class DmgSaveTypes:
         if size == 0:
             return name
 
-        byte_label = __(" Bytes") if localized else " Bytes"
-        kib = __(" KiB") if localized else " KiB"
-        mib = __(" MiB") if localized else " MiB"
+        byte_label: str = __(" Bytes") if localized else " Bytes"
+        kib: str = __(" KiB") if localized else " KiB"
+        mib: str = __(" MiB") if localized else " MiB"
 
         if size == 0x108000:
             return f"{name} ({size / (1024 * 1024):.2f}{mib})"
@@ -337,7 +337,7 @@ class DmgSaveTypes:
             return f"{name} ({size // 1024}{kib})"
         return f"{name} ({size}{byte_label})"
 
-    def GetStringList(self):
+    def GetStringList(self) -> list[str]:
         return [self.GetString(index=index) for index in range(len(self.RAM_TYPES))]
 
     def GetNumberOfTypes(self) -> int:
