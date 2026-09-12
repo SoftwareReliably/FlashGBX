@@ -5374,40 +5374,18 @@ class LK_Device(ABC):
                 )
                 return None
 
-    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
-        mode: Literal["DMG", "AGB"] | None = self.MODE
-        if mode is None:
-            msg = "Cartridge mode must be selected before writing ROM"
-            raise RuntimeError(msg)
-        # Initialization
-        self.FAST_READ = True
-        temp: Any = None
-        rom_bank_size = 0
-        end_bank = 0
-        pos_from = 0
-        verify_len = 0
-        enable_pullup_wr = False
-        _mbc: Any = None
-        flashcart: Any = None
-        data_map_import = bytearray()
-        json_file = ""
-        we = 0
-        pos = 0
-        sector_size = 0
-
+    def _prepare_flash_data(self, args: dict[str, Any], mode: DeviceMode) -> tuple[bytearray, int]:
         if "buffer" in args:
             source_buffer = args["buffer"]
             if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
-                msg_0 = "ROM data must be a bytes-like object"
-                raise TypeError(msg_0)
-            data_import: bytearray = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
+                msg = "ROM data must be a bytes-like object"
+                raise TypeError(msg)
+            data_import = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
         else:
             with Path(args["path"]).open("rb") as file:
                 data_import = bytearray(file.read())
 
-        flash_offset = 0  # Batteryless SRAM or Transfer Resume
-        if "flash_offset" in args:
-            flash_offset = args["flash_offset"]
+        flash_offset = args.get("flash_offset", 0)  # Batteryless SRAM or Transfer Resume
         if "start_addr" in args and args["start_addr"] > 0:
             data_import = bytearray(b"\xff" * args["start_addr"]) + data_import
 
@@ -5428,29 +5406,29 @@ class LK_Device(ABC):
             data_import = bl_data_import
 
         # Pad data
-        if len(data_import) > 0:
+        if data_import:
             if len(data_import) < 0x400:
                 data_import += bytearray([0xFF] * (0x400 - len(data_import)))
             if len(data_import) % 0x4000 > 0:
                 data_import += bytearray([0xFF] * (0x4000 - len(data_import) % 0x4000))
 
             # Skip writing the last 256 bytes of 32 MiB ROMs with EEPROM save type
-            if self.MODE == "AGB" and len(data_import) == 0x2000000:
+            if mode == "AGB" and len(data_import) == 0x2000000:
                 temp_ver = "N/A"
                 try:
-                    ids: list[bytes] = [
+                    ids = (
                         b"SRAM_",
                         b"EEPROM_V",
                         b"FLASH_V",
                         b"FLASH512_V",
                         b"FLASH1M_V",
                         b"AGB_8MDACS_DL_V",
-                    ]
+                    )
                     for ident in ids:
-                        temp_pos: int = data_import.find(ident)
+                        temp_pos = data_import.find(ident)
                         if temp_pos > 0:
-                            temp_ver = data_import[temp_pos : temp_pos + 0x20]
-                            temp_ver = temp_ver[: temp_ver.index(0x00)].decode("ascii", "replace")
+                            version_bytes = data_import[temp_pos : temp_pos + 0x20]
+                            temp_ver = version_bytes[: version_bytes.index(0x00)].decode("ascii", "replace")
                             break
                 except ValueError:
                     temp_ver = "N/A"
@@ -5466,20 +5444,45 @@ class LK_Device(ABC):
 
         # Fix bootlogo and header
         if "fix_bootlogo" in args and isinstance(args["fix_bootlogo"], bytearray):
-            dstr: str = "".join(format(x, "02X") for x in args["fix_bootlogo"])
+            dstr = "".join(format(x, "02X") for x in args["fix_bootlogo"])
             dprint("Replacing bootlogo data with", dstr)
-            if self.MODE == "DMG":
+            if mode == "DMG":
                 data_import[0x104:0x134] = args["fix_bootlogo"]
-            elif self.MODE == "AGB":
+            else:
                 data_import[0x04:0xA0] = args["fix_bootlogo"]
         if args.get("fix_header"):
             dprint("Fixing header checksums")
-            if mode == "DMG":
-                temp = RomFileDMG(data_import[0:0x200]).FixHeader()
-            else:
-                temp = RomFileAGB(data_import[0:0x200]).FixHeader()
-            if temp is not None:
-                data_import[0:0x200] = temp
+            header = (
+                RomFileDMG(data_import[0:0x200]).FixHeader()
+                if mode == "DMG"
+                else RomFileAGB(data_import[0:0x200]).FixHeader()
+            )
+            if header is not None:
+                data_import[0:0x200] = header
+
+        return data_import, flash_offset
+
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+        mode: Literal["DMG", "AGB"] | None = self.MODE
+        if mode is None:
+            msg = "Cartridge mode must be selected before writing ROM"
+            raise RuntimeError(msg)
+        # Initialization
+        self.FAST_READ = True
+        temp: Any = None
+        rom_bank_size = 0
+        end_bank = 0
+        pos_from = 0
+        verify_len = 0
+        enable_pullup_wr = False
+        _mbc: Any = None
+        flashcart: Any = None
+        data_map_import = bytearray()
+        json_file = ""
+        we = 0
+        pos = 0
+        sector_size = 0
+        data_import, flash_offset = self._prepare_flash_data(args, mode)
 
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
         cart_type: Any = copy.deepcopy(supported_carts[args["cart_type"]])
