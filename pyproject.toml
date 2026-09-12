@@ -139,7 +139,6 @@ ignore = [
     "D101", #undocumented-public-class
     "FBT001", #boolean-type-hint-positional-argument
     "TRY003", #raise-vanilla-args
-    "F405", #undefined-local-with-import-star-usage
     "N803", #invalid-argument-name
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
