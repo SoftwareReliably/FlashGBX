@@ -146,13 +146,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.pylint]
-max-branches = 250
-max-statements = 800
+max-branches = 200
+max-statements = 720
 max-returns = 20
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds setting.
-max-complexity = 200
+max-complexity = 160
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["PLR0913", "PLR0917", "SLF001", "ANN201", "FBT003", "S101"]

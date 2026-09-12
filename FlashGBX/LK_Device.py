@@ -19,7 +19,7 @@ import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Protocol, overload
 
 import serial  # pyright: ignore[reportMissingModuleSource]
 from serial import (  # pyright: ignore[reportMissingModuleSource]
@@ -106,6 +106,19 @@ class MBC6FlashMapper(Protocol):
 
 
 ProgressCallback = Callable[[ProgressUpdate], object]
+
+
+class _FlashVerificationContext(NamedTuple):
+    args: dict[str, Any]
+    cart_type: dict[str, Any]
+    flashcart: Flashcart
+    data_import: bytearray
+    flash_offset: int
+    active_voltage: Any
+    verify_sectors: list[list[int]]
+    rom_bank_size: int
+    mbc: Any
+    buffer_len: int
 
 
 class LK_Device(ABC):
@@ -5731,6 +5744,296 @@ class LK_Device(ABC):
         except Exception:
             logger.exception("Failed to resolve the selected flash-cart profile index")
 
+    def _set_flash_voltage(self, args: dict[str, Any], flashcart: Flashcart) -> float:
+        if args["override_voltage"] is not False:
+            active_voltage = args["override_voltage"]
+            if active_voltage == 5:
+                self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
+            else:
+                self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
+        elif flashcart.GetVoltage() == 3.3:
+            active_voltage = 3.3
+            self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
+        elif flashcart.GetVoltage() == 5:
+            active_voltage = 5
+            self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
+        else:
+            active_voltage = flashcart.GetVoltage()
+
+        # Voltage-locked devices ignore the SET_VOLTAGE_* writes above; their
+        # slot voltage is determined by the platform mode.
+        if self.CanSetVoltageByAutoswitch() and not self.CanSetVoltageByCode():
+            return 5 if self.MODE == "DMG" else 3.3
+        return active_voltage
+
+    @staticmethod
+    def _pad_flash_data_for_sector_erase(args: dict[str, Any], flashcart: Flashcart, data_import: bytearray) -> None:
+        if flashcart.SupportsChipErase() or not flashcart.SupportsSectorErase() or not args["prefer_chip_erase"]:
+            return
+
+        print(
+            ANSI.YELLOW
+            + __("Note: Chip erase mode is not supported for this flashcart profile. Sector erase mode will be used.")
+            + "\n"
+            + ANSI.RESET,
+        )
+        if data_import != bytearray([0xFF] * len(data_import)):
+            return
+
+        flash_size = flashcart.GetFlashSize()
+        if flash_size is False or len(data_import) >= flash_size:
+            return
+
+        pad_len = flash_size - len(data_import)
+        while pad_len > 0x2000000:
+            data_import += bytearray([0xFF] * 0x2000000)
+            pad_len -= 0x2000000
+        data_import += bytearray([0xFF] * (flash_size - len(data_import)))
+
+    def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
+        args = context.args
+        cart_type = context.cart_type
+        flashcart = context.flashcart
+        data_import = context.data_import
+        flash_offset = context.flash_offset
+        active_voltage = context.active_voltage
+        verify_sectors = context.verify_sectors
+        rom_bank_size = context.rom_bank_size
+        _mbc = context.mbc
+        buffer_len = context.buffer_len
+        temp: Any = None
+        pos_from = 0
+        verify_len = 0
+        buffer_pos = 0
+        start_address = 0
+        end_address = 0
+        start_bank = 0
+        end_bank = 0
+
+        # ↓↓↓ Flash verify
+        verified = False
+        crc32_errors = 0
+        if "broken_sectors" in self.INFO:
+            del self.INFO["broken_sectors"]
+        if "verify_write" in args and args["verify_write"] is True:
+            self.SetProgress(
+                {
+                    "action": "INITIALIZE",
+                    "method": "ROM_WRITE_VERIFY",
+                    "size": len(data_import),
+                    "flash_offset": flash_offset,
+                    "voltage": active_voltage,
+                },
+            )
+            if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
+                (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").write_bytes(b"")
+
+            current_bank: int | None = None
+            broken_sectors = []
+
+            for sector in verify_sectors:
+                if self.CANCEL:
+                    cancel_args = {"action": "ABORT", "abortable": False}
+                    cancel_args.update(self.CANCEL_ARGS)
+                    self.CANCEL_ARGS = {}
+                    self.ERROR_ARGS = {}
+                    self.SetProgress(cancel_args)
+                    if self.CanPowerCycleCart():
+                        self.CartPowerCycle()
+                    if self.FW["fw_ver"] >= 12:
+                        self._set_fw_variable("AGB_IRQ_ENABLED", 0)
+                    return None
+
+                if sector[0] >= len(data_import):
+                    break
+
+                verified = False
+                if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
+                    if self.MODE == "AGB":
+                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
+                        buffer_pos = sector[0]
+                        start_address = buffer_pos
+                        end_address = sector[0] + sector[1]
+                        start_bank = math.floor(buffer_pos / rom_bank_size)
+                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
+                    elif self.MODE == "DMG":
+                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
+                        buffer_pos = sector[0]
+                        start_bank = math.floor(buffer_pos / rom_bank_size)
+                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
+
+                    bank = start_bank
+                    while bank < end_bank:
+                        # ↓↓↓ Switch ROM bank
+                        if self.MODE == "DMG":
+                            if _mbc.ResetBeforeBankChange(bank) is True:
+                                dprint("Resetting the MBC")
+                                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+                            (start_address, bank_size) = _mbc.SelectBankROM(bank)
+                            verify_len = bank_size
+                            if flashcart.PulseResetAfterWrite() and bank == 0:
+                                if self.FW["fw_ver"] < 2 and "OFW_GB_CART_MODE" in self.DEVICE_CMD:
+                                    self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
+                                else:
+                                    self._write(
+                                        self.DEVICE_CMD["SET_MODE_DMG"],
+                                        wait=self.FW["fw_ver"] >= 12,
+                                    )
+                                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+                            self._set_fw_variable("DMG_ROM_BANK", bank)
+
+                            buffer_len = min(buffer_len, bank_size)
+                            if "start_addr" in flashcart.CONFIG and bank == 0:
+                                start_address = flashcart.CONFIG["start_addr"]
+                            end_address = start_address + bank_size
+                            start_address += buffer_pos % rom_bank_size
+                            end_address = min(end_address, start_address + sector[1])
+                            pos_from = bank * start_address
+
+                        elif self.MODE == "AGB":
+                            if (
+                                "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0
+                            ) and bank != current_bank:
+                                flashcart.Reset(full_reset=True)
+                                flashcart.SelectBankROM(bank)
+                                temp = end_address - start_address
+                                start_address %= cart_type["flash_bank_size"]
+                                end_address = min(
+                                    cart_type["flash_bank_size"],
+                                    start_address + temp,
+                                )
+                                current_bank = bank
+                            verify_len = sector[1]
+                            pos_from = sector[0]
+                        # ↑↑↑ Switch ROM bank
+
+                        dprint(
+                            f"Verifying ROM bank #{bank} at 0x{pos_from:x} (physical 0x{start_address:X}, 0x{verify_len:X} bytes)",
+                        )
+
+                        verified = False
+                        if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
+                            verified = self.CompareCRC32(
+                                buffer=data_import,
+                                offset=pos_from,
+                                length=verify_len,
+                                address=start_address,
+                                flashcart=flashcart,
+                                reset=False,
+                                mbc=_mbc,
+                                bank=bank,
+                            )
+                            if verified is True:
+                                dprint(f"CRC32 verification successful between 0x{pos_from:X} and 0x{verify_len:X}")
+                                self.SetProgress(
+                                    {
+                                        "action": "UPDATE_POS",
+                                        "pos": pos_from + verify_len,
+                                    },
+                                )
+                            elif isinstance(verified, tuple) and len(verified) == 2:
+                                crc32_errors += 1
+                                dprint(
+                                    f"Mismatch during CRC32 verification at 0x{pos_from:X}",
+                                    "Errors:",
+                                    crc32_errors,
+                                )
+                                verified = False
+                                break
+
+                            if verified is False:
+                                break
+
+                        else:
+                            self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
+
+                        bank += 1
+
+                if not verified:
+                    verify_args = copy.copy(args)
+                    verify_args.update(
+                        {
+                            "verify_write": data_import[sector[0] : sector[0] + sector[1]],
+                            "rom_size": len(data_import),
+                            "verify_from": sector[0],
+                            "path": "",
+                            "rtc_area": flashcart.HasRTC(),
+                            "verify_mbc": _mbc,
+                        },
+                    )
+                    verify_args["verify_base_pos"] = sector[0]
+                    verify_args["verify_len"] = len(verify_args["verify_write"])
+                    verify_args["rom_size"] = len(verify_args["verify_write"])
+
+                    self.NO_PROG_UPDATE = True
+                    self.ReadROM(0, 4)  # dummy read
+                    self.NO_PROG_UPDATE = False
+                    start_address = 0
+                    end_address = buffer_pos
+
+                    verified_size = self._BackupROM(verify_args)
+                    if isinstance(verified_size, int):
+                        dprint(
+                            'args["verify_len"]=0x{:X}, verified_size=0x{:X}'.format(
+                                verify_args["verify_len"],
+                                verified_size,
+                            ),
+                        )
+                    if self.CANCEL or self.ERROR:
+                        cancel_args = {"action": "ABORT", "abortable": False}
+                        cancel_args.update(self.CANCEL_ARGS)
+                        self.CANCEL_ARGS = {}
+                        self.ERROR_ARGS = {}
+                        self.SetProgress(cancel_args)
+                        if self.CanPowerCycleCart():
+                            self.CartPowerCycle()
+                        if self.FW["fw_ver"] >= 12:
+                            self._set_fw_variable("AGB_IRQ_ENABLED", 0)
+                        verified = False
+                        return None
+                    if (verified_size is not True) and (verify_args["verify_len"] != verified_size):
+                        if verified_size is None:
+                            dprint(
+                                "Verification failed! Sector: {sector}",
+                                sector=str(sector),
+                            )
+                        else:
+                            dprint(
+                                "Verification failed at {address}! Sector: {sector}",
+                                address=f"0x{sector[0] + verified_size:X}",
+                                sector=str(sector),
+                            )
+                        if sector not in broken_sectors:
+                            broken_sectors.append(sector)
+                        continue
+                    dprint(
+                        f"Verification between 0x{sector[0]:X} and 0x{sector[0] + sector[1]:X} successful by normal reading.",
+                    )
+                    verified = True
+
+            self.SetProgress(
+                {
+                    "action": "UPDATE_POS",
+                    "pos": len(data_import),
+                    "force_update": True,
+                    "skipping": len(data_import) > self.POS,
+                },
+            )
+            if len(broken_sectors) > 0:
+                self.INFO["broken_sectors"] = broken_sectors
+                self.INFO["verify_error_params"] = {}
+                self.INFO["verify_error_params"]["rom_size"] = len(data_import)
+                if self.MODE == "DMG":
+                    self.INFO["verify_error_params"]["mapper_name"] = _mbc.GetName()
+                    if flashcart.GetMBC() == "manual":
+                        self.INFO["verify_error_params"]["mapper_selection_type"] = 1  # manual
+                    else:
+                        self.INFO["verify_error_params"]["mapper_selection_type"] = 2  # forced by cart type
+                    self.INFO["verify_error_params"]["mapper_max_size"] = _mbc.GetMaxROMSize()
+                verified = False
+        # ↑↑↑ Flash verify
+        return verified
+
     def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
@@ -5741,8 +6044,6 @@ class LK_Device(ABC):
         temp: Any = None
         rom_bank_size = 0
         end_bank = 0
-        pos_from = 0
-        verify_len = 0
         enable_pullup_wr = False
         _mbc: Any = None
         flashcart: Any = None
@@ -5785,48 +6086,8 @@ class LK_Device(ABC):
 
         rumble: bool = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
 
-        # ↓↓↓ Set Voltage
-        if args["override_voltage"] is not False:
-            active_voltage = args["override_voltage"]
-            if args["override_voltage"] == 5:
-                self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
-            else:
-                self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
-        elif flashcart.GetVoltage() == 3.3:
-            active_voltage = 3.3
-            self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
-        elif flashcart.GetVoltage() == 5:
-            active_voltage = 5
-            self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
-        else:
-            active_voltage = flashcart.GetVoltage()
-        # Voltage-locked devices ignore the SET_VOLTAGE_* writes above; their
-        # slot voltage is determined by the platform mode.
-        if self.CanSetVoltageByAutoswitch() and not self.CanSetVoltageByCode():
-            active_voltage = 5 if self.MODE == "DMG" else 3.3
-        # ↑↑↑ Set Voltage
-
-        # ↓↓↓ Pad data for full chip erase on sector erase mode
-        if not flashcart.SupportsChipErase() and flashcart.SupportsSectorErase() and args["prefer_chip_erase"]:
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Note: Chip erase mode is not supported for this flashcart profile. Sector erase mode will be used.",
-                )
-                + "\n"
-                + ANSI.RESET,
-            )
-            # Pad data if the user wants to erase the entire cartridge
-            if data_import == bytearray([0xFF] * len(data_import)):
-                flash_size = flashcart.GetFlashSize()
-                if flash_size is not False and len(data_import) < flash_size:
-                    # Pad with FF till the end (with MemoryError fix)
-                    pad_len = flash_size - len(data_import)
-                    while pad_len > 0x2000000:
-                        data_import += bytearray([0xFF] * 0x2000000)
-                        pad_len -= 0x2000000
-                    data_import += bytearray([0xFF] * (flash_size - len(data_import)))
-        # ↑↑↑ Pad data for full chip erase on sector erase mode
+        active_voltage = self._set_flash_voltage(args, flashcart)
+        self._pad_flash_data_for_sector_erase(args, flashcart, data_import)
 
         # ↓↓↓ Flashcart configuration
         if self.FW["fw_ver"] >= 8 and "enable_pullups" in cart_type:
@@ -6753,231 +7014,21 @@ class LK_Device(ABC):
             self._set_fw_variable("DMG_AUDIO_ENABLED", 0)
         # ↑↑↑ Reset flash
 
-        # ↓↓↓ Flash verify
-        verified = False
-        crc32_errors = 0
-        if "broken_sectors" in self.INFO:
-            del self.INFO["broken_sectors"]
-        if "verify_write" in args and args["verify_write"] is True:
-            self.SetProgress(
-                {
-                    "action": "INITIALIZE",
-                    "method": "ROM_WRITE_VERIFY",
-                    "size": len(data_import),
-                    "flash_offset": flash_offset,
-                    "voltage": active_voltage,
-                },
-            )
-            if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                with (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").open("wb") as f:
-                    pass
-
-            current_bank: int | None = None
-            broken_sectors = []
-
-            for sector in verify_sectors:
-                if self.CANCEL:
-                    cancel_args = {"action": "ABORT", "abortable": False}
-                    cancel_args.update(self.CANCEL_ARGS)
-                    self.CANCEL_ARGS = {}
-                    self.ERROR_ARGS = {}
-                    self.SetProgress(cancel_args)
-                    if self.CanPowerCycleCart():
-                        self.CartPowerCycle()
-                    if self.FW["fw_ver"] >= 12:
-                        self._set_fw_variable("AGB_IRQ_ENABLED", 0)
-                    return None
-
-                if sector[0] >= len(data_import):
-                    break
-
-                verified = False
-                if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
-                    if self.MODE == "AGB":
-                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
-                        buffer_pos = sector[0]
-                        start_address = buffer_pos
-                        end_address = sector[0] + sector[1]
-                        sector_pos = sector_offsets.index(sector[:2]) if not chip_erase else 0
-                        start_bank = math.floor(buffer_pos / rom_bank_size)
-                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
-                    elif self.MODE == "DMG":
-                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
-                        buffer_pos = sector[0]
-                        sector_pos = sector_offsets.index(sector[:2]) if not chip_erase else 0
-                        start_bank = math.floor(buffer_pos / rom_bank_size)
-                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
-
-                    bank = start_bank
-                    while bank < end_bank:
-                        # ↓↓↓ Switch ROM bank
-                        if self.MODE == "DMG":
-                            if _mbc.ResetBeforeBankChange(bank) is True:
-                                dprint("Resetting the MBC")
-                                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                            (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                            verify_len = bank_size
-                            if flashcart.PulseResetAfterWrite() and bank == 0:
-                                if self.FW["fw_ver"] < 2 and "OFW_GB_CART_MODE" in self.DEVICE_CMD:
-                                    self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                                else:
-                                    self._write(
-                                        self.DEVICE_CMD["SET_MODE_DMG"],
-                                        wait=self.FW["fw_ver"] >= 12,
-                                    )
-                                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                            self._set_fw_variable("DMG_ROM_BANK", bank)
-
-                            buffer_len = min(buffer_len, bank_size)
-                            if "start_addr" in flashcart.CONFIG and bank == 0:
-                                start_address = flashcart.CONFIG["start_addr"]
-                            end_address = start_address + bank_size
-                            start_address += buffer_pos % rom_bank_size
-                            end_address = min(end_address, start_address + sector[1])
-                            pos_from = bank * start_address
-
-                        elif self.MODE == "AGB":
-                            if (
-                                "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0
-                            ) and bank != current_bank:
-                                flashcart.Reset(full_reset=True)
-                                flashcart.SelectBankROM(bank)
-                                temp = end_address - start_address
-                                start_address %= cart_type["flash_bank_size"]
-                                end_address = min(
-                                    cart_type["flash_bank_size"],
-                                    start_address + temp,
-                                )
-                                current_bank = bank
-                            verify_len = sector[1]
-                            pos_from = sector[0]
-                        # ↑↑↑ Switch ROM bank
-
-                        dprint(
-                            f"Verifying ROM bank #{bank} at 0x{pos_from:x} (physical 0x{start_address:X}, 0x{verify_len:X} bytes)",
-                        )
-
-                        verified = False
-                        if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
-                            verified = self.CompareCRC32(
-                                buffer=data_import,
-                                offset=pos_from,
-                                length=verify_len,
-                                address=start_address,
-                                flashcart=flashcart,
-                                reset=False,
-                                mbc=_mbc,
-                                bank=bank,
-                            )
-                            if verified is True:
-                                dprint(f"CRC32 verification successful between 0x{pos_from:X} and 0x{verify_len:X}")
-                                self.SetProgress(
-                                    {
-                                        "action": "UPDATE_POS",
-                                        "pos": pos_from + verify_len,
-                                    },
-                                )
-                            elif isinstance(verified, tuple) and len(verified) == 2:
-                                crc32_errors += 1
-                                dprint(
-                                    f"Mismatch during CRC32 verification at 0x{pos_from:X}",
-                                    "Errors:",
-                                    crc32_errors,
-                                )
-                                verified = False
-                                break
-
-                            if verified is False:
-                                break
-
-                        else:
-                            self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
-
-                        bank += 1
-
-                if not verified:
-                    verify_args = copy.copy(args)
-                    verify_args.update(
-                        {
-                            "verify_write": data_import[sector[0] : sector[0] + sector[1]],
-                            "rom_size": len(data_import),
-                            "verify_from": sector[0],
-                            "path": "",
-                            "rtc_area": flashcart.HasRTC(),
-                            "verify_mbc": _mbc,
-                        },
-                    )
-                    verify_args["verify_base_pos"] = sector[0]
-                    verify_args["verify_len"] = len(verify_args["verify_write"])
-                    verify_args["rom_size"] = len(verify_args["verify_write"])
-
-                    self.NO_PROG_UPDATE = True
-                    self.ReadROM(0, 4)  # dummy read
-                    self.NO_PROG_UPDATE = False
-                    start_address = 0
-                    end_address = buffer_pos
-
-                    verified_size = self._BackupROM(verify_args)
-                    if isinstance(verified_size, int):
-                        dprint(
-                            'args["verify_len"]=0x{:X}, verified_size=0x{:X}'.format(
-                                verify_args["verify_len"],
-                                verified_size,
-                            ),
-                        )
-                    if self.CANCEL or self.ERROR:
-                        cancel_args = {"action": "ABORT", "abortable": False}
-                        cancel_args.update(self.CANCEL_ARGS)
-                        self.CANCEL_ARGS = {}
-                        self.ERROR_ARGS = {}
-                        self.SetProgress(cancel_args)
-                        if self.CanPowerCycleCart():
-                            self.CartPowerCycle()
-                        if self.FW["fw_ver"] >= 12:
-                            self._set_fw_variable("AGB_IRQ_ENABLED", 0)
-                        verified = False
-                        return None
-                    if (verified_size is not True) and (verify_args["verify_len"] != verified_size):
-                        if verified_size is None:
-                            dprint(
-                                "Verification failed! Sector: {sector}",
-                                sector=str(sector),
-                            )
-                        else:
-                            dprint(
-                                "Verification failed at {address}! Sector: {sector}",
-                                address=f"0x{sector[0] + verified_size:X}",
-                                sector=str(sector),
-                            )
-                        if sector not in broken_sectors:
-                            broken_sectors.append(sector)
-                        continue
-                    dprint(
-                        f"Verification between 0x{sector[0]:X} and 0x{sector[0] + sector[1]:X} successful by normal reading.",
-                    )
-                    verified = True
-
-            self.SetProgress(
-                {
-                    "action": "UPDATE_POS",
-                    "pos": len(data_import),
-                    "force_update": True,
-                    "skipping": len(data_import) > self.POS,
-                },
-            )
-            if len(broken_sectors) > 0:
-                self.INFO["broken_sectors"] = broken_sectors
-                self.INFO["verify_error_params"] = {}
-                self.INFO["verify_error_params"]["rom_size"] = len(data_import)
-                if self.MODE == "DMG":
-                    self.INFO["verify_error_params"]["mapper_name"] = _mbc.GetName()
-                    if flashcart.GetMBC() == "manual":
-                        self.INFO["verify_error_params"]["mapper_selection_type"] = 1  # manual
-                    else:
-                        self.INFO["verify_error_params"]["mapper_selection_type"] = 2  # forced by cart type
-                    self.INFO["verify_error_params"]["mapper_max_size"] = _mbc.GetMaxROMSize()
-                verified = False
-        # ↑↑↑ Flash verify
+        verification_context = _FlashVerificationContext(
+            args=args,
+            cart_type=cart_type,
+            flashcart=flashcart,
+            data_import=data_import,
+            flash_offset=flash_offset,
+            active_voltage=active_voltage,
+            verify_sectors=verify_sectors,
+            rom_bank_size=rom_bank_size,
+            mbc=_mbc,
+            buffer_len=buffer_len,
+        )
+        verified = self._verify_flash_write(verification_context)
+        if verified is None:
+            return None
 
         if delta_state_new is not None and not chip_erase and "broken_sectors" not in self.INFO:
             try:
