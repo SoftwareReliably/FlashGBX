@@ -29,6 +29,8 @@ from serial import (  # pyright: ignore[reportMissingModuleSource]
     SerialTimeoutException,
 )
 
+from FlashGBX.RomFileAGB import AGBHeader
+
 from .app import AppContext, AppInfo, generate_filename
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 from .Flashcart import (
@@ -1372,9 +1374,9 @@ class LK_Device(ABC):
         if self.CanPowerCycleCart():
             self.CartPowerOn()
         elif mode == "DMG":
-            self.SetPin(["PIN_AUDIO"], True)
+            self.SetPin(["PIN_AUDIO"], set_high=True)
         elif mode == "AGB":
-            self.SetPin(["PIN_AUDIO"], False)
+            self.SetPin(["PIN_AUDIO"], set_high=False)
 
     def SetAutoPowerOff(self, value: int) -> None:
         if not self.CanPowerCycleCart():
@@ -1623,7 +1625,7 @@ class LK_Device(ABC):
 
                 elif _mbc.GetName() == "MAC-GBD":
                     dprint("Reading Game Boy Camera calibration data...")
-                    _mbc.EnableRAM(True)
+                    _mbc.EnableRAM(enable=True)
                     _mbc.SelectBankRAM(2)
                     temp = self.ReadRAM(address=0xFF2, length=0xE)
                     if temp and temp != bytearray([temp[0]] * len(temp)):
@@ -1640,7 +1642,7 @@ class LK_Device(ABC):
                             "Game Boy Camera calibration data 2:",
                             "".join(format(x, "02X") for x in temp),
                         )
-                    _mbc.EnableRAM(False)
+                    _mbc.EnableRAM(enable=False)
 
         elif self.MODE == "AGB":
             # Unlock DACS carts on older firmware
@@ -1649,9 +1651,9 @@ class LK_Device(ABC):
                 bytearray([0xFF] * 0x9C),
             ):
                 self.ReadROM(0x1FFFFE0, 20)
-                header = self.ReadROM(0, 0x180)
+                header: bytearray = self.ReadROM(0, 0x180)
 
-            data = RomFileAGB(header).GetHeader()
+            data: AGBHeader = RomFileAGB(header).GetHeader()
             if data["logo_correct"] is False:  # workaround for strange bootlegs
                 self._cart_write(0, 0xFF)
                 header = self.ReadROM(0, 0x180)
@@ -1676,10 +1678,10 @@ class LK_Device(ABC):
                 data["rom_size"] = 0x2000000
             else:
                 # Check where the ROM data repeats (for unlicensed carts)
-                size_check = header[0xA0 : 0xA0 + 16]
+                size_check: bytearray = header[0xA0 : 0xA0 + 16]
                 currAddr = 0x10000
                 while currAddr < 0x2000000:
-                    buffer = self.ReadROM(currAddr + 0xA0, 64)[:16]
+                    buffer: bytearray = self.ReadROM(currAddr + 0xA0, 64)[:16]
                     if buffer == size_check:
                         break
                     currAddr *= 2
@@ -1690,7 +1692,7 @@ class LK_Device(ABC):
                     else:  # Some Vast Fame carts have no mirror, check using VF pattern behaviour instead
                         currAddr = 0x200000
                         while currAddr < 0x2000000:
-                            sentinel = self.ReadROM(currAddr + 0x2AAAA, 2)
+                            sentinel: bytearray = self.ReadROM(currAddr + 0x2AAAA, 2)
                             if int.from_bytes(sentinel, byteorder="big") == 0xAAAA:
                                 break
                             currAddr *= 2
@@ -1726,7 +1728,7 @@ class LK_Device(ABC):
                 )
                 if self.FW["fw_ver"] >= 12:
                     self._write(self.DEVICE_CMD["AGB_READ_GPIO_RTC"])
-                    temp = self._read(8)
+                    temp: bytearray | Literal[False] = self._read(8)
                     data["has_rtc"] = temp is not False and _agb_gpio.HasRTC(temp) is True
                     if data["has_rtc"] is True and temp is not False:
                         data["rtc_buffer"] = temp[1:8]
@@ -3234,8 +3236,8 @@ class LK_Device(ABC):
                     self._cart_write_flash(cart_type["commands"]["reset"])
                     break
                 # Reset commands if not found
-                self._cart_write_flash([[0, 0xFF]], True)
-                self._cart_write_flash([[0, 0xF0]], True)
+                self._cart_write_flash([[0, 0xFF]], flashcart=True)
+                self._cart_write_flash([[0, 0xF0]], flashcart=True)
                 self._set_we_pin_wr()
                 continue
             if self.MODE == "AGB" and cart_type["command_set"] == "GBAMP":
@@ -3274,8 +3276,8 @@ class LK_Device(ABC):
                     self._cart_write(0x2000, 0x00, flashcart=False)
                     break
                 # Reset commands if not found
-                self._cart_write_flash([[0, 0xFF]], True)
-                self._cart_write_flash([[0, 0xF0]], True)
+                self._cart_write_flash([[0, 0xFF]], flashcart=True)
+                self._cart_write_flash([[0, 0xF0]], flashcart=True)
                 self._set_we_pin_wr()
                 continue
 
@@ -3372,8 +3374,8 @@ class LK_Device(ABC):
                         read_cfi_cmds.append(flash_id_cmds[i]["read_cfi"])
 
             dprint(f"Found {len(flash_id_methods):d} result(s)")
-            self._cart_write_flash([[0, 0xFF]], True)
-            self._cart_write_flash([[0, 0xF0]], True)
+            self._cart_write_flash([[0, 0xFF]], flashcart=True)
+            self._cart_write_flash([[0, 0xF0]], flashcart=True)
 
         for f in range(1, len(supported_carts)):
             cart_type = supported_carts[f]
@@ -3846,7 +3848,7 @@ class LK_Device(ABC):
                         for i in range(16):
                             self._cart_write(1 << i, 0xAA, sram=True)
                             for j in range(16):
-                                value = self._cart_read(1 << j, 1, True)[0]
+                                value = self._cart_read(1 << j, 1, agb_save_flash=True)[0]
                                 if value != 0:
                                     addr_reorder[mode][j] = i
                                     break
@@ -3857,7 +3859,7 @@ class LK_Device(ABC):
                     if mode % 4 == 0:
                         for i in range(8):
                             self._cart_write(0x8000, 1 << i, sram=True)
-                            value = self._cart_read(0x8000, 1, True)[0]
+                            value = self._cart_read(0x8000, 1, agb_save_flash=True)[0]
                             for j in range(8):
                                 if (1 << j) == value:
                                     value_reorder[mode // 4][j] = i
@@ -4490,7 +4492,7 @@ class LK_Device(ABC):
             if audio_low:
                 dprint("DMG-MBC5-32M-FLASH Development Cartridge detected")
                 self._set_fw_variable("FLASH_WE_PIN", 0x01)
-                self.SetPin(["PIN_AUDIO"], False)
+                self.SetPin(["PIN_AUDIO"], set_high=False)
             self._cart_write(0x4000, 0x00)
 
             _mbc.EnableRAM(enable=True)
@@ -5300,7 +5302,7 @@ class LK_Device(ABC):
             self._set_fw_variable("DMG_READ_CS_PULSE", 0)
             if audio_low:
                 self._set_fw_variable("FLASH_WE_PIN", 0x02)
-                self.SetPin(["PIN_AUDIO"], True)
+                self.SetPin(["PIN_AUDIO"], set_high=True)
             self._write(
                 self.DEVICE_CMD["SET_ADDR_AS_INPUTS"],
                 wait=self.FW["fw_ver"] >= 12,
