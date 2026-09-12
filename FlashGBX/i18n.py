@@ -431,7 +431,7 @@ def format_decimal(value: float, precision: int = 2, grouping: bool = False, loc
 def loadQtTranslation(app: object | None = None, language: str | None = None) -> bool:
     global _qt_translator  # noqa: PLW0603
     try:
-        from PySide6 import QtCore
+        from PySide6 import QtCore  # noqa: PLC0415 - Qt support is optional for CLI use
     except ImportError:
         return False
 
@@ -474,9 +474,9 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
     LANGUAGES.update(sorted(filtered_langs.items(), key=lambda item: item[1][1]))
 
     try:
-        from .IniSettings import IniSettings
+        from .IniSettings import IniSettings  # noqa: PLC0415 - IniSettings imports this module
     except ImportError:
-        from IniSettings import IniSettings
+        from IniSettings import IniSettings  # noqa: PLC0415 - support direct script execution
 
     settings = IniSettings(path=Path(config_path) / "settings.ini")
     if override:

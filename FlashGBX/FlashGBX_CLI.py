@@ -2724,7 +2724,7 @@ class FlashGBX_CLI:
                 print(__("No devices found."))
                 return False
 
-            from . import hw_GBxCartRW
+            from . import hw_GBxCartRW  # noqa: PLC0415 - load only the selected firmware backend
 
             while True:
                 try:
@@ -2805,7 +2805,7 @@ class FlashGBX_CLI:
                 print(__("No device found."))
                 return False
 
-            from . import hw_GBFlash
+            from . import hw_GBFlash  # noqa: PLC0415 - load only the selected firmware backend
 
             while True:
                 try:
@@ -2896,7 +2896,7 @@ class FlashGBX_CLI:
                 print(__("No devices found."))
                 return False
 
-            from . import hw_JoeyJr
+            from . import hw_JoeyJr  # noqa: PLC0415 - load only the selected firmware backend
 
             while True:
                 try:

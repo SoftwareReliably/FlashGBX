@@ -211,7 +211,7 @@ def generate_filename(
     header: FilenameHeader,
     settings: SettingsReader | None = None,
 ) -> str:
-    from .Mapper import get_mbc_name
+    from .Mapper import get_mbc_name  # noqa: PLC0415 - Mapper imports RomFileDMG, which imports app
 
     use_no_intro_filename = _setting_text(settings, "UseNoIntroFilenames", "enabled").lower() == "enabled"
 

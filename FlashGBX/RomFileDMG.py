@@ -3,6 +3,7 @@
 
 import copy
 import hashlib
+import io
 import json
 import re
 import string
@@ -1219,7 +1220,7 @@ class RomFileDMG:
             if data["game_title"] == "PHOTO":
                 data["ram_size_raw"] = 0x204
 
-        from .Mapper import DMG_Mapper
+        from .Mapper import DMG_Mapper  # noqa: PLC0415 - Mapper imports RomFileDMG
 
         if data["mapper_raw"] in DMG_Mapper().GetAllMapperIds():
             data["mapper"] = DMG_Mapper().GetMapperName(data["mapper_raw"])
@@ -1329,11 +1330,6 @@ class RomFileDMG:
 
 
 def from_isx(buffer: bytearray) -> bytearray:
-    import io
-    import struct
-
-    from .i18n import __
-
     data_input = io.BytesIO(buffer)
     data_output = bytearray(8 * 1024 * 1024)
     rom_size = 0

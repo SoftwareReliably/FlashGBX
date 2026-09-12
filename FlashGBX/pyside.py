@@ -478,8 +478,8 @@ def bitmap2pixmap(
         raise ValueError(msg)
 
     try:
-        from PIL import Image  # pyright: ignore[reportMissingImports]
-        from PIL.ImageQt import ImageQt  # pyright: ignore[reportMissingImports]
+        from PIL import Image  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+        from PIL.ImageQt import ImageQt  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
 
         data_converted = data.convert("RGBA")
         scaled_image = data_converted.resize(

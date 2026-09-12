@@ -1,6 +1,5 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
-# ruff: noqa: UP007, UP017, UP040, UP047
 # Keep syntax compatible with the project's declared Python 3.14 minimum.
 
 from __future__ import annotations
@@ -11,17 +10,18 @@ import math
 import struct
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, ClassVar, Literal, Protocol, TypeAlias, TypeVar, Union, overload
+from typing import Any, ClassVar, Literal, Protocol, TypeVar, overload
 
 from dateutil.relativedelta import relativedelta  # pyright: ignore[reportMissingModuleSource]
 
+from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 from .i18n import __, ___, c__, c___
 from .Logging import ANSI, dprint, logger  # pyright: ignore[reportAttributeAccessIssue]
 from .RomFileDMG import RomFileDMG
 
-Buffer: TypeAlias = Union[bytes, bytearray, memoryview]
-CartCommands: TypeAlias = Sequence[Sequence[int]]
-RTCDict: TypeAlias = dict[str, Union[int, bool, str, bytearray]]
+type Buffer = bytes | bytearray | memoryview
+type CartCommands = Sequence[Sequence[int]]
+type RTCDict = dict[str, int | bool | str | bytearray]
 
 
 class CartReadCallback(Protocol):
@@ -35,7 +35,7 @@ class CartWriteCallback(Protocol):
 CallbackT = TypeVar("CallbackT", bound=Callable[..., object])
 
 
-def _require_callback(callback: CallbackT | None, name: str) -> CallbackT:
+def _require_callback[CallbackT: Callable[..., object]](callback: CallbackT | None, name: str) -> CallbackT:
     """Return a configured hardware callback or fail with a useful error."""
     if callback is None:
         msg = f"{name} callback is not configured"
@@ -45,7 +45,7 @@ def _require_callback(callback: CallbackT | None, name: str) -> CallbackT:
 
 def _local_timezone() -> datetime.tzinfo:
     """Return the system timezone with a UTC fallback for static analyzers."""
-    return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
+    return datetime.datetime.now().astimezone().tzinfo or datetime.UTC
 
 
 class BCD:
@@ -91,8 +91,6 @@ def save_size_includes_rtc(
     save_size: int,
     save_type: int | None,
 ) -> bool:
-    from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes
-
     if save_size <= 0:
         return False
 
@@ -687,8 +685,8 @@ class DMG_MBC3(DMG_Mapper):
                         minutes = dt_new.minute
                         hours = dt_new.hour
                         temp: datetime.timedelta = (
-                            datetime.datetime.fromtimestamp(timestamp_now, tz=datetime.timezone.utc).date()
-                            - datetime.datetime.fromtimestamp(timestamp_then, tz=datetime.timezone.utc).date()
+                            datetime.datetime.fromtimestamp(timestamp_now, tz=datetime.UTC).date()
+                            - datetime.datetime.fromtimestamp(timestamp_then, tz=datetime.UTC).date()
                         )
                         days = temp.days + days
                         if days >= 512:

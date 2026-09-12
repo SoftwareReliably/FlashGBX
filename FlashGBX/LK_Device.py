@@ -3589,7 +3589,7 @@ class LK_Device(ABC):
         return offset
 
     def GetDumpReport(self) -> str:
-        from .DumpReport import DumpReport
+        from .DumpReport import DumpReport  # noqa: PLC0415 - avoid the DumpReport/LK_Device import cycle
 
         return DumpReport.generate(self.INFO["dump_info"], self)
 
@@ -3604,7 +3604,7 @@ class LK_Device(ABC):
         fncSetProgress: ProgressCallback | Literal[False] | None,
         args: dict[str, Any],
     ) -> None:
-        from . import DataTransfer
+        from . import DataTransfer  # noqa: PLC0415 - keep the Qt worker optional until a transfer starts
 
         args["mode"] = mode
         args["port"] = self

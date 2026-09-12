@@ -26,6 +26,7 @@ from packaging import version
 from PySide6 import QtCore, QtGui, QtWidgets
 from serial import SerialException
 
+from . import i18n
 from .app import (
     GBXCART_RW_BAUD_RATES,
     GBXCART_RW_DEFAULT_BAUD_RATE,
@@ -65,6 +66,7 @@ from .PocketCameraWindow import PocketCameraWindow
 from .Progress import Progress
 from .pyside import (
     IsDarkMode,
+    QtWinExtras,
     bitmap2pixmap,
 )
 from .RomFileAGB import RomFileAGB
@@ -1716,8 +1718,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SETTINGS.setValue("SkipCameraSavePopup", "disabled")
 
     def AboutFlashGBX(self) -> None:
-        from . import i18n
-
         msg = "This software is being developed by Lesserkuma as a hobby project. There is no affiliation with Nintendo or any other company. This software is provided as-is and the developer is not responsible for any damage that is caused by the use of it. Use at your own risk!<br><br>"
         msg += f"© 2020-{datetime.datetime.now(tz=datetime.UTC).year} Lesserkuma<br>"
         msg += '<a href="https://github.com/Lesserkuma/FlashGBX">https://github.com/Lesserkuma/FlashGBX</a><br>'
@@ -6830,8 +6830,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         # Taskbar Progress on Windows and Linux (Unity Launcher API)
         if platform.system() in ("Windows", "Linux"):
             try:
-                from .pyside import QtWinExtras
-
                 if platform.system() == "Windows":
                     myappid = "Lesserkuma.FlashGBX"
                     QtWinExtras.QtWin.setCurrentProcessExplicitAppUserModelID(myappid)

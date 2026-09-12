@@ -7,6 +7,12 @@ import platform
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from . import i18n
+from .app import AppInfo
+from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
+from .Formatter import Formatter
+from .Mapper import ConvertMapperToMapperType, DMG_Mapper
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -16,12 +22,6 @@ if TYPE_CHECKING:
 class DumpReport:
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
-        from . import i18n
-        from .app import AppInfo
-        from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
-        from .Formatter import Formatter
-        from .Mapper import ConvertMapperToMapperType, DMG_Mapper
-
         def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
             return [f"* {label + ':':<{col}}{value}" for label, value in fields]
 

@@ -105,6 +105,8 @@ exclude = [
 ]
 typeCheckingMode = "standard"
 pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 target-version = "py314"
@@ -139,7 +141,7 @@ ignore = [
     "D107", #undocumented-public-init
     "CPY001", #missing-copyright-notice
     "D100", #undocumented-public-module
-    "PLC0415", #import-outside-top-level
+    #"PLC0415", #import-outside-top-level
     "S324", #hashlib-insecure-hash-function
     "N801", #invalid-class-name
 ]

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import datetime
 import json
 import os
@@ -93,8 +94,6 @@ def _parse_macos_version(version: str) -> tuple[int, ...]:
 
 def _enable_windows_ansi() -> None:
     try:
-        import ctypes
-
         kernel32 = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
         output_handle = kernel32.GetStdHandle(-11)
         console_mode = ctypes.c_uint()
@@ -309,7 +308,7 @@ def main(portableMode: bool = False) -> int | None:
         app_path = str(Path(__file__).resolve().parent)
 
     try:
-        from PySide6 import QtCore  # pyright: ignore[reportMissingImports]
+        from PySide6 import QtCore  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
 
         cp: ConfigPaths = {
             "subdir": str(Path(app_path) / "config"),
@@ -723,7 +722,7 @@ def main(portableMode: bool = False) -> int | None:
     retval = -1
     if not parsed_args.cli:
         try:
-            from . import FlashGBX_GUI
+            from . import FlashGBX_GUI  # noqa: PLC0415 - keep the GUI dependency optional in CLI mode
 
             app = FlashGBX_GUI.FlashGBX_GUI(startup_args)
         except ModuleNotFoundError:
@@ -735,7 +734,7 @@ def main(portableMode: bool = False) -> int | None:
             app = None
 
         if app is None:
-            from . import FlashGBX_CLI
+            from . import FlashGBX_CLI  # noqa: PLC0415 - imported only when CLI fallback is needed
 
             if parsed_args.action is None:
                 parser.print_help()
@@ -763,7 +762,7 @@ def main(portableMode: bool = False) -> int | None:
         app.run()
 
     else:
-        from . import FlashGBX_CLI
+        from . import FlashGBX_CLI  # noqa: PLC0415 - avoid importing CLI dependencies in GUI mode
 
         print("\n" + __("Now running in CLI mode."))
         cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
