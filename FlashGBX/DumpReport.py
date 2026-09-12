@@ -1,21 +1,28 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from __future__ import annotations
+
 import platform
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from .LK_Device import LK_Device
 
 
 class DumpReport:
     @classmethod
-    def generate(cls, di, device) -> str:
+    def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         from . import i18n
         from .app import AppInfo
         from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
         from .Formatter import Formatter
         from .Mapper import ConvertMapperToMapperType, DMG_Mapper
 
-        def _fields_to_lines(fields, col=19) -> list[str]:
+        def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
             return [f"* {label + ':':<{col}}{value}" for label, value in fields]
 
         # Resolve header into a shallow copy so we never mutate the caller's dict
@@ -27,11 +34,11 @@ class DumpReport:
         if mode not in ("DMG", "AGB"):
             raise NotImplementedError
 
-        system_name = "Game Boy" if mode == "DMG" else "Game Boy Advance"
+        system_name: Literal["Game Boy", "Game Boy Advance"] = "Game Boy" if mode == "DMG" else "Game Boy Advance"
 
-        rom_size_int = di["rom_size"]
+        rom_size_int: int = di["rom_size"]
         if rom_size_int in RomSizes():
-            rom_size_str = RomSizes(rom_size_int).GetString(localized=False)
+            rom_size_str: str = RomSizes(rom_size_int).GetString(localized=False)
         else:
             rom_size_str = f"{rom_size_int:,} bytes"
 
@@ -116,8 +123,10 @@ class DumpReport:
             else:
                 target_platform = "Original Game Boy"
 
-            sgb_str = "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"
-            cgb_str = DMG_Mapper().CGB_MAP.get(cgb_raw, f"Unknown (0x{cgb_raw:02X})")
+            sgb_str: Literal["Supported", "No support"] = (
+                "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"
+            )
+            cgb_str: str = DMG_Mapper().CGB_MAP.get(cgb_raw, f"Unknown (0x{cgb_raw:02X})")
 
             hdr_chk = header["header_checksum"]
             hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
@@ -129,21 +138,21 @@ class DumpReport:
 
             header["rom_checksum_calc"] = device.INFO.get("rom_checksum_calc", header.get("rom_checksum_calc"))
             rom_chk_ok = header["rom_checksum_calc"] == header["rom_checksum"]
-            rom_checksum_str = (
+            rom_checksum_str: str = (
                 f"OK (0x{header['rom_checksum']:04X})"
                 if rom_chk_ok
                 else f"Invalid (0x{header['rom_checksum_calc']:04X}≠0x{header['rom_checksum']:04X})"
             )
 
-            hdr_rom_size_raw = header["rom_size_raw"]
+            hdr_rom_size_raw: int = header["rom_size_raw"]
             if hdr_rom_size_raw < RomSizes().GetNumberOfTypes():
-                hdr_rom_size_str = RomSizes().GetString(index=hdr_rom_size_raw, localized=False)
+                hdr_rom_size_str: str = RomSizes().GetString(index=hdr_rom_size_raw, localized=False)
             else:
                 hdr_rom_size_str = f"Unknown (0x{hdr_rom_size_raw:02X})"
 
-            hdr_save_raw = header["ram_size_raw"]
+            hdr_save_raw: int = header["ram_size_raw"]
             if hdr_save_raw == 0x00:
-                hdr_save_str = f"No SRAM (0x{hdr_save_raw:02X})"
+                hdr_save_str: str = f"No SRAM (0x{hdr_save_raw:02X})"
             elif hdr_save_raw in DmgSaveTypes():
                 hdr_save_str = f"{DmgSaveTypes(mbc=hdr_save_raw).GetString(localized=False)} (0x{hdr_save_raw:02X})"
             else:
@@ -151,7 +160,7 @@ class DumpReport:
 
             mapper_raw = header["mapper_raw"]
             if mapper_raw in DMG_Mapper().GetAllMapperIds():
-                hdr_mapper_str = f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
+                hdr_mapper_str: str = f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
             else:
                 hdr_mapper_str = f"Unknown (0x{mapper_raw:02X})"
 

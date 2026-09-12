@@ -45,7 +45,7 @@ class Formatter:
         return f"{int(hr):02d}:{int(minute):02d}:{int(sec):02d}"
 
     @classmethod
-    def progress_time(cls, seconds: int, as_float: bool = False, localized: bool = True) -> str:
+    def progress_time(cls, seconds: float, as_float: bool = False, localized: bool = True) -> str:
         if not localized:
 
             def t___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
@@ -102,7 +102,7 @@ class Formatter:
         if (len(parts) == 0) or (int(secs) != 0) or (seconds < 1 and as_float):
             if seconds < 1 and as_float:
                 secs_formatted: str = format_decimal(secs, precision=2)
-                n_value: int = secs
+                n_value: int = int(secs)
             else:
                 secs_int = int(secs)
                 secs_formatted = format_number(secs_int)

@@ -2,6 +2,7 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import traceback
+from typing import Any
 
 from PySide6 import QtCore
 from serial import SerialException
@@ -11,18 +12,18 @@ from .Logging import dprint
 
 
 class DataTransfer(QtCore.QThread):
-    CONFIG = None
+    CONFIG: dict[str, Any] | None = None
     FINISHED = False
 
     updateProgress = QtCore.Signal(object)  # noqa: N815
 
-    def __init__(self, config=None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         QtCore.QThread.__init__(self)
         if config is not None:
             self.CONFIG = config
         self.FINISHED = False
 
-    def setConfig(self, config) -> None:
+    def setConfig(self, config: dict[str, Any]) -> None:
         self.CONFIG = config
         self.FINISHED = False
 

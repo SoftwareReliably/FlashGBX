@@ -1,16 +1,28 @@
 # FlashGBX  # noqa: N999
 # Author: Lesserkuma (github.com/Lesserkuma)
 
+from __future__ import annotations
+
 import re
 import shlex
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .i18n import __
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .LK_Device import LK_Device
+
 
 class InteractiveConsole:
-    def __init__(self, conn, on_output, on_error=None) -> None:
+    def __init__(
+        self,
+        conn: LK_Device,
+        on_output: Callable[[str], object],
+        on_error: Callable[[str], object] | None = None,
+    ) -> None:
         self.CONN = conn
         self.MODE = conn.GetMode()
         self.on_output = on_output
@@ -44,26 +56,26 @@ class InteractiveConsole:
         for line in self.get_help_lines():
             self.on_output(line)
 
-    def hexdump(self, base_addr, data) -> None:
+    def hexdump(self, base_addr: int, data: int | bytearray) -> None:
         if isinstance(data, int):
             data = bytearray([data])
         for offset in range(0, len(data), 16):
-            chunk = data[offset : offset + 16]
+            chunk: bytearray = data[offset : offset + 16]
             hex_part: str = " ".join(f"{b:02x}" for b in chunk)
             ascii_part: str = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
             self.on_output(f"{base_addr + offset:08x}: {hex_part:<47}  {ascii_part:s}")
 
-    def execute_line(self, line) -> bool:
+    def execute_line(self, line: str) -> bool:
         cmds = [c.strip() for c in line.split(",") if c.strip()]
         return all(self.execute_command(cmdline) for cmdline in cmds)
 
-    def execute_command(self, cmdline) -> bool:
+    def execute_command(self, cmdline: str) -> bool:
         try:
             return self._execute_command_inner(cmdline)
         except Exception:
             return False
 
-    def _execute_command_inner(self, cmdline) -> bool:
+    def _execute_command_inner(self, cmdline: str) -> bool:
         try:
             parts: list[str] = shlex.split(cmdline)
         except ValueError:
@@ -196,12 +208,12 @@ class InteractiveConsole:
                 self.CONN._set_fw_variable("ADDRESS", address)
                 cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type])
                 self.CONN._write(cmd)
-                data = self.CONN._read(size)
-                if data is False or (isinstance(data, bytearray) and len(data) == 0):
+                eeprom_data = self.CONN._read(size)
+                if not isinstance(eeprom_data, bytearray) or len(eeprom_data) == 0:
                     self.on_error(__("ERROR"))
                 else:
-                    self.last_read_data = bytearray(data)
-                    self.hexdump(address, data)
+                    self.last_read_data = bytearray(eeprom_data)
+                    self.hexdump(address, eeprom_data)
                 return True
 
             if command == "we" and len(parts) == 4:

@@ -50,7 +50,7 @@ class IniSettings:
         if not self.SETTINGS.has_section(self.MAIN_SECTION):
             self.SETTINGS.add_section(self.MAIN_SECTION)
 
-    def value(self, key, default=None) -> str | None:
+    def value(self, key: str, default: str | None = None) -> str | None:
         if self.SETTINGS is None:
             return None
         self.reload()
@@ -60,7 +60,7 @@ class IniSettings:
             return default
         return self.SETTINGS[self.MAIN_SECTION][key]
 
-    def setValue(self, key, value, quiet=False) -> None:
+    def setValue(self, key: str, value: str | None, quiet: bool = False) -> None:
         if self.SETTINGS is None:
             return
         self.reload()
@@ -94,10 +94,10 @@ class IniSettings:
     def Reload(self) -> None:
         return self.reload()
 
-    def GetValue(self, key, default=None) -> str | None:
+    def GetValue(self, key: str, default: str | None = None) -> str | None:
         return self.value(key, default)
 
-    def SetValue(self, key, value, quiet=False) -> None:
+    def SetValue(self, key: str, value: str | None, quiet: bool = False) -> None:
         return self.setValue(key, value, quiet)
 
     def Clear(self) -> None:

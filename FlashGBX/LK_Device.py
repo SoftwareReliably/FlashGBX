@@ -19,7 +19,7 @@ import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, overload
 
 import serial  # pyright: ignore[reportMissingModuleSource]
 import serial.tools.list_ports  # pyright: ignore[reportMissingModuleSource]
@@ -46,6 +46,9 @@ from .Logging import ANSI, dprint, logger  # pyright: ignore[reportAttributeAcce
 from .Mapper import AGB_GPIO, DMG_Mapper
 from .RomFileAGB import RomFileAGB
 from .RomFileDMG import RomFileDMG
+
+if TYPE_CHECKING:
+    from FlashGBX.RomFileAGB import AGBHeader
 
 DeviceMode = Literal["DMG", "AGB"]
 DeviceReadResult = int | bytearray | Literal[False]
@@ -1297,7 +1300,7 @@ class LK_Device(ABC):
     def GetVarState(self) -> bytearray:
         self._write(self.DEVICE_CMD["GET_VAR_STATE"])
         time.sleep(0.2)
-        device = self._serial_device()
+        device: serial.Serial = self._serial_device()
         var_state = bytearray(device.read(device.in_waiting))
         dprint(f"Got the state of variables ({len(var_state):d} bytes)")
         return var_state
@@ -1306,7 +1309,7 @@ class LK_Device(ABC):
         dprint(f"Sending the state of variables ({len(var_state):d} bytes)")
         self._write(self.DEVICE_CMD["SET_VAR_STATE"])
         time.sleep(0.2)
-        device = self._serial_device()
+        device: serial.Serial = self._serial_device()
         device.write(var_state)
         device.flush()
         if self.FW["fw_ver"] >= 15:
@@ -1322,7 +1325,7 @@ class LK_Device(ABC):
             return None
         if self.FW["fw_ver"] < 12:
             return self.MODE
-        mode = self._get_fw_variable("CART_MODE")
+        mode: int | Literal[False] = self._get_fw_variable("CART_MODE")
         if mode is False:
             print(
                 ANSI.RED
@@ -1336,13 +1339,13 @@ class LK_Device(ABC):
             return self.MODE
         if mode == 0:
             return None
-        modes = self.GetSupprtedModes()
+        modes: Sequence[str] = self.GetSupprtedModes()
         if mode > len(modes):
             print(ANSI.RED + __("Error: Invalid mode {mode}", mode=str(mode - 1)) + ANSI.RESET)
             return self.MODE
-        selected_mode = modes[mode - 1]
+        selected_mode: str = modes[mode - 1]
         if selected_mode not in ("DMG", "AGB"):
-            msg = f"Invalid cartridge mode reported by firmware: {selected_mode!r}"
+            msg: str = f"Invalid cartridge mode reported by firmware: {selected_mode!r}"
             raise ConnectionError(msg)
         self.MODE = selected_mode
         return self.MODE
@@ -1771,16 +1774,16 @@ class LK_Device(ABC):
 
         return data
 
-    def _DetectCartridge(self, args) -> bool:  # Wrapper for thread call
+    def _DetectCartridge(self, args: dict[str, Any]) -> bool:  # Wrapper for thread call
         self.SetProgress({"action": "INITIALIZE", "abortable": False, "method": "DETECT_CART"})
-        signal = self.SIGNAL
+        signal: ProgressSignal | ProgressCallback | None = self.SIGNAL
         self.SIGNAL = None
 
-        auto_poweroff_enabled = self._get_fw_variable("AUTO_POWEROFF_ENABLED")
+        auto_poweroff_enabled: int | Literal[False] = self._get_fw_variable("AUTO_POWEROFF_ENABLED")
         if auto_poweroff_enabled:
             self._set_fw_variable("AUTO_POWEROFF_ENABLED", 0)
 
-        auto_poweroff_time = self._thread_worker_auto_poweroff_enter()
+        auto_poweroff_time: int | Literal[False] | None = self._thread_worker_auto_poweroff_enter()
         try:
             ret = self._DetectCartridge_Worker(
                 mbc=None,
@@ -1803,19 +1806,19 @@ class LK_Device(ABC):
 
     def _DetectCartridge_Worker(
         self,
-        mbc=None,
-        limitVoltage=False,
-        checkSaveType=True,
-        signal=None,
+        mbc: int | None = None,
+        limitVoltage: bool = False,
+        checkSaveType: bool = True,
+        signal: ProgressSignal | ProgressCallback | None = None,
     ) -> CartridgeDetectionResult:
         self.SIGNAL = None
         self.CANCEL = False
         self.ERROR = False
         cart_type_id = 0
         save_type = None
-        save_chip = None
+        save_chip: str | None = None
         sram_unstable = None
-        save_size = None
+        save_size: int | None = None
         checkBatterylessSRAM = False
         _apot = 0
 
@@ -1826,7 +1829,7 @@ class LK_Device(ABC):
         if info is False:
             return False
         if self.MODE == "DMG" and mbc is None:
-            mbc = info["mapper_raw"]
+            mbc = int(info["mapper_raw"])
             if mbc > 0x200:
                 checkSaveType = False
 
@@ -1849,7 +1852,7 @@ class LK_Device(ABC):
         if ret is False:
             return False
         (cart_types, cart_type_id, flash_id, cfi_s, cfi, detected_size) = ret
-        mode = self.MODE
+        mode: Literal["DMG", "AGB"] | None = self.MODE
         if mode is None:
             return False
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
@@ -1892,7 +1895,7 @@ class LK_Device(ABC):
             temp[0:0x180] = header
             if data["game_title"] in ("NP M-MENU MENU", "GBMEM-MENU MMSA"):
                 _mbc.SelectBankROM(7)
-                gbmem_menudata = self.ReadROM(0x4000, 0x1000)
+                gbmem_menudata: bytearray = self.ReadROM(0x4000, 0x1000)
                 temp[0x1C000 : 0x1C000 + 0x1000] = gbmem_menudata
             elif data["game_title"] == "DMG MULTI MENU ":
                 _mbc.SelectBankROM(7)
@@ -1903,7 +1906,7 @@ class LK_Device(ABC):
                 gbmem_menudata = self.ReadROM(0x4010, 0x1000)
                 temp[0x10010 : 0x10010 + 0x1000] = gbmem_menudata
             _mbc.SelectBankROM(0)
-            hidden_sector = _mbc.ReadHiddenSector()
+            hidden_sector: bytearray | bool = _mbc.ReadHiddenSector()
             if isinstance(hidden_sector, (bytes, bytearray, memoryview)):
                 info["gbmem"] = hidden_sector
                 gbmem_parsed = (GBMemoryMap()).ParseMapData(buffer_map=hidden_sector, buffer_rom=temp)
@@ -2000,7 +2003,7 @@ class LK_Device(ABC):
 
             if self.MODE == "DMG":
                 try:
-                    save_type = DmgSaveTypes(size=save_size).GetMbc()
+                    save_type: int | None = DmgSaveTypes(size=save_size).GetMbc()
                 except KeyError, TypeError, ValueError:
                     save_size = 0
                     save_type = 0
@@ -2146,7 +2149,7 @@ class LK_Device(ABC):
                                 checkBatterylessSRAM = False
 
                     if checkBatterylessSRAM:
-                        batteryless = self.CheckBatterylessSRAM()
+                        batteryless: dict[str, int] | Literal[False] = self.CheckBatterylessSRAM()
                         if batteryless is not False:
                             save_type = 9
                             info["batteryless_sram"] = batteryless
@@ -2174,11 +2177,11 @@ class LK_Device(ABC):
         )
 
     def CheckBatterylessSRAM(self) -> dict[str, int] | Literal[False]:
-        bl_size = None
-        bl_offset = None
+        bl_size: int | None = None
+        bl_offset: int | None = None
         if self.MODE == "AGB":
-            buffer = self.ReadROM(0, 0x180)
-            header = RomFileAGB(buffer).GetHeader()
+            buffer: bytearray = self.ReadROM(0, 0x180)
+            header: AGBHeader = RomFileAGB(buffer).GetHeader()
             if header["game_code"] in ("GMBC", "PNES"):
                 bl_size = 0x10000
                 state_id1 = 0x57A731D7
@@ -2210,18 +2213,18 @@ class LK_Device(ABC):
                     bl_offset = 0x2000000 - 0x40000
                 dprint("Detected Goomba Color or PocketNES Batteryless ROM by Lesserkuma")
             else:
-                boot_vector = (struct.unpack("<I", buffer[0:3] + bytearray([0]))[0] + 2) << 2
-                batteryless_loader = self.ReadROM(boot_vector, 0x2000)
+                boot_vector: int = (struct.unpack("<I", buffer[0:3] + bytearray([0]))[0] + 2) << 2
+                batteryless_loader: bytearray = self.ReadROM(boot_vector, 0x2000)
                 try:
                     if bytearray(b"<3 from Maniac") in batteryless_loader:
-                        payload_size = struct.unpack(
+                        payload_size: int = struct.unpack(
                             "<H",
                             batteryless_loader[batteryless_loader.index(bytearray(b"<3 from Maniac")) :][0x0E:0x10],
                         )[0]
                         if payload_size == 0:
                             payload_size = 0x414
                         bl_offset = batteryless_loader.index(bytearray(b"<3 from Maniac")) + boot_vector + 0x10
-                        payload = self.ReadROM(bl_offset - payload_size, payload_size)
+                        payload: bytearray = self.ReadROM(bl_offset - payload_size, payload_size)
                         bl_size = struct.unpack("<I", payload[0x8:0xC])[0]
                         dprint(
                             "Detected Batteryless SRAM ROM made with the Automatic batteryless saving patcher for GBA by metroid-maniac",
@@ -2240,11 +2243,11 @@ class LK_Device(ABC):
                             bl_size = 0x20000
                         else:
                             bl_size = 0x10000
-                        base_addr = batteryless_loader.index(bytearray([0x02, 0x13, 0xA0, 0xE3]))
-                        addr_value = batteryless_loader[base_addr - 8]
-                        addr_rotate_right = batteryless_loader[base_addr - 7] * 2
-                        addr_shift = batteryless_loader[base_addr - 3] << 1
-                        address = (addr_value >> addr_rotate_right) | (
+                        base_addr: int = batteryless_loader.index(bytearray([0x02, 0x13, 0xA0, 0xE3]))
+                        addr_value: int = batteryless_loader[base_addr - 8]
+                        addr_rotate_right: int = batteryless_loader[base_addr - 7] * 2
+                        addr_shift: int = batteryless_loader[base_addr - 3] << 1
+                        address: int = (addr_value >> addr_rotate_right) | (
                             addr_value << (32 - addr_rotate_right)
                         ) & 0xFFFFFFFF
                         address = address << addr_shift
@@ -2291,18 +2294,18 @@ class LK_Device(ABC):
             return False
 
         # Read Chip ID
-        temp5555 = self._cart_read(0x5555, agb_save_flash=True)
-        temp2AAA = self._cart_read(0x2AAA, agb_save_flash=True)
-        temp0000 = self._cart_read(0x0000, agb_save_flash=True)
+        temp5555: int | Literal[False] = self._cart_read(0x5555, agb_save_flash=True)
+        temp2AAA: int | Literal[False] = self._cart_read(0x2AAA, agb_save_flash=True)
+        temp0000: int | Literal[False] = self._cart_read(0x0000, agb_save_flash=True)
         if temp5555 is False or temp2AAA is False or temp0000 is False:
             return False
 
-        cmds = [[0x5555, 0xAA], [0x2AAA, 0x55], [0x5555, 0x90]]
+        cmds: list[list[int]] = [[0x5555, 0xAA], [0x2AAA, 0x55], [0x5555, 0x90]]
         self._cart_write_flash(cmds)
-        agb_chip_raw = self._cart_read(0, 2, agb_save_flash=True)
+        agb_chip_raw: bytearray = self._cart_read(0, 2, agb_save_flash=True)
         if agb_chip_raw is False or len(agb_chip_raw) < 2:
             return False
-        agb_flash_chip = struct.unpack(">H", agb_chip_raw)[0]
+        agb_flash_chip: int = struct.unpack(">H", agb_chip_raw)[0]
         cmds = [[0x5555, 0xAA], [0x2AAA, 0x55], [0x5555, 0xF0]]
         self._cart_write_flash(cmds)
         time.sleep(0.01)
@@ -2313,7 +2316,7 @@ class LK_Device(ABC):
             # Restore SRAM values
             cmds = [[0x5555, temp5555], [0x2AAA, temp2AAA], [0x0000, temp0000]]
             self._cart_write_flash(cmds)
-            agb_flash_chip_name = __("Unknown flash chip ID") + f" (0x{agb_flash_chip:04X})"
+            agb_flash_chip_name: str = __("Unknown flash chip ID") + f" (0x{agb_flash_chip:04X})"
         else:
             agb_flash_chip_name = AgbSaveTypes().GetFlashChipName(agb_flash_chip)
 
@@ -2328,7 +2331,7 @@ class LK_Device(ABC):
         max_length: int = 64,
     ) -> bytearray:
         max_length = min(max_length, self.MAX_BUFFER_READ)
-        num = math.ceil(length / max_length)
+        num: int = math.ceil(length / max_length)
         dprint(f"Reading 0x{length:X} bytes from cartridge ROM at 0x{address:X} in {num:d} iteration(s)")
         length = min(length, max_length)
 
@@ -2350,7 +2353,7 @@ class LK_Device(ABC):
 
         for n in range(num):
             self._write(self.DEVICE_CMD[command])
-            temp = self._read(length)
+            temp: int | bytearray | Literal[False] = self._read(length)
             if temp is not False and isinstance(temp, int):
                 temp = bytearray([temp])
             if temp is False or len(temp) != length:
@@ -2406,7 +2409,7 @@ class LK_Device(ABC):
     def ReadROM_GBAMP(self, address: int, length: int, max_length: int = 64) -> bytearray:
         max_length = min(max_length, self.MAX_BUFFER_READ)
         dprint("GBAMP ROM Read Mode", hex(address), hex(length), hex(max_length))
-        addr = (address >> 13 << 16) | (address & 0x1FFF)
+        addr: int = (address >> 13 << 16) | (address & 0x1FFF)
         dprint(f"0x{address:07X} → 0x{addr:07X}")
         return self.ReadROM(address=addr, length=length, max_length=max_length)
 
@@ -2418,7 +2421,7 @@ class LK_Device(ABC):
         max_length: int = 64,
     ) -> bytearray:
         max_length = min(max_length, self.MAX_BUFFER_READ)
-        num = math.ceil(length / max_length)
+        num: int = math.ceil(length / max_length)
         dprint(f"Reading 0x{length:X} bytes from cartridge RAM in {num:d} iteration(s)")
         length = min(length, max_length)
         buffer = bytearray()
@@ -2440,7 +2443,7 @@ class LK_Device(ABC):
 
         for _ in range(num):
             self._write(command)
-            temp = self._read(length)
+            temp: int | bytearray | Literal[False] = self._read(length)
             if isinstance(temp, int):
                 temp = bytearray([temp])
             if temp is False or len(temp) != length:
@@ -2464,7 +2467,7 @@ class LK_Device(ABC):
         self._set_fw_variable("ADDRESS", address)
         for _ in range(num):
             self._write(self.DEVICE_CMD["DMG_MBC7_READ_EEPROM"])
-            temp = self._read(length)
+            temp: int | bytearray | Literal[False] = self._read(length)
             if temp is False:
                 self.ERROR = True
                 break
@@ -2479,7 +2482,7 @@ class LK_Device(ABC):
     def ReadRAM_TAMA5(self) -> bytearray:
         dprint("Reading 0x20 bytes from cartridge RAM")
         buffer = bytearray()
-        npu = self.NO_PROG_UPDATE
+        npu: bool = self.NO_PROG_UPDATE
         self.NO_PROG_UPDATE = True
         self._set_fw_variable("DMG_READ_CS_PULSE", 1)
         self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
@@ -2493,24 +2496,24 @@ class LK_Device(ABC):
             self._cart_write(0xA001, 0x0D, sram=True)  # data out (high)
             value1, value2 = None, None
             while value1 is None or value1 != value2:
-                value2 = value1
-                value1 = self._cart_read(0xA000)
-            data_h = value1
+                value2: int | Literal[False] | None = value1
+                value1: int | Literal[False] | None = self._cart_read(0xA000)
+            data_h: int | Literal[False] = value1
             self._cart_write(0xA001, 0x0C, sram=True)  # data out (low)
 
             value1, value2 = None, None
             while value1 is None or value1 != value2:
                 value2 = value1
                 value1 = self._cart_read(0xA000)
-            data_l = value1
+            data_l: int | Literal[False] = value1
 
-            data = ((data_h & 0xF) << 4) | (data_l & 0xF)
+            data: int = ((data_h & 0xF) << 4) | (data_l & 0xF)
             buffer.append(data)
             self.SetProgress({"action": "UPDATE_POS", "abortable": False, "pos": i + 1})
 
         self._set_fw_variable("DMG_READ_CS_PULSE", 0)
 
-        self.NO_PROG_UPDATE = npu
+        self.NO_PROG_UPDATE: bool = npu
         return buffer
 
     def WriteRAM(
@@ -2521,8 +2524,8 @@ class LK_Device(ABC):
         max_length: int = 256,
     ) -> bool:
         max_length = min(max_length, self.MAX_BUFFER_WRITE)
-        length = len(buffer)
-        num = math.ceil(length / max_length)
+        length: int = len(buffer)
+        num: int = math.ceil(length / max_length)
         dprint(f"Writing 0x{length:X} bytes to cartridge RAM in {num:d} iteration(s)")
         length = min(length, max_length)
 
@@ -2560,9 +2563,9 @@ class LK_Device(ABC):
         buffer: bytes | bytearray | memoryview,
         mapper: MBC6FlashMapper,
     ) -> bool | None:
-        length = len(buffer)
+        length: int = len(buffer)
         max_length = 128
-        num = math.ceil(length / max_length)
+        num: int = math.ceil(length / max_length)
         length = min(length, max_length)
         dprint(f"Write 0x{length:X} bytes to cartridge FLASH in {num:d} iteration(s)")
 
@@ -2612,7 +2615,7 @@ class LK_Device(ABC):
             self._cart_write(address + length - 1, 0x00)
             hp = 100
             while hp > 0:
-                sr = self._cart_read(address + length - 1)
+                sr: int | Literal[False] = self._cart_read(address + length - 1)
                 if sr == 0x80:
                     break
                 time.sleep(0.001)
@@ -2643,7 +2646,7 @@ class LK_Device(ABC):
             if self.INFO["action"] == self.ACTIONS["SAVE_WRITE"] and not self.NO_PROG_UPDATE:
                 self.SetProgress({"action": "WRITE", "bytes_added": length})
         self._cart_write(address - 1, 0xF0)
-        self.SKIPPING = skip_write
+        self.SKIPPING: bool = skip_write
         return None
 
     def WriteEEPROM_MBC7(self, address: int, buffer: bytes | bytearray | memoryview) -> None:
@@ -3663,15 +3666,15 @@ class LK_Device(ABC):
 
     #################################################################
 
-    def _BackupROM(self, args) -> ROMBackupResult:
+    def _BackupROM(self, args: dict[str, Any]) -> ROMBackupResult:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._BackupROM_Worker(args)
         finally:
             self._thread_worker_auto_poweroff_finish()
 
-    def _BackupROM_Worker(self, args) -> ROMBackupResult:
-        device_mode = self.MODE
+    def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
+        device_mode: Literal["DMG", "AGB"] | None = self.MODE
         if device_mode is None:
             msg = "Cartridge mode must be selected before reading ROM"
             raise RuntimeError(msg)
@@ -4306,7 +4309,7 @@ class LK_Device(ABC):
         self.SetProgress({"action": "FINISHED"})
         return True
 
-    def WriteRTC(self, args) -> bool | None:
+    def WriteRTC(self, args: dict[str, Any]) -> bool | None:
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
@@ -4336,7 +4339,7 @@ class LK_Device(ABC):
             raise NotImplementedError
         return ret
 
-    def _BackupRestoreRAM(self, args) -> bool | None:
+    def _BackupRestoreRAM(self, args: dict[str, Any]) -> bool | None:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._BackupRestoreRAM_Worker(args)
@@ -5320,7 +5323,7 @@ class LK_Device(ABC):
         self.SetProgress({"action": "FINISHED", "verified": verified})
         return True
 
-    def _FlashROM(self, args) -> bool | None:
+    def _FlashROM(self, args: dict[str, Any]) -> bool | None:
         self._thread_worker_auto_poweroff_start()
         try:
             return self._FlashROM_Worker(args)
@@ -5353,7 +5356,7 @@ class LK_Device(ABC):
             if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
                 msg_0 = "ROM data must be a bytes-like object"
                 raise TypeError(msg_0)
-            data_import = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
+            data_import: bytearray = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
         else:
             with Path(args["path"]).open("rb") as file:
                 data_import = bytearray(file.read())
@@ -5391,7 +5394,7 @@ class LK_Device(ABC):
             if self.MODE == "AGB" and len(data_import) == 0x2000000:
                 temp_ver = "N/A"
                 try:
-                    ids = [
+                    ids: list[bytes] = [
                         b"SRAM_",
                         b"EEPROM_V",
                         b"FLASH_V",
@@ -5400,7 +5403,7 @@ class LK_Device(ABC):
                         b"AGB_8MDACS_DL_V",
                     ]
                     for ident in ids:
-                        temp_pos = data_import.find(ident)
+                        temp_pos: int = data_import.find(ident)
                         if temp_pos > 0:
                             temp_ver = data_import[temp_pos : temp_pos + 0x20]
                             temp_ver = temp_ver[: temp_ver.index(0x00)].decode("ascii", "replace")
@@ -5419,7 +5422,7 @@ class LK_Device(ABC):
 
         # Fix bootlogo and header
         if "fix_bootlogo" in args and isinstance(args["fix_bootlogo"], bytearray):
-            dstr = "".join(format(x, "02X") for x in args["fix_bootlogo"])
+            dstr: str = "".join(format(x, "02X") for x in args["fix_bootlogo"])
             dprint("Replacing bootlogo data with", dstr)
             if self.MODE == "DMG":
                 data_import[0x104:0x134] = args["fix_bootlogo"]
@@ -7015,7 +7018,7 @@ class LK_Device(ABC):
                 del temp
                 self.NO_PROG_UPDATE = False
                 if args["mode"] == 1:
-                    ret = self._BackupROM(args)
+                    ret: bool | int | None = self._BackupROM(args)
                 elif args["mode"] == 2 or args["mode"] == 3:
                     ret = self._BackupRestoreRAM(args)
                 elif args["mode"] == 4:

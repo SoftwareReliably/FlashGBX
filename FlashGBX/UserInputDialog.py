@@ -101,7 +101,7 @@ class UserInputDialog(QtWidgets.QDialog):
     def GetResult(self) -> dict[Any, Any]:
         return self.paramWidgets
 
-    def hideEvent(self, event) -> None:
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
         del event
         if self.APP is not None:
             self.APP.activateWindow()
