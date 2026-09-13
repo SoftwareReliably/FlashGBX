@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 import zipfile
+from argparse import Namespace
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
@@ -47,6 +48,7 @@ from .RomFileDMG import RomFileDMG, from_isx
 
 if TYPE_CHECKING:
     import argparse
+    from argparse import Namespace
 
 type PlatformMode = Literal["DMG", "AGB"]
 type HeaderData = dict[str, Any]
@@ -71,7 +73,7 @@ class FlashGBX_CLI:
     """Command-line frontend for cartridge and firmware operations."""
 
     def __init__(self, args: CLIConfig) -> None:
-        self.ARGS = args
+        self.ARGS: CLIConfig = args
         AppContext.APP_PATH = args["app_path"]
         AppContext.CONFIG_PATH = args["config_path"]
         self.FLASHCARTS: FlashcartMap = args["flashcarts"]
@@ -91,7 +93,7 @@ class FlashGBX_CLI:
 
     def _GetDeviceMaxBaudRate(self, device: Device) -> int:
         """Return the configured connection speed for a hardware backend."""
-        args = self.ARGS["argparsed"]
+        args: Namespace = self.ARGS["argparsed"]
         configured = getattr(args, "gbxcartrw_baudrate", None)
         if getattr(args, "device_limit_baudrate", False):
             return min(GBXCART_RW_BAUD_RATES)
@@ -124,7 +126,7 @@ class FlashGBX_CLI:
         if conn.FW.get("cart_mode_switch"):
             switch_mode = conn.GetCartModeSwitchState()
             if switch_mode is not False:
-                mode = "AGB" if switch_mode == 1 else "DMG"
+                mode: Literal["AGB", "DMG"] = "AGB" if switch_mode == 1 else "DMG"
                 if mode in supported_modes:
                     return mode
         mode = cast("PlatformMode", conn.GetMode())
@@ -158,7 +160,7 @@ class FlashGBX_CLI:
         """Return a required integer header field or reject malformed data."""
         value = header.get(key)
         if not isinstance(value, int) or isinstance(value, bool):
-            msg = f"Invalid cartridge header field: {key}"
+            msg: str = f"Invalid cartridge header field: {key}"
             raise TypeError(msg)
         return value
 
@@ -169,8 +171,8 @@ class FlashGBX_CLI:
         for index, (_, label) in enumerate(menu_items, start=1):
             print(f"{index:>3d}) {label}")
         print()
-        item_count = len(menu_items)
-        answer = (
+        item_count: int = len(menu_items)
+        answer: str = (
             input(
                 __(
                     "Enter number ({range}) [{default}]:",
@@ -208,7 +210,7 @@ class FlashGBX_CLI:
             return 0
 
         camera.SetPalette(PocketCamera.PALETTE_NAMES.index(args.gbcamera_palette))
-        destination = Path(args.path).with_suffix("")
+        destination: Path = Path(args.path).with_suffix("")
         if destination.is_file():
             print(
                 "\n"
@@ -219,7 +221,7 @@ class FlashGBX_CLI:
             return 1
         destination.mkdir(parents=True, exist_ok=True)
         for index in range(32):
-            file = destination / f"IMG_PC{index + 1:02d}.{args.gbcamera_outfile_format}"
+            file: Path = destination / f"IMG_PC{index + 1:02d}.{args.gbcamera_outfile_format}"
             camera.ExportPicture(index, file, scale=1)
         print(
             __(
@@ -313,8 +315,8 @@ class FlashGBX_CLI:
             elif status == 2:
                 print(f"{ANSI.RED:s}{message:s}{ANSI.RESET:s}")
 
-        args = self.ARGS["argparsed"]
-        config_path = AppContext.CONFIG_PATH
+        args: Namespace = self.ARGS["argparsed"]
+        config_path: str = AppContext.CONFIG_PATH
         print(__("Configuration folder:") + " " + config_path + "\n")
 
         menu_items = [
@@ -967,7 +969,7 @@ class FlashGBX_CLI:
             # Use (label_with_colon, value) pairs to match existing GUI translation keys
             game_name = None
             if data["db"]:
-                game_name = Path(
+                game_name: str | None = Path(
                     generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None),
                 ).stem
             if game_name is not None:
@@ -996,7 +998,7 @@ class FlashGBX_CLI:
             sgb = data.get("sgb", 0)
             old_lic = data.get("old_lic", 0)
             if cgb == 0xC0:
-                platform_str = __("Game Boy Color exclusive")
+                platform_str: str = __("Game Boy Color exclusive")
             elif cgb == 0x80:
                 platform_str = __("Game Boy Color")
             elif old_lic == 0x33 and sgb == 0x03:
@@ -1009,7 +1011,7 @@ class FlashGBX_CLI:
 
             if data["logo_correct"] and data["header_checksum_correct"]:
                 rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
-                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+                bootlogo_path: Path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
                 if not bootlogo_path.exists():
                     with bootlogo_path.open("wb") as f:
                         f.write(data["raw"][0x104:0x134])
@@ -1037,7 +1039,7 @@ class FlashGBX_CLI:
 
             try:
                 if data["mapper_raw"] == 0x06:  # MBC2
-                    save_type_str = DmgSaveTypes(index=1).GetString()
+                    save_type_str: str = DmgSaveTypes(index=1).GetString()
                 elif data["mapper_raw"] == 0x22 and data["game_title"] in (
                     "KORO2 KIRBY",
                     "KIRBY TNT",
@@ -1160,7 +1162,6 @@ class FlashGBX_CLI:
                 rows.append((__("ROM Checksum:"), rom_checksum_str))
             rows.append((__("ROM Size:"), rom_size_str))
 
-            save_type_str = None
             save_type = data.get("save_type")
             save_type_count = AgbSaveTypes().GetNumberOfTypes()
             database_save_type = db_agb_entry.get("st") if isinstance(db_agb_entry, dict) else None
@@ -1197,7 +1198,7 @@ class FlashGBX_CLI:
                     + ANSI.RESET,
                 )
 
-        max_len = max((len(label) for label, _ in rows), default=0)
+        max_len: int = max((len(label) for label, _ in rows), default=0)
         for label, value in rows:
             if value is not None:
                 s += f"{label.ljust(max_len + 1):s} {value:s}\n"
@@ -1274,17 +1275,17 @@ class FlashGBX_CLI:
                     )
                 else:
                     msg_cart_type += f"- {supp_cart_types[0][cart_types[i]]:s}\n"
-            msg_cart_type = msg_cart_type[:-1]
+            msg_cart_type: str = msg_cart_type[:-1]
 
         # Messages
         # Header
-        msg_header_s = __("Game Title:") + " " + Formatter.title(header["game_title"]) + "\n"
+        msg_header_s: str = __("Game Title:") + " " + Formatter.title(header["game_title"]) + "\n"
 
         # Save Type
         msg_save_type_s = ""
         temp = ""
         if save_chip is not None:
-            temp = f"{AgbSaveTypes(save_type).GetString():s} ({save_chip:s})"
+            temp: str = f"{AgbSaveTypes(save_type).GetString():s} ({save_chip:s})"
         elif self.CONN.GetMode() == "DMG":
             temp = f"{DmgSaveTypes(index=save_type).GetString():s}"
         elif self.CONN.GetMode() == "AGB":
@@ -1293,7 +1294,7 @@ class FlashGBX_CLI:
             if save_chip and "Unknown" in save_chip:
                 msg_save_type_s = __("Save Type:") + " " + save_chip + "\n"
             else:
-                msg_save_type_s = (
+                msg_save_type_s: str = (
                     __("Save Type:") + " " + c__("Save Type", "None or unknown (no save data detected)") + "\n"
                 )
         elif sram_unstable and "SRAM" in temp:
@@ -1316,7 +1317,7 @@ class FlashGBX_CLI:
         msg_flash_mapper_s = ""
 
         if cart_type is not None:
-            msg_cart_type_s = (
+            msg_cart_type_s: str = (
                 __("Flashcart Profile:")
                 + " "
                 + __("Supported flash cartridge - compatible with:")
@@ -1326,8 +1327,8 @@ class FlashGBX_CLI:
             )
 
             if detected_size > 0:
-                size = detected_size
-                msg_flash_size_s = __("ROM Size:") + " " + Formatter.file_size(size, as_int=True) + "\n"
+                size: int = detected_size
+                msg_flash_size_s: str = __("ROM Size:") + " " + Formatter.file_size(size, as_int=True) + "\n"
             elif "flash_size" in supp_cart_types[1][cart_type_id]:
                 size = supp_cart_types[1][cart_type_id]["flash_size"]
                 msg_flash_size_s = __("ROM Size:") + " " + Formatter.file_size(size, as_int=True) + "\n"
@@ -1335,7 +1336,7 @@ class FlashGBX_CLI:
             if self.CONN.GetMode() == "DMG":
                 if "mbc" in supp_cart_types[1][cart_type_id]:
                     if supp_cart_types[1][cart_type_id]["mbc"] == "manual":
-                        msg_flash_mapper_s = __("Mapper Type:") + " " + __("Manual selection") + "\n"
+                        msg_flash_mapper_s: str = __("Mapper Type:") + " " + __("Manual selection") + "\n"
                     elif supp_cart_types[1][cart_type_id]["mbc"] in DMG_Mapper().GetAllMapperIds():
                         msg_flash_mapper_s = (
                             __("Mapper Type:")
@@ -1398,7 +1399,7 @@ class FlashGBX_CLI:
                 + "\n\n"
             )
         else:
-            msg_cfi_s = (
+            msg_cfi_s: str = (
                 __(
                     "{common_flash_interface} Data:",
                     common_flash_interface="Common Flash Interface",
@@ -1408,7 +1409,7 @@ class FlashGBX_CLI:
                 + "\n\n"
             )
 
-        msg = "\n\n" + __("The following cartridge configuration was detected:") + "\n\n"
+        msg: str = "\n\n" + __("The following cartridge configuration was detected:") + "\n\n"
         temp = (
             msg
             + f"{msg_header_s}{msg_flash_size_s}{msg_flash_mapper_s}{msg_save_type_s}\n{msg_flash_id_s}{msg_cfi_s}{msg_cart_type_s}"
@@ -1421,11 +1422,11 @@ class FlashGBX_CLI:
         mbc = 1
         rom_size = 0
 
-        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
+        path: str = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
         if self.CONN.GetMode() == "DMG":
             if args.dmg_mbc == "auto":
                 try:
-                    mbc = self._GetHeaderInt(header, "mapper_raw")
+                    mbc: int = self._GetHeaderInt(header, "mapper_raw")
                     if mbc == 0:
                         mbc = 0x19  # MBC5 default
                 except TypeError:
@@ -1443,7 +1444,7 @@ class FlashGBX_CLI:
 
             if args.dmg_romsize == "auto":
                 try:
-                    rom_size = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
+                    rom_size: int | None = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
                     if not isinstance(rom_size, int):
                         msg = "Invalid ROM size"
                         raise TypeError(msg)  # noqa: TRY301
@@ -1472,9 +1473,9 @@ class FlashGBX_CLI:
 
         if path == "":
             return
-        output_path = Path(path).resolve()
+        output_path: Path = Path(path).resolve()
         if not args.overwrite and output_path.exists():
-            answer = (
+            answer: str = (
                 input(
                     __(
                         "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
@@ -1548,7 +1549,7 @@ class FlashGBX_CLI:
                         + "\n",
                     )
                     rom_size = carts[i]["flash_size"]
-                    cart_type = i
+                    cart_type: int = i
                     break
             if cart_type == 0:
                 print(__("Error: Couldn't select the flashcart profile.") + "\n")
@@ -1623,7 +1624,7 @@ class FlashGBX_CLI:
 
             with rom_path.open("rb") as file:
                 if rom_path.suffix.lower() == ".isx":
-                    buffer = from_isx(bytearray(file.read()))
+                    buffer: bytearray = from_isx(bytearray(file.read()))
                 else:
                     buffer = bytearray(file.read(0x1000))
             if "flash_size" in carts[cart_type] and rom_size > carts[cart_type]["flash_size"]:
@@ -1636,7 +1637,7 @@ class FlashGBX_CLI:
                     )
                     + ANSI.RESET,
                 )
-                answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
+                answer: str = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
                 print()
                 if answer != "y":
                     print(__("Canceled."))
