@@ -10,6 +10,8 @@ from FlashGBX.CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
 def test_rom_sizes_support_display_lookup_and_cli_conversion() -> None:
     sizes = RomSizes(1024 * 1024)
 
+    assert RomSizes(index=1).GetString(localized=False) == "64 KiB"
+    assert RomSizes().GetString(localized=False) == "0 Bytes"
     assert 32 * 1024 in sizes
     assert 12345 not in sizes
     assert sizes.GetString(localized=False) == "1 MiB"
@@ -48,7 +50,12 @@ def test_agb_save_types_cover_lookups_library_names_and_flash_chips() -> None:
     saves = AgbSaveTypes(index=3)
 
     assert 32768 in saves
+    assert saves.GetName() == "256K SRAM/FRAM"
+    assert saves.GetSize() == 32768
+    assert AgbSaveTypes().GetName() == "Unknown"
+    assert AgbSaveTypes().GetSize() is None
     assert saves.GetIndexFromSize(131072) == 5
+    assert saves.GetIndexFromSize(12345) is None
     assert saves.GetString(index=-1) == "Unknown"
     assert saves.GetStringFromSaveLib("N/A", localized=False) == "None"
     assert saves.GetStringFromSaveLib("SRAM_F_V", localized=False) == "256K SRAM/FRAM (SRAM_F_V)"
@@ -82,11 +89,13 @@ def test_dmg_save_types_resolve_mbc_size_and_cli_names() -> None:
     assert DmgSaveTypes(index=6).GetString(localized=False) == "1M SRAM (128 KiB)"
     assert DmgSaveTypes(index=7).GetString(localized=False) == "MBC6 SRAM+FLASH (1.03 MiB)"
     assert DmgSaveTypes(mbc=0xFFFF).GetName() == "Unknown Save Type"
+    assert DmgSaveTypes(size=0x800).GetMbc() == 0x01
     assert DmgSaveTypes(size=12345).GetSize() == 0
     assert DmgSaveTypes(index=999).GetIndex() is None
     assert 0x03 in DmgSaveTypes()
     assert DmgSaveTypes(mbc=0x03) in DmgSaveTypes()
     assert 0xFFFF not in DmgSaveTypes()
+    assert "0x03" not in DmgSaveTypes()
     assert len(DmgSaveTypes().GetStringList()) == DmgSaveTypes().GetNumberOfTypes()
     assert DmgSaveTypes.GetCLINames()[:2] == ["auto", "4k"]
     assert "batteryless" not in DmgSaveTypes.GetCLINames(include_batteryless=False)

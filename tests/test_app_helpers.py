@@ -224,3 +224,77 @@ def test_app_info_windows_fallback_handles_version_lookup_failure(
     monkeypatch.setattr(app_module.platform, "release", lambda: "")
     monkeypatch.setattr(app_module.platform, "platform", lambda: "Windows fallback")
     assert AppInfo.os_string() == "Windows fallback"
+
+
+@pytest.mark.parametrize("value", [True, 1.5, None, object()])
+def test_registry_int_rejects_non_integer_values(value: object) -> None:
+    with pytest.raises(TypeError, match="Registry value"):
+        app_module._registry_int(value)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ({}, None),
+        ({"cart_id": ""}, None),
+        ({"cart_id": 123}, None),
+        ([], None),
+        (["not-a-mapping"], None),
+        ([{"cart_id": "CART"}], "CART"),
+    ],
+)
+def test_gbmemory_cart_id_validates_parsed_metadata(value: object, expected: str | None) -> None:
+    assert app_module._gbmemory_cart_id(value) == expected
+
+
+def test_app_info_handles_partial_windows_registry_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RegistryKey:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+    values: dict[str, object] = {
+        "ProductName": "Windows Server 2022 Datacenter",
+        "UBR": True,
+    }
+
+    def query_value(_key: object, name: str) -> tuple[object, int]:
+        if name not in values:
+            raise FileNotFoundError(name)
+        return values[name], 1
+
+    fake_winreg = SimpleNamespace(
+        HKEY_LOCAL_MACHINE=object(),
+        OpenKey=lambda _root, _path: RegistryKey(),
+        QueryValueEx=query_value,
+    )
+    monkeypatch.setitem(app_module.sys.modules, "winreg", fake_winreg)
+    monkeypatch.setattr(app_module.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        app_module.sys,
+        "getwindowsversion",
+        lambda: SimpleNamespace(major=6, minor=3, build=9600),
+        raising=False,
+    )
+
+    assert AppInfo.os_string() == "Windows Server (Build 9600)"
+
+    values.pop("ProductName")
+    assert AppInfo.os_string() == "Windows 8.1 (Build 9600)"
+
+
+def test_generate_filename_rejects_invalid_database_fields() -> None:
+    with pytest.raises(TypeError, match=r"'gn'.*string"):
+        generate_filename("AGB", agb_header(db={"gn": 123, "ne": "USA"}))
+    with pytest.raises(TypeError, match=r"'ne'.*string"):
+        generate_filename("AGB", agb_header(db={"gn": "Game", "ne": 123}))
+
+
+def test_generate_filename_uses_title_only_for_unlicensed_mappers() -> None:
+    class Settings:
+        def value(self, key: str, default: str) -> str:
+            return "disabled" if key == "UseNoIntroFilenames" else default
+
+    assert generate_filename("DMG", dmg_header(mapper_raw=0x201), Settings()) == "POKEMON_RED.gbc"

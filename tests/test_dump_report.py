@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 import pytest  # pyright: ignore[reportMissingImports]
 
+import FlashGBX.DumpReport as report_module  # noqa: N813
 from FlashGBX.DumpReport import DumpReport
 
 
@@ -214,3 +215,108 @@ def test_generate_dmg_report_includes_single_gbmemory_entry() -> None:
 
     assert "GB-Memory Data (Single Game)" in report
     assert "Single Game" in report
+
+
+def test_generate_dmg_report_formats_unknown_metadata_and_raw_gbmemory() -> None:
+    header = dmg_header(
+        cgb=0xC0,
+        header_checksum=0xAA,
+        header_checksum_calc=0xBB,
+        header_checksum_correct=False,
+        rom_checksum=0x4321,
+        rom_size_raw=0xFF,
+        ram_size_raw=0xFF,
+        mapper_raw=0xEE,
+    )
+    report_data = base_report("DMG", header)
+    report_data.update(
+        {
+            "rom_size": 12_345,
+            "cart_type": 99,
+            "file_name": "",
+            "mapper_type": 0x123,
+            "gbmem": bytearray(range(0x80)),
+            "gbmem_parsed": None,
+        },
+    )
+
+    report = DumpReport.generate(report_data, ReportDevice("GBFlash"))
+
+    assert "12,345 bytes" in report
+    assert "Cartridge Profile: #99" in report
+    assert "0x123" in report
+    assert "Game Boy Color exclusive" in report
+    assert "Invalid (0xBB≠0xAA)" in report
+    assert "Invalid (0x1234≠0x4321)" in report
+    assert "Unknown (0xFF)" in report
+    assert "Unknown (0xEE)" in report
+    assert "GB-Memory Data:" in report
+    assert "Baud Rate:" not in report
+
+
+def test_generate_dmg_report_uses_unchanged_header_and_sgb_metadata() -> None:
+    unchanged = dmg_header(
+        cgb=0,
+        old_lic=0x33,
+        sgb=0x03,
+        ram_size_raw=2,
+        db=None,
+    )
+    report_data = base_report(
+        "DMG",
+        {
+            "unchanged": unchanged,
+            "db": {"gn": "Database Only Name", "rc": 0xAABBCCDD},
+        },
+    )
+    device = ReportDevice()
+    device.INFO = {}
+
+    report = DumpReport.generate(report_data, device)
+
+    assert "Target Platform:   Super Game Boy" in report
+    assert "Super Game Boy:" in report
+    assert "Supported" in report
+    assert "64K SRAM (8 KiB)" in report
+    assert "Database Only Name" in report
+
+
+def test_generate_report_uses_windows_newlines(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(report_module.platform, "system", lambda: "Windows")
+
+    report = DumpReport.generate(base_report("DMG", dmg_header()), ReportDevice())
+
+    assert "\r\n" in report
+    assert report.count("\n") == report.count("\r\n")
+
+
+def test_generate_dmg_report_accepts_unchanged_header_without_outer_database() -> None:
+    report_data = base_report("DMG", {"unchanged": dmg_header(db=None)})
+    report_data["gbmem"] = bytearray(0x80)
+    report_data["gbmem_parsed"] = {"game_code": 123}
+
+    report = DumpReport.generate(report_data, ReportDevice())
+
+    assert "== Parsed Data ==" in report
+    assert "GB-Memory Data (Single Game)" not in report
+
+
+def test_generate_agb_report_omits_optional_fields_for_standard_cartridge() -> None:
+    header = {
+        "game_title_raw": "STANDARD",
+        "game_code_raw": "ABCD",
+        "version": 0,
+        "logo_correct": True,
+        "header_checksum": 0x42,
+        "header_checksum_correct": True,
+        "db": None,
+    }
+    device = ReportDevice("GBFlash")
+    device.SUPPORTED_CARTS = {"DMG": {"Profile": {}}, "AGB": {"Standard": {}}}
+
+    report = DumpReport.generate(base_report("AGB", header), device)
+
+    assert "Save Flash Chip:" not in report
+    assert "EEPROM area:" not in report
+    assert "Vast Fame Protection Information" not in report
+    assert "Database Match" not in report
