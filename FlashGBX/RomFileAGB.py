@@ -78,7 +78,7 @@ class RomFileAGB:
     def CalcChecksumHeader(self, fix: bool = False) -> int:
         checksum = 0
         for i in range(0xA0, 0xBD):
-            checksum = checksum - self.ROMFILE[i]
+            checksum: int = checksum - self.ROMFILE[i]
         checksum = (checksum - 0x19) & 0xFF
 
         if fix:
@@ -143,28 +143,28 @@ class RomFileAGB:
                     0x09,
                 ],
             )
-            encoded_data = (
+            encoded_data: bytes = (
                 bytes([0x20 | BITS])
                 + OUT_SIZE.to_bytes(3, "little")
                 + bytes([len(TREE) // 2])
                 + TREE
                 + bytes(compressed_data)
             )
-            bits = encoded_data[0] & 15
-            out_size = int.from_bytes(encoded_data[1:4], "little") & 0xFFFF
-            i = 6 + encoded_data[4] * 2
+            bits: int = encoded_data[0] & 15
+            out_size: int = int.from_bytes(encoded_data[1:4], "little") & 0xFFFF
+            i: int = 6 + encoded_data[4] * 2
             node_offs = 5
             out_units = 0
             out_ready = 0
             out = b""
             while len(out) < out_size:
-                in_unit = (
+                in_unit: int = (
                     int.from_bytes(encoded_data[i : i + 2], "little")
                     | int.from_bytes(encoded_data[i ^ 2 : (i ^ 2) + 2], "little") << 16
                 )
                 i += 4
                 for b in range(31, -1, -1):
-                    node = encoded_data[node_offs]
+                    node: int = encoded_data[node_offs]
                     node_offs &= ~1
                     node_offs += (node & 0x3F) * 2 + 2 + (in_unit >> b & 1)
                     if node << (in_unit >> b & 1) & 0x80:
@@ -182,22 +182,22 @@ class RomFileAGB:
             return out
 
         def diff_16_bit_unfilter(filtered_data: bytes) -> bytearray:
-            header = struct.unpack_from("<I", filtered_data)[0]
-            out_size = (header >> 8) & 0xFFFF
+            header: int = struct.unpack_from("<I", filtered_data)[0]
+            out_size: int = (header >> 8) & 0xFFFF
             pos = 4
             prev = 0
             dest = bytearray()
             while pos < out_size:
                 if pos + 2 > len(filtered_data):
                     break
-                temp = (struct.unpack_from("<H", filtered_data, pos)[0] + prev) & 0xFFFF
+                temp: int = (struct.unpack_from("<H", filtered_data, pos)[0] + prev) & 0xFFFF
                 dest.extend(struct.pack("<H", temp))
                 pos += 2
-                prev = temp
+                prev: int = temp
             return dest
 
         try:
-            logo_data = diff_16_bit_unfilter(huff_uncomp(data))
+            logo_data: bytearray = diff_16_bit_unfilter(huff_uncomp(data))
         except IndexError, struct.error:
             return False
 
@@ -212,12 +212,12 @@ class RomFileAGB:
             for tile_w in range(13):
                 for tile_h in range(8):
                     for bit in range(8):
-                        pos = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
+                        pos: int = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
                         if pos >= len(logo_data):
                             break
-                        pixel = (logo_data[pos] >> bit) & 1
-                        x = tile_w * 8 + bit
-                        y = tile_row * 8 + tile_h
+                        pixel: int = (logo_data[pos] >> bit) & 1
+                        x: int = tile_w * 8 + bit
+                        y: int = tile_row * 8 + tile_h
                         pixels[x, y] = pixel
         return img
 
@@ -241,10 +241,10 @@ class RomFileAGB:
             data["logo"] = temp
 
         data["game_title_raw"] = bytearray(buffer[0xA0:0xAC]).decode("ascii", "replace")
-        game_title = _clean_header_text(buffer[0xA0:0xAC], remove_newlines=True)
+        game_title: str = _clean_header_text(buffer[0xA0:0xAC], remove_newlines=True)
         data["game_title"] = game_title
         data["game_code_raw"] = bytearray(buffer[0xAC:0xB0]).decode("ascii", "replace")
-        game_code = _clean_header_text(buffer[0xAC:0xB0])
+        game_code: str = _clean_header_text(buffer[0xAC:0xB0])
         data["game_code"] = game_code
         data["maker_code"] = _clean_header_text(buffer[0xB0:0xB2])
         data["header_checksum"] = int(buffer[0xBD])
