@@ -447,10 +447,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.LOG_ERROR_TIMER.timeout.connect(self.LogErrorCheck)
         self.LOG_ERROR_TIMER.start(200)
 
-    def __init__(self, args: GuiArgs) -> None:
-        sys.excepthook = Logger.exception_hook
-        self._InitializeState(args)
-
+    def _ConfigureColorScheme(self) -> None:
         try:
             if self.SETTINGS.value("AllowDarkMode", default="enabled") == "disabled":
                 QtGui.QGuiApplication.styleHints().setColorScheme(QtCore.Qt.ColorScheme.Light)
@@ -458,6 +455,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 qt_app.setStyle("fusion" if IsDarkMode() else "windowsvista")
         except Exception:
             logger.exception("Failed to configure the Qt color scheme")
+
+    def __init__(self, args: GuiArgs) -> None:
+        sys.excepthook = Logger.exception_hook
+        self._InitializeState(args)
+        self._ConfigureColorScheme()
 
         QtWidgets.QMainWindow.__init__(self)
         AppContext.CONFIG_PATH = args["config_path"]

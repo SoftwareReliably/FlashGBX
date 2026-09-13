@@ -221,6 +221,14 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.main_layout.addLayout(self.layout_options3, 3, 0)
         self.setLayout(self.main_layout)
 
+        if not self._load_settings():
+            return
+
+        self.btnSaveAll.setDefault(True)
+        self.btnSaveAll.setAutoDefault(True)
+        self.btnSaveAll.setFocus()
+
+    def _load_settings(self) -> bool:
         zoom_setting: str | None = self.APP.SETTINGS.value("PocketCameraZoom", default="2")
         try:
             self.spnZoom.setValue(int(zoom_setting) if isinstance(zoom_setting, (int, str)) else 2)
@@ -243,16 +251,13 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         if self.CUR_FILE is not None and self.OpenFile(self.CUR_FILE) is False:
             self.FORCE_EXIT = True
-            return
+            return False
 
         if self.CUR_EXPORT_PATH == "":
-            self.CUR_EXPORT_PATH: str = QtCore.QStandardPaths.writableLocation(
+            self.CUR_EXPORT_PATH = QtCore.QStandardPaths.writableLocation(
                 QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
             )
-
-        self.btnSaveAll.setDefault(True)
-        self.btnSaveAll.setAutoDefault(True)
-        self.btnSaveAll.setFocus()
+        return True
 
     def run(self) -> None:
         if self.FORCE_EXIT:
