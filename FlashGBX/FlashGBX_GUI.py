@@ -426,6 +426,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             text_layout.createLine()
             text_layout.endLayout()
 
+    def _DisableDisconnectedControls(self) -> None:
+        self.optAGB.setEnabled(False)
+        self.optDMG.setEnabled(False)
+        self.btnHeaderRefresh.setEnabled(False)
+        self.btnDetectCartridge.setEnabled(False)
+        self.btnBackupROM.setEnabled(False)
+        self.btnFlashROM.setEnabled(False)
+        self.btnBackupRAM.setEnabled(False)
+        self.btnRestoreRAM.setEnabled(False)
+        self.btnConnect.setEnabled(False)
+        self.grpDMGCartridgeInfo.setEnabled(False)
+        self.grpAGBCartridgeInfo.setEnabled(False)
+
+    def _StartStatusTimers(self) -> None:
+        self.MSGBOX_TIMER = QtCore.QTimer()
+        self.MSGBOX_TIMER.timeout.connect(self.MsgBoxCheck)
+        self.MSGBOX_TIMER.start(200)
+        self.LOG_ERROR_TIMER = QtCore.QTimer()
+        self.LOG_ERROR_TIMER.timeout.connect(self.LogErrorCheck)
+        self.LOG_ERROR_TIMER.start(200)
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -710,17 +731,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.main_layout.addLayout(self.layout_devices, 1, 0, 1, 0)
 
         # Disable widgets
-        self.optAGB.setEnabled(False)
-        self.optDMG.setEnabled(False)
-        self.btnHeaderRefresh.setEnabled(False)
-        self.btnDetectCartridge.setEnabled(False)
-        self.btnBackupROM.setEnabled(False)
-        self.btnFlashROM.setEnabled(False)
-        self.btnBackupRAM.setEnabled(False)
-        self.btnRestoreRAM.setEnabled(False)
-        self.btnConnect.setEnabled(False)
-        self.grpDMGCartridgeInfo.setEnabled(False)
-        self.grpAGBCartridgeInfo.setEnabled(False)
+        self._DisableDisconnectedControls()
 
         # Set the main layout on a central widget for QMainWindow
         self.central_widget = QtWidgets.QWidget()
@@ -743,12 +754,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.FindDevices(port=args["argparsed"].device_port, firstRun=True),
             ],
         )
-        self.MSGBOX_TIMER = QtCore.QTimer()
-        self.MSGBOX_TIMER.timeout.connect(self.MsgBoxCheck)
-        self.MSGBOX_TIMER.start(200)
-        self.LOG_ERROR_TIMER = QtCore.QTimer()
-        self.LOG_ERROR_TIMER.timeout.connect(self.LogErrorCheck)
-        self.LOG_ERROR_TIMER.start(200)
+        self._StartStatusTimers()
 
     @property
     def _device(self) -> LK_Device:

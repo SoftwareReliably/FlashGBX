@@ -146,8 +146,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.pylint]
-max-branches = 48 # default is 12
-max-statements = 160 # default is 50
+max-branches = 45 # default is 12
+max-statements = 150 # default is 50
 max-returns = 9 # default is 6
 
 [tool.ruff.lint.mccabe]
