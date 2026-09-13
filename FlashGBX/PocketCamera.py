@@ -9,7 +9,7 @@ import io
 import math
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -19,9 +19,9 @@ from .app import AppInfo
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-CameraSource: TypeAlias = bytes | bytearray | memoryview | str | PathLike[str]  # noqa: UP040
-FrameData: TypeAlias = bytes | bytearray | memoryview | Literal[False] | None  # noqa: UP040
-Palette: TypeAlias = tuple[int, ...]  # noqa: UP040
+type CameraSource = bytes | bytearray | memoryview | str | PathLike[str]
+type FrameData = bytes | bytearray | memoryview | Literal[False] | None
+type Palette = tuple[int, ...]
 
 
 class PocketCamera:
@@ -65,7 +65,9 @@ class PocketCamera:
         self.IMAGES_DELETED = []
         self.ORDER = []
 
-        data = bytes(savefile) if isinstance(savefile, (bytes, bytearray, memoryview)) else Path(savefile).read_bytes()
+        data: bytes = (
+            bytes(savefile) if isinstance(savefile, (bytes, bytearray, memoryview)) else Path(savefile).read_bytes()
+        )
 
         if len(data) != self.SAVE_SIZE:
             return False
@@ -74,7 +76,7 @@ class PocketCamera:
 
         # The album table maps physical slots to display positions. Deleted,
         # duplicate, and malformed entries are kept at the end of the album.
-        order_raw = data[0x11D7:0x11F5]
+        order_raw: bytes = data[0x11D7:0x11F5]
         ordered_slots: list[int | None] = [None] * self.PHOTO_COUNT
         deleted_slots: list[int] = []
         seen_positions: set[int] = set()
@@ -114,13 +116,13 @@ class PocketCamera:
 
     def ConvertPicture(self, buffer: bytes | bytearray | memoryview, lastseen: bool = False) -> Image.Image:
         tile_width = 16
-        tile_height = 16 if lastseen else 14
-        required_size = tile_width * tile_height * 16
+        tile_height: Literal[16, 14] = 16 if lastseen else 14
+        required_size: Literal[4096, 3584] = tile_width * tile_height * 16
         if len(buffer) < required_size:
-            msg = f"Camera image data is too short: expected at least {required_size} bytes"
+            msg: str = f"Camera image data is too short: expected at least {required_size} bytes"
             raise ValueError(msg)
 
-        image_height = 128 if lastseen else 112
+        image_height: Literal[128, 112] = 128 if lastseen else 112
         image = Image.new(mode="P", size=(128, image_height))
         image.putpalette(self.PALETTE)
         pixels = image.load()
@@ -129,23 +131,23 @@ class PocketCamera:
             raise RuntimeError(msg)
         for tile_y in range(tile_height):
             for tile_x in range(tile_width):
-                tile_position = 16 * ((tile_y * tile_width) + tile_x)
-                tile = buffer[tile_position : tile_position + 16]
+                tile_position: int = 16 * ((tile_y * tile_width) + tile_x)
+                tile: bytes | bytearray | memoryview[int] = buffer[tile_position : tile_position + 16]
                 for pixel_y in range(8):
                     for pixel_x in range(8):
-                        high_bit = (tile[pixel_y * 2] >> (7 - pixel_x)) & 1
-                        low_bit = (tile[pixel_y * 2 + 1] >> (7 - pixel_x)) & 1
+                        high_bit: int = (tile[pixel_y * 2] >> (7 - pixel_x)) & 1
+                        low_bit: int = (tile[pixel_y * 2 + 1] >> (7 - pixel_x)) & 1
                         pixels[(tile_x * 8) + pixel_x, (tile_y * 8) + pixel_y] = (low_bit << 1) | high_bit
 
         return image.crop((0, 0, 128, 123 if lastseen else 112))
 
     def ExtractGameFace(self) -> Image.Image:
-        data = self._loaded_data()
+        data: bytes = self._loaded_data()
         offset = 0x11FC
         return self.ConvertPicture(data[offset : offset + 0x1000])
 
     def ExtractLastSeen(self) -> Image.Image:
-        data = self._loaded_data()
+        data: bytes = self._loaded_data()
         return self.ConvertPicture(data[:0x1000], lastseen=True)
 
     def ExtractPicture(self, index: int) -> Image.Image:
@@ -156,9 +158,9 @@ class PocketCamera:
         if index == self.LAST_SEEN_INDEX:
             return self.ExtractLastSeen()
 
-        data = self._loaded_data()
-        slot = self.ORDER[index]
-        offset = 0x2000 + (slot * 0x1000)
+        data: bytes = self._loaded_data()
+        slot: int = self.ORDER[index]
+        offset: int = 0x2000 + (slot * 0x1000)
         return self.ConvertPicture(data[offset : offset + 0x1000])
 
     def ExportPicture(
@@ -184,8 +186,8 @@ class PocketCamera:
             with Image.open(io.BytesIO(bytes(frame))) as frame_image:
                 framed_picture = frame_image.convert("RGB")
             if framed_picture.width >= 160 and framed_picture.height >= 144:
-                left = math.floor(framed_picture.width / 2) - 64
-                top = math.floor(framed_picture.height / 2) - 56
+                left: int = math.floor(framed_picture.width / 2) - 64
+                top: int = math.floor(framed_picture.height / 2) - 56
                 framed_picture.paste(picture, (left, top))
                 picture = framed_picture
 
@@ -193,14 +195,14 @@ class PocketCamera:
         if not math.isfinite(scale_value) or scale_value <= 0:
             msg = "Picture scale must be a positive finite number"
             raise ValueError(msg)
-        output_size = (round(picture.width * scale_value), round(picture.height * scale_value))
+        output_size: tuple[int, int] = (round(picture.width * scale_value), round(picture.height * scale_value))
         if min(output_size) < 1:
             msg = "Picture scale is too small to produce an image"
             raise ValueError(msg)
         picture = picture.resize(output_size, Image.Resampling.NEAREST)
 
         output_path = Path(path)
-        extension = output_path.suffix.lower()
+        extension: str = output_path.suffix.lower()
         if extension in ("", ".png"):
             picture.save(output_path, format="PNG", pnginfo=pnginfo)
         elif extension == ".gif":
