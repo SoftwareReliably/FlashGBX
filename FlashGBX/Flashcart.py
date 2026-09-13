@@ -686,6 +686,15 @@ class CFI:
         else:
             info["single_write"] = False
 
+    @staticmethod
+    def _get_data_swaps(magic: str) -> list[tuple[int, int]] | None:
+        swaps_by_magic: dict[str, list[tuple[int, int]]] = {
+            "QRY": [(0, 0)],  # Nothing swapped
+            "RQZ": [(0, 1)],  # D0/D1 swapped
+            "\x92\x91\x9a": [(0, 1), (6, 7)],  # D0/D1 and D6/D7 swapped
+        }
+        return swaps_by_magic.get(magic)
+
     def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
         if buffer is False or buffer == b"":
             return False
@@ -694,13 +703,8 @@ class CFI:
             return False
         magic: str = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
 
-        if magic == "QRY":  # nothing swapped
-            d_swap: list[tuple[int, int]] = [(0, 0)]
-        elif magic == "RQZ":  # D0D1 swapped
-            d_swap = [(0, 1)]
-        elif magic == "\x92\x91\x9a":  # D0D1+D6D7 swapped
-            d_swap = [(0, 1), (6, 7)]
-        else:
+        d_swap = self._get_data_swaps(magic)
+        if d_swap is None:
             return False
 
         info = cast("CFIInfo", {"d_swap": d_swap})

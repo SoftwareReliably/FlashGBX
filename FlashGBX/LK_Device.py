@@ -4599,6 +4599,17 @@ class LK_Device(ABC):
             return None
         return Path(path).open("wb")
 
+    @staticmethod
+    def _WriteROMBackupChunk(file: BinaryIO | None, args: Mapping[str, Any], chunk: bytearray) -> None:
+        if file is None:
+            return
+        if args.get("bl_layout") == 1:
+            file.write(chunk[0x0000:0x2000])
+        elif args.get("bl_layout") == 2:
+            file.write(chunk[0x2000:0x4000])
+        else:
+            file.write(chunk)
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = self._OpenROMBackupFile(args["path"])
@@ -4725,13 +4736,7 @@ class LK_Device(ABC):
                     continue
                 lives = max(lives, 20)
 
-                if file is not None:
-                    if "bl_layout" in args and args["bl_layout"] == 1:
-                        file.write(temp[0x0000:0x2000])
-                    elif "bl_layout" in args and args["bl_layout"] == 2:
-                        file.write(temp[0x2000:0x4000])
-                    else:
-                        file.write(temp)
+                self._WriteROMBackupChunk(file, args, temp)
                 buffer[pos_total : pos_total + len(temp)] = temp
                 pos_total += len(temp)
 

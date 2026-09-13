@@ -1722,6 +1722,27 @@ class FlashGBX_CLI:
         print()
         return bootlogo if answer != "n" else False
 
+    def _PromptHeaderChecksumFix(self, header: Mapping[str, Any], mbc: int) -> bool:
+        mode = self.CONN.GetMode()
+        should_prompt = not header["header_checksum_correct"] and (
+            mode == "AGB" or (mode == "DMG" and mbc not in (0x203, 0x205))
+        )
+        if not should_prompt:
+            return False
+
+        print(
+            ANSI.YELLOW
+            + __(
+                "Warning: The ROM file you selected will not boot on actual hardware due to an invalid header checksum (expected {expected} instead of {actual}).",
+                expected="0x{:02X}".format(header["header_checksum_calc"]),
+                actual="0x{:02X}".format(header["header_checksum"]),
+            )
+            + ANSI.RESET,
+        )
+        answer = input(__("Fix the header checksum before continuing?") + " [Y/n]: ").strip().lower()
+        print()
+        return answer != "n"
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
         mbc = 0
@@ -1821,7 +1842,6 @@ class FlashGBX_CLI:
         compare_sectors = args.compare_sectors is True
 
         fix_bootlogo: bool | bytearray = False
-        fix_header = False
         if self.CONN.GetMode() == "DMG":
             hdr = RomFileDMG(buffer).GetHeader()
 
@@ -1841,23 +1861,7 @@ class FlashGBX_CLI:
             raise NotImplementedError
 
         fix_bootlogo = self._PromptBootLogoFix(hdr, mbc)
-
-        if not hdr["header_checksum_correct"] and (
-            self.CONN.GetMode() == "AGB" or (self.CONN.GetMode() == "DMG" and mbc not in (0x203, 0x205))
-        ):
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Warning: The ROM file you selected will not boot on actual hardware due to an invalid header checksum (expected {expected} instead of {actual}).",
-                    expected="0x{:02X}".format(hdr["header_checksum_calc"]),
-                    actual="0x{:02X}".format(hdr["header_checksum"]),
-                )
-                + ANSI.RESET,
-            )
-            answer: str = input(__("Fix the header checksum before continuing?") + " [Y/n]: ").strip().lower()
-            print()
-            if answer != "n":
-                fix_header = True
+        fix_header = self._PromptHeaderChecksumFix(hdr, mbc)
 
         print()
         v = carts[cart_type]["voltage"]
