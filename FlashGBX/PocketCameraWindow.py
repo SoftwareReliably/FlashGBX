@@ -15,6 +15,8 @@ from PIL import Image, ImageDraw
 from PIL.ImageQt import ImageQt
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from FlashGBX.FlashGBX_GUI import FlashGBX_GUI
+
 from .app import AppInfo
 from .i18n import __, c__
 from .Logging import logger
@@ -66,7 +68,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.CUR_PALETTE = 3
         self.APP_PATH = Path(app_path)
         self.CONFIG_PATH = Path(config_path)
-        self.APP = app
+        self.APP: FlashGBX_GUI = app
         self.FORCE_EXIT = False
         self._palettes = list(self.PALETTES)
 
@@ -221,7 +223,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.main_layout.addLayout(self.layout_options3, 3, 0)
         self.setLayout(self.main_layout)
 
-        zoom_setting = self.APP.SETTINGS.value("PocketCameraZoom", default="2")
+        zoom_setting: str | None = self.APP.SETTINGS.value("PocketCameraZoom", default="2")
         try:
             self.spnZoom.setValue(int(zoom_setting) if isinstance(zoom_setting, (int, str)) else 2)
         except TypeError, ValueError:
@@ -246,7 +248,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             return
 
         if self.CUR_EXPORT_PATH == "":
-            self.CUR_EXPORT_PATH = QtCore.QStandardPaths.writableLocation(
+            self.CUR_EXPORT_PATH: str = QtCore.QStandardPaths.writableLocation(
                 QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
             )
 
@@ -270,7 +272,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
     def SetColors(self, _: int | None = None) -> None:
         if self.CUR_PC is None:
             return
-        palette_index = self.cmbColor.currentIndex()
+        palette_index: int = self.cmbColor.currentIndex()
         if not 0 <= palette_index < len(self._palettes):
             palette_index = 3
             self.cmbColor.setCurrentIndex(palette_index)
@@ -282,12 +284,12 @@ class PocketCameraWindow(QtWidgets.QDialog):
     def OpenFile(self, file: CameraSource) -> bool:
         try:
             source: CameraSource = file
-            source_path = None if isinstance(source, (bytes, bytearray, memoryview)) else Path(source)
-            source_size = (
+            source_path: Path | None = None if isinstance(source, (bytes, bytearray, memoryview)) else Path(source)
+            source_size: int = (
                 len(source) if isinstance(source, (bytes, bytearray, memoryview)) else Path(source).stat().st_size
             )
             if source_size == self.PHOTO_SAVE_SIZE:
-                roll = self._select_photo_roll(source)
+                roll: bytes | None = self._select_photo_roll(source)
                 if roll is None:
                     self.CUR_PC = None
                     return False
@@ -350,23 +352,23 @@ class PocketCameraWindow(QtWidgets.QDialog):
             return None
 
         combo_box = dialog.GetResult()["index"]
-        index = cast("QtWidgets.QComboBox", combo_box).currentIndex()
-        data = bytes(source) if isinstance(source, (bytes, bytearray, memoryview)) else Path(source).read_bytes()
-        offset = PocketCamera.SAVE_SIZE * index
+        index: int = cast("QtWidgets.QComboBox", combo_box).currentIndex()
+        data: bytes = bytes(source) if isinstance(source, (bytes, bytearray, memoryview)) else Path(source).read_bytes()
+        offset: int = PocketCamera.SAVE_SIZE * index
         return data[offset : offset + PocketCamera.SAVE_SIZE]
 
     def lblPhoto_Clicked(self, event: QtGui.QMouseEvent, index: int) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.CUR_INDEX = index
+            self.CUR_INDEX: int = index
             self.UpdateViewer(self.CUR_INDEX)
 
     def lblPhotoViewer_Clicked(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            self.CUR_BICUBIC = not self.CUR_BICUBIC
+            self.CUR_BICUBIC: bool = not self.CUR_BICUBIC
             self.UpdateViewer(self.CUR_INDEX)
 
     def btnOpenSRAM_Clicked(self, _: bool = False) -> None:
-        last_dir = self.APP.SETTINGS.value("LastDirSaveDataDMG")
+        last_dir: str | None = self.APP.SETTINGS.value("LastDirSaveDataDMG")
         if not isinstance(last_dir, str):
             last_dir = QtCore.QStandardPaths.writableLocation(
                 QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
@@ -414,7 +416,9 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.CUR_EXPORT_PATH = str(Path(path).parent)
         output_path = Path(path)
 
-        output_files = [self._batch_export_path(output_path, index) for index in range(PocketCamera.IMAGE_COUNT)]
+        output_files: list[Path] = [
+            self._batch_export_path(output_path, index) for index in range(PocketCamera.IMAGE_COUNT)
+        ]
         if any(file.exists() for file in output_files):
             answer = QtWidgets.QMessageBox.warning(
                 self,
@@ -444,7 +448,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.reject()
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        palette_index = self.cmbColor.currentIndex()
+        palette_index: int = self.cmbColor.currentIndex()
         if not 0 <= palette_index < len(self._palettes):
             palette_index = 3
         self.APP.SETTINGS.setValue(
@@ -512,7 +516,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         output_path = str(path)
         if output_path == "":
             path = str(Path(self.CUR_EXPORT_PATH) / f"IMG_PC{index + 1:02d}.png")
-            output_path = QtWidgets.QFileDialog.getSaveFileName(
+            output_path: str = QtWidgets.QFileDialog.getSaveFileName(
                 self,
                 __("Save Photo"),
                 path,
@@ -536,7 +540,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         frame: FrameData = False
         if self.chkFrame.isChecked():
-            own_frame = Path(self.CONFIG_PATH) / "pc_frame.png"
+            own_frame: Path = Path(self.CONFIG_PATH) / "pc_frame.png"
             if not own_frame.exists():
                 shutil.copy(
                     Path(self.APP_PATH) / "res" / "pc_frame.png",
@@ -572,7 +576,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
             e.setDropAction(QtCore.Qt.DropAction.CopyAction)
             e.accept()
             for url in e.mimeData().urls():
-                path = self._url_to_path(url)
+                path: Path = self._url_to_path(url)
                 if path.suffix.lower() == ".sav":
                     self.OpenFile(path)
         else:
@@ -580,7 +584,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
     @staticmethod
     def _url_to_path(url: QtCore.QUrl) -> Path:
-        filename = url.toLocalFile()
+        filename: str = url.toLocalFile()
         if filename == "":
             filename = urllib.parse.unquote(str(QtCore.QUrl(url.toString()).toLocalFile() or url.path()))
         return Path(filename)
