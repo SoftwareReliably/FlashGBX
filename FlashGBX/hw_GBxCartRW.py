@@ -1617,17 +1617,13 @@ try:
                 unknown,
                 avr_jmp_identifier,
             ) = struct.unpack("<3sHB3sBHHBB", buffer[:-1])
-            jmp_mode = "unknown"
-            device_type = "unknown"
+            jmp_mode, device_type = "unknown", "unknown"
             if avr_jmp_identifier == 0x00:
-                jmp_mode = "relative"
-                device_type = "attiny"
+                jmp_mode, device_type = "relative", "attiny"
             elif avr_jmp_identifier == 0x0C:
-                jmp_mode = "absolute"
-                device_type = "attiny"
+                jmp_mode, device_type = "absolute", "attiny"
             elif avr_jmp_identifier == 0xAA:
-                jmp_mode = "relative"
-                device_type = "atmega"
+                jmp_mode, device_type = "relative", "atmega"
             info: BootloaderInfo = {
                 "magic": magic,
                 "tsb_version": tsb_version,
