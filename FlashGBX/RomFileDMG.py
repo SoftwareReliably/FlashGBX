@@ -277,10 +277,10 @@ class RomFileDMG:
             data["mapper_raw"] += 0x100
 
     def _ApplySachenOverride(self, data: dict[str, Any], buffer: bytearray) -> None:
-        digest = hashlib.sha1(buffer[0x200:0x280]).hexdigest()
-        override = SACHEN_OVERRIDES.get(digest)
+        digest: str = hashlib.sha1(buffer[0x200:0x280]).hexdigest()
+        override: tuple[int, int, str, int, bool] | None = SACHEN_OVERRIDES.get(digest)
         if digest == "d824d2b2716b08faeaa4fbd97d81945746779160":
-            secondary_digest = hashlib.sha1(buffer[0:0x80]).hexdigest()
+            secondary_digest: str = hashlib.sha1(buffer[0:0x80]).hexdigest()
             override = (
                 (0x04, 0x657A, "SACHEN 8B-001", 2, False)
                 if secondary_digest == "20173b95fb1aac816c66f56211f496fbfb8803bc"
@@ -296,7 +296,7 @@ class RomFileDMG:
         data["game_title"] = title
         if is_cgb:
             data["cgb"] = 0x80
-        logo_offset = 0x184 if version == 1 else 0x104
+        logo_offset: Literal[388, 260] = 0x184 if version == 1 else 0x104
         logo = self.LogoToImage(buffer[logo_offset : logo_offset + 0x30])
         if logo is not False:
             data["logo_sachen"] = logo
@@ -510,7 +510,7 @@ class RomFileDMG:
                 data["mapper_raw"] = 0x203
                 data["cgb"] = 0x80
                 try:
-                    game_title = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
+                    game_title: str = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
                     game_title = re.sub(r"(\x00+)$", "", game_title)
                     game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
                     game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
