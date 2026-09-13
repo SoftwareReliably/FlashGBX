@@ -517,6 +517,21 @@ class Flashcart:
         self.Reset(full_reset=True)
         return True
 
+    @staticmethod
+    def _ResolveSectorAddress(address: int | str | None, sector_position: int) -> int | None:
+        offsets = {
+            "SA": 0,
+            "SA+1": 1,
+            "SA+2": 2,
+            "SA+16384": 0x4000,
+            "SA+28672": 0x7000,
+            "SA+66": 0x42,
+            "SA+132": 0x84,
+        }
+        if isinstance(address, str):
+            return sector_position + offsets[address]
+        return address
+
     def SectorErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> int | Literal[False]:
         if not skip:
             self.Reset(full_reset=False)
@@ -530,20 +545,7 @@ class Flashcart:
                 else:
                     we = None
 
-                if addr == "SA":
-                    addr = pos
-                if addr == "SA+1":
-                    addr = pos + 1
-                if addr == "SA+2":
-                    addr = pos + 2
-                if addr == "SA+16384":
-                    addr = pos + 0x4000
-                if addr == "SA+28672":
-                    addr = pos + 0x7000
-                if addr == "SA+66":
-                    addr = pos + 0x42
-                if addr == "SA+132":
-                    addr = pos + 0x84
+                addr = self._ResolveSectorAddress(addr, pos)
                 if addr is not None:
                     if we == "WR":
                         self._set_we_pin_wr()
@@ -559,20 +561,10 @@ class Flashcart:
                 if self._config["commands"]["sector_erase_wait_for"][i][0] is not None:
                     addr = self._config["commands"]["sector_erase_wait_for"][i][0]
                     data = self._config["commands"]["sector_erase_wait_for"][i][1]
-                    if addr == "SA":
-                        addr = pos
-                    if addr == "SA+1":
-                        addr = pos + 1
-                    if addr == "SA+2":
-                        addr = pos + 2
-                    if addr == "SA+16384":
-                        addr = pos + 0x4000
-                    if addr == "SA+28672":
-                        addr = pos + 0x7000
-                    if addr == "SA+66":
-                        addr = pos + 0x42
-                    if addr == "SA+132":
-                        addr = pos + 0x84
+                    addr = self._ResolveSectorAddress(addr, pos)
+                    if addr is None:
+                        msg = "Sector erase status address cannot be empty"
+                        raise ValueError(msg)
                     time.sleep(0.05)
                     timeout = 100
                     while True:

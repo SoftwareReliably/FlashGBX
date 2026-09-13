@@ -135,6 +135,22 @@ class _SaveMapper(Protocol):
     def SelectBankROM(self, bank: int) -> object: ...
 
 
+class _DmgRtcMapper(Protocol):
+    def HasRTC(self) -> bool: ...
+
+    def GetName(self) -> str: ...
+
+    def EnableMapper(self) -> object: ...
+
+    def LatchRTC(self) -> object: ...
+
+    def ReadRTC(self) -> bytearray | bool: ...
+
+    def GetRTCDict(self) -> dict[str, Any]: ...
+
+    def GetRTCString(self) -> str: ...
+
+
 class _SaveActionMapper(Protocol):
     def GetName(self) -> str: ...
 
@@ -165,6 +181,17 @@ class _FlashVerificationContext(NamedTuple):
     rom_bank_size: int
     mbc: Any
     buffer_len: int
+
+
+class _FlashIdSearchContext(NamedTuple):
+    mode: DeviceMode
+    rom: bytearray
+    flash_id_commands: list[Any]
+    cfi_buffer: bytearray | None
+    read_cfi_commands: list[Any]
+    flash_id_methods: list[Any]
+    flash_id_text: str
+    write_enable_pins: list[str]
 
 
 class _FlashConfiguration(NamedTuple):
@@ -203,6 +230,22 @@ class _SaveTransferActionParameters(NamedTuple):
     empty_data_byte: int
     ram_banks: int
     extra_size: int
+
+
+class _SaveBankContext(NamedTuple):
+    args: dict[str, Any]
+    mbc: Any
+    bank: int
+    save_size: int
+    buffer_length: int
+    buffer_offset: int
+    agb_flash_chip: int
+
+
+class _SaveBankRange(NamedTuple):
+    start_address: int
+    end_address: int
+    buffer_length: int
 
 
 class _FlashSectorPlan(NamedTuple):
@@ -258,6 +301,14 @@ class _ROMReadConfiguration(NamedTuple):
     is_3d_memory: bool
 
 
+class _ROMReadRange(NamedTuple):
+    buffer_position: int
+    start_address: int
+    end_address: int
+    start_bank: int
+    end_bank: int
+
+
 class _SaveReadParameters(NamedTuple):
     args: Mapping[str, Any]
     mbc: Any
@@ -278,6 +329,27 @@ class _FlashChunkParameters(NamedTuple):
     flash_buffer_size: int | Literal[False]
     skip_init: bool
     rumble: bool
+
+
+class _FlashBankContext(NamedTuple):
+    mbc: Any
+    flashcart: Flashcart
+    cart_type: dict[str, Any]
+    bank: int
+    current_bank: int | None
+    start_address: int
+    end_address: int
+    buffer_position: int
+    rom_bank_size: int
+    sector_size: int
+    buffer_length: int
+
+
+class _FlashBankState(NamedTuple):
+    start_address: int
+    end_address: int
+    current_bank: int | None
+    buffer_length: int
 
 
 class LK_Device(ABC):
@@ -1672,6 +1744,57 @@ class LK_Device(ABC):
         if self.MODE == "DMG":
             self._write(self.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=self.FW["fw_ver"] >= 12)
 
+    def _ReadDmgRtc(self, data: dict[str, Any], mbc: _DmgRtcMapper, check_rtc: bool) -> None:
+        if not check_rtc:
+            return
+        data["has_rtc"] = mbc.HasRTC() is True
+        if data["has_rtc"] is not True:
+            return
+        if mbc.GetName() == "TAMA5":
+            mbc.EnableMapper()
+        mbc.LatchRTC()
+        data["rtc_buffer"] = mbc.ReadRTC()
+        if mbc.GetName() == "TAMA5":
+            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
+        try:
+            data["rtc_dict"] = mbc.GetRTCDict()
+            data["rtc_string"] = mbc.GetRTCString()
+        except Exception:
+            data["rtc_string"] = c__("Game Data", "Invalid RTC data")
+
+    def _ReadAgbRtc(self, data: AGBHeader, header: bytearray, check_rtc: bool) -> None:
+        data["rtc_dict"] = {}
+        data["rtc_string"] = c__("Game Data", "Not available")
+        rtc_header_is_valid = header[0xC5] == 0 and header[0xC7] == 0 and header[0xC9] == 0
+        if not check_rtc or data["logo_correct"] is not True or not rtc_header_is_valid:
+            data["has_rtc"] = False
+            data["no_rtc_reason"] = None
+            return
+
+        agb_gpio = AGB_GPIO(
+            args={"rtc": True},
+            cart_write_fncptr=self._cart_write,
+            cart_read_fncptr=self._mapper_cart_read,
+            cart_powercycle_fncptr=self.CartPowerCycleOrAskReconnect,
+            clk_toggle_fncptr=self._clk_toggle,
+        )
+        if self.FW["fw_ver"] >= 12:
+            self._write(self.DEVICE_CMD["AGB_READ_GPIO_RTC"])
+            rtc_data: bytearray | Literal[False] = self._read(8)
+            data["has_rtc"] = rtc_data is not False and agb_gpio.HasRTC(rtc_data) is True
+            if data["has_rtc"] is True and rtc_data is not False:
+                data["rtc_buffer"] = rtc_data[1:8]
+        else:
+            data["has_rtc"] = agb_gpio.HasRTC() is True
+            if data["has_rtc"] is True:
+                data["rtc_buffer"] = agb_gpio.ReadRTC()
+        try:
+            data["rtc_dict"] = agb_gpio.GetRTCDict(has_rtc=data["has_rtc"])
+            data["rtc_string"] = agb_gpio.GetRTCString(has_rtc=data["has_rtc"])
+        except Exception as error:
+            dprint("RTC exception:", str(error.args[0]))
+            data["has_rtc"] = False
+
     def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
         if not self.IsConnected():
             msg = "Couldn't access the the device."
@@ -1766,20 +1889,7 @@ class LK_Device(ABC):
                     cart_powercycle_fncptr=self.CartPowerCycleOrAskReconnect,
                     clk_toggle_fncptr=self._clk_toggle,
                 )
-                if checkRtc:
-                    data["has_rtc"] = _mbc.HasRTC() is True
-                    if data["has_rtc"] is True:
-                        if _mbc.GetName() == "TAMA5":
-                            _mbc.EnableMapper()
-                        _mbc.LatchRTC()
-                        data["rtc_buffer"] = _mbc.ReadRTC()
-                        if _mbc.GetName() == "TAMA5":
-                            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-                        try:
-                            data["rtc_dict"] = _mbc.GetRTCDict()
-                            data["rtc_string"] = _mbc.GetRTCString()
-                        except Exception:
-                            data["rtc_string"] = c__("Game Data", "Invalid RTC data")
+                self._ReadDmgRtc(data, _mbc, checkRtc)
 
                 if _mbc.GetName() == "G-MMC1":
                     try:
@@ -1902,41 +2012,7 @@ class LK_Device(ABC):
                         + ANSI.RESET,
                     )
 
-            data["rtc_dict"] = {}
-            data["rtc_string"] = c__("Game Data", "Not available")
-            if (
-                checkRtc
-                and data["logo_correct"] is True
-                and header[0xC5] == 0
-                and header[0xC7] == 0
-                and header[0xC9] == 0
-            ):
-                _agb_gpio = AGB_GPIO(
-                    args={"rtc": True},
-                    cart_write_fncptr=self._cart_write,
-                    cart_read_fncptr=self._mapper_cart_read,
-                    cart_powercycle_fncptr=self.CartPowerCycleOrAskReconnect,
-                    clk_toggle_fncptr=self._clk_toggle,
-                )
-                if self.FW["fw_ver"] >= 12:
-                    self._write(self.DEVICE_CMD["AGB_READ_GPIO_RTC"])
-                    temp: bytearray | Literal[False] = self._read(8)
-                    data["has_rtc"] = temp is not False and _agb_gpio.HasRTC(temp) is True
-                    if data["has_rtc"] is True and temp is not False:
-                        data["rtc_buffer"] = temp[1:8]
-                else:
-                    data["has_rtc"] = _agb_gpio.HasRTC() is True
-                    if data["has_rtc"] is True:
-                        data["rtc_buffer"] = _agb_gpio.ReadRTC()
-                try:
-                    data["rtc_dict"] = _agb_gpio.GetRTCDict(has_rtc=data["has_rtc"])
-                    data["rtc_string"] = _agb_gpio.GetRTCString(has_rtc=data["has_rtc"])
-                except Exception as e:
-                    dprint("RTC exception:", str(e.args[0]))
-                    data["has_rtc"] = False
-            else:
-                data["has_rtc"] = False
-                data["no_rtc_reason"] = None
+            self._ReadAgbRtc(data, header, checkRtc)
 
             if data["ereader"] is True:
                 bank = 0
@@ -2085,6 +2161,45 @@ class LK_Device(ABC):
         if check:
             return 65536, 0x05
         return save_size, save_type
+
+    def _DetectAgbFlashSaveType(self, save_size: int) -> tuple[int | None, int, str | None]:
+        save_type = None
+        save_chip = None
+        flash_id_result = self.ReadFlashSaveID()
+        if flash_id_result is False:
+            return save_type, save_size, save_chip
+        flash_save_id, _ = flash_id_result
+        try:
+            if flash_save_id == 0:
+                return save_type, save_size, save_chip
+            if not AgbSaveTypes().IsValidFlashChipIndex(flash_save_id):
+                return 0, 0, __("Unknown FLASH save chip") + f" (0x{flash_save_id:04X})"
+            save_size = AgbSaveTypes().GetFlashChipSize(flash_save_id)
+            save_chip = AgbSaveTypes().GetFlashChipName(flash_save_id)
+            if flash_save_id in (0xBF4B, 0xBF5B, 0xFFFF, 0xBF6D):  # Bootlegs
+                if self.INFO["data"][0:0x20000] == bytearray([0xFF] * 0x20000):
+                    save_type = 5
+                elif self.INFO["data"][0:0x10000] == self.INFO["data"][0x10000:0x20000]:
+                    save_type = 4
+                else:
+                    save_type = 5
+            elif save_size == 131072:
+                save_type = 5
+            elif save_size == 65536:
+                save_type = 4
+        except Exception as error:
+            print(
+                ANSI.RED
+                + __(
+                    "Error: Couldn't check save type with FLASH save ID {flash_save_id}",
+                    flash_save_id=f"0x{flash_save_id:04X}",
+                )
+                + ANSI.RESET
+                + "\n"
+                + str(error),
+            )
+            return 0, 0, __("Unknown FLASH save chip") + f" (0x{flash_save_id:04X})"
+        return save_type, save_size, save_chip
 
     def _DetectCartridge_Worker(
         self,
@@ -2249,48 +2364,7 @@ class LK_Device(ABC):
                     save_size = 0
                 else:
                     # Check for FLASH
-                    ret = self.ReadFlashSaveID()
-                    if ret is not False:
-                        (flash_save_id, _) = ret
-                        try:
-                            if flash_save_id != 0:
-                                if AgbSaveTypes().IsValidFlashChipIndex(flash_save_id) is True:
-                                    save_size = AgbSaveTypes().GetFlashChipSize(flash_save_id)
-                                    save_chip = AgbSaveTypes().GetFlashChipName(flash_save_id)
-                                    if flash_save_id in (
-                                        0xBF4B,
-                                        0xBF5B,
-                                        0xFFFF,
-                                        0xBF6D,
-                                    ):  # Bootlegs
-                                        if self.INFO["data"][0:0x20000] == bytearray([0xFF] * 0x20000):
-                                            save_type = 5
-                                        elif self.INFO["data"][0:0x10000] == self.INFO["data"][0x10000:0x20000]:
-                                            save_type = 4
-                                        else:
-                                            save_type = 5
-                                    elif save_size == 131072:
-                                        save_type = 5
-                                    elif save_size == 65536:
-                                        save_type = 4
-                                else:  # Other bootleg chips
-                                    save_type = 0
-                                    save_size = 0
-                                    save_chip = __("Unknown FLASH save chip") + f" (0x{flash_save_id:04X})"
-                        except Exception as e:
-                            print(
-                                ANSI.RED
-                                + __(
-                                    "Error: Couldn't check save type with FLASH save ID {flash_save_id}",
-                                    flash_save_id=f"0x{flash_save_id:04X}",
-                                )
-                                + ANSI.RESET
-                                + "\n"
-                                + str(e),
-                            )
-                            save_type = 0
-                            save_size = 0
-                            save_chip = __("Unknown FLASH save chip") + f" (0x{flash_save_id:04X})"
+                    save_type, save_size, save_chip = self._DetectAgbFlashSaveType(save_size)
 
                     if save_type is None:
                         checkBatterylessSRAM = True
@@ -3513,6 +3587,64 @@ class LK_Device(ABC):
         elif self.MODE == "AGB":
             self.SetAGBReadMethod(read_method)
 
+    def _SearchFlashIdentifiers(self, context: _FlashIdSearchContext) -> str:
+        dprint("Trying to find the Flash ID")
+        write_enable_options: dict[str, list[int]] = (
+            {"DMG": [1, 2], "AGB": [0]} if self.SupportsAudioAsWe() else {"DMG": [1], "AGB": [0]}
+        )
+        flash_id_text = context.flash_id_text
+        for write_enable in write_enable_options[context.mode]:
+            if self.MODE == "DMG":
+                self._set_fw_variable("FLASH_WE_PIN", write_enable)
+            for command_index, command in enumerate(context.flash_id_commands):
+                self._cart_write_flash(command["reset"], flashcart=True)
+                self._cart_write_flash(command["read_identifier"], flashcart=True)
+                result: bytearray = self._cart_read(0, 8)
+                self._cart_write_flash(command["reset"], flashcart=True)
+
+                if result is False or context.rom == result:
+                    continue
+                context.flash_id_methods.append(
+                    [
+                        write_enable - 1,
+                        command_index,
+                        list(result),
+                        context.cfi_buffer,
+                        command["read_identifier"],
+                    ],
+                )
+                if self.MODE == "DMG":
+                    flash_id_text += "[{:s}/{:4X}/{:2X}] {:s}\n".format(
+                        context.write_enable_pins[write_enable - 1].ljust(5),
+                        command["read_identifier"][0][0],
+                        command["read_identifier"][0][1],
+                        " ".join(format(value, "02X") for value in result),
+                    )
+                else:
+                    flash_id_text += "[{:6X}/{:4X}] {:s}\n".format(
+                        command["read_identifier"][0][0],
+                        command["read_identifier"][0][1],
+                        " ".join(format(value, "02X") for value in result),
+                    )
+                command["read_cfi"] = [command["read_identifier"][0][0], 0x98]
+                context.read_cfi_commands.append(command["read_cfi"])
+
+        dprint(f"Found {len(context.flash_id_methods):d} result(s)")
+        self._cart_write_flash([[0, 0xFF]], flashcart=True)
+        self._cart_write_flash([[0, 0xF0]], flashcart=True)
+        return flash_id_text
+
+    def _PrepareFlashDetectionMode(self, mode: DeviceMode, limit_voltage: bool) -> bytearray:
+        if mode == "DMG":
+            voltage_command = "SET_VOLTAGE_3_3V" if limit_voltage else "SET_VOLTAGE_5V"
+            self._write(self.DEVICE_CMD[voltage_command], wait=self.FW["fw_ver"] >= 12)
+            self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
+        else:
+            self.SetAGBReadMethod(0)
+            self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
+        rom = self._cart_read(0, 8)
+        return bytearray() if rom is False else rom
+
     def DetectFlash(self, limitVoltage: bool = False) -> tuple[Any, ...]:
         mode = self.MODE
         if mode is None:
@@ -3535,24 +3667,7 @@ class LK_Device(ABC):
         flash_id_methods = []
         read_method = self.AGB_READ_METHOD
 
-        match self.MODE:
-            case "DMG":
-                if limitVoltage:
-                    self._write(self.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait=self.FW["fw_ver"] >= 12)
-                else:
-                    self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
-                self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
-
-            case "AGB":
-                self.SetAGBReadMethod(0)
-                self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
-
-            case _:
-                raise NotImplementedError
-
-        rom: bytearray = self._cart_read(0, 8)
-        if rom is False:
-            rom = bytearray()
+        rom = self._PrepareFlashDetectionMode(mode, limitVoltage)
 
         dprint("Resetting and unlocking all cart types")
         cmds = []
@@ -3736,51 +3851,18 @@ class LK_Device(ABC):
             we_pins = [""]
 
         if len(flash_types) == 0:
-            dprint("Trying to find the Flash ID")
-            wes: dict[str, list[int]] = (
-                {"DMG": [1, 2], "AGB": [0]} if self.SupportsAudioAsWe() else {"DMG": [1], "AGB": [0]}
+            flash_id_s = self._SearchFlashIdentifiers(
+                _FlashIdSearchContext(
+                    mode,
+                    rom,
+                    flash_id_cmds,
+                    cfi_buffer,
+                    read_cfi_cmds,
+                    flash_id_methods,
+                    flash_id_s,
+                    we_pins,
+                ),
             )
-            for we in wes[mode]:
-                if self.MODE == "DMG":
-                    self._set_fw_variable("FLASH_WE_PIN", we)
-                for i in range(len(flash_id_cmds)):
-                    self._cart_write_flash(flash_id_cmds[i]["reset"], flashcart=True)
-                    self._cart_write_flash(flash_id_cmds[i]["read_identifier"], flashcart=True)
-                    cmp: bytearray = self._cart_read(0, 8)
-                    self._cart_write_flash(flash_id_cmds[i]["reset"], flashcart=True)
-
-                    if cmp is not False and rom != cmp:  # ROM data changed
-                        flash_id_methods.append(
-                            [
-                                we - 1,
-                                i,
-                                list(cmp),
-                                cfi_buffer,
-                                flash_id_cmds[i]["read_identifier"],
-                            ],
-                        )
-                        if self.MODE == "DMG":
-                            flash_id_s += "[{:s}/{:4X}/{:2X}] {:s}\n".format(
-                                we_pins[we - 1].ljust(5),
-                                flash_id_cmds[i]["read_identifier"][0][0],
-                                flash_id_cmds[i]["read_identifier"][0][1],
-                                " ".join(format(x, "02X") for x in cmp),
-                            )
-                        else:
-                            flash_id_s += "[{:6X}/{:4X}] {:s}\n".format(
-                                flash_id_cmds[i]["read_identifier"][0][0],
-                                flash_id_cmds[i]["read_identifier"][0][1],
-                                " ".join(format(x, "02X") for x in cmp),
-                            )
-                        flash_id_cmds[i]["read_cfi"] = [
-                            flash_id_cmds[i]["read_identifier"][0][0],
-                            0x98,
-                        ]
-                        read_cfi_cmds.append(flash_id_cmds[i]["read_cfi"])
-
-            dprint(f"Found {len(flash_id_methods):d} result(s)")
-            self._cart_write_flash([[0, 0xFF]], flashcart=True)
-            self._cart_write_flash([[0, 0xF0]], flashcart=True)
 
         self._MatchDetectedFlashTypes(
             supported_carts,
@@ -4303,6 +4385,51 @@ class LK_Device(ABC):
 
         return _ROMReadConfiguration(mbc, size, rom_banks, rom_bank_size, buffer_len, is_3d_memory)
 
+    @staticmethod
+    def _GetROMReadRange(
+        args: dict[str, Any],
+        size: int,
+        rom_bank_size: int,
+        rom_banks: int,
+    ) -> _ROMReadRange:
+        buffer_position = 0
+        start_address = 0
+        end_address = size
+        start_bank = 0
+        end_bank = rom_banks
+        if "verify_write" in args:
+            buffer_position = args["verify_from"]
+            start_address = buffer_position
+            end_address = args["verify_from"] + args["verify_len"]
+            start_bank = math.floor(buffer_position / rom_bank_size)
+            end_bank = math.ceil((buffer_position + args["verify_len"]) / rom_bank_size)
+        elif "bl_offset" in args:
+            if args.get("bl_layout") in (1, 2):
+                args["bl_size"] <<= 1
+            buffer_position = args["bl_offset"]
+            start_address = buffer_position
+            end_address = args["bl_offset"] + args["bl_size"]
+            start_bank = math.floor(buffer_position / rom_bank_size)
+            end_bank = math.ceil((buffer_position + args["bl_size"]) / rom_bank_size)
+        return _ROMReadRange(buffer_position, start_address, end_address, start_bank, end_bank)
+
+    def _AbortROMReadIfCanceled(self, file: BinaryIO | None) -> bool:
+        if not self.CANCEL:
+            return False
+        cancel_args = {"action": "ABORT", "abortable": False}
+        cancel_args.update(self.CANCEL_ARGS)
+        self.CANCEL_ARGS = {}
+        self.ERROR_ARGS = {}
+        self.SetProgress(cancel_args)
+        try:
+            if file is not None:
+                file.close()
+        except Exception:
+            logger.exception("Failed to close the canceled ROM-read output file")
+        if self.CanPowerCycleCart():
+            self.CartPowerCycle()
+        return True
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = None
@@ -4312,7 +4439,6 @@ class LK_Device(ABC):
         self.FAST_READ = True
         agb_read_method = self.AGB_READ_METHOD
         dmg_read_method = self.DMG_READ_METHOD
-        buffer_pos = 0
         pos = 0
         cart_type, flashcart = self._PrepareBackupFlashcart(device_mode, args["cart_type"])
 
@@ -4348,27 +4474,10 @@ class LK_Device(ABC):
         max_length = min(max_length, 4096) if is_3dmemory else min(max_length, 8192)
         self.INFO["dump_info"]["transfer_size"] = max_length
         pos_total = 0
-        start_address = 0
-        end_address = size
         # dprint("ROM banks:", rom_banks)
 
-        start_bank = 0
-        if "verify_write" in args:
-            buffer_pos = args["verify_from"]
-            start_address = buffer_pos
-            end_address = args["verify_from"] + args["verify_len"]
-            start_bank = math.floor(buffer_pos / rom_bank_size)
-            end_bank = math.ceil((buffer_pos + args["verify_len"]) / rom_bank_size)
-            rom_banks = end_bank
-        elif "bl_offset" in args:
-            if "bl_layout" in args and args["bl_layout"] in (1, 2):
-                args["bl_size"] <<= 1
-            buffer_pos = args["bl_offset"]
-            start_address = buffer_pos
-            end_address = args["bl_offset"] + args["bl_size"]
-            start_bank = math.floor(buffer_pos / rom_bank_size)
-            end_bank = math.ceil((buffer_pos + args["bl_size"]) / rom_bank_size)
-            rom_banks = end_bank
+        read_range = self._GetROMReadRange(args, size, rom_bank_size, rom_banks)
+        buffer_pos, start_address, end_address, start_bank, rom_banks = read_range
 
         dprint(
             f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, start_bank=0x{start_bank:X}, rom_banks=0x{rom_banks:X}, buffer_len=0x{buffer_len:X}, max_length=0x{max_length:X}",
@@ -4404,19 +4513,7 @@ class LK_Device(ABC):
 
             while pos < end_address:
                 temp = bytearray()
-                if self.CANCEL:
-                    cancel_args = {"action": "ABORT", "abortable": False}
-                    cancel_args.update(self.CANCEL_ARGS)
-                    self.CANCEL_ARGS = {}
-                    self.ERROR_ARGS = {}
-                    self.SetProgress(cancel_args)
-                    try:
-                        if file is not None:
-                            file.close()
-                    except Exception:
-                        logger.exception("Failed to close the canceled ROM-read output file")
-                    if self.CanPowerCycleCart():
-                        self.CartPowerCycle()
+                if self._AbortROMReadIfCanceled(file):
                     return None
 
                 if is_3dmemory:
@@ -5320,6 +5417,66 @@ class LK_Device(ABC):
                 data[index] = value & 0x0F
         return data
 
+    def _PrepareSaveBank(self, context: _SaveBankContext) -> _SaveBankRange:
+        args, mbc, bank, save_size, buffer_length, buffer_offset, agb_flash_chip = context
+        if self.MODE == "DMG":
+            if mbc.GetName() == "MBC6" and bank > 7:
+                self._set_fw_variable("DMG_ROM_BANK", bank - 8)
+                start_address, bank_size = mbc.SelectBankFlash(bank - 8)
+                end_address = start_address + bank_size
+                buffer_length = 0x2000
+                if args["mode"] == 3 and (buffer_offset - 0x8000) % 0x20000 == 0:
+                    dprint(f"Erasing flash sector at position 0x{buffer_offset:X}")
+                    mbc.EraseFlashSector()
+            elif mbc.GetName() == "Xploder GB":
+                self._set_fw_variable("DMG_ROM_BANK", bank + 8)
+                start_address, bank_size = mbc.SelectBankRAM(bank)
+                end_address = min(save_size, start_address + bank_size)
+            else:
+                self._set_fw_variable("DMG_WRITE_CS_PULSE", 1 if mbc.WriteWithCSPulse() else 0)
+                start_address, bank_size = mbc.SelectBankRAM(bank)
+                end_address = min(save_size, start_address + bank_size)
+            return _SaveBankRange(start_address, end_address, buffer_length)
+
+        start_address = 0
+        bank_size = 0x10000
+        if args["save_type"] == 6:  # DACS
+            bank_size = min(save_size, 0x100000)
+            buffer_length = 0x2000
+        end_address = min(save_size, bank_size)
+        if save_size <= bank_size:
+            return _SaveBankRange(start_address, end_address, buffer_length)
+
+        if args["save_type"] == 8 or agb_flash_chip in (0xBF4B, 0xBF5B, 0xFFFF, 0xBF6D):
+            dprint(f"Switching to bootleg save bank {bank:d}")
+            self._cart_write(0x1000000, bank)
+        elif args["save_type"] == 5:
+            dprint(f"Switching to FLASH bank {bank:d}")
+            self._cart_write_flash(
+                [
+                    [0x5555, 0xAA],
+                    [0x2AAA, 0x55],
+                    [0x5555, 0xB0],
+                    [0, bank],
+                ],
+            )
+        else:
+            dprint("Unknown bank switching method")
+        time.sleep(0.05)
+        return _SaveBankRange(start_address, end_address, buffer_length)
+
+    def _AbortSaveTransferIfCanceled(self) -> bool:
+        if not self.CANCEL:
+            return False
+        cancel_args = {"action": "ABORT", "abortable": False}
+        cancel_args.update(self.CANCEL_ARGS)
+        self.CANCEL_ARGS = {}
+        self.ERROR_ARGS = {}
+        self.SetProgress(cancel_args)
+        if self.CanPowerCycleCart():
+            self.CartPowerCycle()
+        return True
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("accessing save data")
         self.FAST_READ = False
@@ -5391,67 +5548,24 @@ class LK_Device(ABC):
         buffer_offset = 0
         max_length = 64 if self.FW["pcb_name"] in ("GBxCart RW", "") else self.MAX_BUFFER_READ
         for bank in range(ram_banks):
-            if self.MODE == "DMG":
-                if _mbc.GetName() == "MBC6" and bank > 7:
-                    self._set_fw_variable("DMG_ROM_BANK", bank - 8)
-                    (start_address, bank_size) = _mbc.SelectBankFlash(bank - 8)
-                    end_address = start_address + bank_size
-                    buffer_len = 0x2000
-                    if args["mode"] == 3 and (buffer_offset - 0x8000) % 0x20000 == 0:  # Restore
-                        dprint(f"Erasing flash sector at position 0x{buffer_offset:X}")
-                        _mbc.EraseFlashSector()
-                elif _mbc.GetName() == "Xploder GB":
-                    self._set_fw_variable("DMG_ROM_BANK", bank + 8)
-                    (start_address, bank_size) = _mbc.SelectBankRAM(bank)
-                    end_address = min(save_size, start_address + bank_size)
-                else:
-                    self._set_fw_variable("DMG_WRITE_CS_PULSE", 1 if _mbc.WriteWithCSPulse() else 0)
-                    (start_address, bank_size) = _mbc.SelectBankRAM(bank)
-                    end_address = min(save_size, start_address + bank_size)
-            elif self.MODE == "AGB":
-                start_address = 0
-                bank_size = 0x10000
-                if args["save_type"] == 6:  # DACS
-                    bank_size = min(save_size, 0x100000)
-                    buffer_len = 0x2000
-
-                end_address = min(save_size, bank_size)
-
-                if save_size > bank_size:
-                    if args["save_type"] == 8 or agb_flash_chip in (
-                        0xBF4B,
-                        0xBF5B,
-                        0xFFFF,
-                        0xBF6D,
-                    ):  # Bootleg 1M
-                        dprint(f"Switching to bootleg save bank {bank:d}")
-                        self._cart_write(0x1000000, bank)
-                    elif args["save_type"] == 5:  # FLASH 1M
-                        dprint(f"Switching to FLASH bank {bank:d}")
-                        cmds = [
-                            [0x5555, 0xAA],
-                            [0x2AAA, 0x55],
-                            [0x5555, 0xB0],
-                            [0, bank],
-                        ]
-                        self._cart_write_flash(cmds)
-                    else:
-                        dprint("Unknown bank switching method")
-                    time.sleep(0.05)
+            start_address, end_address, buffer_len = self._PrepareSaveBank(
+                _SaveBankContext(
+                    args,
+                    _mbc,
+                    bank,
+                    save_size,
+                    buffer_len,
+                    buffer_offset,
+                    agb_flash_chip,
+                ),
+            )
 
             dprint(
                 f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, buffer_len=0x{buffer_len:X}, buffer_offset=0x{buffer_offset:X}",
             )
             pos = start_address
             while pos < end_address:
-                if self.CANCEL:
-                    cancel_args = {"action": "ABORT", "abortable": False}
-                    cancel_args.update(self.CANCEL_ARGS)
-                    self.CANCEL_ARGS = {}
-                    self.ERROR_ARGS = {}
-                    self.SetProgress(cancel_args)
-                    if self.CanPowerCycleCart():
-                        self.CartPowerCycle()
+                if self._AbortSaveTransferIfCanceled():
                     return None
 
                 if args["mode"] == 2:  # Backup
@@ -7059,6 +7173,47 @@ class LK_Device(ABC):
         if self.CanPowerCycleCart():
             self.CartPowerOn()
 
+    def _SelectFlashWriteBank(self, context: _FlashBankContext) -> _FlashBankState:
+        (
+            mbc,
+            flashcart,
+            cart_type,
+            bank,
+            current_bank,
+            start_address,
+            end_address,
+            buffer_position,
+            rom_bank_size,
+            sector_size,
+            buffer_length,
+        ) = context
+        if self.MODE == "DMG":
+            if mbc.ResetBeforeBankChange(bank) is True:
+                dprint("Resetting the MBC")
+                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+            start_address, bank_size = mbc.SelectBankROM(bank)
+            if flashcart.PulseResetAfterWrite() and bank == 0:
+                if self.FW["fw_ver"] < 2 and "OFW_GB_CART_MODE" in self.DEVICE_CMD:
+                    self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
+                else:
+                    self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
+                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+            self._set_fw_variable("DMG_ROM_BANK", bank)
+            buffer_length = min(buffer_length, bank_size)
+            if "start_addr" in flashcart.CONFIG and bank == 0:
+                start_address = flashcart.CONFIG["start_addr"]
+            end_address = start_address + bank_size
+            start_address += buffer_position % rom_bank_size
+            end_address = min(end_address, start_address + sector_size)
+        elif "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0 and bank != current_bank:
+            flashcart.Reset(full_reset=True)
+            flashcart.SelectBankROM(bank)
+            remaining_size = end_address - start_address
+            start_address %= cart_type["flash_bank_size"]
+            end_address = min(cart_type["flash_bank_size"], start_address + remaining_size)
+            current_bank = bank
+        return _FlashBankState(start_address, end_address, current_bank, buffer_length)
+
     def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("writing ROM")
         self.FAST_READ = True
@@ -7089,7 +7244,6 @@ class LK_Device(ABC):
             verify_sectors,
         ) = preparation
 
-        temp: Any = None
         pos = 0
         rumble = self._FlashcartHasRumble(flashcart)
         sector_pos = 0
@@ -7140,39 +7294,21 @@ class LK_Device(ABC):
                 while bank < end_bank:
                     status = None
                     # ↓↓↓ Switch ROM bank
-                    if self.MODE == "DMG":
-                        if _mbc.ResetBeforeBankChange(bank) is True:
-                            dprint("Resetting the MBC")
-                            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                        (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                        if flashcart.PulseResetAfterWrite() and bank == 0:
-                            if self.FW["fw_ver"] < 2 and "OFW_GB_CART_MODE" in self.DEVICE_CMD:
-                                self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                            else:
-                                self._write(
-                                    self.DEVICE_CMD["SET_MODE_DMG"],
-                                    wait=self.FW["fw_ver"] >= 12,
-                                )
-                            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                        self._set_fw_variable("DMG_ROM_BANK", bank)
-
-                        buffer_len = min(buffer_len, bank_size)
-                        if "start_addr" in flashcart.CONFIG and bank == 0:
-                            start_address = flashcart.CONFIG["start_addr"]
-                        end_address = start_address + bank_size
-                        start_address += buffer_pos % rom_bank_size
-                        end_address = min(end_address, start_address + sector[1])
-
-                    elif self.MODE == "AGB":
-                        if (
-                            "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0
-                        ) and bank != current_bank:
-                            flashcart.Reset(full_reset=True)
-                            flashcart.SelectBankROM(bank)
-                            temp = end_address - start_address
-                            start_address %= cart_type["flash_bank_size"]
-                            end_address = min(cart_type["flash_bank_size"], start_address + temp)
-                            current_bank = bank
+                    start_address, end_address, current_bank, buffer_len = self._SelectFlashWriteBank(
+                        _FlashBankContext(
+                            _mbc,
+                            flashcart,
+                            cart_type,
+                            bank,
+                            current_bank,
+                            start_address,
+                            end_address,
+                            buffer_pos,
+                            rom_bank_size,
+                            sector[1],
+                            buffer_len,
+                        ),
+                    )
                     # ↑↑↑ Switch ROM bank
 
                     pos = start_address
@@ -7220,39 +7356,21 @@ class LK_Device(ABC):
 
                 status = None
                 # ↓↓↓ Switch ROM bank
-                if self.MODE == "DMG":
-                    if _mbc.ResetBeforeBankChange(bank) is True:
-                        dprint("Resetting the MBC")
-                        self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                    (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                    if flashcart.PulseResetAfterWrite() and bank == 0:
-                        if self.FW["fw_ver"] < 2 and "OFW_GB_CART_MODE" in self.DEVICE_CMD:
-                            self._write(self.DEVICE_CMD["OFW_GB_CART_MODE"])
-                        else:
-                            self._write(
-                                self.DEVICE_CMD["SET_MODE_DMG"],
-                                wait=self.FW["fw_ver"] >= 12,
-                            )
-                        self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                    self._set_fw_variable("DMG_ROM_BANK", bank)
-
-                    buffer_len = min(buffer_len, bank_size)
-                    if "start_addr" in flashcart.CONFIG and bank == 0:
-                        start_address = flashcart.CONFIG["start_addr"]
-                    end_address = start_address + bank_size
-                    start_address += buffer_pos % rom_bank_size
-                    end_address = min(end_address, start_address + sector[1])
-
-                elif self.MODE == "AGB":
-                    if (
-                        "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0
-                    ) and bank != current_bank:
-                        flashcart.Reset(full_reset=True)
-                        flashcart.SelectBankROM(bank)
-                        temp = end_address - start_address
-                        start_address %= cart_type["flash_bank_size"]
-                        end_address = min(cart_type["flash_bank_size"], start_address + temp)
-                        current_bank = bank
+                start_address, end_address, current_bank, buffer_len = self._SelectFlashWriteBank(
+                    _FlashBankContext(
+                        _mbc,
+                        flashcart,
+                        cart_type,
+                        bank,
+                        current_bank,
+                        start_address,
+                        end_address,
+                        buffer_pos,
+                        rom_bank_size,
+                        sector[1],
+                        buffer_len,
+                    ),
+                )
                 # ↑↑↑ Switch ROM bank
 
                 skip_init = False

@@ -1650,6 +1650,33 @@ class FlashGBX_CLI:
             return None
         return rom_path, buffer
 
+    def _GetFlashVoltageOverrides(
+        self,
+        args: argparse.Namespace,
+        carts: Sequence[Mapping[str, Any]],
+        cart_type: int,
+    ) -> tuple[float | Literal[False], float | Literal[False], bool]:
+        override_voltage: float | Literal[False] = False
+        voltage_fallback: float | Literal[False] = False
+        device_voltage_locked = self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode()
+        if device_voltage_locked:
+            return override_voltage, voltage_fallback, device_voltage_locked
+        if args.force_5v is True:
+            override_voltage = 5
+        elif "voltage_variants" in carts[cart_type] and carts[cart_type]["voltage"] == 3.3:
+            print(
+                __(
+                    "The selected flashcart profile usually flashes fine with 3.3V, however sometimes it may require 5V. You can use the “{switch}” command line switch if necessary. Please note that 5V can be unsafe for some flash chips.",
+                    switch="--force-5v",
+                ),
+            )
+        elif carts[cart_type].get("voltage") == 5 and has_3v_compatible_profile(carts, cart_type):
+            # Some PCBs share the same flash chip but need 3.3V; try 3.3V silently first,
+            # fall back to 5V if writing fails.
+            override_voltage = 3.3
+            voltage_fallback = 5
+        return override_voltage, voltage_fallback, device_voltage_locked
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
         mbc = 0
@@ -1726,24 +1753,11 @@ class FlashGBX_CLI:
             return
         rom_path, buffer = loaded_rom
 
-        override_voltage = False
-        voltage_fallback = False
-        device_voltage_locked = self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode()
-        if not device_voltage_locked:
-            if args.force_5v is True:
-                override_voltage = 5
-            elif "voltage_variants" in carts[cart_type] and carts[cart_type]["voltage"] == 3.3:
-                print(
-                    __(
-                        "The selected flashcart profile usually flashes fine with 3.3V, however sometimes it may require 5V. You can use the “{switch}” command line switch if necessary. Please note that 5V can be unsafe for some flash chips.",
-                        switch="--force-5v",
-                    ),
-                )
-            elif carts[cart_type].get("voltage") == 5 and has_3v_compatible_profile(carts, cart_type):
-                # Some PCBs share the same flash chip but need 3.3V; try 3.3V silently first,
-                # fall back to 5V if writing fails.
-                override_voltage = 3.3
-                voltage_fallback = 5
+        override_voltage, voltage_fallback, device_voltage_locked = self._GetFlashVoltageOverrides(
+            args,
+            carts,
+            cart_type,
+        )
 
         prefer_chip_erase = args.prefer_chip_erase is True
         if (
@@ -2059,6 +2073,32 @@ class FlashGBX_CLI:
             return None
         return mbc, save_type, cart_type
 
+    def _PrepareEReaderCalibration(
+        self,
+        args: argparse.Namespace,
+        path: str,
+    ) -> tuple[bool, bytearray | None]:
+        if self.CONN.GetFWBuildDate() == "":  # Legacy Mode
+            print(__("This cartridge is not supported in Legacy Mode."))
+            return False, None
+        self.CONN.ReadHeader()
+        if "ereader_calibration" not in self.CONN.INFO:
+            print(__("Note: No existing e-Reader calibration data found."))
+            return True, None
+
+        with Path(path).open("rb") as file:
+            buffer = bytearray(file.read())
+        if buffer[0xD000:0xF000] == self.CONN.INFO["ereader_calibration"]:
+            return True, buffer
+        if args.keep_calibration:
+            if args.action == "erase-save":
+                args.action = "restore-save"
+            print(__("Note: Keeping existing e-Reader calibration data."))
+            buffer[0xD000:0xF000] = self.CONN.INFO["ereader_calibration"]
+        else:
+            print(__("Note: Overwriting existing e-Reader calibration data."))
+        return True, buffer
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2116,23 +2156,9 @@ class FlashGBX_CLI:
 
         mode = self.CONN.GetMode()
         if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.CONN.INFO.get("ereader") is True:
-            if self.CONN.GetFWBuildDate() == "":  # Legacy Mode
-                print(__("This cartridge is not supported in Legacy Mode."))
+            continue_write, buffer = self._PrepareEReaderCalibration(args, path)
+            if not continue_write:
                 return
-            self.CONN.ReadHeader()
-            if "ereader_calibration" in self.CONN.INFO:
-                with Path(path).open("rb") as f:
-                    buffer = bytearray(f.read())
-                if buffer[0xD000:0xF000] != self.CONN.INFO["ereader_calibration"]:
-                    if args.keep_calibration:
-                        if args.action == "erase-save":
-                            args.action = "restore-save"
-                        print(__("Note: Keeping existing e-Reader calibration data."))
-                        buffer[0xD000:0xF000] = self.CONN.INFO["ereader_calibration"]
-                    else:
-                        print(__("Note: Overwriting existing e-Reader calibration data."))
-            else:
-                print(__("Note: No existing e-Reader calibration data found."))
         if mode == "AGB":
             print(
                 __(
