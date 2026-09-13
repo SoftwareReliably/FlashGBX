@@ -6152,6 +6152,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cfi_message = "<br><b>" + label + "</b> " + c__("Common Flash Interface Data", "Not available") + "<br><br>"
         return flash_id_message, cfi_message
 
+    def _FormatDetectedFlashMapper(self, cart_config: Mapping[str, Any]) -> str:
+        if self._device.GetMode() != "DMG":
+            return ""
+        if "mbc" not in cart_config:
+            return "<b>" + __("Mapper Type:") + "</b> " + c__("Mapper Type", "Default") + " (MBC5)<br>"
+
+        mapper = cart_config["mbc"]
+        if mapper == "manual":
+            return "<b>" + __("Mapper Type:") + "</b> <i>" + __("Manual selection") + "</i><br>"
+        if mapper in DMG_Mapper().GetAllMapperIds():
+            return "<b>" + __("Mapper Type:") + f"</b> {DMG_Mapper().GetMapperType(mapper):s}<br>"
+        return ""
+
     def _ApplyDetectedSaveType(self, save_type: int | Literal[False] | None) -> None:
         if self.STATUS["can_skip_message"] or save_type is None or save_type is False:
             return
@@ -6304,24 +6317,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if size > 0:
                     msg_flash_size_s = "<b>" + __("ROM Size:") + f"</b> {Formatter.file_size(size, as_int=True):s}<br>"
 
-                if self._device.GetMode() == "DMG":
-                    if "mbc" in supp_cart_types[1][cart_type_id]:
-                        if supp_cart_types[1][cart_type_id]["mbc"] == "manual":
-                            msg_flash_mapper_s = (
-                                "<b>" + __("Mapper Type:") + "</b> <i>" + __("Manual selection") + "</i><br>"
-                            )
-                        elif supp_cart_types[1][cart_type_id]["mbc"] in DMG_Mapper().GetAllMapperIds():
-                            msg_flash_mapper_s = (
-                                "<b>"
-                                + __("Mapper Type:")
-                                + "</b> {:s}<br>".format(
-                                    DMG_Mapper().GetMapperType(supp_cart_types[1][cart_type_id]["mbc"]),
-                                )
-                            )
-                    else:
-                        msg_flash_mapper_s = (
-                            "<b>" + __("Mapper Type:") + "</b> " + c__("Mapper Type", "Default") + " (MBC5)" + "<br>"
-                        )
+                msg_flash_mapper_s = self._FormatDetectedFlashMapper(supp_cart_types[1][cart_type_id])
 
             elif (len(flash_id.split("\n")) > 2) and (
                 (self._device.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)

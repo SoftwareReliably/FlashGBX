@@ -5899,6 +5899,26 @@ class LK_Device(ABC):
             self._write(write_enable)  # unset
         return write_enable
 
+    def _send_flash_commands(self, flash_cmds: Sequence[Sequence[int | str | None]]) -> None:
+        for i in range(6):
+            if i >= len(flash_cmds):
+                self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
+                continue
+
+            address = flash_cmds[i][0]
+            value = flash_cmds[i][1]
+            if not isinstance(address, int):
+                address = 0
+            if not isinstance(value, int):
+                value = 0
+            if self.MODE == "AGB":
+                address >>= 1
+            dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
+            self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
+
+        if self.FW["fw_ver"] >= 12:
+            self.wait_for_ack()
+
     def _load_flash_commands(
         self,
         cart_type: dict[str, Any],
@@ -5972,23 +5992,7 @@ class LK_Device(ABC):
                 return None
 
             we = self._configure_flash_write_pin(flashcart)
-
-            for i in range(6):
-                if i > len(flash_cmds) - 1:  # skip
-                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
-                else:
-                    address = flash_cmds[i][0]
-                    value = flash_cmds[i][1]
-                    if not isinstance(address, int):
-                        address = 0
-                    if not isinstance(value, int):
-                        value = 0
-                    if self.MODE == "AGB":
-                        address >>= 1
-                    dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
-                    self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
-            if self.FW["fw_ver"] >= 12:
-                self.wait_for_ack()
+            self._send_flash_commands(flash_cmds)
 
             if self.FW["fw_ver"] >= 6:
                 if "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:

@@ -677,6 +677,15 @@ class CFI:
             n ^= 1 << q
         return n
 
+    @staticmethod
+    def _set_single_write_timing(info: CFIInfo, buffer: bytearray) -> None:
+        if 0 < buffer[0x3E] < 0xFF:
+            info["single_write"] = True
+            info["single_write_time_avg"] = int(math.pow(2, buffer[0x3E]))
+            info["single_write_time_max"] = int(math.pow(2, buffer[0x46]) * info["single_write_time_avg"])
+        else:
+            info["single_write"] = False
+
     def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
         if buffer is False or buffer == b"":
             return False
@@ -718,12 +727,7 @@ class CFI:
             info["vdd_min"] = (buffer[0x36] >> 4) + ((buffer[0x36] & 0x0F) / 10)
             info["vdd_max"] = (buffer[0x38] >> 4) + ((buffer[0x38] & 0x0F) / 10)
 
-            if buffer[0x3E] > 0 and buffer[0x3E] < 0xFF:
-                info["single_write"] = True
-                info["single_write_time_avg"] = int(math.pow(2, buffer[0x3E]))
-                info["single_write_time_max"] = int(math.pow(2, buffer[0x46]) * info["single_write_time_avg"])
-            else:
-                info["single_write"] = False
+            self._set_single_write_timing(info, buffer)
 
             if buffer[0x40] > 0 and buffer[0x40] < 0xFF:
                 info["buffer_write"] = True
