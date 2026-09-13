@@ -7,9 +7,9 @@ import statistics
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import ClassVar, Literal, TypeAlias, TypedDict, cast
+from typing import ClassVar, Literal, TypedDict, cast
 
-ProgressAction: TypeAlias = Literal[  # noqa: UP040
+type ProgressAction = Literal[
     "USER_ACTION",
     "INITIALIZE",
     "ABORT",
@@ -25,15 +25,15 @@ ProgressAction: TypeAlias = Literal[  # noqa: UP040
     "UPDATE_INFO",
     "FINISHED",
 ]
-ProgressStateAction: TypeAlias = Literal[  # noqa: UP040
+type ProgressStateAction = Literal[
     "INITIALIZE",
     "PROGRESS",
     "UPDATE_INFO",
     "FINISHED",
 ]
-UserAction: TypeAlias = Literal["REINSERT_CART", "RETRY_5V"]  # noqa: UP040
-ProgressCallback: TypeAlias = Callable[[Mapping[str, object]], None]  # noqa: UP040
-ProgressPayload: TypeAlias = dict[str, object]  # noqa: UP040
+type UserAction = Literal["REINSERT_CART", "RETRY_5V"]
+type ProgressCallback = Callable[[Mapping[str, object]], None]
+type ProgressPayload = dict[str, object]
 
 
 class _ProgressEventBase(TypedDict):
@@ -160,14 +160,14 @@ class Progress:
         """Return whether ``new_number`` is far outside the speed history."""
         if not speeds:
             return False
-        mean = statistics.fmean(speeds)
-        standard_deviation = statistics.pstdev(speeds)
+        mean: float = statistics.fmean(speeds)
+        standard_deviation: float = statistics.pstdev(speeds)
         return bool(abs(new_number - mean) > threshold * standard_deviation)
 
     @classmethod
     def _record_speed(cls, state: ProgressState, speed: float) -> None:
         """Add a valid speed sample while keeping a bounded history."""
-        speeds = state["speeds"]
+        speeds: list[float] = state["speeds"]
         if len(speeds) < cls.SPEED_OUTLIER_START or not cls._is_outlier(
             speeds=speeds,
             new_number=speed,
@@ -179,17 +179,17 @@ class Progress:
 
     def _initialize(self, event: ProgressEvent, now: float) -> None:
         """Start a fresh operation and publish its initial state."""
-        method = event.get("method")
+        method: str | None = event.get("method")
         if not isinstance(method, str):
             return
-        flash_offset = max(self._int_or_default(event.get("flash_offset"), 0), 0)
-        size = max(self._int_or_default(event.get("size"), 0) - flash_offset, 0)
+        flash_offset: int = max(self._int_or_default(event.get("flash_offset"), 0), 0)
+        size: int = max(self._int_or_default(event.get("size"), 0) - flash_offset, 0)
         position = max(
             self._int_or_default(event.get("pos"), flash_offset) - flash_offset,
             0,
         )
-        position = min(position, size)
-        abortable = event.get("abortable")
+        position: int = min(position, size)
+        abortable: bool | None = event.get("abortable")
         if not isinstance(abortable, bool):
             abortable = True
 
@@ -243,7 +243,7 @@ class Progress:
     ) -> None:
         """Apply a read/write position event and emit it when due."""
         action = event["action"]
-        method = state["method"]
+        method: str = state["method"]
         if (action == "READ" and method in ("SAVE_WRITE", "ROM_WRITE")) or (
             action == "WRITE" and method in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY")
         ):
@@ -257,10 +257,10 @@ class Progress:
                 state["pos"] + max(self._int_or_default(event.get("bytes_added"), 0), 0),
             )
         else:
-            position = event.get("pos")
+            position: int | None = event.get("pos")
             if not isinstance(position, int) or isinstance(position, bool):
                 return
-            relative_position = position - state["flash_offset"]
+            relative_position: int = position - state["flash_offset"]
             if state["pos"] == relative_position:
                 skip_speed = True
             if event.get("skipping") is True:
@@ -268,11 +268,11 @@ class Progress:
             state["pos"] = max(0, min(relative_position, state["size"]))
 
             if "sector_erase_time" in event:
-                sector_erase_time = max(
+                sector_erase_time: float = max(
                     self._float_or_default(event.get("sector_erase_time"), 0.0),
                     0.0,
                 )
-                previous_erase_time = state["sector_erase_time"]
+                previous_erase_time: float = state["sector_erase_time"]
                 if previous_erase_time > 0:
                     sector_erase_time = (previous_erase_time + sector_erase_time) / 2
                 state["sector_erase_time"] = sector_erase_time
@@ -280,22 +280,22 @@ class Progress:
                 state["sector_erase_time"] = 0.0
 
             if "sector_pos" in event:
-                sector_position = event.get("sector_pos")
+                sector_position: int | None = event.get("sector_pos")
                 if isinstance(sector_position, int) and not isinstance(sector_position, bool):
                     state["sector_pos"] = max(sector_position, 0)
-            abortable = event.get("abortable")
+            abortable: bool | None = event.get("abortable")
             if isinstance(abortable, bool):
                 state["abortable"] = abortable
 
-        force_update = event.get("force_update") is True
+        force_update: bool = event.get("force_update") is True
         if now - state["time_last_emit"] <= self.EMIT_INTERVAL and not force_update:
             return
 
         state["time_elapsed"] = max(now - state["time_start"], 0.0)
-        time_delta = now - state["time_last_update_speed"]
-        position_delta = state["pos"] - state["bytes_last_update_speed"]
+        time_delta: float = now - state["time_last_update_speed"]
+        position_delta: int = state["pos"] - state["bytes_last_update_speed"]
         if time_delta > 0 and now - state["time_start"] > self.SPEED_WARMUP and "sector_erase_time" not in event:
-            speed = (position_delta / time_delta) / 1024
+            speed: float = (position_delta / time_delta) / 1024
             if speed > 0 and not skip_speed:
                 self._record_speed(state, speed)
             state["speed"] = statistics.fmean(state["speeds"]) if state["speeds"] else 0.0
@@ -330,7 +330,7 @@ class Progress:
 
         state["action"] = "FINISHED"
         state["bytes_last_update_speed"] = state["size"]
-        elapsed = max(now - state["time_start"], 0.001)
+        elapsed: float = max(now - state["time_start"], 0.001)
         state["time_elapsed"] = elapsed
         state["time_last_emit"] = now
         state["time_last_update_speed"] = now
@@ -357,10 +357,10 @@ class Progress:
         if not isinstance(action, str):
             return
 
-        event = cast("ProgressEvent", args)
+        event: ProgressEvent = cast("ProgressEvent", args)
         with self.MUTEX:
-            now = time.time()
-            state = self._active_state()
+            now: float = time.time()
+            state: ProgressState | None = self._active_state()
             if state is None:
                 # ``FINISHED`` removes ``method`` but leaves the last state
                 # available for callers that inspect it after completion.
@@ -399,7 +399,7 @@ class Progress:
             if action in ("READ", "WRITE", "UPDATE_POS"):
                 self._handle_position_event(event, state, now)
             elif action == "UPDATE_INFO":
-                text = event.get("text")
+                text: str | None = event.get("text")
                 if not isinstance(text, str):
                     return
                 state["text"] = text
