@@ -20,6 +20,34 @@ if TYPE_CHECKING:
 
 
 class DumpReport:
+    @staticmethod
+    def _database_fields(db: dict[str, Any], *, include_save_type: bool) -> list[tuple[str, str]]:
+        fields: list[tuple[str, str]] = []
+        if "gn" in db and "ne" in db:
+            fields.append(("Game Name", f"{db['gn']} {db['ne']}"))
+        elif "gn" in db:
+            fields.append(("Game Name", db["gn"]))
+        if "rg" in db:
+            fields.append(("Region", db["rg"]))
+        if "lg" in db:
+            fields.append(("Language(s)", db["lg"]))
+        if "rv" in db:
+            fields.append(("Revision", db["rv"]))
+        if "gc" in db:
+            fields.append(("Game Code", db["gc"]))
+        if "rc" in db:
+            fields.append(("ROM CRC32", f"{db['rc']:08x}"))
+        if "rs" in db:
+            fields.append(
+                (
+                    "ROM Size",
+                    Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
+                ),
+            )
+        if include_save_type and "st" in db:
+            fields.append(("Save Type", AgbSaveTypes(db["st"]).GetString(localized=False)))
+        return fields
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
@@ -255,30 +283,8 @@ class DumpReport:
 
             if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
                 db = header["db"]
-                db_fields = []
-                if "gn" in db and "ne" in db:
-                    db_fields.append(("Game Name", f"{db['gn']} {db['ne']}"))
-                elif "gn" in db:
-                    db_fields.append(("Game Name", db["gn"]))
-                if "rg" in db:
-                    db_fields.append(("Region", db["rg"]))
-                if "lg" in db:
-                    db_fields.append(("Language(s)", db["lg"]))
-                if "rv" in db:
-                    db_fields.append(("Revision", db["rv"]))
-                if "gc" in db:
-                    db_fields.append(("Game Code", db["gc"]))
-                if "rc" in db:
-                    db_fields.append(("ROM CRC32", f"{db['rc']:08x}"))
-                if "rs" in db:
-                    db_fields.append(
-                        (
-                            "ROM Size",
-                            Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
-                        ),
-                    )
                 lines += ["", "== Database Match =="]
-                lines += _fields_to_lines(db_fields)
+                lines += _fields_to_lines(cls._database_fields(db, include_save_type=False))
 
         elif mode == "AGB":
             hdr_chk = header["header_checksum"]
@@ -321,32 +327,8 @@ class DumpReport:
 
             if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
                 db = header["db"]
-                db_fields = []
-                if "gn" in db and "ne" in db:
-                    db_fields.append(("Game Name", f"{db['gn']} {db['ne']}"))
-                elif "gn" in db:
-                    db_fields.append(("Game Name", db["gn"]))
-                if "rg" in db:
-                    db_fields.append(("Region", db["rg"]))
-                if "lg" in db:
-                    db_fields.append(("Language(s)", db["lg"]))
-                if "rv" in db:
-                    db_fields.append(("Revision", db["rv"]))
-                if "gc" in db:
-                    db_fields.append(("Game Code", db["gc"]))
-                if "rc" in db:
-                    db_fields.append(("ROM CRC32", f"{db['rc']:08x}"))
-                if "rs" in db:
-                    db_fields.append(
-                        (
-                            "ROM Size",
-                            Formatter.file_size(db["rs"], space=" ", as_int=True, localized=False),
-                        ),
-                    )
-                if "st" in db:
-                    db_fields.append(("Save Type", AgbSaveTypes(db["st"]).GetString(localized=False)))
                 lines += ["", "== Database Match =="]
-                lines += _fields_to_lines(db_fields)
+                lines += _fields_to_lines(cls._database_fields(db, include_save_type=True))
 
         newline: Literal["\r\n", "\n"] = "\r\n" if platform.system() == "Windows" else "\n"
         return newline.join(lines)

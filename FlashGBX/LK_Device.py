@@ -249,6 +249,37 @@ class _FlashSectorState(NamedTuple):
     end_bank: int
 
 
+class _ROMReadConfiguration(NamedTuple):
+    mbc: Any
+    size: int
+    rom_banks: int
+    rom_bank_size: int
+    buffer_len: int
+    is_3d_memory: bool
+
+
+class _SaveReadParameters(NamedTuple):
+    args: Mapping[str, Any]
+    mbc: Any
+    bank: int
+    pos: int
+    buffer_len: int
+    command: Any
+    max_length: int
+
+
+class _FlashChunkParameters(NamedTuple):
+    command_set_type: str
+    pos: int
+    data_import: bytearray
+    buffer_pos: int
+    buffer_len: int
+    bank: int
+    flash_buffer_size: int | Literal[False]
+    skip_init: bool
+    rumble: bool
+
+
 class LK_Device(ABC):
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
@@ -1062,6 +1093,14 @@ class LK_Device(ABC):
             return self._try_write(buffer)
         return self._write(buffer)
 
+    @staticmethod
+    def _unpack_cart_read(
+        raw: bytearray | Literal[False], minimum_length: int, data_format: str
+    ) -> int | Literal[False]:
+        if raw is False or len(raw) < minimum_length:
+            return False
+        return struct.unpack(data_format, raw)[0]
+
     @overload
     def _cart_read(
         self,
@@ -1099,9 +1138,7 @@ class LK_Device(ABC):
                     raw: bytearray = self.ReadROM(address, 1, max_length=self.MAX_BUFFER_READ)
                 else:
                     raw = self.ReadRAM(address - 0xA000, 1, max_length=self.MAX_BUFFER_READ)
-                if raw is False or len(raw) < 1:
-                    return False
-                return struct.unpack("B", raw)[0]
+                return self._unpack_cart_read(raw, 1, "B")
             if address < 0xA000:
                 return self.ReadROM(address, length, max_length=self.MAX_BUFFER_READ)
             return self.ReadRAM(address - 0xA000, length, max_length=self.MAX_BUFFER_READ)
@@ -1115,14 +1152,10 @@ class LK_Device(ABC):
                         command=self.DEVICE_CMD["AGB_CART_READ_SRAM"],
                         max_length=self.MAX_BUFFER_READ,
                     )
-                    if raw is False or len(raw) < 1:
-                        return False
-                    return struct.unpack("B", raw)[0]
+                    return self._unpack_cart_read(raw, 1, "B")
                 length = 2
                 raw = self.ReadROM(address >> 1, length, max_length=self.MAX_BUFFER_READ)
-                if raw is False or len(raw) < 2:
-                    return False
-                return struct.unpack(">H", raw)[0]
+                return self._unpack_cart_read(raw, 2, ">H")
             if agb_save_flash:
                 return self.ReadRAM(
                     address,
@@ -1626,6 +1659,19 @@ class LK_Device(ABC):
         self._write(self.DEVICE_CMD["DEBUG"], wait=True)  # For delay measurement on CLK line
         return True
 
+    def _StoreHeaderData(self, data: dict[str, Any], header: bytearray) -> None:
+        dprint("Header data:", data)
+        data["raw"] = header
+        self.INFO = {**self.INFO, **data}
+        if "batteryless_sram" in self.INFO["dump_info"]:
+            del self.INFO["dump_info"]["batteryless_sram"]
+        self.INFO["dump_info"]["header"] = data
+        self.INFO["flash_type"] = 0
+        self.INFO["last_action"] = 0
+
+        if self.MODE == "DMG":
+            self._write(self.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=self.FW["fw_ver"] >= 12)
+
     def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
         if not self.IsConnected():
             msg = "Couldn't access the the device."
@@ -1908,18 +1954,7 @@ class LK_Device(ABC):
                     data["ereader_calibration"] = None
                     del data["ereader_calibration"]
 
-        dprint("Header data:", data)
-        data["raw"] = header
-        self.INFO = {**self.INFO, **data}
-        if "batteryless_sram" in self.INFO["dump_info"]:
-            del self.INFO["dump_info"]["batteryless_sram"]
-        self.INFO["dump_info"]["header"] = data
-        self.INFO["flash_type"] = 0
-        self.INFO["last_action"] = 0
-
-        if self.MODE == "DMG":
-            self._write(self.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=self.FW["fw_ver"] >= 12)
-
+        self._StoreHeaderData(data, header)
         return data
 
     def _DetectCartridge(self, args: dict[str, Any]) -> bool:  # Wrapper for thread call
@@ -2011,6 +2046,45 @@ class LK_Device(ABC):
                 if gbmem_parsed:
                     info["gbmem_parsed"] = gbmem_parsed
         return check_save_type, save_size, save_type
+
+    def _DetectDmgSaveType(self, save_size: int, mbc: int | None) -> tuple[int, int | None]:
+        try:
+            save_type: int | None = DmgSaveTypes(size=save_size).GetMbc()
+        except KeyError, TypeError, ValueError:
+            save_size = 0
+            save_type = 0
+
+        if save_size <= 0x20:
+            return save_size, save_type
+        if mbc == 0x22:  # MBC7
+            if save_size == 256:
+                save_type = 0x101
+            elif save_size == 512:
+                save_type = 0x102
+            return save_size, save_type
+        if save_size <= 0x10000:
+            return save_size, save_type
+
+        check = True
+        for i in range(0x8000, 0x10000, 0x40):
+            if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
+                check = False
+                break
+
+        if self.INFO["data"][0:0x8000] == self.INFO["data"][0x8000:0x10000]:  # MBCX
+            check = True
+
+        if check:
+            return 32768, 0x03
+
+        check = True
+        for i in range(0x1A000, 0x20000, 0x40):
+            if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
+                check = False
+                break
+        if check:
+            return 65536, 0x05
+        return save_size, save_type
 
     def _DetectCartridge_Worker(
         self,
@@ -2167,40 +2241,7 @@ class LK_Device(ABC):
                 save_size = 0
 
             if self.MODE == "DMG":
-                try:
-                    save_type: int | None = DmgSaveTypes(size=save_size).GetMbc()
-                except KeyError, TypeError, ValueError:
-                    save_size = 0
-                    save_type = 0
-
-                if save_size > 0x20:
-                    if mbc == 0x22:  # MBC7
-                        if save_size == 256:
-                            save_type = 0x101
-                        elif save_size == 512:
-                            save_type = 0x102
-                    elif save_size > 0x10000:  # MBC30+RTC?
-                        check = True
-                        for i in range(0x8000, 0x10000, 0x40):
-                            if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
-                                check = False
-                                break
-
-                        if self.INFO["data"][0:0x8000] == self.INFO["data"][0x8000:0x10000]:  # MBCX
-                            check = True
-
-                        if check:
-                            save_size = 32768
-                            save_type = 0x03
-                        else:
-                            check = True
-                            for i in range(0x1A000, 0x20000, 0x40):
-                                if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
-                                    check = False
-                                    break
-                            if check:
-                                save_size = 65536
-                                save_type = 0x05
+                save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
 
             elif self.MODE == "AGB":
                 if info["3d_memory"] is True:
@@ -3465,6 +3506,13 @@ class LK_Device(ABC):
                     if found:
                         break
 
+    def _RestoreFlashDetectionMode(self, read_method: int) -> None:
+        if self.MODE == "DMG":
+            self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
+            self._set_fw_variable("FLASH_WE_PIN", 1)  # back to WE=WR
+        elif self.MODE == "AGB":
+            self.SetAGBReadMethod(read_method)
+
     def DetectFlash(self, limitVoltage: bool = False) -> tuple[Any, ...]:
         mode = self.MODE
         if mode is None:
@@ -3756,11 +3804,7 @@ class LK_Device(ABC):
             fc_fncptr,
         )
 
-        if self.MODE == "DMG":
-            self._write(self.DEVICE_CMD["SET_VOLTAGE_5V"], wait=self.FW["fw_ver"] >= 12)
-            self._set_fw_variable("FLASH_WE_PIN", 1)  # back to WE=WR
-        elif self.MODE == "AGB":
-            self.SetAGBReadMethod(read_method)
+        self._RestoreFlashDetectionMode(read_method)
 
         return (flash_types, flash_type_id, flash_id_s, cfi_s, cfi, detected_size)
 
@@ -4161,36 +4205,21 @@ class LK_Device(ABC):
                 flashcart.SelectBankROM(0)
             self.SetAGBReadMethod(agb_read_method)
 
-    def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
-        device_mode = self._require_cartridge_mode("reading ROM")
-        file = None
-        if len(args["path"]) > 0:
-            file = Path(args["path"]).open("wb")  # noqa: SIM115 - closed across the worker's exit paths
-
-        self.FAST_READ = True
-        agb_read_method = self.AGB_READ_METHOD
-        dmg_read_method = self.DMG_READ_METHOD
-        _mbc: Any = None
+    def _PrepareROMRead(
+        self,
+        mode: DeviceMode,
+        args: dict[str, Any],
+        cart_type: dict[str, Any],
+        flashcart: Flashcart | Literal[False],
+    ) -> _ROMReadConfiguration | None:
+        mbc: Any = None
         size = 0
         rom_banks = 1
         rom_bank_size = 0x2000000
-        buffer_pos = 0
-        pos = 0
-        cart_type, flashcart = self._PrepareBackupFlashcart(device_mode, args["cart_type"])
-
-        self._apply_legacy_flashcart_compatibility(cart_type, flashcart)
-
         buffer_len = 0x4000
+        is_3d_memory = mode == "AGB" and cart_type.get("command_set") == "3DMEMORY"
 
-        self.INFO["dump_info"]["timestamp"] = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
-        self.INFO["dump_info"]["file_name"] = args["path"]
-        self.INFO["dump_info"]["file_size"] = args["rom_size"]
-        self.INFO["dump_info"]["cart_type"] = args["cart_type"]
-        self.INFO["dump_info"]["system"] = self.MODE
-
-        is_3dmemory = self.MODE == "AGB" and "command_set" in cart_type and cart_type["command_set"] == "3DMEMORY"
-
-        if self.MODE == "DMG":
+        if mode == "DMG":
             self.INFO["dump_info"]["rom_size"] = args["rom_size"]
             self.INFO["dump_info"]["mapper_type"] = args["mbc"]
             self.INFO["dump_info"]["dmg_read_method"] = self.DMG_READ_METHODS[self.DMG_READ_METHOD]
@@ -4209,12 +4238,12 @@ class LK_Device(ABC):
                         "abortable": False,
                     },
                 )
-                return False
+                return None
 
             if "verify_mbc" in args and args["verify_mbc"] is not None:
-                _mbc = args["verify_mbc"]
+                mbc = args["verify_mbc"]
             else:
-                _mbc = DMG_Mapper().GetInstance(
+                mbc = DMG_Mapper().GetInstance(
                     args=args,
                     cart_write_fncptr=self._cart_write,
                     cart_read_fncptr=self._mapper_cart_read,
@@ -4227,48 +4256,41 @@ class LK_Device(ABC):
 
             self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
             self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-            if _mbc.GetName() == "TAMA5":
+            if mbc.GetName() == "TAMA5":
                 self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
                 self._set_fw_variable("DMG_READ_CS_PULSE", 1)
-                _mbc.EnableMapper()
+                mbc.EnableMapper()
                 self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-            elif _mbc.GetName() == "Sachen":
+            elif mbc.GetName() == "Sachen":
                 start_bank = int(args["rom_size"] / 0x4000)
-                _mbc.SetStartBank(start_bank)
+                mbc.SetStartBank(start_bank)
             else:
-                _mbc.EnableMapper()
+                mbc.EnableMapper()
 
             rom_size = args["rom_size"]
-            rom_banks = _mbc.GetROMBanks(rom_size)
-            rom_bank_size = _mbc.GetROMBankSize()
-            size = _mbc.GetROMSize()
-
-        elif self.MODE == "AGB":
+            rom_banks = mbc.GetROMBanks(rom_size)
+            rom_bank_size = mbc.GetROMBankSize()
+            size = mbc.GetROMSize()
+        else:
             self.INFO["dump_info"]["mapper_type"] = None
             if self._get_fw_variable("CART_MODE") != 2:
                 self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
                 self.ReadROM(0, 4)  # dummy read
 
             buffer_len = 0x10000
-            size = 32 * 1024 * 1024
-            if "agb_rom_size" in args:
-                size = args["agb_rom_size"]
+            size = args.get("agb_rom_size", 32 * 1024 * 1024)
             self.INFO["dump_info"]["rom_size"] = size
-            if is_3dmemory:
+            if is_3d_memory:
                 self.INFO["dump_info"]["agb_read_method"] = "3D Memory"
-
-            elif flashcart and "command_set" in cart_type and cart_type["command_set"] == "GBAMP":
+            elif flashcart and cart_type.get("command_set") == "GBAMP":
                 self.INFO["dump_info"]["agb_read_method"] = "GBA Movie Player"
                 if "verify_write" not in args:
                     self.CartPowerCycleOrAskReconnect()
                 flashcart.Unlock()
                 buffer_len = 0x4000
-
-            # Initialize Vast Fame ROM (if it was not autodetected) and determine SRAM address/value bit reordering (necessary for emulation)
-            elif flashcart and "command_set" in cart_type and cart_type["command_set"] == "VASTFAME":
+            elif flashcart and cart_type.get("command_set") == "VASTFAME":
                 self._InitializeVastFameRead()
                 self.INFO["dump_info"]["agb_read_method"] = self.AGB_READ_METHODS[self.AGB_READ_METHOD]
-
             else:
                 self.INFO["dump_info"]["agb_read_method"] = self.AGB_READ_METHODS[self.AGB_READ_METHOD]
 
@@ -4278,9 +4300,34 @@ class LK_Device(ABC):
                 else:
                     rom_banks = math.ceil(size / cart_type["flash_bank_size"])
                 rom_bank_size = cart_type["flash_bank_size"]
-            else:
-                rom_banks = 1
-                rom_bank_size = 0x2000000
+
+        return _ROMReadConfiguration(mbc, size, rom_banks, rom_bank_size, buffer_len, is_3d_memory)
+
+    def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
+        device_mode = self._require_cartridge_mode("reading ROM")
+        file = None
+        if len(args["path"]) > 0:
+            file = Path(args["path"]).open("wb")  # noqa: SIM115 - closed across the worker's exit paths
+
+        self.FAST_READ = True
+        agb_read_method = self.AGB_READ_METHOD
+        dmg_read_method = self.DMG_READ_METHOD
+        buffer_pos = 0
+        pos = 0
+        cart_type, flashcart = self._PrepareBackupFlashcart(device_mode, args["cart_type"])
+
+        self._apply_legacy_flashcart_compatibility(cart_type, flashcart)
+
+        self.INFO["dump_info"]["timestamp"] = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+        self.INFO["dump_info"]["file_name"] = args["path"]
+        self.INFO["dump_info"]["file_size"] = args["rom_size"]
+        self.INFO["dump_info"]["cart_type"] = args["cart_type"]
+        self.INFO["dump_info"]["system"] = self.MODE
+
+        configuration = self._PrepareROMRead(device_mode, args, cart_type, flashcart)
+        if configuration is None:
+            return False
+        _mbc, size, rom_banks, rom_bank_size, buffer_len, is_3dmemory = configuration
 
         if self.ERROR:
             return None
@@ -5234,6 +5281,45 @@ class LK_Device(ABC):
             return self._VerifySaveWrite(args, mbc, buffer, buffer_offset)
         return True
 
+    def _ReadSaveChunk(
+        self,
+        parameters: _SaveReadParameters,
+    ) -> bytearray:
+        args, mbc, bank, pos, buffer_len, command, max_length = parameters
+        if self.MODE == "DMG" and mbc.GetName() == "MBC7":
+            return self.ReadRAM_MBC7(address=pos, length=buffer_len)
+        if self.MODE == "DMG" and mbc.GetName() == "MBC6" and bank > 7:  # MBC6 flash save memory
+            return self.ReadROM(address=pos, length=buffer_len, skip_init=False, max_length=max_length)
+        if self.MODE == "DMG" and mbc.GetName() == "TAMA5":
+            return self.ReadRAM_TAMA5()
+        if self.MODE == "DMG" and mbc.GetName() == "Xploder GB":
+            return self.ReadROM(
+                address=0x20000 + pos,
+                length=buffer_len,
+                skip_init=False,
+                max_length=max_length,
+            )
+        if self.MODE == "AGB" and args["save_type"] in (1, 2):  # EEPROM
+            return self.ReadRAM(
+                address=int(pos / 8),
+                length=buffer_len,
+                command=command,
+                max_length=max_length,
+            )
+        if self.MODE == "AGB" and args["save_type"] == 6:  # DACS
+            return self.ReadROM(
+                address=0x1F00000 + pos,
+                length=buffer_len,
+                skip_init=False,
+                max_length=max_length,
+            )
+
+        data = self.ReadRAM(address=pos, length=buffer_len, command=command, max_length=max_length)
+        if self.MODE == "DMG" and mbc.GetName() == "MBC2":
+            for index, value in enumerate(data):
+                data[index] = value & 0x0F
+        return data
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("accessing save data")
         self.FAST_READ = False
@@ -5378,57 +5464,9 @@ class LK_Device(ABC):
                         else:
                             self.NO_PROG_UPDATE = False
 
-                        if self.MODE == "DMG" and _mbc.GetName() == "MBC7":
-                            in_temp[x] = self.ReadRAM_MBC7(address=pos, length=buffer_len)
-                        elif self.MODE == "DMG" and _mbc.GetName() == "MBC6" and bank > 7:  # MBC6 flash save memory
-                            in_temp[x] = self.ReadROM(
-                                address=pos,
-                                length=buffer_len,
-                                skip_init=False,
-                                max_length=max_length,
-                            )
-                        elif self.MODE == "DMG" and _mbc.GetName() == "TAMA5":
-                            in_temp[x] = self.ReadRAM_TAMA5()
-                        elif self.MODE == "DMG" and _mbc.GetName() == "Xploder GB":
-                            in_temp[x] = self.ReadROM(
-                                address=0x20000 + pos,
-                                length=buffer_len,
-                                skip_init=False,
-                                max_length=max_length,
-                            )
-                        elif self.MODE == "AGB" and args["save_type"] in (
-                            1,
-                            2,
-                        ):  # EEPROM
-                            in_temp[x] = self.ReadRAM(
-                                address=int(pos / 8),
-                                length=buffer_len,
-                                command=command,
-                                max_length=max_length,
-                            )
-                        elif self.MODE == "AGB" and args["save_type"] == 6:  # DACS
-                            in_temp[x] = self.ReadROM(
-                                address=0x1F00000 + pos,
-                                length=buffer_len,
-                                skip_init=False,
-                                max_length=max_length,
-                            )
-                        elif self.MODE == "DMG" and _mbc.GetName() == "MBC2":
-                            in_temp[x] = self.ReadRAM(
-                                address=pos,
-                                length=buffer_len,
-                                command=command,
-                                max_length=max_length,
-                            )
-                            for i in range(len(in_temp[x])):
-                                in_temp[x][i] = in_temp[x][i] & 0x0F
-                        else:
-                            in_temp[x] = self.ReadRAM(
-                                address=pos,
-                                length=buffer_len,
-                                command=command,
-                                max_length=max_length,
-                            )
+                        in_temp[x] = self._ReadSaveChunk(
+                            _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
+                        )
 
                         if len(in_temp[x]) != buffer_len:
                             if (max_length >> 1) < 64:
@@ -6967,6 +7005,60 @@ class LK_Device(ABC):
             self.SetProgress({"action": "FINISHED", "verified": verified})
         return True
 
+    def _WriteFlashChunk(self, parameters: _FlashChunkParameters) -> tuple[DeviceWriteResult, int]:
+        command_set_type, pos, data_import, buffer_pos, buffer_len, bank, flash_buffer_size, skip_init, rumble = (
+            parameters
+        )
+        data = data_import[buffer_pos : buffer_pos + buffer_len]
+        if command_set_type == "GBMEMORY" and self.FW["fw_ver"] < 2:
+            status = self.WriteROM_GBMEMORY(address=pos, buffer=data, bank=bank)
+        elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
+            status = self.WriteROM(
+                address=pos,
+                buffer=data,
+                flash_buffer_size=flash_buffer_size,
+                skip_init=(skip_init and not self.SKIPPING),
+            )
+        elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] < 12:
+            status = self.WriteROM_DMG_MBC5_32M_FLASH(address=pos, buffer=data, bank=bank)
+        elif command_set_type == "EEPROM":
+            status = self.WriteROM_DMG_EEPROM(address=pos, buffer=data, bank=bank, eeprom_buffer_size=256)
+        elif command_set_type == "BLAZE_XPLODER":
+            status = self.WriteROM_DMG_EEPROM(address=pos, buffer=data, bank=bank)
+        elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
+            status = self.WriteROM(
+                address=(pos | (bank << 24)),
+                buffer=data,
+                flash_buffer_size=flash_buffer_size,
+                skip_init=(skip_init and not self.SKIPPING),
+            )
+        elif command_set_type == "DATEL_ORBITV2":
+            status = self.WriteROM_DMG_DatelOrbitV2(address=pos, buffer=data, bank=bank)
+        else:
+            max_buffer_write = self.MAX_BUFFER_WRITE
+            if len(data_import) == 0x1FFFF00 and buffer_pos + buffer_len > len(data_import):
+                # 32 MiB ROM + EEPROM cart
+                max_buffer_write = 256
+                buffer_len = buffer_pos + buffer_len - len(data_import)
+                data = data_import[buffer_pos : buffer_pos + buffer_len]
+            status = self.WriteROM(
+                address=pos,
+                buffer=data,
+                flash_buffer_size=flash_buffer_size,
+                skip_init=(skip_init and not self.SKIPPING),
+                rumble_stop=rumble,
+                max_length=max_buffer_write,
+            )
+        return status, buffer_len
+
+    @staticmethod
+    def _FlashcartHasRumble(flashcart: Flashcart) -> bool:
+        return "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
+
+    def _PowerOnIfSupported(self) -> None:
+        if self.CanPowerCycleCart():
+            self.CartPowerOn()
+
     def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("writing ROM")
         self.FAST_READ = True
@@ -6999,7 +7091,7 @@ class LK_Device(ABC):
 
         temp: Any = None
         pos = 0
-        rumble: bool = "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
+        rumble = self._FlashcartHasRumble(flashcart)
         sector_pos = 0
 
         current_bank: int | None = 0
@@ -7188,8 +7280,7 @@ class LK_Device(ABC):
                                 "force_update": True,
                             },
                         )
-                        if self.CanPowerCycleCart():
-                            self.CartPowerOn()
+                        self._PowerOnIfSupported()
 
                         sector_pos += 1
                         if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
@@ -7219,65 +7310,19 @@ class LK_Device(ABC):
                     # ↑↑↑ Sector erase
 
                     if se_ret is not False:
-                        if command_set_type == "GBMEMORY" and self.FW["fw_ver"] < 2:
-                            status = self.WriteROM_GBMEMORY(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                bank=bank,
-                            )
-                        elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
-                            status = self.WriteROM(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                flash_buffer_size=flash_buffer_size,
-                                skip_init=(skip_init and not self.SKIPPING),
-                            )
-                        elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] < 12:
-                            status = self.WriteROM_DMG_MBC5_32M_FLASH(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                bank=bank,
-                            )
-                        elif command_set_type == "EEPROM":
-                            status = self.WriteROM_DMG_EEPROM(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                bank=bank,
-                                eeprom_buffer_size=256,
-                            )
-                        elif command_set_type == "BLAZE_XPLODER":
-                            status = self.WriteROM_DMG_EEPROM(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                bank=bank,
-                            )
-                        elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
-                            status = self.WriteROM(
-                                address=(pos | (bank << 24)),
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                flash_buffer_size=flash_buffer_size,
-                                skip_init=(skip_init and not self.SKIPPING),
-                            )
-                        elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] < 12:
-                            status = self.WriteROM_DMG_DatelOrbitV2(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                bank=bank,
-                            )
-                        else:
-                            max_buffer_write = self.MAX_BUFFER_WRITE
-                            if (len(data_import) == 0x1FFFF00) and (buffer_pos + buffer_len > len(data_import)):
-                                # 32 MiB ROM + EEPROM cart
-                                max_buffer_write = 256
-                                buffer_len = buffer_pos + buffer_len - len(data_import)
-                            status = self.WriteROM(
-                                address=pos,
-                                buffer=data_import[buffer_pos : buffer_pos + buffer_len],
-                                flash_buffer_size=flash_buffer_size,
-                                skip_init=(skip_init and not self.SKIPPING),
-                                rumble_stop=rumble,
-                                max_length=max_buffer_write,
-                            )
+                        status, buffer_len = self._WriteFlashChunk(
+                            _FlashChunkParameters(
+                                command_set_type,
+                                pos,
+                                data_import,
+                                buffer_pos,
+                                buffer_len,
+                                bank,
+                                flash_buffer_size,
+                                skip_init,
+                                rumble,
+                            ),
+                        )
 
                     if status is False or se_ret is False:
                         self.CANCEL = True

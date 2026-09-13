@@ -372,19 +372,9 @@ class FlashGBX_CLI:
         if not self._connect_for_action(args, fwupdate_actions):
             return 1
 
-        if args.action == "gbcamera-extract":
-            return self._ExtractCameraPictures(args)
-
-        if args.action in fwupdate_actions:
-            for hw_mod in HW_DEVICES:
-                cls = hw_mod.GbxDevice
-                dev = cls()
-                action = dev.FirmwareUpdateAction()
-                if dev.SupportsFirmwareUpdates() and action == args.action:
-                    method = getattr(self, dev.CLIUpdaterMethod())
-                    kwargs = {"port": args.device_port}
-                    method(**kwargs)
-                    return 0
+        action_result = self._RunStandaloneAction(args, fwupdate_actions)
+        if action_result is not None:
+            return action_result
 
         if args.mode is None:
             supported_modes = self.CONN.GetSupprtedModes()
@@ -497,6 +487,24 @@ class FlashGBX_CLI:
         action_result = self._RunCartridgeAction(args, header)
         self.DisconnectDevice()
         return self.RETVAL if action_result is None else action_result
+
+    def _RunStandaloneAction(self, args: argparse.Namespace, fwupdate_actions: set[str]) -> int | None:
+        if args.action == "gbcamera-extract":
+            return self._ExtractCameraPictures(args)
+
+        if args.action not in fwupdate_actions:
+            return None
+
+        for hw_mod in HW_DEVICES:
+            cls = hw_mod.GbxDevice
+            dev = cls()
+            action = dev.FirmwareUpdateAction()
+            if dev.SupportsFirmwareUpdates() and action == args.action:
+                method = getattr(self, dev.CLIUpdaterMethod())
+                kwargs = {"port": args.device_port}
+                method(**kwargs)
+                return 0
+        return None
 
     def WaitProgress(self, args: ProgressPayload) -> None:
         if args["user_action"] == "REINSERT_CART":
@@ -2479,46 +2487,7 @@ class FlashGBX_CLI:
         print()
 
         if args.action == "backup-save":
-            target_path = Path(path).resolve()
-            if not args.overwrite and target_path.exists():
-                answer = (
-                    input(
-                        __(
-                            "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                            file_path=str(target_path),
-                        )
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(
-                __("The Batteryless SRAM save data will now be read and saved to the following file:")
-                + "\n"
-                + str(target_path),
-            )
-            try:
-                with Path(path).open("ab+"):
-                    pass
-            except PermissionError, FileNotFoundError:
-                print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
-                return
-            print()
-            targs = {
-                "mode": 1,
-                "path": path,
-                "mbc": mbc,
-                "rom_size": bl_size,
-                "agb_rom_size": bl_size,
-                "fast_read_mode": True,
-                "cart_type": 0,
-            }
-            targs.update(bl_args)
-            self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
+            self._BackupBatterylessSRAM(args, path, mbc, bl_size, bl_args)
             return
 
         # restore-save / erase-save: write into ROM flash, so a flash cart profile is required.
@@ -2608,6 +2577,55 @@ class FlashGBX_CLI:
         if erase:
             targs["path"] = ""
             targs["buffer"] = bytearray([0xFF] * bl_size)
+        self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
+
+    def _BackupBatterylessSRAM(
+        self,
+        args: argparse.Namespace,
+        path: str,
+        mbc: int,
+        bl_size: int,
+        bl_args: BatterylessArgs,
+    ) -> None:
+        target_path = Path(path).resolve()
+        if not args.overwrite and target_path.exists():
+            answer = (
+                input(
+                    __(
+                        "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
+                        file_path=str(target_path),
+                    )
+                    + " [y/N]: ",
+                )
+                .strip()
+                .lower()
+            )
+            print()
+            if answer != "y":
+                print(__("Canceled."))
+                return
+        print(
+            __("The Batteryless SRAM save data will now be read and saved to the following file:")
+            + "\n"
+            + str(target_path),
+        )
+        try:
+            with Path(path).open("ab+"):
+                pass
+        except PermissionError, FileNotFoundError:
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
+            return
+        print()
+        targs = {
+            "mode": 1,
+            "path": path,
+            "mbc": mbc,
+            "rom_size": bl_size,
+            "agb_rom_size": bl_size,
+            "fast_read_mode": True,
+            "cart_type": 0,
+        }
+        targs.update(bl_args)
         self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
 
     def _ResolveFlashcartType(self, args: argparse.Namespace) -> int | None:

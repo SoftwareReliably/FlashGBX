@@ -1650,22 +1650,18 @@ try:
                 or info["jmp_mode"] != "relative"
                 or info["device_type"] != "atmega"
                 or info["signature"] != b"\x1e\x93\x06"
+                or info["tsb_version"] >= 32768
             ):
                 fncSetStatus(text="Wrong device detected.", enableUI=True)
                 dev.close()
                 return 2
 
-            if info["tsb_version"] < 32768:
-                info["tsb_version"] = int(
-                    (info["tsb_version"] & 31)
-                    + ((info["tsb_version"] & 480) / 32) * 100
-                    + ((info["tsb_version"] & 65024) / 512) * 10000
-                    + 20000000,
-                )
-            else:
-                fncSetStatus(text="Wrong device detected.", enableUI=True)
-                dev.close()
-                return 2
+            info["tsb_version"] = int(
+                (info["tsb_version"] & 31)
+                + ((info["tsb_version"] & 480) / 32) * 100
+                + ((info["tsb_version"] & 65024) / 512) * 10000
+                + 20000000,
+            )
 
             #################
 

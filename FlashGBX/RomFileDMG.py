@@ -205,6 +205,54 @@ class RomFileDMG:
         data["rom_checksum_correct"] = data["rom_checksum"] == data["rom_checksum_calc"]
         return data
 
+    @staticmethod
+    def _ApplyKnownMapperOverrides(data: dict[str, Any]) -> None:
+        # MBC2
+        if data["mapper_raw"] == 0x06:
+            data["ram_size_raw"] = 0x100
+
+        # MBC30
+        if data["mapper_raw"] == 0x10 and data["ram_size_raw"] == 0x05:
+            data["mapper_raw"] += 0x100
+
+        # MBC6
+        if data["mapper_raw"] == 0x20:
+            data["ram_size_raw"] = 0x104
+
+        # MBC7
+        if data["mapper_raw"] == 0x22 and data["game_title"] in ("KORO2 KIRBY", "KIRBY TNT"):
+            data["ram_size_raw"] = 0x101
+        elif data["mapper_raw"] == 0x22 and data["game_title"] == "CMASTER":
+            data["ram_size_raw"] = 0x102
+
+        # TAMA5
+        if data["mapper_raw"] == 0xFD:
+            data["ram_size_raw"] = 0x103
+
+        # MBC1M
+        if (
+            (data["mapper_raw"] == 0x03 and data["game_title"] == "MOMOCOL" and data["header_checksum"] == 0x28)
+            or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMCOL" and data["header_checksum"] == 0x86)
+            or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMSEL" and data["header_checksum"] == 0x9C)
+            or (data["mapper_raw"] == 0x01 and data["game_title"] == "GENCOL" and data["header_checksum"] == 0x8A)
+            or (
+                data["mapper_raw"] == 0x01
+                and data["game_title"] == "SUPERCHINESE 123"
+                and data["header_checksum"] == 0xE4
+            )
+            or (
+                data["mapper_raw"] == 0x01
+                and data["game_title"] == "MORTALKOMBATI&II"
+                and data["header_checksum"] == 0xB9
+            )
+            or (
+                data["mapper_raw"] == 0x01
+                and data["game_title"] == "MORTALKOMBAT DUO"
+                and data["header_checksum"] == 0xA7
+            )
+        ):
+            data["mapper_raw"] += 0x100
+
     def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
         buffer: bytearray = self.ROMFILE
         if len(buffer) < 0x180:
@@ -214,54 +262,7 @@ class RomFileDMG:
         if unchanged:
             data["unchanged"] = copy.copy(data)
         else:
-            # MBC2
-            if data["mapper_raw"] == 0x06:
-                data["ram_size_raw"] = 0x100
-
-            # MBC30
-            if data["mapper_raw"] == 0x10 and data["ram_size_raw"] == 0x05:
-                data["mapper_raw"] += 0x100
-
-            # MBC6
-            if data["mapper_raw"] == 0x20:
-                data["ram_size_raw"] = 0x104
-
-            # MBC7
-            if data["mapper_raw"] == 0x22 and data["game_title"] in (
-                "KORO2 KIRBY",
-                "KIRBY TNT",
-            ):
-                data["ram_size_raw"] = 0x101
-            elif data["mapper_raw"] == 0x22 and data["game_title"] == "CMASTER":
-                data["ram_size_raw"] = 0x102
-
-            # TAMA5
-            if data["mapper_raw"] == 0xFD:
-                data["ram_size_raw"] = 0x103
-
-            # MBC1M
-            if (
-                (data["mapper_raw"] == 0x03 and data["game_title"] == "MOMOCOL" and data["header_checksum"] == 0x28)
-                or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMCOL" and data["header_checksum"] == 0x86)
-                or (data["mapper_raw"] == 0x01 and data["game_title"] == "BOMSEL" and data["header_checksum"] == 0x9C)
-                or (data["mapper_raw"] == 0x01 and data["game_title"] == "GENCOL" and data["header_checksum"] == 0x8A)
-                or (
-                    data["mapper_raw"] == 0x01
-                    and data["game_title"] == "SUPERCHINESE 123"
-                    and data["header_checksum"] == 0xE4
-                )
-                or (
-                    data["mapper_raw"] == 0x01
-                    and data["game_title"] == "MORTALKOMBATI&II"
-                    and data["header_checksum"] == 0xB9
-                )
-                or (
-                    data["mapper_raw"] == 0x01
-                    and data["game_title"] == "MORTALKOMBAT DUO"
-                    and data["header_checksum"] == 0xA7
-                )
-            ):
-                data["mapper_raw"] += 0x100
+            self._ApplyKnownMapperOverrides(data)
 
             # GB-Memory (DMG-MMSA-JPN)
             if (
