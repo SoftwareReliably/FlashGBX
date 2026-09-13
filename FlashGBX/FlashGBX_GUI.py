@@ -2626,6 +2626,55 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         msgbox.setText(msg_text + elapsed_message)
         msgbox.exec()
 
+    def _PrepareROMBackupReport(
+        self,
+        msgbox: QtWidgets.QMessageBox,
+        time_elapsed: float | None,
+        speed: str | None,
+    ) -> tuple[str | Literal[False], str, bool, QtWidgets.QPushButton | None, QtWidgets.QPushButton]:
+        dumpinfo_file = ""
+        generate_report = str(self.SETTINGS.value("GenerateDumpReports", default="disabled")).lower() == "enabled"
+        dump_report = self._device.GetDumpReport()
+        if dump_report is not False:
+            if time_elapsed is not None and speed is not None:
+                self.lblStatus2aResult.setText(speed)
+                dump_report = dump_report.replace(
+                    "%TRANSFER_RATE%",
+                    "{:.2f}".format((self._device.INFO["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
+                )
+                dump_report = dump_report.replace(
+                    "%TIME_ELAPSED%",
+                    Formatter.progress_time(time_elapsed, localized=False),
+                )
+            else:
+                dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
+                dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
+            dumpinfo_file = str(Path(self.STATUS["last_path"]).with_suffix(".txt"))
+
+        button_dump_report = None
+        if dump_report is not False and dumpinfo_file != "" and generate_report:
+            try:
+                with Path(dumpinfo_file).open("wb") as f:
+                    f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
+                    f.write(dump_report.encode("UTF-8"))
+                button_dump_report = msgbox.addButton(
+                    c__("Button (& = Keyboard Shortcut)", "Open Dump &Report"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+            except Exception as e:
+                print(__("Error:") + f" {e!s:s}")
+        else:
+            button_dump_report = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "Generate Dump &Report"),
+                QtWidgets.QMessageBox.ButtonRole.ActionRole,
+            )
+
+        button_open_dir = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "Open Fol&der"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        return dump_report, dumpinfo_file, generate_report, button_dump_report, button_open_dir
+
     def _PrepareOperationFinish(self) -> None:
         if self.lblStatus2aResult.text() == __("Pending..."):
             self.lblStatus2aResult.setText("-")
@@ -2659,50 +2708,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if self._device.INFO["last_action"] == 1:  # Backup ROM
             self._device.INFO["last_action"] = 0
-            dump_report = False
-            button_dump_report = None
-            dumpinfo_file = ""
-            temp = str(self.SETTINGS.value("GenerateDumpReports", default="disabled")).lower() == "enabled"
-            # try:
-            dump_report = self._device.GetDumpReport()
-            if dump_report is not False:
-                if time_elapsed is not None and speed is not None:
-                    self.lblStatus2aResult.setText(speed)
-                    dump_report = dump_report.replace(
-                        "%TRANSFER_RATE%",
-                        "{:.2f}".format((self._device.INFO["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
-                    )
-                    dump_report = dump_report.replace(
-                        "%TIME_ELAPSED%",
-                        Formatter.progress_time(time_elapsed, localized=False),
-                    )
-                else:
-                    dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
-                    dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
-                dumpinfo_file = str(Path(self.STATUS["last_path"]).with_suffix(".txt"))
-            # except Exception as e:
-            # 	print(__("Dump Report Error:") + " {:s}".format(str(e)))
-
-            if dump_report is not False and dumpinfo_file != "" and temp is True:
-                try:
-                    with Path(dumpinfo_file).open("wb") as f:
-                        f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
-                        f.write(dump_report.encode("UTF-8"))
-                    button_dump_report = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "Open Dump &Report"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                except Exception as e:
-                    print(__("Error:") + f" {e!s:s}")
-            else:
-                button_dump_report = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "Generate Dump &Report"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-
-            button_open_dir = msgbox.addButton(
-                c__("Button (& = Keyboard Shortcut)", "Open Fol&der"),
-                QtWidgets.QMessageBox.ButtonRole.ActionRole,
+            dump_report, dumpinfo_file, temp, button_dump_report, button_open_dir = self._PrepareROMBackupReport(
+                msgbox,
+                time_elapsed,
+                speed,
             )
 
             if self._device.GetMode() == "DMG":
