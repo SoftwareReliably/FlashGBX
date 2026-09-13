@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 class DumpReport:
     @staticmethod
+    def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
+        return [f"* {label + ':':<{col}}{value}" for label, value in fields]
+
+    @staticmethod
     def _database_fields(db: dict[str, Any], *, include_save_type: bool) -> list[tuple[str, str]]:
         fields: list[tuple[str, str]] = []
         if "gn" in db and "ne" in db:
@@ -49,10 +53,84 @@ class DumpReport:
         return fields
 
     @classmethod
-    def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
-        def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
-            return [f"* {label + ':':<{col}}{value}" for label, value in fields]
+    def _gbmemory_lines(cls, di: dict[str, Any]) -> list[str]:
+        if "gbmem" not in di or di["gbmem"] is None:
+            return []
 
+        raw_data: str = "\n                     ".join(
+            "".join(f"{x:02X}" for x in di["gbmem"][i * 0x20 : i * 0x20 + 0x20]) for i in range(4)
+        )
+        parsed = di.get("gbmem_parsed")
+        if parsed is None or len(parsed) == 0:
+            return cls._fields_to_lines([("GB-Memory Data", raw_data)])
+
+        if not isinstance(parsed, list):
+            if not isinstance(parsed["game_code"], str):
+                return []
+            return [
+                "",
+                "== GB-Memory Data (Single Game) ==",
+                *cls._fields_to_lines(
+                    [
+                        ("Game Code", parsed["game_code"]),
+                        ("Game Title", parsed["title"]),
+                        ("Write Timestamp", parsed["timestamp"]),
+                        ("Write Kiosk ID", parsed["kiosk_id"]),
+                        ("Write Counter", f"{parsed['write_count']:d}"),
+                        ("Cartridge ID", parsed["cart_id"]),
+                        ("Raw Map Data", raw_data),
+                    ],
+                ),
+            ]
+
+        p0 = parsed[0]
+        lines = ["", "== GB-Memory Data (Multi Menu) =="]
+        lines += cls._fields_to_lines(
+            [
+                ("Write Timestamp", p0["timestamp"]),
+                ("Write Kiosk ID", p0["kiosk_id"]),
+                ("Number of Games", f"{p0['num_games']:d}"),
+                ("Write Counter", f"{p0['write_count']:d}"),
+                ("Cartridge ID", p0["cart_id"]),
+                ("Raw Map Data", raw_data),
+            ],
+        )
+        for i, entry in enumerate(parsed[1:], start=1):
+            if entry["menu_index"] == 0xFF or not entry["header"]["logo_correct"]:
+                continue
+            section: str = "Menu ROM" if i == 1 else f"Game {i - 1}"
+            entry_rom_bytes = entry["rom_size"]
+            entry_size_str: str = (
+                f"{Formatter.file_size(entry_rom_bytes, space=' ', localized=False)} ({entry_rom_bytes:d} bytes)"
+            )
+            entry_fields = [
+                ("Game Code", entry["game_code"]),
+                ("Game Title", entry["title"]),
+                ("Write Timestamp", entry["timestamp"]),
+                ("Write Kiosk ID", entry["kiosk_id"]),
+                (
+                    "Location",
+                    f"0x{entry['rom_offset']:06X}-0x{entry['rom_offset'] + entry['rom_size'] - 1:06X}",
+                ),
+                ("ROM Size", entry_size_str),
+            ]
+            hash_fields = (
+                ("crc32", "CRC32", lambda value: f"{value:08x}"),
+                ("md5", "MD5", str),
+                ("sha1", "SHA-1", str),
+                ("sha256", "SHA-256", str),
+            )
+            entry_fields.extend((label, formatter(entry[key])) for key, label, formatter in hash_fields if key in entry)
+            lines += ["", f"=== {section} ==="]
+            lines += cls._fields_to_lines(entry_fields)
+            if "db_entry" in entry and "crc32" in entry and entry["db_entry"]["rc"] == entry["crc32"]:
+                lines += cls._fields_to_lines(
+                    [("Database Match", f"{entry['db_entry']['gn']} {entry['db_entry']['ne']}")],
+                )
+        return lines
+
+    @classmethod
+    def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         # Resolve header into a shallow copy so we never mutate the caller's dict
         header = dict(di["header"].get("unchanged", di["header"]))
         if "db" in di["header"]:
@@ -82,7 +160,7 @@ class DumpReport:
         lines: list[str] = ["= FlashGBX Dump Report ="]
 
         lines += ["", "== File Information =="]
-        lines += _fields_to_lines(
+        lines += cls._fields_to_lines(
             [
                 ("File Name", file_name),
                 ("File Size", file_size_str),
@@ -113,7 +191,7 @@ class DumpReport:
             ("Transfer Buffer", f"{di['transfer_size']:d} bytes"),
             ("Retries", f"{device.GetReadErrors():d}"),
         ]
-        lines += _fields_to_lines(general_fields)
+        lines += cls._fields_to_lines(general_fields)
 
         lines += ["", "== Dumping Settings =="]
         dumping_fields: list[tuple[str, str]] = [
@@ -136,7 +214,7 @@ class DumpReport:
                 ("Cartridge Profile", cart_type_str),
                 ("Read Method", di["agb_read_method"]),
             ]
-        lines += _fields_to_lines(dumping_fields)
+        lines += cls._fields_to_lines(dumping_fields)
 
         lines += ["", "== Parsed Data =="]
 
@@ -207,84 +285,13 @@ class DumpReport:
                 ("Mapper Type", hdr_mapper_str),
                 ("Target Platform", target_platform),
             ]
-            lines += _fields_to_lines(parsed_fields)
-
-            if "gbmem" in di and di["gbmem"] is not None:
-                raw_data: str = "\n                     ".join(
-                    "".join(f"{x:02X}" for x in di["gbmem"][i * 0x20 : i * 0x20 + 0x20]) for i in range(4)
-                )
-                if "gbmem_parsed" in di and di["gbmem_parsed"] is not None and len(di["gbmem_parsed"]) > 0:
-                    if isinstance(di["gbmem_parsed"], list):
-                        p0 = di["gbmem_parsed"][0]
-                        lines += ["", "== GB-Memory Data (Multi Menu) =="]
-                        lines += _fields_to_lines(
-                            [
-                                ("Write Timestamp", p0["timestamp"]),
-                                ("Write Kiosk ID", p0["kiosk_id"]),
-                                ("Number of Games", f"{p0['num_games']:d}"),
-                                ("Write Counter", f"{p0['write_count']:d}"),
-                                ("Cartridge ID", p0["cart_id"]),
-                                ("Raw Map Data", raw_data),
-                            ],
-                        )
-                        for i in range(1, len(di["gbmem_parsed"])):
-                            entry = di["gbmem_parsed"][i]
-                            if entry["menu_index"] == 0xFF or not entry["header"]["logo_correct"]:
-                                continue
-                            section: str = "Menu ROM" if i == 1 else f"Game {i - 1}"
-                            entry_rom_bytes = entry["rom_size"]
-                            entry_size_str: str = f"{Formatter.file_size(entry_rom_bytes, space=' ', localized=False)} ({entry_rom_bytes:d} bytes)"
-                            entry_fields = [
-                                ("Game Code", entry["game_code"]),
-                                ("Game Title", entry["title"]),
-                                ("Write Timestamp", entry["timestamp"]),
-                                ("Write Kiosk ID", entry["kiosk_id"]),
-                                (
-                                    "Location",
-                                    f"0x{entry['rom_offset']:06X}-0x{entry['rom_offset'] + entry['rom_size'] - 1:06X}",
-                                ),
-                                ("ROM Size", entry_size_str),
-                            ]
-                            if "crc32" in entry:
-                                entry_fields.append(("CRC32", f"{entry['crc32']:08x}"))
-                            if "md5" in entry:
-                                entry_fields.append(("MD5", entry["md5"]))
-                            if "sha1" in entry:
-                                entry_fields.append(("SHA-1", entry["sha1"]))
-                            if "sha256" in entry:
-                                entry_fields.append(("SHA-256", entry["sha256"]))
-                            lines += ["", f"=== {section} ==="]
-                            lines += _fields_to_lines(entry_fields)
-                            if "db_entry" in entry and "crc32" in entry and entry["db_entry"]["rc"] == entry["crc32"]:
-                                lines += _fields_to_lines(
-                                    [
-                                        (
-                                            "Database Match",
-                                            f"{entry['db_entry']['gn']} {entry['db_entry']['ne']}",
-                                        ),
-                                    ],
-                                )
-                    elif isinstance(di["gbmem_parsed"]["game_code"], str):
-                        p = di["gbmem_parsed"]
-                        lines += ["", "== GB-Memory Data (Single Game) =="]
-                        lines += _fields_to_lines(
-                            [
-                                ("Game Code", p["game_code"]),
-                                ("Game Title", p["title"]),
-                                ("Write Timestamp", p["timestamp"]),
-                                ("Write Kiosk ID", p["kiosk_id"]),
-                                ("Write Counter", f"{p['write_count']:d}"),
-                                ("Cartridge ID", p["cart_id"]),
-                                ("Raw Map Data", raw_data),
-                            ],
-                        )
-                else:
-                    lines += _fields_to_lines([("GB-Memory Data", raw_data)])
+            lines += cls._fields_to_lines(parsed_fields)
+            lines += cls._gbmemory_lines(di)
 
             if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
                 db = header["db"]
                 lines += ["", "== Database Match =="]
-                lines += _fields_to_lines(cls._database_fields(db, include_save_type=False))
+                lines += cls._fields_to_lines(cls._database_fields(db, include_save_type=False))
 
         elif mode == "AGB":
             hdr_chk = header["header_checksum"]
@@ -313,11 +320,11 @@ class DumpReport:
             if "eeprom_data" in di:
                 eeprom_hex: str = "".join(f"{x:02X}" for x in di["eeprom_data"])
                 parsed_fields.append(("EEPROM area", f"{eeprom_hex}"))
-            lines += _fields_to_lines(parsed_fields)
+            lines += cls._fields_to_lines(parsed_fields)
 
             if cart_type_str == "Vast Fame":
                 lines += ["", "== Vast Fame Protection Information =="]
-                lines += _fields_to_lines(
+                lines += cls._fields_to_lines(
                     [
                         ("Address Reordering", str(di.get("vf_addr_reorder", "N/A"))),
                         ("Value Reordering", str(di.get("vf_value_reorder", "N/A"))),
@@ -328,7 +335,7 @@ class DumpReport:
             if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
                 db = header["db"]
                 lines += ["", "== Database Match =="]
-                lines += _fields_to_lines(cls._database_fields(db, include_save_type=True))
+                lines += cls._fields_to_lines(cls._database_fields(db, include_save_type=True))
 
         newline: Literal["\r\n", "\n"] = "\r\n" if platform.system() == "Windows" else "\n"
         return newline.join(lines)

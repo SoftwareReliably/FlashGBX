@@ -640,6 +640,71 @@ class FlashGBX_CLI:
                 except Exception:
                     logger.exception("Failed to render the CLI progress bar")
 
+    def _FinishBackupRAM(self) -> None:
+        self.CONN.INFO["last_action"] = 0
+        is_camera_save = (
+            "debug" not in self.ARGS
+            and self.CONN.GetMode() == "DMG"
+            and self.CONN.INFO["mapper_raw"] == 252
+            and self.CONN.INFO["transferred"] == 0x20000
+        ) or (
+            self.CONN.INFO["transferred"] == 0x100000
+            and "ram_size_raw" in self.CONN.INFO["dump_info"]["header"]
+            and self.CONN.INFO["dump_info"]["header"]["ram_size_raw"] == 0x204
+        )
+        if is_camera_save:
+            if getattr(self.ARGS["argparsed"], "gbcamera_extract", False):
+                if self.CONN.INFO["transferred"] == 0x100000:
+                    base = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                    if base.is_file():
+                        print(
+                            __(
+                                "Can't save pictures at location “{path}”.",
+                                path=str(base.resolve()),
+                            ),
+                        )
+                        self.RETVAL = 1
+                        return
+                    base.mkdir(parents=True, exist_ok=True)
+                    pc = PocketCamera()
+                    pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
+                    for roll in range(1, 9):
+                        with Path(self.CONN.INFO["last_path"]).open("rb") as f:
+                            f.seek(0x20000 * (roll - 1))
+                            roll_data = bytearray(f.read(0x20000))
+                        if pc.LoadFile(roll_data):
+                            for i in range(32):
+                                file = base / "IMG_P{:1d}{:02d}.{}".format(
+                                    roll,
+                                    i,
+                                    self.ARGS["argparsed"].gbcamera_outfile_format,
+                                )
+                                pc.ExportPicture(i, file, scale=1)
+                else:
+                    file = self.CONN.INFO["last_path"]
+                    pc = PocketCamera()
+                    if pc.LoadFile(file):
+                        pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
+                        destination = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                        file = destination / "IMG_PC00.png"
+                        if destination.is_file():
+                            print(
+                                __(
+                                    "Can't save pictures at location “{path}”.",
+                                    path=str(destination.resolve()),
+                                ),
+                            )
+                            self.RETVAL = 1
+                            return
+                        destination.mkdir(parents=True, exist_ok=True)
+                        for i in range(32):
+                            file = destination / f"IMG_PC{i:02d}.{self.ARGS['argparsed'].gbcamera_outfile_format}"
+                            pc.ExportPicture(i, file, scale=1)
+                print(__("The pictures were extracted."))
+            print()
+
+        print(__("The save data backup is complete!"))
+
     def FinishOperation(self) -> None:
         time_elapsed = None
         speed = None
@@ -770,68 +835,7 @@ class FlashGBX_CLI:
                     print(ANSI.YELLOW + msg + ANSI.RESET)
 
         elif self.CONN.INFO["last_action"] == 2:  # Backup RAM
-            self.CONN.INFO["last_action"] = 0
-            if (
-                "debug" not in self.ARGS
-                and self.CONN.GetMode() == "DMG"
-                and self.CONN.INFO["mapper_raw"] == 252
-                and self.CONN.INFO["transferred"] == 0x20000
-            ) or (
-                self.CONN.INFO["transferred"] == 0x100000
-                and "ram_size_raw" in self.CONN.INFO["dump_info"]["header"]
-                and self.CONN.INFO["dump_info"]["header"]["ram_size_raw"] == 0x204
-            ):
-                if getattr(self.ARGS["argparsed"], "gbcamera_extract", False):
-                    if self.CONN.INFO["transferred"] == 0x100000:
-                        base = Path(self.CONN.INFO["last_path"]).with_suffix("")
-                        if base.is_file():
-                            print(
-                                __(
-                                    "Can't save pictures at location “{path}”.",
-                                    path=str(base.resolve()),
-                                ),
-                            )
-                            self.RETVAL = 1
-                            return
-                        base.mkdir(parents=True, exist_ok=True)
-                        pc = PocketCamera()
-                        pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
-                        for roll in range(1, 9):
-                            with Path(self.CONN.INFO["last_path"]).open("rb") as f:
-                                f.seek(0x20000 * (roll - 1))
-                                roll_data = bytearray(f.read(0x20000))
-                            if pc.LoadFile(roll_data):
-                                for i in range(32):
-                                    file = base / "IMG_P{:1d}{:02d}.{}".format(
-                                        roll,
-                                        i,
-                                        self.ARGS["argparsed"].gbcamera_outfile_format,
-                                    )
-                                    pc.ExportPicture(i, file, scale=1)
-                    else:
-                        file = self.CONN.INFO["last_path"]
-                        pc = PocketCamera()
-                        if pc.LoadFile(file):
-                            pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
-                            destination = Path(self.CONN.INFO["last_path"]).with_suffix("")
-                            file = destination / "IMG_PC00.png"
-                            if destination.is_file():
-                                print(
-                                    __(
-                                        "Can't save pictures at location “{path}”.",
-                                        path=str(destination.resolve()),
-                                    ),
-                                )
-                                self.RETVAL = 1
-                                return
-                            destination.mkdir(parents=True, exist_ok=True)
-                            for i in range(32):
-                                file = destination / f"IMG_PC{i:02d}.{self.ARGS['argparsed'].gbcamera_outfile_format}"
-                                pc.ExportPicture(i, file, scale=1)
-                    print(__("The pictures were extracted."))
-                print()
-
-            print(__("The save data backup is complete!"))
+            self._FinishBackupRAM()
 
         elif self.CONN.INFO["last_action"] == 3:  # Restore RAM
             self.CONN.INFO["last_action"] = 0
@@ -960,6 +964,37 @@ class FlashGBX_CLI:
             logger.exception("Failed to disconnect the CLI device")
         self.CONN = None
 
+    @staticmethod
+    def _DmgPlatformString(data: HeaderData) -> str:
+        cgb = data.get("cgb", 0)
+        if cgb == 0xC0:
+            return __("Game Boy Color exclusive")
+        if cgb == 0x80:
+            return __("Game Boy Color")
+        if data.get("old_lic", 0) == 0x33 and data.get("sgb", 0) == 0x03:
+            return __("Super Game Boy")
+        return __("Original Game Boy")
+
+    @staticmethod
+    def _DmgSaveTypeString(data: HeaderData) -> str:
+        try:
+            if data["mapper_raw"] == 0x06:  # MBC2
+                return DmgSaveTypes(index=1).GetString()
+            if data["mapper_raw"] == 0x22 and data["game_title"] in (
+                "KORO2 KIRBY",
+                "KIRBY TNT",
+            ):  # MBC7 Kirby
+                return DmgSaveTypes(mbc=0x101).GetString()
+            if data["mapper_raw"] == 0x22 and data["game_title"] in ("CMASTER"):  # MBC7 Command Master
+                return DmgSaveTypes(mbc=0x102).GetString()
+            if data["mapper_raw"] == 0xFD:  # TAMA5
+                return DmgSaveTypes(mbc=0x103).GetString()
+            if data["mapper_raw"] == 0x20:  # MBC6
+                return DmgSaveTypes(mbc=0x104).GetString()
+            return DmgSaveTypes(mbc=data["ram_size_raw"]).GetString()
+        except KeyError, TypeError, ValueError, IndexError:
+            return c__("Game Data", "Not detected")
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -996,18 +1031,7 @@ class FlashGBX_CLI:
             else:
                 rows.append((__("Revision:"), str(data["version"])))
 
-            cgb = data.get("cgb", 0)
-            sgb = data.get("sgb", 0)
-            old_lic = data.get("old_lic", 0)
-            if cgb == 0xC0:
-                platform_str: str = __("Game Boy Color exclusive")
-            elif cgb == 0x80:
-                platform_str = __("Game Boy Color")
-            elif old_lic == 0x33 and sgb == 0x03:
-                platform_str = __("Super Game Boy")
-            else:
-                platform_str = __("Original Game Boy")
-            rows.append((__("Platform:"), platform_str))
+            rows.append((__("Platform:"), self._DmgPlatformString(data)))
 
             rows.append((__("Real Time Clock:"), data["rtc_string"]))
 
@@ -1039,25 +1063,7 @@ class FlashGBX_CLI:
                 )
                 bad_read = True
 
-            try:
-                if data["mapper_raw"] == 0x06:  # MBC2
-                    save_type_str: str = DmgSaveTypes(index=1).GetString()
-                elif data["mapper_raw"] == 0x22 and data["game_title"] in (
-                    "KORO2 KIRBY",
-                    "KIRBY TNT",
-                ):  # MBC7 Kirby
-                    save_type_str = DmgSaveTypes(mbc=0x101).GetString()
-                elif data["mapper_raw"] == 0x22 and data["game_title"] in ("CMASTER"):  # MBC7 Command Master
-                    save_type_str = DmgSaveTypes(mbc=0x102).GetString()
-                elif data["mapper_raw"] == 0xFD:  # TAMA5
-                    save_type_str = DmgSaveTypes(mbc=0x103).GetString()
-                elif data["mapper_raw"] == 0x20:  # MBC6
-                    save_type_str = DmgSaveTypes(mbc=0x104).GetString()
-                else:
-                    save_type_str = DmgSaveTypes(mbc=data["ram_size_raw"]).GetString()
-            except KeyError, TypeError, ValueError, IndexError:
-                save_type_str = c__("Game Data", "Not detected")
-            rows.append((__("Save Type:"), save_type_str))
+            rows.append((__("Save Type:"), self._DmgSaveTypeString(data)))
 
             try:
                 rows.append((__("Mapper Type:"), DMG_Mapper().GetMapperName(data["mapper_raw"])))
@@ -1353,25 +1359,18 @@ class FlashGBX_CLI:
             (self.CONN.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
         ):
             msg_cart_type_s = __("Flashcart Profile:") + " " + __("Unknown flash cartridge")
-            try_this = ""
-            if "[     0/90]" in flash_id:
-                try_this = "Generic Flash Cartridge (0/90)"
-            elif "[   AAA/AA]" in flash_id:
-                try_this = "Generic Flash Cartridge (AAA/AA)"
-            elif "[   AAA/A9]" in flash_id:
-                try_this = "Generic Flash Cartridge (AAA/A9)"
-            elif "[WR   / AAA/AA]" in flash_id:
-                try_this = "Generic Flash Cartridge (WR/AAA/AA)"
-            elif "[WR   / AAA/A9]" in flash_id:
-                try_this = "Generic Flash Cartridge (WR/AAA/A9)"
-            elif "[WR   / 555/AA]" in flash_id:
-                try_this = "Generic Flash Cartridge (WR/555/AA)"
-            elif "[WR   / 555/A9]" in flash_id:
-                try_this = "Generic Flash Cartridge (WR/555/A9)"
-            elif "[AUDIO/ AAA/AA]" in flash_id:
-                try_this = "Generic Flash Cartridge (AUDIO/AAA/AA)"
-            elif "[AUDIO/ 555/AA]" in flash_id:
-                try_this = "Generic Flash Cartridge (AUDIO/555/AA)"
+            generic_profiles = (
+                ("[     0/90]", "Generic Flash Cartridge (0/90)"),
+                ("[   AAA/AA]", "Generic Flash Cartridge (AAA/AA)"),
+                ("[   AAA/A9]", "Generic Flash Cartridge (AAA/A9)"),
+                ("[WR   / AAA/AA]", "Generic Flash Cartridge (WR/AAA/AA)"),
+                ("[WR   / AAA/A9]", "Generic Flash Cartridge (WR/AAA/A9)"),
+                ("[WR   / 555/AA]", "Generic Flash Cartridge (WR/555/AA)"),
+                ("[WR   / 555/A9]", "Generic Flash Cartridge (WR/555/A9)"),
+                ("[AUDIO/ AAA/AA]", "Generic Flash Cartridge (AUDIO/AAA/AA)"),
+                ("[AUDIO/ 555/AA]", "Generic Flash Cartridge (AUDIO/555/AA)"),
+            )
+            try_this = next((profile for marker, profile in generic_profiles if marker in flash_id), "")
             if try_this != "":
                 msg_cart_type_s += " " + __(
                     "For ROM writing, you can give the option called “{try_this}” a try at your own risk.",
@@ -1419,6 +1418,64 @@ class FlashGBX_CLI:
         print(temp[:-1])
 
         return cart_type
+
+    def _ResolveBackupCartType(
+        self,
+        args: argparse.Namespace,
+        header: HeaderData,
+        rom_size: int | None,
+    ) -> tuple[int, int | None]:
+        cart_type = 0
+        if args.flashcart_type != "autodetect":
+            if self.CONN.GetMode() == "DMG":
+                carts = self.CONN.GetSupportedCartridgesDMG()[1]
+            elif self.CONN.GetMode() == "AGB":
+                carts = self.CONN.GetSupportedCartridgesAGB()[1]
+            else:
+                raise NotImplementedError
+
+            for i, cart in enumerate(carts):
+                if "names" not in cart or cart["type"] != self.CONN.GetMode():
+                    continue
+                if args.flashcart_type in cart["names"] and "flash_size" in cart:
+                    print(
+                        __(
+                            "Selected flashcart profile: {profile}",
+                            profile=args.flashcart_type,
+                        )
+                        + "\n",
+                    )
+                    cart_type = i
+                    rom_size = cart["flash_size"]
+                    break
+            if cart_type == 0:
+                print(__("Error: Couldn't select the flashcart profile.") + "\n")
+        elif self.CONN.GetMode() == "AGB":
+            cart_types = self.CONN.GetSupportedCartridgesAGB()
+            if "flash_type" in header:
+                print(
+                    __(
+                        "Selected flashcart profile: {profile}",
+                        profile=cart_types[0][header["flash_type"]],
+                    )
+                    + "\n",
+                )
+                cart_type = header["flash_type"]
+            elif header["logo_correct"]:
+                for i in range(len(cart_types[0])):
+                    if (header["3d_memory"] is True and "3d_memory" in cart_types[1][i]) or (
+                        header["vast_fame"] is True and "vast_fame" in cart_types[1][i]
+                    ):
+                        print(
+                            __(
+                                "Selected flashcart profile: {profile}",
+                                profile=cart_types[0][i],
+                            )
+                            + "\n",
+                        )
+                        cart_type = i
+                        break
+        return cart_type, rom_size
 
     def BackupROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         mbc = 1
@@ -1527,59 +1584,7 @@ class FlashGBX_CLI:
 
         print()
 
-        cart_type = 0
-        if args.flashcart_type != "autodetect":
-            if self.CONN.GetMode() == "DMG":
-                carts = self.CONN.GetSupportedCartridgesDMG()[1]
-            elif self.CONN.GetMode() == "AGB":
-                carts = self.CONN.GetSupportedCartridgesAGB()[1]
-            else:
-                raise NotImplementedError
-
-            cart_type = 0
-            for i in range(len(carts)):
-                if "names" not in carts[i]:
-                    continue
-                if carts[i]["type"] != self.CONN.GetMode():
-                    continue
-                if args.flashcart_type in carts[i]["names"] and "flash_size" in carts[i]:
-                    print(
-                        __(
-                            "Selected flashcart profile: {profile}",
-                            profile=args.flashcart_type,
-                        )
-                        + "\n",
-                    )
-                    rom_size = carts[i]["flash_size"]
-                    cart_type: int = i
-                    break
-            if cart_type == 0:
-                print(__("Error: Couldn't select the flashcart profile.") + "\n")
-        elif self.CONN.GetMode() == "AGB":
-            cart_types = self.CONN.GetSupportedCartridgesAGB()
-            if "flash_type" in header:
-                print(
-                    __(
-                        "Selected flashcart profile: {profile}",
-                        profile=cart_types[0][header["flash_type"]],
-                    )
-                    + "\n",
-                )
-                cart_type = header["flash_type"]
-            elif header["logo_correct"]:
-                for i in range(len(cart_types[0])):
-                    if (header["3d_memory"] is True and "3d_memory" in cart_types[1][i]) or (
-                        header["vast_fame"] is True and "vast_fame" in cart_types[1][i]
-                    ):
-                        print(
-                            __(
-                                "Selected flashcart profile: {profile}",
-                                profile=cart_types[0][i],
-                            )
-                            + "\n",
-                        )
-                        cart_type = i
-                        break
+        cart_type, rom_size = self._ResolveBackupCartType(args, header, rom_size)
         self.CONN.TransferData(
             args={
                 "mode": 1,
@@ -1680,6 +1685,37 @@ class FlashGBX_CLI:
             voltage_fallback = 5
         return override_voltage, voltage_fallback, device_voltage_locked
 
+    def _PromptBootLogoFix(self, header: Mapping[str, Any], mbc: int) -> bool | bytearray:
+        mode = self.CONN.GetMode()
+        if header["logo_correct"] or (mode == "DMG" and mbc in (0x203, 0x205)):
+            return False
+
+        print(
+            ANSI.YELLOW
+            + __(
+                "Warning: The ROM file you selected will not boot on actual hardware due to invalid boot logo data.",
+            )
+            + ANSI.RESET,
+        )
+        bootlogo = None
+        if mode == "DMG":
+            bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
+            if bootlogo_path.exists():
+                with bootlogo_path.open("rb") as f:
+                    bootlogo = bytearray(f.read(0x30))
+        elif mode == "AGB":
+            bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+            if bootlogo_path.exists():
+                with bootlogo_path.open("rb") as f:
+                    bootlogo = bytearray(f.read(0x9C))
+        if bootlogo is None:
+            dprint(__("Couldn't find boot logo file in configuration folder."))
+            return False
+
+        answer = input(__("Fix the boot logo before continuing?") + " [Y/n]: ").strip().lower()
+        print()
+        return bootlogo if answer != "n" else False
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
         mbc = 0
@@ -1778,7 +1814,7 @@ class FlashGBX_CLI:
         verify_write = args.no_verify_write is False
         compare_sectors = args.compare_sectors is True
 
-        fix_bootlogo = False
+        fix_bootlogo: bool | bytearray = False
         fix_header = False
         if self.CONN.GetMode() == "DMG":
             hdr = RomFileDMG(buffer).GetHeader()
@@ -1798,34 +1834,7 @@ class FlashGBX_CLI:
         else:
             raise NotImplementedError
 
-        if not hdr["logo_correct"] and (
-            self.CONN.GetMode() == "AGB" or (self.CONN.GetMode() == "DMG" and mbc not in (0x203, 0x205))
-        ):
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Warning: The ROM file you selected will not boot on actual hardware due to invalid boot logo data.",
-                )
-                + ANSI.RESET,
-            )
-            bootlogo = None
-            if self.CONN.GetMode() == "DMG":
-                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
-                if bootlogo_path.exists():
-                    with bootlogo_path.open("rb") as f:
-                        bootlogo = bytearray(f.read(0x30))
-            elif self.CONN.GetMode() == "AGB":
-                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
-                if bootlogo_path.exists():
-                    with bootlogo_path.open("rb") as f:
-                        bootlogo = bytearray(f.read(0x9C))
-            if bootlogo is not None:
-                answer = input(__("Fix the boot logo before continuing?") + " [Y/n]: ").strip().lower()
-                print()
-                if answer != "n":
-                    fix_bootlogo = bootlogo
-            else:
-                dprint(__("Couldn't find boot logo file in configuration folder."))
+        fix_bootlogo = self._PromptBootLogoFix(hdr, mbc)
 
         if not hdr["header_checksum_correct"] and (
             self.CONN.GetMode() == "AGB" or (self.CONN.GetMode() == "DMG" and mbc not in (0x203, 0x205))
@@ -2102,6 +2111,161 @@ class FlashGBX_CLI:
             print(__("Note: Overwriting existing e-Reader calibration data."))
         return True, buffer
 
+    def _DebugTestSave(self, mbc: int, save_type: int) -> None:
+        self.ARGS["debug"] = True
+        config_path = Path(AppContext.CONFIG_PATH)
+        test1_path: Path = config_path / "test1.bin"
+        test2_path: Path = config_path / "test2.bin"
+        test3_path: Path = config_path / "test3.bin"
+        test4_path: Path = config_path / "test4.bin"
+
+        print(__("Making a backup of the original save data."))
+        ret = self.CONN.TransferData(
+            args={
+                "mode": 2,
+                "path": str(test1_path),
+                "mbc": mbc,
+                "save_type": save_type,
+            },
+            signal=self.PROGRESS.SetProgress,
+        )
+        if ret is False:
+            return
+        time.sleep(0.1)
+        print(__("Writing random data."))
+        test2 = bytearray(os.urandom(test1_path.stat().st_size))
+        with test2_path.open("wb") as f:
+            f.write(test2)
+        self.CONN.TransferData(
+            args={
+                "mode": 3,
+                "path": str(test2_path),
+                "mbc": mbc,
+                "save_type": save_type,
+                "erase": False,
+            },
+            signal=self.PROGRESS.SetProgress,
+        )
+        time.sleep(0.1)
+        print(__("Reading back and comparing data."))
+        self.CONN.TransferData(
+            args={
+                "mode": 2,
+                "path": str(test3_path),
+                "mbc": mbc,
+                "save_type": save_type,
+            },
+            signal=self.PROGRESS.SetProgress,
+        )
+        time.sleep(0.1)
+        with test3_path.open("rb") as f:
+            test3 = bytearray(f.read())
+        if self.CONN.CanPowerCycleCart():
+            print("\n" + __("Power cycling."))
+            for _ in range(5):
+                self.CONN.CartPowerCycle()
+                time.sleep(0.1)
+            self.CONN.ReadHeader(checkRtc=False)
+        time.sleep(0.2)
+        print("\n" + __("Reading back and comparing data again."))
+        self.CONN.TransferData(
+            args={
+                "mode": 2,
+                "path": str(test4_path),
+                "mbc": mbc,
+                "save_type": save_type,
+            },
+            signal=self.PROGRESS.SetProgress,
+        )
+        time.sleep(0.1)
+        with test4_path.open("rb") as f:
+            test4 = bytearray(f.read())
+        print(__("Restoring original save data."))
+        self.CONN.TransferData(
+            args={
+                "mode": 3,
+                "path": str(test1_path),
+                "mbc": mbc,
+                "save_type": save_type,
+                "erase": False,
+            },
+            signal=self.PROGRESS.SetProgress,
+        )
+        time.sleep(0.1)
+
+        if mbc == 6:
+            for i in range(len(test2)):
+                test2[i] &= 0x0F
+                test3[i] &= 0x0F
+                test4[i] &= 0x0F
+
+        if test2 != test4:
+            diffcount = 0
+            for i in range(len(test2)):
+                if test2[i] != test4[i]:
+                    diffcount += 1
+            print("\n" + ANSI.RED + __("Differences found:") + str(diffcount) + ANSI.RESET)
+        if test3 != test4:
+            diffcount = 0
+            for i in range(len(test3)):
+                if test3[i] != test4[i]:
+                    diffcount += 1
+            print(
+                "\n"
+                + ANSI.RED
+                + __("Differences found between two consecutive readbacks:")
+                + str(diffcount)
+                + ANSI.RESET,
+            )
+            input("")
+
+        found_offset: int = test2.find(test3[0:512])
+        if found_offset < 0:
+            if self.CONN.GetMode() == "AGB":
+                print(
+                    "\n"
+                    + ANSI.RED
+                    + __(
+                        "It was not possible to save any data to the cartridge using save type “{save_type}”.",
+                        save_type=AgbSaveTypes(save_type).GetString(),
+                    )
+                    + ANSI.RESET,
+                )
+            else:
+                print("\n" + ANSI.RED + __("It was not possible to save any data to the cartridge.") + ANSI.RESET)
+            return
+
+        if found_offset == 0 and test2 != test3:  # Pokémon Crystal JPN
+            found_length: int = 0
+            for _, (expected, actual) in enumerate(zip(test2, test3, strict=False)):
+                if expected != actual:
+                    break
+        else:
+            found_length = len(test2) - found_offset
+
+        if self.CONN.GetMode() == "DMG":
+            print(
+                "\n"
+                + ANSI.GREEN
+                + __(
+                    "Done! The writable save data size is {data_writable} out of {data_checked} checked.",
+                    data_writable=Formatter.file_size(found_length),
+                    data_checked=Formatter.file_size(DmgSaveTypes(mbc=save_type).GetSize()),
+                )
+                + ANSI.RESET,
+            )
+        elif self.CONN.GetMode() == "AGB":
+            print(
+                "\n"
+                + ANSI.GREEN
+                + __(
+                    "Done! The writable save data size using save type “{save_type}” is {data_writable}.",
+                    save_type=AgbSaveTypes(save_type).GetString(),
+                    data_writable=Formatter.file_size(found_length),
+                )
+                + ANSI.RESET,
+            )
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2237,158 +2401,7 @@ class FlashGBX_CLI:
                 signal=self.PROGRESS.SetProgress,
             )
         elif args.action == "debug-test-save":  # debug
-            self.ARGS["debug"] = True
-            config_path = Path(AppContext.CONFIG_PATH)
-            test1_path: Path = config_path / "test1.bin"
-            test2_path: Path = config_path / "test2.bin"
-            test3_path: Path = config_path / "test3.bin"
-            test4_path: Path = config_path / "test4.bin"
-
-            print(__("Making a backup of the original save data."))
-            ret = self.CONN.TransferData(
-                args={
-                    "mode": 2,
-                    "path": str(test1_path),
-                    "mbc": mbc,
-                    "save_type": save_type,
-                },
-                signal=self.PROGRESS.SetProgress,
-            )
-            if ret is False:
-                return
-            time.sleep(0.1)
-            print(__("Writing random data."))
-            test2 = bytearray(os.urandom(test1_path.stat().st_size))
-            with test2_path.open("wb") as f:
-                f.write(test2)
-            self.CONN.TransferData(
-                args={
-                    "mode": 3,
-                    "path": str(test2_path),
-                    "mbc": mbc,
-                    "save_type": save_type,
-                    "erase": False,
-                },
-                signal=self.PROGRESS.SetProgress,
-            )
-            time.sleep(0.1)
-            print(__("Reading back and comparing data."))
-            self.CONN.TransferData(
-                args={
-                    "mode": 2,
-                    "path": str(test3_path),
-                    "mbc": mbc,
-                    "save_type": save_type,
-                },
-                signal=self.PROGRESS.SetProgress,
-            )
-            time.sleep(0.1)
-            with test3_path.open("rb") as f:
-                test3 = bytearray(f.read())
-            if self.CONN.CanPowerCycleCart():
-                print("\n" + __("Power cycling."))
-                for _ in range(5):
-                    self.CONN.CartPowerCycle()
-                    time.sleep(0.1)
-                self.CONN.ReadHeader(checkRtc=False)
-            time.sleep(0.2)
-            print("\n" + __("Reading back and comparing data again."))
-            self.CONN.TransferData(
-                args={
-                    "mode": 2,
-                    "path": str(test4_path),
-                    "mbc": mbc,
-                    "save_type": save_type,
-                },
-                signal=self.PROGRESS.SetProgress,
-            )
-            time.sleep(0.1)
-            with test4_path.open("rb") as f:
-                test4 = bytearray(f.read())
-            print(__("Restoring original save data."))
-            self.CONN.TransferData(
-                args={
-                    "mode": 3,
-                    "path": str(test1_path),
-                    "mbc": mbc,
-                    "save_type": save_type,
-                    "erase": False,
-                },
-                signal=self.PROGRESS.SetProgress,
-            )
-            time.sleep(0.1)
-
-            if mbc == 6:
-                for i in range(len(test2)):
-                    test2[i] &= 0x0F
-                    test3[i] &= 0x0F
-                    test4[i] &= 0x0F
-
-            if test2 != test4:
-                diffcount = 0
-                for i in range(len(test2)):
-                    if test2[i] != test4[i]:
-                        diffcount += 1
-                print("\n" + ANSI.RED + __("Differences found:") + str(diffcount) + ANSI.RESET)
-            if test3 != test4:
-                diffcount = 0
-                for i in range(len(test3)):
-                    if test3[i] != test4[i]:
-                        diffcount += 1
-                print(
-                    "\n"
-                    + ANSI.RED
-                    + __("Differences found between two consecutive readbacks:")
-                    + str(diffcount)
-                    + ANSI.RESET,
-                )
-                input("")
-
-            found_offset: int = test2.find(test3[0:512])
-            if found_offset < 0:
-                if self.CONN.GetMode() == "AGB":
-                    print(
-                        "\n"
-                        + ANSI.RED
-                        + __(
-                            "It was not possible to save any data to the cartridge using save type “{save_type}”.",
-                            save_type=AgbSaveTypes(save_type).GetString(),
-                        )
-                        + ANSI.RESET,
-                    )
-                else:
-                    print("\n" + ANSI.RED + __("It was not possible to save any data to the cartridge.") + ANSI.RESET)
-            else:
-                if found_offset == 0 and test2 != test3:  # Pokémon Crystal JPN
-                    found_length: int = 0
-                    for _, (expected, actual) in enumerate(zip(test2, test3, strict=False)):
-                        if expected != actual:
-                            break
-                else:
-                    found_length: int = len(test2) - found_offset
-
-                if self.CONN.GetMode() == "DMG":
-                    print(
-                        "\n"
-                        + ANSI.GREEN
-                        + __(
-                            "Done! The writable save data size is {data_writable} out of {data_checked} checked.",
-                            data_writable=Formatter.file_size(found_length),
-                            data_checked=Formatter.file_size(DmgSaveTypes(mbc=save_type).GetSize()),
-                        )
-                        + ANSI.RESET,
-                    )
-                elif self.CONN.GetMode() == "AGB":
-                    print(
-                        "\n"
-                        + ANSI.GREEN
-                        + __(
-                            "Done! The writable save data size using save type “{save_type}” is {data_writable}.",
-                            save_type=AgbSaveTypes(save_type).GetString(),
-                            data_writable=Formatter.file_size(found_length),
-                        )
-                        + ANSI.RESET,
-                    )
+            self._DebugTestSave(mbc, save_type)
 
     def _ResolveBLArgs(
         self,
