@@ -4407,6 +4407,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if not self._device.IsConnected():
             self.DisconnectDevice()
 
+    def _RunSaveStressTestTransfer(self, args: dict[str, Any]) -> None:
+        transfer = threading.Thread(
+            target=self._device.TransferData,
+            kwargs={"args": args, "signal": _ignore_progress},
+        )
+        transfer.start()
+        while transfer.is_alive():
+            qt_app.processEvents()
+            time.sleep(0.02)
+        transfer.join()
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4419,7 +4430,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         save_type = preparation.save_type
         cart_type = preparation.cart_type
         test_patterns, test_patterns_names = self._PrepareSaveStressTest(mbc)
-        # if AppContext.DEBUG: test_patterns = [ test_patterns[0], test_patterns[1], test_patterns[4] ]
 
         time_start = time.time()
         test_ok = 0
@@ -4441,15 +4451,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 "rtc": False,
                 "cart_type": cart_type,
             }
-            t = threading.Thread(
-                target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                args=[args],
-            )
-            t.start()
-            while t.is_alive():
-                qt_app.processEvents()
-                time.sleep(0.02)
-            t.join()
+            self._RunSaveStressTestTransfer(args)
             save1 = self._device.INFO["data"]
             if self._device.CanPowerCycleCart():
                 self._device.CartPowerOff()
@@ -4465,15 +4467,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 time.sleep(1)
             self.lblStatus4a.setText(__("Testing ({pattern} 2/2)...", pattern=test_patterns_names[0]))
             qt_app.processEvents()
-            t = threading.Thread(
-                target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                args=[args],
-            )
-            t.start()
-            while t.is_alive():
-                qt_app.processEvents()
-                time.sleep(0.02)
-            t.join()
+            self._RunSaveStressTestTransfer(args)
             save2 = self._device.INFO["data"]
         except KeyError:
             msgbox = _create_message_box(
@@ -4538,15 +4532,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "buffer": towrite,
                     "cart_type": cart_type,
                 }
-                t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                    args=[args],
-                )
-                t.start()
-                while t.is_alive():
-                    qt_app.processEvents()
-                    time.sleep(0.02)
-                t.join()
+                self._RunSaveStressTestTransfer(args)
                 if i == 0 and save1 == save2:  # user "continued anyway"
                     self._device.CartPowerOff()
                     time.sleep(0.5)
@@ -4559,15 +4545,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "rtc": False,
                     "cart_type": cart_type,
                 }
-                t = threading.Thread(
-                    target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                    args=[args],
-                )
-                t.start()
-                while t.is_alive():
-                    qt_app.processEvents()
-                    time.sleep(0.02)
-                t.join()
+                self._RunSaveStressTestTransfer(args)
                 readback = self._device.INFO["data"]
                 if towrite[: len(readback)] != readback:
                     break
@@ -4589,15 +4567,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 "buffer": save1,
                 "cart_type": cart_type,
             }
-            t = threading.Thread(
-                target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                args=[args],
-            )
-            t.start()
-            while t.is_alive():
-                qt_app.processEvents()
-                time.sleep(0.02)
-            t.join()
+            self._RunSaveStressTestTransfer(args)
             args = {
                 "mode": 2,
                 "path": path,
@@ -4606,15 +4576,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 "rtc": False,
                 "cart_type": cart_type,
             }
-            t = threading.Thread(
-                target=lambda a: self._device.TransferData(args=a, signal=_ignore_progress),
-                args=[args],
-            )
-            t.start()
-            while t.is_alive():
-                qt_app.processEvents()
-                time.sleep(0.02)
-            t.join()
+            self._RunSaveStressTestTransfer(args)
 
         time_elapsed = time.time() - time_start
         msg_te = "\n\n" + __(
