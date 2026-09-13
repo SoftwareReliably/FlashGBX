@@ -5613,6 +5613,24 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
         return cast("dict[str, Any]", data)
 
+    def _PrepareAgbHeaderControls(self, data: Mapping[str, Any], *, reset_status: bool) -> None:
+        if reset_status:
+            self.cmbAGBCartridgeTypeResult.clear()
+            self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
+            self.cmbAGBCartridgeTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+            if "flash_type" in data:
+                self.cmbAGBCartridgeTypeResult.setCurrentIndex(data["flash_type"])
+            else:
+                self.cmbAGBCartridgeTypeResult.setCurrentIndex(0)
+        if self.cmbAGBHeaderROMSizeResult.count() == 0:
+            self.cmbAGBHeaderROMSizeResult.addItems(RomSizes().GetStringList())
+            self.cmbAGBHeaderROMSizeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+            self.cmbAGBHeaderROMSizeResult.setCurrentIndex(self.cmbAGBHeaderROMSizeResult.count() - 1)
+        if self.cmbAGBSaveTypeResult.count() == 0:
+            self.cmbAGBSaveTypeResult.addItems(AgbSaveTypes().GetStringList())
+            self.cmbAGBSaveTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+            self.cmbAGBSaveTypeResult.setCurrentIndex(self.cmbAGBSaveTypeResult.count() - 1)
+
     def _DisplayAgbRtc(self, data: Mapping[str, Any]) -> None:
         rtc_is_valid = data["has_rtc"] is True and bool(data["rtc_dict"]) and data["rtc_dict"].get("rtc_valid") is True
         if rtc_is_valid:
@@ -5691,22 +5709,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.grpDMGCartridgeInfo.setVisible(True)
 
     def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
-        if reset_status:
-            self.cmbAGBCartridgeTypeResult.clear()
-            self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
-            self.cmbAGBCartridgeTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-            if "flash_type" in data:
-                self.cmbAGBCartridgeTypeResult.setCurrentIndex(data["flash_type"])
-            else:
-                self.cmbAGBCartridgeTypeResult.setCurrentIndex(0)
-        if self.cmbAGBHeaderROMSizeResult.count() == 0:
-            self.cmbAGBHeaderROMSizeResult.addItems(RomSizes().GetStringList())
-            self.cmbAGBHeaderROMSizeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-            self.cmbAGBHeaderROMSizeResult.setCurrentIndex(self.cmbAGBHeaderROMSizeResult.count() - 1)
-        if self.cmbAGBSaveTypeResult.count() == 0:
-            self.cmbAGBSaveTypeResult.addItems(AgbSaveTypes().GetStringList())
-            self.cmbAGBSaveTypeResult.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-            self.cmbAGBSaveTypeResult.setCurrentIndex(self.cmbAGBSaveTypeResult.count() - 1)
+        self._PrepareAgbHeaderControls(data, reset_status=reset_status)
 
         self.lblAGBRomTitleResult.setText(Formatter.title(data["game_title"]))
         self.lblAGBGameNameResult.setToolTip("")

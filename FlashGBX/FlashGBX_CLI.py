@@ -301,10 +301,9 @@ class FlashGBX_CLI:
             print("\n\n" + __("Operation stopped."))
         return None
 
-    def run(self) -> int:
-        sys.stdout = Logger()
-        config_ret = self.ARGS["config_ret"]
-        for config_message in config_ret:
+    @staticmethod
+    def _PrintConfigMessages(config_messages: Sequence[Sequence[object]]) -> None:
+        for config_message in config_messages:
             if len(config_message) < 2:
                 continue
             status, message = config_message[:2]
@@ -316,6 +315,10 @@ class FlashGBX_CLI:
                 print(f"{ANSI.YELLOW:s}{message:s}{ANSI.RESET:s}")
             elif status == 2:
                 print(f"{ANSI.RED:s}{message:s}{ANSI.RESET:s}")
+
+    def run(self) -> int:
+        sys.stdout = Logger()
+        self._PrintConfigMessages(self.ARGS["config_ret"])
 
         args: Namespace = self.ARGS["argparsed"]
         config_path: str = AppContext.CONFIG_PATH
@@ -995,6 +998,26 @@ class FlashGBX_CLI:
         except KeyError, TypeError, ValueError, IndexError:
             return c__("Game Data", "Not detected")
 
+    @staticmethod
+    def _AgbSaveTypeString(data: HeaderData, database_entry: object) -> str:
+        save_type = data.get("save_type")
+        save_type_count = AgbSaveTypes().GetNumberOfTypes()
+        if isinstance(save_type, int) and not isinstance(save_type, bool) and 0 <= save_type < save_type_count:
+            return AgbSaveTypes(save_type).GetString()
+        if data.get("dacs_8m") is True:
+            data["save_type"] = 6
+            return AgbSaveTypes(6).GetString()
+
+        database_save_type = database_entry.get("st") if isinstance(database_entry, dict) else None
+        if (
+            isinstance(database_save_type, int)
+            and not isinstance(database_save_type, bool)
+            and 0 <= database_save_type < save_type_count
+        ):
+            data["save_type"] = database_save_type
+            return AgbSaveTypes(database_save_type).GetString()
+        return c__("Game Data", "No database entry")
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -1170,24 +1193,7 @@ class FlashGBX_CLI:
                 rows.append((__("ROM Checksum:"), rom_checksum_str))
             rows.append((__("ROM Size:"), rom_size_str))
 
-            save_type = data.get("save_type")
-            save_type_count = AgbSaveTypes().GetNumberOfTypes()
-            database_save_type = db_agb_entry.get("st") if isinstance(db_agb_entry, dict) else None
-            if isinstance(save_type, int) and not isinstance(save_type, bool) and 0 <= save_type < save_type_count:
-                save_type_str = AgbSaveTypes(save_type).GetString()
-            elif data.get("dacs_8m") is True:
-                save_type_str = AgbSaveTypes(6).GetString()
-                data["save_type"] = 6
-            elif (
-                isinstance(database_save_type, int)
-                and not isinstance(database_save_type, bool)
-                and 0 <= database_save_type < save_type_count
-            ):
-                save_type_str = AgbSaveTypes(database_save_type).GetString()
-                data["save_type"] = database_save_type
-            else:
-                save_type_str = c__("Game Data", "No database entry")
-            rows.append((__("Save Type:"), save_type_str))
+            rows.append((__("Save Type:"), self._AgbSaveTypeString(data, db_agb_entry)))
 
             if (
                 data["logo_correct"]
