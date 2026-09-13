@@ -17,6 +17,20 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+NINTENDO_LOGO = bytes.fromhex(
+    "24 FF AE 51 69 9A A2 21 3D 84 82 0A 84 E4 09 AD "
+    "11 24 8B 98 C0 81 7F 21 A3 52 BE 19 93 09 CE 20 "
+    "10 46 4A 4A F8 27 31 EC 58 C7 E8 33 82 E3 CE BF "
+    "85 F4 DF 94 CE 4B 09 C1 94 56 8A C0 13 72 A7 FC "
+    "9F 84 4D 73 A3 CA 9A 61 58 97 A3 27 FC 03 98 76 "
+    "23 1D C7 61 03 04 AE 56 BF 38 84 00 40 A7 0E FD "
+    "FF 52 FE 03 6F 95 30 F1 97 FB C0 85 60 D6 80 25 "
+    "A9 63 BE 03 01 4E 38 E2 F9 A2 34 FF BB 3E 03 44 "
+    "78 00 90 CB 88 11 3A 94 65 C0 7C 63 87 F0 3C AF "
+    "D6 25 E4 8B 38 0A AC 72 21 D4 F8 07",
+)
+
+
 def make_agb_header(*, title: str = "TEST GAME", code: str = "ABCD", maker: str = "01") -> bytearray:
     header = bytearray(0x200)
     header[0xA0:0xAC] = title.encode("ascii")[:12].ljust(12, b"\x00")
@@ -64,6 +78,29 @@ def test_agb_fix_header_and_logo_rejects_empty_data() -> None:
     assert rom.LogoToImage(bytearray(16)) is False
     assert rom.LogoToImage(bytearray([0xFF] * 16)) is False
     assert rom.LogoToImage(b"\x01") is False
+
+
+def test_agb_logo_decoder_renders_valid_and_invalid_palettes(monkeypatch: pytest.MonkeyPatch) -> None:
+    header = make_agb_header()
+    header[0x04:0xA0] = NINTENDO_LOGO
+    header[0xBD] = RomFileAGB(header).CalcChecksumHeader()
+    rom = RomFileAGB(header)
+    monkeypatch.setattr(rom, "GetDatabaseEntry", lambda: None)
+
+    data = rom.GetHeader()
+
+    assert data["empty"] is False
+    assert data["logo_correct"] is True
+    assert data["logo"].size == (104, 16)
+    assert data["logo"].getpalette()[:6] == [255, 255, 255, 0, 0, 0]
+
+    invalid_logo = bytearray(NINTENDO_LOGO)
+    invalid_logo[-1] ^= 1
+    image = rom.LogoToImage(invalid_logo, valid=False)
+
+    assert image is not False
+    assert image.size == (104, 16)
+    assert image.getpalette()[:6] == [255, 255, 255, 255, 0, 0]
 
 
 def test_agb_instances_have_independent_buffers_and_accept_immutable_bytes() -> None:
