@@ -15,8 +15,6 @@ from PIL import Image, ImageDraw
 from PIL.ImageQt import ImageQt
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from FlashGBX.FlashGBX_GUI import FlashGBX_GUI
-
 from .app import AppInfo
 from .i18n import __, c__
 from .Logging import logger

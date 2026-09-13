@@ -113,6 +113,14 @@ class _SaveWritePreparation(NamedTuple):
     buffer: bytearray | None
 
 
+class _SaveWritePathOptions(NamedTuple):
+    mode: PlatformMode
+    dpath: str
+    erase: bool
+    test: bool
+    skip_warning: bool
+
+
 def _format_batteryless_sram_details(save_size: int, info: BatterylessSramInfo) -> str:
     """Build the save-size and ROM-location text shown after auto-detection."""
     save_size_text = __("unknown size") if save_size == 0 else Formatter.file_size(save_size, as_int=True)
@@ -3487,83 +3495,91 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
 
+    def _prepare_save_backup_cartridge(self, mode: PlatformMode, path: str) -> bool:
+        needs_detection = (
+            (
+                mode == "AGB"
+                and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
+            )
+            or (
+                mode == "DMG"
+                and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+            )
+            or (
+                mode == "DMG"
+                and "Unlicensed Photo!"
+                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+            )
+        )
+        if not needs_detection:
+            return True
+
+        if self._device.GetFWBuildDate() == "":  # Legacy Mode
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("This feature is not supported in Legacy Mode."),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return False
+
+        cart_type = (
+            self.cmbAGBCartridgeTypeResult.currentIndex()
+            if mode == "AGB"
+            else self.cmbDMGCartridgeTypeResult.currentIndex()
+        )
+        if cart_type != 0 and (
+            "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]
+        ):
+            return True
+
+        if "detected_cart_type" not in self.STATUS:
+            self.STATUS["detected_cart_type"] = ""
+        if self.STATUS["detected_cart_type"] == "":
+            self.STATUS["detected_cart_type"] = "WAITING_SAVE_READ"
+            self.STATUS["detect_cartridge_args"] = {"dpath": path}
+            self.STATUS["can_skip_message"] = True
+            self.DetectCartridge(checkSaveType=True)
+            return False
+
+        cart_type = self.STATUS.pop("detected_cart_type")
+        if cart_type is False:  # clicked Cancel button
+            return False
+        if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("A compatible flashcart profile could not be auto-detected."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return False
+        if mode == "AGB":
+            self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
+        else:
+            self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
+        return True
+
     def BackupRAM(self, dpath: str = "") -> None:
         if not self.CheckDeviceAlive():
             return
 
-        mode = self._device.GetMode()
+        mode: Literal["DMG", "AGB"] | None = self._device.GetMode()
         if mode not in ("DMG", "AGB"):
             return
         rtc = False
         path = ""
 
-        # Detect Cartridge needed?
-        if (
-            (
-                self._device.GetMode() == "AGB"
-                and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-            )
-            or (
-                self._device.GetMode() == "DMG"
-                and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-            )
-            or (
-                self._device.GetMode() == "DMG"
-                and "Unlicensed Photo!"
-                in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-            )
-        ):
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return
-
-            if mode == "AGB":
-                cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
-            else:
-                cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
-            if cart_type == 0 or (
-                "dump_info" not in self._device.INFO or "batteryless_sram" not in self._device.INFO["dump_info"]
-            ):
-                if "detected_cart_type" not in self.STATUS:
-                    self.STATUS["detected_cart_type"] = ""
-                if self.STATUS["detected_cart_type"] == "":
-                    self.STATUS["detected_cart_type"] = "WAITING_SAVE_READ"
-                    self.STATUS["detect_cartridge_args"] = {"dpath": path}
-                    self.STATUS["can_skip_message"] = True
-                    self.DetectCartridge(checkSaveType=True)
-                    return
-                cart_type = self.STATUS["detected_cart_type"]
-                if "detected_cart_type" in self.STATUS:
-                    del self.STATUS["detected_cart_type"]
-
-                if cart_type is False:  # clicked Cancel button
-                    return
-                if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        __("A compatible flashcart profile could not be auto-detected."),
-                        QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-                    return
-                if self._device.GetMode() == "AGB":
-                    self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
-                elif self._device.GetMode() == "DMG":
-                    self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
+        if not self._prepare_save_backup_cartridge(mode, path):
+            return
 
         cart_type = 0
         if self._device.GetMode() == "DMG":
             setting_name = "LastDirSaveDataDMG"
-            last_dir = self.SETTINGS.value(setting_name)
+            last_dir: str | None = self.SETTINGS.value(setting_name)
             if last_dir is None:
                 last_dir = QtCore.QStandardPaths.writableLocation(
                     QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
@@ -3611,7 +3627,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             path = str(Path(path).with_suffix(""))
 
-            add_date_time = self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled")
+            add_date_time: str | None = self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled")
             if len(path) > 0 and add_date_time and add_date_time.lower() == "enabled":
                 path += "_{:s}".format(datetime.datetime.now(tz=datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S"))
 
@@ -3726,7 +3742,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         erase: bool,
         test: bool,
     ) -> bool:
-        needs_detection = not test and (
+        needs_detection: bool = not test and (
             (
                 mode == "AGB"
                 and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
@@ -4021,6 +4037,136 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return answer != QtWidgets.QMessageBox.StandardButton.No, None
 
+    def _prepare_save_write_path(
+        self,
+        options: _SaveWritePathOptions,
+        setting_name: str,
+        last_dir: str,
+    ) -> tuple[str, int] | None:
+        mode, dpath, erase, test, skip_warning = options
+        path: str | None = ""
+        if dpath != "":
+            if not skip_warning:
+                text = __("The following save data file will now be written to the cartridge:") + "\n" + dpath
+                answer = QtWidgets.QMessageBox.question(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    text,
+                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+                    return None
+            path = dpath
+            self.SETTINGS.setValue(setting_name, str(Path(path).parent))
+        elif erase:
+            if not skip_warning:
+                answer = QtWidgets.QMessageBox.warning(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("The save data on your cartridge will now be erased."),
+                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+                    QtWidgets.QMessageBox.StandardButton.Cancel,
+                )
+                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+                    return None
+        elif test:
+            path = None
+            if self._device.GetFWBuildDate() == "":  # Legacy Mode
+                msgbox = _create_message_box(
+                    parent=self,
+                    icon=QtWidgets.QMessageBox.Icon.Critical,
+                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    text=__("This feature is not supported in Legacy Mode."),
+                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                msgbox.exec()
+                return None
+
+            unsupported = (
+                (
+                    mode == "AGB"
+                    and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
+                    and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
+                )
+                or (
+                    mode == "DMG"
+                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
+                    and "Batteryless SRAM"
+                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+                )
+                or (
+                    mode == "DMG"
+                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
+                    and "Unlicensed Photo!"
+                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+                )
+                or ("8M DACS" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()])
+                or (mode == "AGB" and "ereader" in self._device.INFO and self._device.INFO["ereader"] is True)
+                or (
+                    mode == "DMG"
+                    and "256M Multi Cart" in self.cmbDMGHeaderMapperResult.currentText()
+                    and not self._device.CanPowerCycleCart()
+                )
+            )
+            if unsupported:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("Stress test is not supported for this save type."),
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                return None
+            msg = __(
+                "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
+            )
+            if not self._device.CanPowerCycleCart() and (
+                (mode == "AGB" and "SRAM" in self.cmbAGBSaveTypeResult.currentText())
+                or (mode == "DMG" and "SRAM" in self.cmbDMGHeaderSaveTypeResult.currentText())
+            ):
+                msg += "\n\n" + __(
+                    "Note: Your {device_name} does not support automatic power cycling, so some tests may be skipped.",
+                    device_name=self._device.GetName(),
+                )
+            answer = QtWidgets.QMessageBox.question(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                msg,
+                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+                return None
+        else:
+            generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
+            path = generated_path if isinstance(generated_path, str) else "save.sav"
+            path = str(Path(path).with_suffix("")) + ".sav"
+            path = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                __("Restore Save Data"),
+                str(Path(last_dir) / path),
+                __("Save Data File") + " (" + " ".join("*" + e for e in SAVE_EXTS) + ");;" + __("All Files") + " (*.*)",
+            )[0]
+            if path != "":
+                self.SETTINGS.setValue(setting_name, str(Path(path).parent))
+            if path == "":
+                return None
+
+        if not isinstance(path, str):
+            return None
+        filesize = 0
+        if not erase and not test and len(path) > 0:
+            filesize = Path(path).stat().st_size
+            if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("The size of this file is not supported."),
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                return None
+        return path, filesize
+
     def _PrepareSaveWrite(
         self,
         dpath: str = "",
@@ -4083,127 +4229,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if not self.CheckHeader():
             return None
 
-        filesize = 0
-        if dpath != "":
-            if not skip_warning:
-                text = __("The following save data file will now be written to the cartridge:") + "\n" + dpath
-                answer = QtWidgets.QMessageBox.question(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text,
-                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return None
-            path = dpath
-            self.SETTINGS.setValue(setting_name, str(Path(path).parent))
-        elif erase:
-            if not skip_warning:
-                answer = QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("The save data on your cartridge will now be erased."),
-                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                    QtWidgets.QMessageBox.StandardButton.Cancel,
-                )
-                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return None
-        elif test:
-            path = None
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return None
-
-            if (
-                (
-                    mode == "AGB"
-                    and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-                    and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-                )
-                or (
-                    mode == "DMG"
-                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                    and "Batteryless SRAM"
-                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-                )
-                or (
-                    mode == "DMG"
-                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                    and "Unlicensed Photo!"
-                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-                )
-                or ("8M DACS" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()])
-                or (mode == "AGB" and "ereader" in self._device.INFO and self._device.INFO["ereader"] is True)
-                or (
-                    mode == "DMG"
-                    and "256M Multi Cart" in self.cmbDMGHeaderMapperResult.currentText()
-                    and not self._device.CanPowerCycleCart()
-                )
-            ):
-                QtWidgets.QMessageBox.information(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("Stress test is not supported for this save type."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
-            msg = __(
-                "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
-            )
-            if not self._device.CanPowerCycleCart() and (
-                (mode == "AGB" and "SRAM" in self.cmbAGBSaveTypeResult.currentText())
-                or (mode == "DMG" and "SRAM" in self.cmbDMGHeaderSaveTypeResult.currentText())
-            ):
-                msg += "\n\n" + __(
-                    "Note: Your {device_name} does not support automatic power cycling, so some tests may be skipped.",
-                    device_name=self._device.GetName(),
-                )
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                msg,
-                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                return None
-        else:
-            if path == "":
-                generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
-                path = generated_path if isinstance(generated_path, str) else "save.sav"
-                path = str(Path(path).with_suffix(""))
-                path += ".sav"
-            path = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                __("Restore Save Data"),
-                str(Path(last_dir) / path),
-                __("Save Data File") + " (" + " ".join("*" + e for e in SAVE_EXTS) + ");;" + __("All Files") + " (*.*)",
-            )[0]
-            if path != "":
-                self.SETTINGS.setValue(setting_name, str(Path(path).parent))
-            if path == "":
-                return None
-
-        if not isinstance(path, str):
+        save_location = self._prepare_save_write_path(
+            _SaveWritePathOptions(mode, dpath, erase, test, skip_warning),
+            setting_name=setting_name,
+            last_dir=last_dir,
+        )
+        if save_location is None:
             return None
-        if not erase and not test and len(path) > 0:
-            filesize = Path(path).stat().st_size
-            if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("The size of this file is not supported."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
+        path, filesize = save_location
 
         continue_write, buffer = self._prepare_save_calibration(mode=mode, path=path, erase=erase, test=test)
         if not continue_write:
@@ -5847,6 +5880,57 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             args={"limitVoltage": limitVoltage, "checkSaveType": checkSaveType},
         )
 
+    @staticmethod
+    def _format_gb_memory_detection_message(header: Mapping[str, Any]) -> str:
+        parsed = header.get("gbmem_parsed")
+        if parsed is None:
+            return ""
+
+        message = "<br><b>" + __("{gb_memory_cartridge} Data:", gb_memory_cartridge="GB-Memory Cartridge") + "</b><br>"
+        if isinstance(parsed, list):
+            first_entry = parsed[0]
+            message += (
+                "- "
+                + __("Write Timestamp:")
+                + " {timestamp:s}<br>".format(timestamp=first_entry["timestamp"].replace("\0", ""))
+                + "- "
+                + __("Write Kiosk ID:")
+                + " {kiosk_id:s}<br>".format(kiosk_id=first_entry["kiosk_id"].replace("\0", ""))
+                + "- "
+                + __("Number of Games:")
+                + " {num_games:d}<br>".format(num_games=first_entry["num_games"])
+                + "- "
+                + __("Write Counter:")
+                + " {write_count:d}<br>".format(write_count=first_entry["write_count"])
+                + "- "
+                + __("Cartridge ID:")
+                + " {cart_id:s}<br>".format(cart_id=first_entry["cart_id"].replace("\0", ""))
+            )
+            for index, game in enumerate(parsed[1:], start=1):
+                if game["menu_index"] == 0xFF:
+                    continue
+                label = __("Menu ROM:") if index == 1 else __("Game {number}:", number=index - 1)
+                message += "- " + label + " {:s}<br>".format(game["title"].replace("\0", ""))
+            return message
+
+        return message + (
+            "- "
+            + __("Write Timestamp:")
+            + " {timestamp:s}<br>".format(timestamp=parsed["timestamp"].replace("\0", ""))
+            + "- "
+            + __("Write Kiosk ID:")
+            + " {kiosk_id:s}<br>".format(kiosk_id=parsed["kiosk_id"].replace("\0", ""))
+            + "- "
+            + __("Write Counter:")
+            + " {write_count:d}<br>".format(write_count=parsed["write_count"])
+            + "- "
+            + __("Cartridge ID:")
+            + " {cart_id:s}<br>".format(cart_id=parsed["cart_id"].replace("\0", ""))
+            + "- "
+            + __("Game Title:")
+            + " {game_title:s}<br>".format(game_title=parsed["title"].replace("\0", ""))
+        )
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self.lblStatus1aResult.setText("-")
         self.lblStatus2aResult.setText("-")
@@ -6138,71 +6222,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.SetProgressBars(min=0, max=100, value=100)
             show_details = False
 
-            msg_gbmem = ""
-            if "gbmem_parsed" in header and header["gbmem_parsed"] is not None:
-                msg_gbmem = (
-                    "<br><b>"
-                    + __(
-                        "{gb_memory_cartridge} Data:",
-                        gb_memory_cartridge="GB-Memory Cartridge",
-                    )
-                    + "</b><br>"
-                )
-                if isinstance(header["gbmem_parsed"], list):
-                    msg_gbmem += (
-                        ""
-                        "- "
-                        + __("Write Timestamp:")
-                        + " {timestamp:s}<br>".format(
-                            timestamp=header["gbmem_parsed"][0]["timestamp"].replace("\0", "")
-                        )
-                        + "- "
-                        + __("Write Kiosk ID:")
-                        + " {kiosk_id:s}<br>".format(kiosk_id=header["gbmem_parsed"][0]["kiosk_id"].replace("\0", ""))
-                        + "- "
-                        + __("Number of Games:")
-                        + " {num_games:d}<br>".format(num_games=header["gbmem_parsed"][0]["num_games"])
-                        + "- "
-                        + __("Write Counter:")
-                        + " {write_count:d}<br>".format(write_count=header["gbmem_parsed"][0]["write_count"])
-                        + "- "
-                        + __("Cartridge ID:")
-                        + " {cart_id:s}<br>".format(cart_id=header["gbmem_parsed"][0]["cart_id"].replace("\0", ""))
-                    )
-                    for i in range(1, len(header["gbmem_parsed"])):
-                        if header["gbmem_parsed"][i]["menu_index"] == 0xFF:
-                            continue
-                        if i == 1:
-                            msg_gbmem += (
-                                "- "
-                                + __("Menu ROM:")
-                                + " {:s}<br>".format(header["gbmem_parsed"][i]["title"].replace("\0", ""))
-                            )
-                        else:
-                            msg_gbmem += (
-                                "- "
-                                + __("Game {number}:", number=i - 1)
-                                + " {:s}<br>".format(header["gbmem_parsed"][i]["title"].replace("\0", ""))
-                            )
-                else:
-                    msg_gbmem += (
-                        ""
-                        "- "
-                        + __("Write Timestamp:")
-                        + " {timestamp:s}<br>".format(timestamp=header["gbmem_parsed"]["timestamp"].replace("\0", ""))
-                        + "- "
-                        + __("Write Kiosk ID:")
-                        + " {kiosk_id:s}<br>".format(kiosk_id=header["gbmem_parsed"]["kiosk_id"].replace("\0", ""))
-                        + "- "
-                        + __("Write Counter:")
-                        + " {write_count:d}<br>".format(write_count=header["gbmem_parsed"]["write_count"])
-                        + "- "
-                        + __("Cartridge ID:")
-                        + " {cart_id:s}<br>".format(cart_id=header["gbmem_parsed"]["cart_id"].replace("\0", ""))
-                        + "- "
-                        + __("Game Title:")
-                        + " {game_title:s}<br>".format(game_title=header["gbmem_parsed"]["title"].replace("\0", ""))
-                    )
+            msg_gbmem = self._format_gb_memory_detection_message(header)
 
             msg = __("The following cartridge configuration was detected:") + "<br><br>"
             if found_supported:

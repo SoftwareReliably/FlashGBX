@@ -230,6 +230,37 @@ class FlashGBX_CLI:
         )
         return 0
 
+    def _connect_for_action(self, args: argparse.Namespace, fwupdate_actions: set[str]) -> bool:
+        if args.action is not None and args.action in ({"gbcamera-extract"} | fwupdate_actions):
+            return True
+        if not self.FindDevices(port=args.device_port):
+            print(__("No devices found."))
+            return False
+        if not self.ConnectDevice() or self.DEVICE is None:
+            print(__("Couldn't connect to the device."))
+            return False
+
+        dev = self.DEVICE[1]
+        if dev.FirmwareUpdateAvailable() and dev.FW_UPDATE_REQ is True:
+            print(
+                __(
+                    "The current firmware version of your device is not supported.\nPlease update to a supported firmware version first.",
+                ),
+            )
+            return False
+
+        builddate = dev.GetFWBuildDate()
+        print(
+            "\n"
+            + __(
+                "Connected to {device_name}",
+                device_name=dev.GetFullNameExtended(more=builddate != ""),
+            ),
+        )
+        self.CONN.SetAutoPowerOff(value=1500)
+        self.CONN.SetAGBReadMethod(method=2)
+        return True
+
     def run(self) -> int:
         sys.stdout = Logger()
         config_ret = self.ARGS["config_ret"]
@@ -281,7 +312,7 @@ class FlashGBX_CLI:
             except Exception:
                 logger.exception("Failed to add a firmware-update action to the CLI menu")
 
-        fwupdate_actions = set()
+        fwupdate_actions: set[str] = set()
         for hw_mod in HW_DEVICES:
             try:
                 dev = hw_mod.GbxDevice()
@@ -302,46 +333,8 @@ class FlashGBX_CLI:
         else:
             self.ARGS["called_with_args"] = True
 
-        if args.action is None or args.action not in ({"gbcamera-extract"} | fwupdate_actions):
-            if not self.FindDevices(port=args.device_port):
-                print(__("No devices found."))
-                return 1
-            if not self.ConnectDevice():
-                print(__("Couldn't connect to the device."))
-                return 1
-            if self.DEVICE is None:
-                print(__("Couldn't connect to the device."))
-                return 1
-            dev = self.DEVICE[1]
-            builddate = dev.GetFWBuildDate()
-
-            if dev.FirmwareUpdateAvailable() and dev.FW_UPDATE_REQ is True:
-                print(
-                    __(
-                        "The current firmware version of your device is not supported.\nPlease update to a supported firmware version first.",
-                    ),
-                )
-                return 1
-
-            if builddate != "":
-                print(
-                    "\n"
-                    + __(
-                        "Connected to {device_name}",
-                        device_name=dev.GetFullNameExtended(more=True),
-                    ),
-                )
-            else:
-                print(
-                    "\n"
-                    + __(
-                        "Connected to {device_name}",
-                        device_name=dev.GetFullNameExtended(more=False),
-                    ),
-                )
-
-            self.CONN.SetAutoPowerOff(value=1500)
-            self.CONN.SetAGBReadMethod(method=2)
+        if not self._connect_for_action(args, fwupdate_actions):
+            return 1
 
         if args.action == "gbcamera-extract":
             return self._ExtractCameraPictures(args)

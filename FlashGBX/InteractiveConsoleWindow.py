@@ -7,9 +7,6 @@ from typing import TYPE_CHECKING, Literal
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from FlashGBX.FlashGBX_GUI import FlashGBX_GUI
-from FlashGBX.LK_Device import LK_Device  # pyright: ignore[reportMissingImports]
-
 from .app import AppInfo
 from .i18n import __, c__
 from .InteractiveConsole import InteractiveConsole

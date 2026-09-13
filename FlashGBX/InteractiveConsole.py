@@ -23,10 +23,10 @@ class InteractiveConsole:
         on_output: Callable[[str], object],
         on_error: Callable[[str], object] | None = None,
     ) -> None:
-        self.CONN = conn
-        self.MODE = conn.GetMode()
-        self.on_output = on_output
-        self.on_error = on_error if on_error is not None else on_output
+        self.CONN: LK_Device = conn
+        self.MODE: Literal["DMG", "AGB"] | None = conn.GetMode()
+        self.on_output: Callable[[str], object] = on_output
+        self.on_error: Callable[[str], object] = on_error if on_error is not None else on_output
         self.last_read_data = None
 
     def get_help_lines(self) -> list[Any]:
@@ -66,7 +66,7 @@ class InteractiveConsole:
             self.on_output(f"{base_addr + offset:08x}: {hex_part:<47}  {ascii_part:s}")
 
     def execute_line(self, line: str) -> bool:
-        cmds = [c.strip() for c in line.split(",") if c.strip()]
+        cmds: list[str] = [c.strip() for c in line.split(",") if c.strip()]
         return all(self.execute_command(cmdline) for cmdline in cmds)
 
     def execute_command(self, cmdline: str) -> bool:
@@ -145,7 +145,7 @@ class InteractiveConsole:
             return True
         if size == 0:
             return True
-        raw = self.CONN._cart_read(address, size)
+        raw: int | bytearray | Literal[False] = self.CONN._cart_read(address, size)
         self._show_read_result(address, size, raw)
         return True
 
@@ -186,7 +186,7 @@ class InteractiveConsole:
             return True
         if size == 0:
             return True
-        raw = self.CONN._cart_read(address, size, agb_save_flash=True)
+        raw: int | bytearray | Literal[False] = self.CONN._cart_read(address, size, agb_save_flash=True)
         self._show_read_result(address, size, raw)
         return True
 
@@ -244,7 +244,7 @@ class InteractiveConsole:
         self.CONN._set_fw_variable("ADDRESS", address)
         cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type])
         self.CONN._write(cmd)
-        eeprom_data = self.CONN._read(size)
+        eeprom_data: int | bytearray | Literal[False] = self.CONN._read(size)
         if not isinstance(eeprom_data, bytearray) or len(eeprom_data) == 0:
             self.on_error(__("ERROR"))
         else:
@@ -258,10 +258,10 @@ class InteractiveConsole:
         if parts[1] not in ("4", "64"):
             self.on_output(__("EEPROM type must be 4 or 64."))
             return True
-        eeprom_type = 2 if parts[1] == "64" else 1
+        eeprom_type: Literal[2, 1] = 2 if parts[1] == "64" else 1
         try:
             address = int(parts[2], 16)
-            data = bytearray.fromhex(parts[3])
+            data: bytearray = bytearray.fromhex(parts[3])
         except ValueError:
             self.on_output(__("Invalid input."))
             return True
@@ -272,7 +272,7 @@ class InteractiveConsole:
         self.CONN._set_fw_variable("ADDRESS", address)
         cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], eeprom_type])
         self.CONN._write(cmd)
-        ack = self.CONN._write(data, wait=True)
+        ack: int | Literal[False] | None = self.CONN._write(data, wait=True)
         if ack is False:
             self.on_error(__("ERROR"))
         else:

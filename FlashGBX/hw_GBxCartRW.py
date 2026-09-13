@@ -1530,15 +1530,13 @@ try:
                 return 3
             return 2
 
-        def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
-            fw_buffer: bytearray = data
-            port: str = self.PORT
-
-            delay = 0
+        def _ConnectBootloader(
+            self,
+            fncSetStatus: StatusCallback,
+        ) -> tuple[serial.Serial, bytes] | None:
+            delay = 0.0
             lives = 10
-            buffer = bytearray()
-
-            msgWarnBadResponse: str = __(
+            warning = __(
                 "Failed to update your GBxCart RW {pcb_version} ({fw_version})!\n\n"
                 "The firmware update failed as the device is not responding correctly. Please ensure you use a genuine GBxCart RW, re-connect using a different USB cable and try again.\n\n"
                 "⚠️ Please note that FlashGBX does not work with the “{flashboy}” series devices.",
@@ -1547,87 +1545,65 @@ try:
                 flashboy="FLASH BOY",
             )
 
-            fncSetStatus(text=__("Waiting for bootloader..."), setProgress=0)
-            if self.ResetAVR(delay) is False:
-                fncSetStatus(text=__("Bootloader error."), enableUI=True)
-                self.prgStatus.setValue(0)
+            def show_bootloader_error(status: str) -> None:
+                fncSetStatus(text=status, enableUI=True)
                 msgbox = _message_box(
                     parent=self,
                     icon=QtWidgets.QMessageBox.Icon.Critical,
                     windowTitle=AppInfo.NAME
                     + " - "
-                    + __(
-                        "Firmware Updater for {device_name}",
-                        device_name="GBxCart RW " + self.PCB_VER,
-                    ),
-                    text=msgWarnBadResponse,
+                    + __("Firmware Updater for {device_name}", device_name="GBxCart RW " + self.PCB_VER),
+                    text=warning,
                     standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
                 )
-                answer = msgbox.exec()
-                return 2
+                msgbox.exec()
+
+            fncSetStatus(text=__("Waiting for bootloader..."), setProgress=0)
+            if self.ResetAVR(delay) is False:
+                self.prgStatus.setValue(0)
+                show_bootloader_error(__("Bootloader error."))
+                return None
 
             while True:
                 try:
-                    dev = serial.Serial(port=port, baudrate=9600 * 4, timeout=1)
+                    dev = serial.Serial(port=self.PORT, baudrate=9600 * 4, timeout=1)
                 except OSError, SerialException:
                     fncSetStatus(text=__("Device access error."), enableUI=True)
-                    return 2
+                    return None
                 dev.reset_input_buffer()
                 dev.reset_output_buffer()
                 dev.write(b"@@@")
                 dev.flush()
                 time.sleep(0.00125)
                 buffer = dev.read(0x11)
-                if (len(buffer) < 0x11) or (buffer[0:3] != b"TSB"):
-                    dev.write(b"?")
-                    dev.flush()
-                    time.sleep(0.00125)
-                    dev.close()
-                    self.APP.QT_APP.processEvents()
-                    time.sleep(1)
-                    if len(buffer) != 0x11:
-                        delay += 0.05
-                    fncSetStatus(
-                        __(
-                            "Waiting for bootloader... (+{milliseconds}ms)",
-                            milliseconds=math.ceil(delay * 1000),
-                        ),
-                    )
-                    if self.ResetAVR(delay) is False:
-                        fncSetStatus(text=__("Bootloader error."), enableUI=True)
-                        msgbox = _message_box(
-                            parent=self,
-                            icon=QtWidgets.QMessageBox.Icon.Critical,
-                            windowTitle=AppInfo.NAME
-                            + " - "
-                            + __(
-                                "Firmware Updater for {device_name}",
-                                device_name="GBxCart RW " + self.PCB_VER,
-                            ),
-                            text=msgWarnBadResponse,
-                            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                        )
-                        answer = msgbox.exec()
-                        return 2
-                    lives -= 1
-                    if lives < 0:
-                        fncSetStatus(text=__("Bootloader timeout."), enableUI=True)
-                        msgbox = _message_box(
-                            parent=self,
-                            icon=QtWidgets.QMessageBox.Icon.Critical,
-                            windowTitle=AppInfo.NAME
-                            + " - "
-                            + __(
-                                "Firmware Updater for {device_name}",
-                                device_name="GBxCart RW " + self.PCB_VER,
-                            ),
-                            text=msgWarnBadResponse,
-                            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                        )
-                        answer = msgbox.exec()
-                        return 2
-                    continue
-                break
+                if len(buffer) >= 0x11 and buffer[0:3] == b"TSB":
+                    return dev, buffer
+
+                dev.write(b"?")
+                dev.flush()
+                time.sleep(0.00125)
+                dev.close()
+                self.APP.QT_APP.processEvents()
+                time.sleep(1)
+                if len(buffer) != 0x11:
+                    delay += 0.05
+                fncSetStatus(
+                    __("Waiting for bootloader... (+{milliseconds}ms)", milliseconds=math.ceil(delay * 1000)),
+                )
+                if self.ResetAVR(delay) is False:
+                    show_bootloader_error(__("Bootloader error."))
+                    return None
+                lives -= 1
+                if lives < 0:
+                    show_bootloader_error(__("Bootloader timeout."))
+                    return None
+
+        def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
+            fw_buffer: bytearray = data
+            bootloader = self._ConnectBootloader(fncSetStatus)
+            if bootloader is None:
+                return 2
+            dev, buffer = bootloader
 
             fncSetStatus(__("Reading bootloader information..."))
             (
