@@ -344,6 +344,11 @@ def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | No
     return app_path, cp, config_path, language_choice
 
 
+def _print_banner() -> None:
+    print(f"FlashGBX {AppInfo.VERSION}\n© 2020-{time.strftime('%Y')} Lesserkuma")
+    print("https://github.com/Lesserkuma/FlashGBX")
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -352,8 +357,7 @@ def main(portableMode: bool = False) -> int | None:
     cfgdir_default = "subdir" if portableMode else "appdata"
     init_language(config_path, override=language_choice)
 
-    print(f"FlashGBX {AppInfo.VERSION}\n© 2020-{time.strftime('%Y')} Lesserkuma")
-    print("https://github.com/Lesserkuma/FlashGBX")
+    _print_banner()
 
     examples = (
         "\n"
