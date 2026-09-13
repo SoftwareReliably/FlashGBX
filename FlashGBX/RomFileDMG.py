@@ -108,11 +108,8 @@ class RomFileDMG:
                     break
         return img
 
-    def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
-        buffer: bytearray = self.ROMFILE
+    def _ParseHeaderFields(self, buffer: bytearray) -> dict[str, Any]:
         data: dict[str, Any] = {}
-        if len(buffer) < 0x180:
-            return {}
         data["empty"] = buffer[0x104:0x134] == bytearray([buffer[0x104]] * 0x30)
         data["empty_nocart"] = buffer == bytearray([0x00] * len(buffer))
         data["logo_correct"] = hashlib.sha1(buffer[0x104:0x134]).digest() == bytearray(
@@ -206,6 +203,13 @@ class RomFileDMG:
         data["rom_checksum"] = int(256 * buffer[0x14E] + buffer[0x14F])
         data["rom_checksum_calc"] = self.CalcChecksumGlobal()
         data["rom_checksum_correct"] = data["rom_checksum"] == data["rom_checksum_calc"]
+        return data
+
+    def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
+        buffer: bytearray = self.ROMFILE
+        if len(buffer) < 0x180:
+            return {}
+        data = self._ParseHeaderFields(buffer)
 
         if unchanged:
             data["unchanged"] = copy.copy(data)

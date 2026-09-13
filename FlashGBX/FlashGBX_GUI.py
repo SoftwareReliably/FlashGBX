@@ -234,6 +234,29 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.FLASHCARTS = args["flashcarts"]
         self.PROGRESS = Progress(self.UpdateProgress, self.WaitProgress)
 
+    def _ApplyConfigMenuSettings(self) -> None:
+        for action_index in (0, 1, 2, 3, 4, 6, 7, 8, 9, 10):
+            self.mnuConfig.actions()[action_index].setCheckable(True)
+        self.mnuConfig.actions()[0].setChecked(self.SETTINGS.value("UpdateCheck") == "enabled")
+        self.mnuConfig.actions()[1].setChecked(
+            self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled") == "enabled",
+        )
+        self.mnuConfig.actions()[2].setChecked(self.SETTINGS.value("PreferChipErase", default="disabled") == "enabled")
+        self.mnuConfig.actions()[3].setChecked(self.SETTINGS.value("VerifyData", default="enabled") == "enabled")
+        self.mnuConfig.actions()[4].setChecked(
+            self.SETTINGS.value("AutoDetectLimitVoltage", default="disabled") == "enabled",
+        )
+        self._UpdateGBxCartRWBaudRateActions(self._GetGBxCartRWBaudRate())
+        self.mnuConfig.actions()[6].setChecked(
+            self.SETTINGS.value("GenerateDumpReports", default="disabled") == "enabled",
+        )
+        self.mnuConfig.actions()[7].setChecked(
+            self.SETTINGS.value("UseNoIntroFilenames", default="enabled") == "enabled",
+        )
+        self.mnuConfig.actions()[8].setChecked(self.SETTINGS.value("AutoPowerOff", default="350") != "0")
+        self.mnuConfig.actions()[9].setChecked(self.SETTINGS.value("CompareSectors", default="enabled") == "enabled")
+        self.mnuConfig.actions()[10].setChecked(self.SETTINGS.value("ForceWrPullup", default="disabled") == "enabled")
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -578,35 +601,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.addMenu(self.mnuConfigReadModeAGB)
         self.mnuConfig.addSeparator()
         self.mnuConfig.addAction("", self.ReEnableMessages)
-        self.mnuConfig.actions()[0].setCheckable(True)
-        self.mnuConfig.actions()[1].setCheckable(True)
-        self.mnuConfig.actions()[2].setCheckable(True)
-        self.mnuConfig.actions()[3].setCheckable(True)
-        self.mnuConfig.actions()[4].setCheckable(True)
-        self.mnuConfig.actions()[6].setCheckable(True)
-        self.mnuConfig.actions()[7].setCheckable(True)
-        self.mnuConfig.actions()[8].setCheckable(True)
-        self.mnuConfig.actions()[9].setCheckable(True)
-        self.mnuConfig.actions()[10].setCheckable(True)
-        self.mnuConfig.actions()[0].setChecked(self.SETTINGS.value("UpdateCheck") == "enabled")
-        self.mnuConfig.actions()[1].setChecked(
-            self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled") == "enabled",
-        )
-        self.mnuConfig.actions()[2].setChecked(self.SETTINGS.value("PreferChipErase", default="disabled") == "enabled")
-        self.mnuConfig.actions()[3].setChecked(self.SETTINGS.value("VerifyData", default="enabled") == "enabled")
-        self.mnuConfig.actions()[4].setChecked(
-            self.SETTINGS.value("AutoDetectLimitVoltage", default="disabled") == "enabled",
-        )
-        self._UpdateGBxCartRWBaudRateActions(self._GetGBxCartRWBaudRate())
-        self.mnuConfig.actions()[6].setChecked(
-            self.SETTINGS.value("GenerateDumpReports", default="disabled") == "enabled",
-        )
-        self.mnuConfig.actions()[7].setChecked(
-            self.SETTINGS.value("UseNoIntroFilenames", default="enabled") == "enabled",
-        )
-        self.mnuConfig.actions()[8].setChecked(self.SETTINGS.value("AutoPowerOff", default="350") != "0")
-        self.mnuConfig.actions()[9].setChecked(self.SETTINGS.value("CompareSectors", default="enabled") == "enabled")
-        self.mnuConfig.actions()[10].setChecked(self.SETTINGS.value("ForceWrPullup", default="disabled") == "enabled")
+        self._ApplyConfigMenuSettings()
 
         self.mnuLanguage = QtWidgets.QMenu()
         self.languageActionGroup = QtGui.QActionGroup(self.mnuLanguage)
@@ -5427,6 +5422,53 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.grpAGBCartridgeInfo.setEnabled(True)
         return None
 
+    def _DisplayDmgMapperDetails(self, data: dict[str, Any]) -> None:
+        if data["mapper_raw"] == 0x203:  # Xploder GB
+            self.lblDMGHeaderRtcResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+            self.lblDMGHeaderROMChecksumResult.setText("")
+            self.lblDMGHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+        elif data["mapper_raw"] == 0x205:  # Datel
+            self.lblDMGHeaderRtcResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+            self.lblDMGGameCodeRevisionResult.setText("")
+            self.lblDMGGameCodeRevisionResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+            self.lblDMGHeaderROMChecksumResult.setText("")
+            self.lblDMGHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+        elif data["mapper_raw"] == 0x204:  # Sachen
+            self.SetDMGGameNameText(Formatter.title(data["game_title"]))
+            self.lblDMGHeaderRtcResult.setText("")
+            self.lblDMGRomTitleResult.setText("")
+            self.lblDMGGameCodeRevisionResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setText("")
+            self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+            if "logo_sachen" in data:
+                data["logo_sachen"].putpalette([255, 255, 255, 128, 128, 128])
+                try:
+                    _set_bitmap(self.lblDMGHeaderBootlogoResult, data["logo_sachen"])
+                except Exception:
+                    logger.exception("Failed to display the Sachen boot logo")
+        elif "logo" in data:
+            if data["logo_correct"]:
+                rgb = (
+                    self.TEXT_COLOR[0],
+                    self.TEXT_COLOR[1],
+                    self.TEXT_COLOR[2],
+                )  # GUI font color
+                rgb = tuple(
+                    min(255, int(c + (127.5 - c) * 0.25)) if c < 127.5 else max(0, int(c - (c - 127.5) * 0.25))
+                    for c in rgb
+                )
+                data["logo"].putpalette([255, 255, 255, rgb[0], rgb[1], rgb[2]])
+            else:
+                data["logo"].putpalette([255, 255, 255, 251, 0, 24])
+            try:
+                _set_bitmap(self.lblDMGHeaderBootlogoResult, data["logo"])
+            except Exception:
+                logger.exception("Failed to display the Game Boy boot logo")
+
     def ReadCartridge(self, resetStatus: bool = True) -> bool | None:
         if self.CheckDeviceAlive() is not True:
             return None
@@ -5582,51 +5624,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         if "dmg-mmsa-jpn" in cart_types[1][i]:
                             self.cmbDMGCartridgeTypeResult.setCurrentIndex(i)
 
-            if data["mapper_raw"] == 0x203:  # Xploder GB
-                self.lblDMGHeaderRtcResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                self.lblDMGHeaderROMChecksumResult.setText("")
-                self.lblDMGHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-            elif data["mapper_raw"] == 0x205:  # Datel
-                self.lblDMGHeaderRtcResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                self.lblDMGGameCodeRevisionResult.setText("")
-                self.lblDMGGameCodeRevisionResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                self.lblDMGHeaderROMChecksumResult.setText("")
-                self.lblDMGHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-            elif data["mapper_raw"] == 0x204:  # Sachen
-                self.SetDMGGameNameText(Formatter.title(data["game_title"]))
-                self.lblDMGHeaderRtcResult.setText("")
-                self.lblDMGRomTitleResult.setText("")
-                self.lblDMGGameCodeRevisionResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setText("")
-                self.lblDMGHeaderBootlogoResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                if "logo_sachen" in data:
-                    data["logo_sachen"].putpalette([255, 255, 255, 128, 128, 128])
-                    try:
-                        _set_bitmap(self.lblDMGHeaderBootlogoResult, data["logo_sachen"])
-                    except Exception:
-                        logger.exception("Failed to display the Sachen boot logo")
-            elif "logo" in data:
-                if data["logo_correct"]:
-                    rgb = (
-                        self.TEXT_COLOR[0],
-                        self.TEXT_COLOR[1],
-                        self.TEXT_COLOR[2],
-                    )  # GUI font color
-                    rgb = tuple(
-                        min(255, int(c + (127.5 - c) * 0.25)) if c < 127.5 else max(0, int(c - (c - 127.5) * 0.25))
-                        for c in rgb
-                    )
-                    data["logo"].putpalette([255, 255, 255, rgb[0], rgb[1], rgb[2]])
-                else:
-                    data["logo"].putpalette([255, 255, 255, 251, 0, 24])
-                try:
-                    _set_bitmap(self.lblDMGHeaderBootlogoResult, data["logo"])
-                except Exception:
-                    logger.exception("Failed to display the Game Boy boot logo")
+            self._DisplayDmgMapperDetails(data)
 
             self.grpAGBCartridgeInfo.setVisible(False)
             self.grpDMGCartridgeInfo.setVisible(True)
@@ -5975,6 +5973,64 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             else:
                 self.WriteRAM()
 
+    def _FormatDetectedSaveType(
+        self,
+        save_size: int,
+        save_type: int | None,
+        save_chip: str | None,
+        sram_unstable: bool,
+        header: dict[str, Any],
+    ) -> str:
+        if self.STATUS["can_skip_message"] or save_type is False or save_type is None:
+            return ""
+
+        if save_chip is not None:
+            if (
+                save_type == 5
+                and "Unlicensed" in save_chip
+                and "data" in self._device.INFO
+                and self._device.INFO["data"] == bytearray([0xFF] * len(self._device.INFO["data"]))
+            ):
+                description = (
+                    f"{AgbSaveTypes().GetStringList()[4]:s} or {AgbSaveTypes().GetStringList()[5]:s} ({save_chip:s})"
+                )
+            else:
+                description = f"{AgbSaveTypes().GetStringList()[save_type]:s} ({save_chip:s})"
+        elif self._device.GetMode() == "DMG":
+            try:
+                description = f"{DmgSaveTypes(mbc=save_type).GetString():s}"
+            except IndexError, KeyError, TypeError, ValueError:
+                description = "Unknown"
+        elif self._device.GetMode() == "AGB":
+            description = f"{AgbSaveTypes().GetStringList()[save_type]:s}"
+            try:
+                if "Batteryless SRAM" in AgbSaveTypes().GetStringList()[save_type]:
+                    description += _format_batteryless_sram_details(save_size, header["batteryless_sram"])
+            except Exception:
+                logger.exception("Failed to format batteryless SRAM details")
+        else:
+            description = ""
+
+        if save_type == 0:
+            if save_chip and "Unknown" not in save_chip:
+                return "<b>" + __("Save Type:") + f"</b> {save_chip:s}<br>"
+            return (
+                "<b>"
+                + __("Save Type:")
+                + "</b> "
+                + c__("Save Type", "None or unknown (no save data detected)")
+                + "<br>"
+            )
+        if sram_unstable and "SRAM" in description:
+            return (
+                "<b>"
+                + __("Save Type:")
+                + '</b> {:s} <span style="color: red;">('
+                + c__("Save Data Access", "not stable or not battery-backed")
+                + ")</span><br>"
+            )
+        return "<b>" + __("Save Type:") + f"</b> {description:s}<br>"
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self.lblStatus1aResult.setText("-")
         self.lblStatus2aResult.setText("-")
@@ -6089,54 +6145,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             msg_header_s = "<b>" + __("ROM Title:") + "</b> {:s}<br>".format(Formatter.title(header["game_title"]))
 
             # Save Type
-            msg_save_type_s = ""
-            temp = ""
-            if not self.STATUS["can_skip_message"] and save_type is not False and save_type is not None:
-                if save_chip is not None:
-                    if (
-                        save_type == 5
-                        and save_chip is not None
-                        and "Unlicensed" in save_chip
-                        and "data" in self._device.INFO
-                        and self._device.INFO["data"] == bytearray([0xFF] * len(self._device.INFO["data"]))
-                    ):
-                        temp = f"{AgbSaveTypes().GetStringList()[4]:s} or {AgbSaveTypes().GetStringList()[5]:s} ({save_chip:s})"
-                    else:
-                        temp = f"{AgbSaveTypes().GetStringList()[save_type]:s} ({save_chip:s})"
-                elif self._device.GetMode() == "DMG":
-                    try:
-                        temp = f"{DmgSaveTypes(mbc=save_type).GetString():s}"
-                    except IndexError, KeyError, TypeError, ValueError:
-                        temp = "Unknown"
-                elif self._device.GetMode() == "AGB":
-                    temp = f"{AgbSaveTypes().GetStringList()[save_type]:s}"
-                    try:
-                        if "Batteryless SRAM" in AgbSaveTypes().GetStringList()[save_type]:
-                            temp += _format_batteryless_sram_details(save_size, header["batteryless_sram"])
-                    except Exception:
-                        logger.exception("Failed to format batteryless SRAM details")
-
-                if save_type == 0:
-                    if save_chip and "Unknown" not in save_chip:
-                        msg_save_type_s = "<b>" + __("Save Type:") + f"</b> {save_chip:s}<br>"
-                    else:
-                        msg_save_type_s = (
-                            "<b>"
-                            + __("Save Type:")
-                            + "</b> "
-                            + c__("Save Type", "None or unknown (no save data detected)")
-                            + "<br>"
-                        )
-                elif sram_unstable and "SRAM" in temp:
-                    msg_save_type_s = (
-                        "<b>"
-                        + __("Save Type:")
-                        + '</b> {:s} <span style="color: red;">('
-                        + c__("Save Data Access", "not stable or not battery-backed")
-                        + ")</span><br>"
-                    )
-                else:
-                    msg_save_type_s = "<b>" + __("Save Type:") + f"</b> {temp:s}<br>"
+            msg_save_type_s = self._FormatDetectedSaveType(
+                save_size,
+                save_type,
+                save_chip,
+                sram_unstable,
+                header,
+            )
 
             # Cart Type
             msg_cart_type_s = ""

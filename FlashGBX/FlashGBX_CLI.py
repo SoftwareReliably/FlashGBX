@@ -1960,23 +1960,12 @@ class FlashGBX_CLI:
             )
         return True
 
-    def BackupRestoreRAM(
+    def _ResolveSaveConfiguration(
         self,
         args: argparse.Namespace,
         header: HeaderData,
-    ) -> None:
-        add_date_time = args.save_filename_add_datetime is True
-        rtc = args.store_rtc is True
+    ) -> tuple[int, int, int | None] | None:
         cart_type = 0
-
-        path_datetime = ""
-        if add_date_time:
-            path_datetime = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
-
-        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
-        path = str(Path(path).with_suffix(""))
-        path += f"{path_datetime:s}.sav"
-
         if self.CONN.GetMode() == "DMG":
             if args.dmg_mbc == "auto":
                 try:
@@ -2031,7 +2020,7 @@ class FlashGBX_CLI:
                     )
                     + ANSI.RESET,
                 )
-                return
+                return None
 
             if save_type == 0x204:
                 cart_type = self.DetectCartridge()
@@ -2054,10 +2043,34 @@ class FlashGBX_CLI:
                     )
                     + ANSI.RESET,
                 )
-                return
-
+                return None
         else:
+            return None
+
+        if not isinstance(save_type, int):
+            return None
+        return mbc, save_type, cart_type
+
+    def BackupRestoreRAM(
+        self,
+        args: argparse.Namespace,
+        header: HeaderData,
+    ) -> None:
+        add_date_time = args.save_filename_add_datetime is True
+        rtc = args.store_rtc is True
+
+        path_datetime = ""
+        if add_date_time:
+            path_datetime = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
+
+        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
+        path = str(Path(path).with_suffix(""))
+        path += f"{path_datetime:s}.sav"
+
+        configuration = self._ResolveSaveConfiguration(args, header)
+        if configuration is None:
             return
+        mbc, save_type, cart_type = configuration
 
         if args.path != "auto":
             path = str(Path(args.path) / path) if Path(args.path).is_dir() else args.path
