@@ -15,7 +15,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from loguru import logger
 
@@ -222,7 +222,7 @@ def set_locale(language: str | None = None) -> bool:
     if not target:
         return False
 
-    candidates = [target]
+    candidates: list[str] = [target]
     if "_" in target:
         candidates.append(target.split(".")[0])
         candidates.append(target.split("_")[0])
@@ -264,14 +264,14 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
     fuzzy = False
     is_plural = False
 
-    filename = _application_path() / "locale" / f"{language}.po"
+    filename: Path = _application_path() / "locale" / f"{language}.po"
     if not filename.exists():
-        msg = f"{filename} not found"
+        msg: str = f"{filename} not found"
         raise FileNotFoundError(msg)
 
     with filename.open(encoding="utf-8") as translation_file:
         for raw_line in translation_file:
-            line = raw_line.strip()
+            line: str = raw_line.strip()
             if not line:
                 continue
 
@@ -280,14 +280,14 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
 
             if line.startswith("#"):
                 if section == "STR":
-                    key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
+                    key: bytes = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
                     if not fuzzy and msgstr:
                         messages[key] = msgstr
                 section = msgctxt = None
                 fuzzy = False
                 continue
 
-            value_source = line
+            value_source: str = line
             if line.startswith("msgctxt"):
                 section = "CTXT"
                 msgctxt = b""
@@ -324,7 +324,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
             if not isinstance(value, str):
                 msg = f"Expected a quoted string in {filename}: {value_source}"
                 raise TypeError(msg)
-            encoded_value = value.encode()
+            encoded_value: bytes = value.encode()
 
             if section == "CTXT":
                 if msgctxt is None:
@@ -341,7 +341,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
         if not fuzzy and msgstr:
             messages[key] = msgstr
 
-    keys = sorted(messages.keys())
+    keys: list[bytes] = sorted(messages.keys())
     offsets: list[tuple[int, int, int, int]] = []
     ids = bytearray()
     strs = bytearray()
@@ -350,24 +350,24 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
         ids += k + b"\0"
         strs += messages[k] + b"\0"
 
-    keystart = 28 + 16 * len(keys)
-    valuestart = keystart + len(ids)
+    keystart: int = 28 + 16 * len(keys)
+    valuestart: int = keystart + len(ids)
     koffsets: list[int] = []
     voffsets: list[int] = []
     for o1, l1, o2, l2 in offsets:
         koffsets += [l1, o1 + keystart]
         voffsets += [l2, o2 + valuestart]
 
-    mo_header = struct.pack("<7I", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
-    table_values = koffsets + voffsets
-    mo_tables = struct.pack(f"<{len(table_values)}I", *table_values)
-    mo = b"".join((mo_header, mo_tables, ids, strs))
+    mo_header: bytes = struct.pack("<7I", 0x950412DE, 0, len(keys), 7 * 4, 7 * 4 + len(keys) * 8, 0, 0)
+    table_values: list[int] = koffsets + voffsets
+    mo_tables: bytes = struct.pack(f"<{len(table_values)}I", *table_values)
+    mo: bytes = b"".join((mo_header, mo_tables, ids, strs))
 
     return gettext.GNUTranslations(fp=io.BytesIO(mo))
 
 
 def __(msgid: str, **kwargs: object) -> str:  # noqa: N807
-    msg = lang.gettext(msgid)
+    msg: str = lang.gettext(msgid)
     try:
         return msg.format(**kwargs)
     except (
@@ -378,7 +378,7 @@ def __(msgid: str, **kwargs: object) -> str:  # noqa: N807
 
 
 def ___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:  # noqa: N807
-    msg = lang.ngettext(singular, plural, n)
+    msg: str = lang.ngettext(singular, plural, n)
     try:
         return msg.format(n=n, **kwargs)
     except (
@@ -391,7 +391,7 @@ def ___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:  # noq
 
 def c__(context: str, msgid: str, **kwargs: object) -> str:
     try:
-        msg = lang.pgettext(context, msgid)
+        msg: str = lang.pgettext(context, msgid)
     except AttributeError:
         msg = lang.gettext(msgid)
     try:
@@ -405,7 +405,7 @@ def c__(context: str, msgid: str, **kwargs: object) -> str:
 
 def c___(context: str, singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
     try:
-        msg = lang.npgettext(context, singular, plural, n)
+        msg: str = lang.npgettext(context, singular, plural, n)
     except AttributeError:
         msg = lang.ngettext(singular, plural, n)
     try:
@@ -466,10 +466,12 @@ def loadQtTranslation(app: object | None = None, language: str | None = None) ->
 def init_language(config_path: str | os.PathLike[str], override: str | None = None) -> None:
     global lang, CONFIGURED_LANGUAGE, TRANSLATION_AUTHOR  # noqa: PLW0603
 
-    app_path = _application_path()
-    available_langs = ["en"]  # Always include English
+    app_path: Path = _application_path()
+    available_langs: list[str] = ["en"]  # Always include English
     available_langs += [language_file.stem for language_file in (app_path / "locale").glob("*.po")]
-    filtered_langs = {code: name for code, name in LANGUAGES.items() if code in available_langs}
+    filtered_langs: dict[str, tuple[str, str]] = {
+        code: name for code, name in LANGUAGES.items() if code in available_langs
+    }
     LANGUAGES.clear()
     LANGUAGES.update(sorted(filtered_langs.items(), key=lambda item: item[1][1]))
 
@@ -480,17 +482,17 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
 
     settings = IniSettings(path=Path(config_path) / "settings.ini")
     if override:
-        language_setting = override
+        language_setting: str = override
         settings.SetValue("Language", override)
     else:
-        configured_value = settings.GetValue("Language", default="auto")
+        configured_value: str | None = settings.GetValue("Language", default="auto")
         language_setting = configured_value if isinstance(configured_value, str) else "auto"
 
-    system_language = OS_LANGUAGE.split("_")[0].split("-")[0].lower()
+    system_language: str = OS_LANGUAGE.split("_")[0].split("-")[0].lower()
 
     if language_setting.lower() != "auto":
         CONFIGURED_LANGUAGE = language_setting
-        lang_code = language_setting.split("_")[0].split("-")[0].lower()
+        lang_code: str = language_setting.split("_")[0].split("-")[0].lower()
     else:
         CONFIGURED_LANGUAGE = system_language
         lang_code = system_language if system_language and system_language != "C" else "en"
@@ -503,7 +505,7 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
         try:
             lang = loadTranslation(lang_code)
             empty = ""
-            metadata = lang.gettext(empty)
+            metadata: str = lang.gettext(empty)
             for line in metadata.splitlines():
                 if line.lower().startswith("last-translator:"):
                     TRANSLATION_AUTHOR = line.split(":", 1)[1].strip()
@@ -531,18 +533,18 @@ except (
 ):
     lang_country = None
 
-detected_language = lang_country
+detected_language: str | None = lang_country
 
 if not detected_language and platform.system() == "Darwin":
     try:
-        defaults_output = subprocess.check_output(
+        defaults_output: str = subprocess.check_output(
             ["/usr/bin/defaults", "read", "-g", "AppleLanguages"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
         apple_languages: list[str] = []
         for raw_line in defaults_output.splitlines():
-            cleaned = raw_line.strip().strip(",").strip().strip('"')
+            cleaned: str = raw_line.strip().strip(",").strip().strip('"')
             if cleaned and cleaned not in ("(", ")"):
                 apple_languages.append(cleaned)
         if apple_languages:
@@ -552,9 +554,9 @@ if not detected_language and platform.system() == "Darwin":
 
 if not detected_language:
     for env_name in ("LC_ALL", "LC_MESSAGES", "LANG"):
-        env_value = os.environ.get(env_name)
+        env_value: str | None = os.environ.get(env_name)
         if env_value:
-            candidate = re.split(r"[.@]", env_value, maxsplit=1)[0].strip()
+            candidate: str | Any = re.split(r"[.@]", env_value, maxsplit=1)[0].strip()
             if candidate:
                 detected_language = candidate
                 break
