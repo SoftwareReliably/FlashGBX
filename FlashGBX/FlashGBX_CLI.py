@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from serial import SerialException  # pyright: ignore[reportMissingModuleSource]
-from serial.tools import list_ports  # pyright: ignore[reportMissingModuleSource]
+from serial.tools import list_ports
 
 from .i18n import __, ___, c__, format_decimal
 
@@ -49,6 +49,8 @@ from .RomFileDMG import RomFileDMG, from_isx
 if TYPE_CHECKING:
     import argparse
     from argparse import Namespace
+
+    from FlashGBX.hw_JoeyJr import FirmwareUpdater
 
 type PlatformMode = Literal["DMG", "AGB"]
 type HeaderData = dict[str, Any]
@@ -1600,7 +1602,7 @@ class FlashGBX_CLI:
     ) -> tuple[Path, bytearray] | None:
         rom_path = Path(args.path)
         try:
-            rom_size = rom_path.stat().st_size
+            rom_size: int = rom_path.stat().st_size
             if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
                 print(
                     ANSI.RED
@@ -1659,7 +1661,7 @@ class FlashGBX_CLI:
     ) -> tuple[float | Literal[False], float | Literal[False], bool]:
         override_voltage: float | Literal[False] = False
         voltage_fallback: float | Literal[False] = False
-        device_voltage_locked = self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode()
+        device_voltage_locked: bool = self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode()
         if device_voltage_locked:
             return override_voltage, voltage_fallback, device_voltage_locked
         if args.force_5v is True:
@@ -1837,7 +1839,7 @@ class FlashGBX_CLI:
                 )
                 + ANSI.RESET,
             )
-            answer = input(__("Fix the header checksum before continuing?") + " [Y/n]: ").strip().lower()
+            answer: str = input(__("Fix the header checksum before continuing?") + " [Y/n]: ").strip().lower()
             print()
             if answer != "n":
                 fix_header = True
@@ -1845,7 +1847,7 @@ class FlashGBX_CLI:
         print()
         v = carts[cart_type]["voltage"]
         if override_voltage:
-            v = override_voltage
+            v: float = override_voltage
         print(
             __(
                 "The following ROM file will now be written to the flash cartridge at {voltage}V:",
@@ -1927,7 +1929,7 @@ class FlashGBX_CLI:
     def _ConfirmSaveAction(self, args: argparse.Namespace, target_path: Path) -> bool:
         if args.action == "backup-save":
             if not args.overwrite and target_path.exists():
-                answer = (
+                answer: str = (
                     input(
                         __(
                             "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
@@ -1992,7 +1994,7 @@ class FlashGBX_CLI:
         if self.CONN.GetMode() == "DMG":
             if args.dmg_mbc == "auto":
                 try:
-                    mbc = self._GetHeaderInt(header, "mapper_raw")
+                    mbc: int = self._GetHeaderInt(header, "mapper_raw")
                     if mbc == 0:
                         mbc = 0x19  # MBC5 default
                 except TypeError:
@@ -2032,7 +2034,7 @@ class FlashGBX_CLI:
             elif args.dmg_savetype == "batteryless":
                 save_type = 0x205
             else:
-                save_type = DmgSaveTypes.GetMbcFromCLIName(args.dmg_savetype) or 0
+                save_type: int | None = DmgSaveTypes.GetMbcFromCLIName(args.dmg_savetype) or 0
 
             if save_type == 0:
                 print(
@@ -2046,7 +2048,7 @@ class FlashGBX_CLI:
                 return None
 
             if save_type == 0x204:
-                cart_type = self.DetectCartridge()
+                cart_type: int | None = self.DetectCartridge()
 
         elif self.CONN.GetMode() == "AGB":
             if args.agb_savetype == "auto":
@@ -2105,18 +2107,18 @@ class FlashGBX_CLI:
         args: argparse.Namespace,
         header: HeaderData,
     ) -> None:
-        add_date_time = args.save_filename_add_datetime is True
-        rtc = args.store_rtc is True
+        add_date_time: bool = args.save_filename_add_datetime is True
+        rtc: bool = args.store_rtc is True
 
         path_datetime = ""
         if add_date_time:
-            path_datetime = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
+            path_datetime: str = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
 
         path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
         path = str(Path(path).with_suffix(""))
         path += f"{path_datetime:s}.sav"
 
-        configuration = self._ResolveSaveConfiguration(args, header)
+        configuration: tuple[int, int, int | None] | None = self._ResolveSaveConfiguration(args, header)
         if configuration is None:
             return
         mbc, save_type, cart_type = configuration
@@ -2135,7 +2137,7 @@ class FlashGBX_CLI:
             return
 
         buffer = None
-        target_path = Path(path).resolve()
+        target_path: Path = Path(path).resolve()
         if not self._ConfirmSaveAction(args, target_path):
             return
 
@@ -2206,7 +2208,7 @@ class FlashGBX_CLI:
                 signal=self.PROGRESS.SetProgress,
             )
         elif args.action == "restore-save":
-            verify_write = args.no_verify_write is False
+            verify_write: bool = args.no_verify_write is False
             targs = {
                 "mode": 3,
                 "path": path,
@@ -2237,10 +2239,10 @@ class FlashGBX_CLI:
         elif args.action == "debug-test-save":  # debug
             self.ARGS["debug"] = True
             config_path = Path(AppContext.CONFIG_PATH)
-            test1_path = config_path / "test1.bin"
-            test2_path = config_path / "test2.bin"
-            test3_path = config_path / "test3.bin"
-            test4_path = config_path / "test4.bin"
+            test1_path: Path = config_path / "test1.bin"
+            test2_path: Path = config_path / "test2.bin"
+            test3_path: Path = config_path / "test3.bin"
+            test4_path: Path = config_path / "test4.bin"
 
             print(__("Making a backup of the original save data."))
             ret = self.CONN.TransferData(
@@ -2342,7 +2344,7 @@ class FlashGBX_CLI:
                 )
                 input("")
 
-            found_offset = test2.find(test3[0:512])
+            found_offset: int = test2.find(test3[0:512])
             if found_offset < 0:
                 if self.CONN.GetMode() == "AGB":
                     print(
@@ -2358,12 +2360,12 @@ class FlashGBX_CLI:
                     print("\n" + ANSI.RED + __("It was not possible to save any data to the cartridge.") + ANSI.RESET)
             else:
                 if found_offset == 0 and test2 != test3:  # Pokémon Crystal JPN
-                    found_length = 0
+                    found_length: int = 0
                     for _, (expected, actual) in enumerate(zip(test2, test3, strict=False)):
                         if expected != actual:
                             break
                 else:
-                    found_length = len(test2) - found_offset
+                    found_length: int = len(test2) - found_offset
 
                 if self.CONN.GetMode() == "DMG":
                     print(
@@ -2402,7 +2404,7 @@ class FlashGBX_CLI:
         if args.bl_offset != "auto":
             try:
                 txt = args.bl_offset.strip()
-                bl_offset = int(txt, 16) if txt.lower().startswith("0x") else int(txt, 0)
+                bl_offset: int | None = int(txt, 16) if txt.lower().startswith("0x") else int(txt, 0)
             except ValueError:
                 print(
                     ANSI.RED
@@ -2519,13 +2521,13 @@ class FlashGBX_CLI:
 
         # restore-save / erase-save: write into ROM flash, so a flash cart profile is required.
         erase = args.action == "erase-save"
-        cart_type = self._ResolveFlashcartType(args)
+        cart_type: int | None = self._ResolveFlashcartType(args)
         if cart_type is None:
             return
 
         if args.action == "restore-save":
             if not args.overwrite:
-                answer = (
+                answer: str = (
                     input(
                         __("Do you want to overwrite the existing Batteryless SRAM save data on the cartridge?")
                         + " [y/N]: ",
@@ -2583,7 +2585,7 @@ class FlashGBX_CLI:
                     return
 
         print()
-        verify_write = args.no_verify_write is False
+        verify_write: bool = args.no_verify_write is False
         targs = {
             "mode": 4,
             "path": path,
@@ -2614,9 +2616,9 @@ class FlashGBX_CLI:
         bl_size: int,
         bl_args: BatterylessArgs,
     ) -> None:
-        target_path = Path(path).resolve()
+        target_path: Path = Path(path).resolve()
         if not args.overwrite and target_path.exists():
-            answer = (
+            answer: str = (
                 input(
                     __(
                         "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
@@ -2741,15 +2743,15 @@ class FlashGBX_CLI:
     ) -> bool:
         if pcb != 5:
             return False
-        title = __("Firmware Updater for {device_name}", device_name="GBxCart RW v1.4")
+        title: str = __("Firmware Updater for {device_name}", device_name="GBxCart RW v1.4")
         print("\n" + title)
         print("=" * len(title) + "\n")
         print(__("Select your PCB version:") + "\n1) GBxCart RW v1.4\n2) GBxCart RW v1.4a/b/c\n")
-        answer = input(__("Enter number ({range}):", range="1-2") + " ").lower().strip()
+        answer: str = input(__("Enter number ({range}):", range="1-2") + " ").lower().strip()
         print()
         if answer == "1":
             led = "Done"
-            file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4.zip"
+            file_name: Path = Path(AppContext.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4.zip"
         elif answer == "2":
             led = "Status"
             file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBxCart_RW_v1_4a.zip"
@@ -2765,7 +2767,7 @@ class FlashGBX_CLI:
                 f"{fw_ver:s} ({datetime.datetime.fromtimestamp(int(fw_buildts)).astimezone().replace(microsecond=0).isoformat():s})",
             ),
         )
-        text = __("Please follow these steps to proceed with the firmware update:")
+        text: str = __("Please follow these steps to proceed with the firmware update:")
         text += "\n\n" + __(
             "- Disconnect the USB cable of your GBxCart RW.\n"
             "- On the circuit board of your GBxCart RW, press and hold down the small button while connecting the USB cable again.\n"
@@ -2801,7 +2803,7 @@ class FlashGBX_CLI:
                     print(__("Using port {port}", port=port) + "\n")
                     FirmwareUpdater = hw_GBxCartRW.FirmwareUpdater
                     FWUPD = FirmwareUpdater(port=port)
-                    ret = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
+                    ret: Literal[1, 2, 3] = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
                     port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
@@ -2814,7 +2816,7 @@ class FlashGBX_CLI:
                     print(err)
                     return False
 
-            update_succeeded = ret == 1
+            update_succeeded: bool = ret == 1
             if update_succeeded:
                 print(__("The firmware update is complete!"))
             elif ret == 3:
@@ -2830,11 +2832,11 @@ class FlashGBX_CLI:
         self,
         port: str | Literal[False] | None = False,
     ) -> bool:
-        title = __("Firmware Updater for {device_name}", device_name="GBFlash")
+        title: str = __("Firmware Updater for {device_name}", device_name="GBFlash")
         print("\n" + title)
         print("=" * len(title))
         print(__("Supported revisions:") + " v1.0, v1.1, v1.2, v1.3\n")
-        file_name = Path(AppContext.APP_PATH) / "res" / "fw_GBFlash.zip"
+        file_name: Path = Path(AppContext.APP_PATH) / "res" / "fw_GBFlash.zip"
 
         fw_ver, fw_buildts = self._LoadFirmwareInfo(file_name)
 
@@ -2844,7 +2846,7 @@ class FlashGBX_CLI:
                 f"{fw_ver:s} ({datetime.datetime.fromtimestamp(int(fw_buildts)).astimezone().replace(microsecond=0).isoformat():s})",
             ),
         )
-        text = __("Note: Cloned GBFlash hardware often don't come with a firmware update feature.") + "\n\n"
+        text: str = __("Note: Cloned GBFlash hardware often don't come with a firmware update feature.") + "\n\n"
         text += (
             __("Please follow these steps to proceed with the firmware update:")
             + "\n\n"
@@ -2911,7 +2913,7 @@ class FlashGBX_CLI:
         self,
         port: str | Literal[False] | None = False,
     ) -> bool:
-        title = __("Firmware Updater for {device_name}", device_name="Joey Jr")
+        title: str = __("Firmware Updater for {device_name}", device_name="Joey Jr")
         print("\n" + title)
         print("=" * len(title))
         file_name = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
@@ -2948,7 +2950,7 @@ class FlashGBX_CLI:
             ports = []
             if port is None or port is False:
                 comports = list_ports.comports()
-                ports = [
+                ports: list[str] = [
                     comports[i].device
                     for i in range(len(comports))
                     if comports[i].vid == 0x483 and comports[i].pid == 0x5740
@@ -2971,8 +2973,8 @@ class FlashGBX_CLI:
                 try:
                     print(__("Using port {port}", port=port) + "\n")
                     FirmwareUpdater = hw_JoeyJr.FirmwareUpdater
-                    FWUPD = FirmwareUpdater(port=port)
-                    file_name = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
+                    FWUPD: FirmwareUpdater = FirmwareUpdater(port=port)
+                    file_name: Path = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
                     with zipfile.ZipFile(file_name) as archive:
                         fw_data = None
                         if fw_choice == 1:
