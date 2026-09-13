@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
+from PySide6 import QtCore, QtGui, QtWidgets
+
+from FlashGBX.FlashGBX_GUI import FlashGBX_GUI
+from FlashGBX.LK_Device import LK_Device  # pyright: ignore[reportMissingImports]
 
 from .app import AppInfo
 from .i18n import __, c__
@@ -32,13 +35,13 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.setWindowFlags(flags)
         self.resize(700, 400)
 
-        self.APP = app
-        connection = app.CONN
+        self.APP: FlashGBX_GUI = app
+        connection: LK_Device | None = app.CONN
         if connection is None:
             msg = "The interactive console requires an active device connection"
             raise RuntimeError(msg)
         self.CONN: LK_Device = connection
-        mode = self.CONN.GetMode()
+        mode: Literal["DMG", "AGB"] | None = self.CONN.GetMode()
         if mode is None:
             msg = "The interactive console requires an active cartridge mode"
             raise RuntimeError(msg)
@@ -48,7 +51,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.main_layout = QtWidgets.QVBoxLayout()
         self.main_layout.setContentsMargins(8, 8, 8, 8)
 
-        mono_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
+        mono_font: QtGui.QFont = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont)
         mono_font.setStyleHint(QtGui.QFont.StyleHint.TypeWriter)
 
         self.txtOutput = QtWidgets.QPlainTextEdit()
@@ -91,11 +94,11 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
             self.txtInput.setFocus()
             self.main_layout.update()
             self.main_layout.activate()
-            screen = self.screen() or QtGui.QGuiApplication.primaryScreen()
+            screen: QtGui.QScreen = self.screen() or QtGui.QGuiApplication.primaryScreen()
             if screen is not None:
-                geometry = screen.availableGeometry()
-                x = geometry.x() + (geometry.width() - self.width()) // 2
-                y = geometry.y() + (geometry.height() - self.height()) // 2
+                geometry: QtCore.QRect = screen.availableGeometry()
+                x: int = geometry.x() + (geometry.width() - self.width()) // 2
+                y: int = geometry.y() + (geometry.height() - self.height()) // 2
                 self.move(x, y)
             self.show()
         except Exception:
@@ -135,11 +138,11 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
 
     def AppendOutput(self, text: str) -> None:
         self.txtOutput.appendPlainText(text)
-        scrollbar = self.txtOutput.verticalScrollBar()
+        scrollbar: QtWidgets.QScrollBar = self.txtOutput.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def OnSubmit(self) -> None:
-        line = self.txtInput.text().strip()
+        line: str = self.txtInput.text().strip()
         self.txtInput.clear()
         if not line:
             self.AppendOutput("")
@@ -147,7 +150,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.AppendOutput("> " + line)
         if not self.History or self.History[-1] != line:
             self.History.append(line)
-        self.HistoryIndex = len(self.History)
+        self.HistoryIndex: int = len(self.History)
 
         self.txtInput.setEnabled(False)
         self.btnClose.setEnabled(False)
