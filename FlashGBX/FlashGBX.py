@@ -298,7 +298,7 @@ class ArgParseCustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.R
     pass
 
 
-def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | None]:
+def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | None, str]:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         app_path = str(Path(sys.executable).parent)
     else:
@@ -341,7 +341,7 @@ def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | No
 
     if config_path is None:
         config_path = cp[cfgdir_default] if cfgdir_default in cp else cp["subdir"]
-    return app_path, cp, config_path, language_choice
+    return app_path, cp, config_path, language_choice, cfgdir_default
 
 
 def _print_banner() -> None:
@@ -390,8 +390,7 @@ def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
 
-    app_path, cp, config_path, language_choice = _startup_paths(portableMode)
-    cfgdir_default = "subdir" if portableMode else "appdata"
+    app_path, cp, config_path, language_choice, cfgdir_default = _startup_paths(portableMode)
     init_language(config_path, override=language_choice)
 
     _print_banner()

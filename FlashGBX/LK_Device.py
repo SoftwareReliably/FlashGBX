@@ -7439,10 +7439,13 @@ class LK_Device(ABC):
             preparation.rom_bank_size,
         )
 
-    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+    def _StartFlashROMWrite(self, args: dict[str, Any]) -> tuple[DeviceMode, _FlashWritePreparation | None]:
         mode = self._require_cartridge_mode("writing ROM")
         self.FAST_READ = True
-        preparation = self._prepare_flash_write(args, mode)
+        return mode, self._prepare_flash_write(args, mode)
+
+    def _FlashROM_Worker(self, args: dict[str, Any]) -> bool | None:
+        mode, preparation = self._StartFlashROMWrite(args)
         if preparation is None:
             return False
         (
