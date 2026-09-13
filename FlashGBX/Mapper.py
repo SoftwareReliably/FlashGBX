@@ -38,7 +38,7 @@ CallbackT = TypeVar("CallbackT", bound=Callable[..., object])
 def _require_callback[CallbackT: Callable[..., object]](callback: CallbackT | None, name: str) -> CallbackT:
     """Return a configured hardware callback or fail with a useful error."""
     if callback is None:
-        msg = f"{name} callback is not configured"
+        msg: str = f"{name} callback is not configured"
         raise RuntimeError(msg)
     return callback
 
@@ -96,7 +96,7 @@ def save_size_includes_rtc(
 
     rtc_size = 0x10
     if mode == "DMG":
-        save_type_index = DmgSaveTypes(mbc=save_type).GetIndex()
+        save_type_index: int | None = DmgSaveTypes(mbc=save_type).GetIndex()
         if get_mbc_name(mbc) in ("MBC3", "MBC30"):
             rtc_size = 0x30
         elif get_mbc_name(mbc) == "HuC-3":
@@ -105,7 +105,7 @@ def save_size_includes_rtc(
             rtc_size = 0x28
         base_size = DmgSaveTypes(index=save_type_index).GetSize()
     elif mode == "AGB":
-        base_size = AgbSaveTypes().GetSize(save_type)
+        base_size: int | None = AgbSaveTypes().GetSize(save_type)
     else:
         return False
 
@@ -236,11 +236,11 @@ class DMG_Mapper:
             args = {}
         mbc_id = args["mbc"]
 
-        mapper_type = self.GetMapperType(mbc_id)
+        mapper_type: str = self.GetMapperType(mbc_id)
 
         # Get the appropriate class from MAPPER_MAP
-        mapper_info = self.MAPPER_MAP.get(mapper_type)
-        mapper_class_name = mapper_info[1] if mapper_info else None
+        mapper_info: tuple[list[int], str | None] | None = self.MAPPER_MAP.get(mapper_type)
+        mapper_class_name: str | None = mapper_info[1] if mapper_info else None
 
         # Resolve class name to actual class object
         if mapper_class_name:
@@ -277,7 +277,7 @@ class DMG_Mapper:
 
     @classmethod
     def GetMapperIdsByType(cls, mapper_type: str) -> list[int]:
-        mapper_info = cls.MAPPER_MAP.get(mapper_type)
+        mapper_info: tuple[list[int], str | None] | None = cls.MAPPER_MAP.get(mapper_type)
         return mapper_info[0] if mapper_info else []
 
     @classmethod
@@ -306,14 +306,14 @@ class DMG_Mapper:
     def CartRead(self, address: int, length: int = 0) -> int | bytearray:
         read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
         if length == 0:  # auto size:
-            result = read(address)
+            result: int | bytearray | bool | None = read(address)
             if isinstance(result, int):
                 return result
         else:
             result = read(address, length)
             if isinstance(result, bytearray):
                 return result
-        msg = f"Cartridge read failed at 0x{address:X}"
+        msg: str = f"Cartridge read failed at 0x{address:X}"
         raise RuntimeError(msg)
 
     def CartWrite(
@@ -322,28 +322,28 @@ class DMG_Mapper:
         delay: float | bool = False,
         sram: bool = False,
     ) -> None:
-        write = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
+        write: CartWriteCallback = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
         for command in commands:
-            address = command[0]
-            value = command[1]
+            address: int = command[0]
+            value: int = command[1]
             write(address, value, sram=sram)
             if delay is not False:
                 time.sleep(delay)
 
     def _toggle_clock(self, cycles: int) -> None:
-        toggle = _require_callback(self.CLK_TOGGLE_FNCPTR, "clock toggle")
+        toggle: Callable[[int], object] = _require_callback(self.CLK_TOGGLE_FNCPTR, "clock toggle")
         toggle(cycles)
 
     def _power_cycle(self) -> None:
-        power_cycle = _require_callback(self.CART_POWERCYCLE_FNCPTR, "cartridge power-cycle")
+        power_cycle: Callable[[], object] = _require_callback(self.CART_POWERCYCLE_FNCPTR, "cartridge power-cycle")
         power_cycle()
 
     def _get_rtc_buffer(self) -> bytearray:
-        rtc_buffer = self.RTC_BUFFER
+        rtc_buffer: bytearray | None = self.RTC_BUFFER
         if rtc_buffer is None:
-            result = self.ReadRTC()
+            result: bytearray | bool = self.ReadRTC()
             if not isinstance(result, bytearray):
-                msg = f"Could not read {self.GetName()} RTC data"
+                msg: str = f"Could not read {self.GetName()} RTC data"
                 raise RuntimeError(msg)
             rtc_buffer = result
         return rtc_buffer
@@ -353,14 +353,14 @@ class DMG_Mapper:
 
     def GetName(self) -> str:
         # Get the base mapper type name (e.g. "MBC1", "MBC5")
-        mapper_type = self.GetMapperType(self.MBC_ID)
+        mapper_type: str = self.GetMapperType(self.MBC_ID)
         if mapper_type != "Unknown":
             return mapper_type
         return f"Unknown MBC {self.MBC_ID:d}"
 
     def GetFullName(self) -> str:
         # Get the full mapper name with all features (e.g. "MBC1+SRAM+BATTERY")
-        full_name = self.GetMapperName(self.MBC_ID)
+        full_name: str = self.GetMapperName(self.MBC_ID)
         if full_name != "Unknown":
             return full_name
         return f"Unknown MBC {self.MBC_ID:d}"
@@ -393,7 +393,7 @@ class DMG_Mapper:
         chk = 0
         for i in range(0, len(buffer), 2):
             if i != 0x14E:
-                chk = chk + buffer[i + 1]
+                chk: int = chk + buffer[i + 1]
                 chk = chk + buffer[i]
         return chk & 0xFFFF
 
@@ -402,23 +402,23 @@ class DMG_Mapper:
 
     def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
-        commands = [[0x0000, 0x0A if enable else 0x00]]
+        commands: list[list[int]] = [[0x0000, 0x0A if enable else 0x00]]
         self.CartWrite(commands)
 
     def SelectBankROM(self, index: int) -> tuple[int, int]:
         dprint(self.GetName(), "|", index)
-        commands = [
+        commands: list[list[int]] = [
             [0x2100, index & 0xFF],
         ]
 
-        start_address = 0 if index == 0 else 0x4000
+        start_address: Literal[0, 16384] = 0 if index == 0 else 0x4000
 
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
     def SelectBankRAM(self, index: int) -> tuple[int, int]:
         dprint(self.GetName(), "|", index)
-        commands = [[0x4000, index & 0xFF]]
+        commands: list[list[int]] = [[0x4000, index & 0xFF]]
         start_address = 0
         self.CartWrite(commands)
         return (start_address, self.RAM_BANK_SIZE)
@@ -540,7 +540,7 @@ class DMG_MBC3(DMG_Mapper):
         for i in range(0x08, 0x0D):
             self._toggle_clock(60)
             self.CartWrite([[0x4000, i]])
-            data = self.CartRead(0xA880, 0x100)
+            data: bytearray = self.CartRead(0xA880, 0x100)
             if len(data) == 0:
                 return False
             if data[0] in (0, 0xFF):
@@ -662,11 +662,11 @@ class DMG_MBC3(DMG_Mapper):
                     days = buffer[0x0C] | buffer[0x10] << 8
                     carry = (buffer[0x10] & 0x80) != 0
                     days = days & 0x1FF
-                    timestamp_then = struct.unpack("<Q", buffer[-8:])[0]
+                    timestamp_then: int = struct.unpack("<Q", buffer[-8:])[0]
                     timestamp_now = int(time.time())
                     dprint(seconds, minutes, hours, days, carry)
                     if timestamp_then < timestamp_now:
-                        dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
+                        dt_then: datetime.datetime = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
                         dt_buffer1 = datetime.datetime(2000, 1, 1, tzinfo=local_timezone)
                         dt_buffer2 = datetime.datetime(
                             2000,
@@ -768,7 +768,7 @@ class DMG_MBC5(DMG_Mapper):
             [0x2100, index & 0xFF],
         ]
 
-        start_address = 0 if index == 0 else 0x4000
+        start_address: Literal[0, 16384] = 0 if index == 0 else 0x4000
 
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
@@ -806,7 +806,6 @@ class DMG_MBC6(DMG_Mapper):
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 0x4000], int]:
         dprint(self.GetName(), "|", index)
         self.CURRENT_ROM_BANK = index
-        # index = index * 2
         commands: list[list[int]] = [
             [0x2800, 0],
             [0x3800, 0],
@@ -814,7 +813,7 @@ class DMG_MBC6(DMG_Mapper):
             [0x3000, index],  # ROM Bank B (0x6000-0x7FFF)
         ]
         self.CartWrite(commands)
-        start_address = 0 if index == 0 else 0x4000
+        start_address: Literal[0, 16384] = 0 if index == 0 else 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
     def HasFlashBanks(self) -> Literal[True]:
@@ -823,7 +822,6 @@ class DMG_MBC6(DMG_Mapper):
     def SelectBankFlash(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
         self.CURRENT_ROM_BANK = index
-        # index = index * 2
         commands: list[list[int]] = [
             [0x2800, 8],
             [0x3800, 8],
@@ -885,7 +883,7 @@ class DMG_MBC6(DMG_Mapper):
         self.SelectBankFlash(self.GetROMBank())
         self.CartWrite([[0x4000, 0x30]])
         while True:
-            sr = self.CartRead(0x4000)
+            sr: int = self.CartRead(0x4000)
             dprint(f"Status Register Check: 0x{sr:X} == 0x80? {sr == 0x80!s:s}")
             if sr == 0x80:
                 break
@@ -927,7 +925,7 @@ class DMG_MBC7(DMG_Mapper):
 
     def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
-        commands = [[0x0000, 0x0A if enable else 0x00], [0x4000, 0x40]]
+        commands: list[list[int]] = [[0x0000, 0x0A if enable else 0x00], [0x4000, 0x40]]
         self.CartWrite(commands)
 
     def GetMaxROMSize(self) -> Literal[4194304]:
@@ -940,7 +938,7 @@ class DMG_MBC1M(DMG_MBC1):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[16384, 0], int]:
         dprint(self.GetName(), "|", index)
-        commands = [
+        commands: list[list[int]] = [
             [0x6000, 1],
             [0x2000, index],
             [0x4000, index >> 4],
@@ -1008,7 +1006,7 @@ class DMG_GBD(DMG_MBC5):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
-        commands = [
+        commands: list[list[int]] = [
             [0x2000, index & 0xFF],
         ]
 
@@ -1070,7 +1068,7 @@ class DMG_GMMC1(DMG_MBC5):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
-        commands = [
+        commands: list[list[int]] = [
             [0x2000, index & 0xFF],
         ]
 
@@ -1087,7 +1085,7 @@ class DMG_GMMC1(DMG_MBC5):
         hs = bytearray()
         while hp > 0:
             self.EnableMapper()
-            rom = self.CartRead(0, 128)
+            rom: bytearray = self.CartRead(0, 128)
             self.CartWrite(self.lk_dmg_mmsa_access_mapper())
             self.CartWrite(self.lk_dmg_mmsa_access_mbc(enable=True))
             self.CartWrite([[0x2100, 0x1]])
@@ -1098,7 +1096,7 @@ class DMG_GMMC1(DMG_MBC5):
             self.CartWrite(self.lk_dmg_mmsa_flash_command(0x2AAA, 0x55))
             self.CartWrite(self.lk_dmg_mmsa_flash_command(0x5555, 0x77))
             self.CartWrite([[0x2100, 0x0]])
-            hs = self.CartRead(0, 128)
+            hs: bytearray = self.CartRead(0, 128)
             self.CartWrite(self.lk_dmg_mmsa_access_rom())
             if hs != rom:
                 break
@@ -1170,7 +1168,7 @@ class DMG_M161(DMG_Mapper):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0], Literal[32768]]:
         dprint(self.GetName(), "|", index)
-        commands = [[0x4000, (index & 0x7)]]
+        commands: list[list[int]] = [[0x4000, (index & 0x7)]]
         self.CartWrite(commands)
         return (0, 0x8000)
 
@@ -1184,7 +1182,7 @@ class DMG_HuC1(DMG_MBC5):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
-        commands = [
+        commands: list[list[int]] = [
             [0x2100, index & 0xFF],
         ]
 
@@ -1195,7 +1193,7 @@ class DMG_HuC1(DMG_MBC5):
 
     def EnableRAM(self, enable: bool = True) -> None:
         dprint(self.GetName(), "|", enable)
-        commands = [[0x0000, 0x0A if enable else 0x0E]]
+        commands: list[list[int]] = [[0x0000, 0x0A if enable else 0x0E]]
         self.CartWrite(commands)
 
     def GetMaxROMSize(self) -> Literal[1048576]:
@@ -1455,7 +1453,7 @@ class DMG_TAMA5(DMG_Mapper):
                 while value1 is None or value1 != value2:
                     value2 = value1
                     value1 = self.CartRead(0xA000)
-                data = self.CartRead(0xA000) & 0x0F
+                data: int = self.CartRead(0xA000) & 0x0F
                 if reg % 2 == 0:
                     page_buffer[reg >> 1] = data
                 else:
@@ -1465,9 +1463,6 @@ class DMG_TAMA5(DMG_Mapper):
         # Add timestamp of backup time
         ts = int(time.time())
         buffer.extend(struct.pack("<Q", ts))
-
-        # dstr = ' '.join(format(x, '02X') for x in buffer)
-        # print("[{:02X}] {:s}".format(int(len(dstr)/3) + 1, dstr))
 
         commands = [
             # Select RTC
@@ -1639,7 +1634,7 @@ class DMG_TAMA5(DMG_Mapper):
                     self.CartWrite([[0xA000, page_buffer[reg >> 1] & 0xF]], sram=True)
                 else:
                     self.CartWrite([[0xA000, page_buffer[reg >> 1] >> 4]], sram=True)
-                commands2 = [[0xA001, 0x07], [0xA000, page << 1], [0xA001, 0x0C]]
+                commands2: list[list[int]] = [[0xA001, 0x07], [0xA000, page << 1], [0xA001, 0x0C]]
                 self.CartWrite(commands2, sram=True)
                 value1, value2 = None, None
                 while value1 is None or value1 != value2:
@@ -1731,7 +1726,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
         self.CURRENT_ROM_BANK = index
         index = index % 512
 
-        commands = [
+        commands: list[list[int]] = [
             [0x3000, ((index >> 8) & 0xFF)],
             [0x2100, index & 0xFF],
         ]
@@ -1748,7 +1743,6 @@ class DMG_Unlicensed_256M(DMG_MBC5):
 
         if index % 4 == 0:
             self.EnableRAM(enable=False)
-            # self.CART_POWERCYCLE_FNCPTR()
             self.CURRENT_FLASH_BANK = flash_bank
 
             commands: list[list[int]] = [
@@ -1918,7 +1912,7 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
     def SelectBankFlash(self, index: int) -> None:
         dprint(self.GetName(), "|SelectBankFlash()|", index)
 
-        commands = [[0x0000, 0x05], [0x4000, 0x82], [0xA000, index], [0x0000, 0x00]]
+        commands: list[list[int]] = [[0x0000, 0x05], [0x4000, 0x82], [0xA000, index], [0x0000, 0x00]]
         self.CURRENT_FLASH_BANK = index
         self.CartWrite(commands, delay=0.1)
 
@@ -1992,12 +1986,12 @@ class AGB_GPIO:
     def CartRead(self, address: int, length: int) -> bytearray: ...
 
     def CartRead(self, address: int, length: int = 0) -> int | bytearray:
-        read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
+        read: CartReadCallback = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
         if length == 0:  # auto size:
             address = address * 2
             result: int | bytearray | bool | None = read(address)
             if not isinstance(result, int):
-                msg = f"Cartridge read failed at 0x{address:X}"
+                msg: str = f"Cartridge read failed at 0x{address:X}"
                 raise RuntimeError(msg)
             data = struct.pack(">H", result)
             data = struct.unpack("<H", data)[0]
@@ -2047,15 +2041,15 @@ class AGB_GPIO:
                     [self.GPIO_REG_DAT, 5],
                 ],
             )
-            temp = self.CartRead(self.GPIO_REG_DAT) & 0xFF
-            bit = (temp & 2) >> 1
-            data = (data >> 1) | (bit << 7)
+            temp: int = self.CartRead(self.GPIO_REG_DAT) & 0xFF
+            bit: int = (temp & 2) >> 1
+            data: int = (data >> 1) | (bit << 7)
             # dprint("RTCReadData(): i={:d}/temp={:X}/bit={:x}/data={:x}".format(i, temp, bit, data))
         return data
 
     def RTCWriteData(self, data: int) -> None:
         for i in range(8):
-            bit = (data >> i) & 0x01
+            bit: int = (data >> i) & 0x01
             self.CartWrite(
                 [
                     [self.GPIO_REG_DAT, 4 | (bit << 1)],
@@ -2250,36 +2244,36 @@ class AGB_GPIO:
             seconds = 0
             rtc_status = 0x40 | 0x80
         else:
-            years = BCD.decode(buffer[0x00])
-            months = BCD.decode(buffer[0x01])
-            days = BCD.decode(buffer[0x02])
-            weekday = BCD.decode(buffer[0x03])
-            hours = BCD.decode(buffer[0x04] & 0x7F)
-            minutes = BCD.decode(buffer[0x05])
-            seconds = BCD.decode(buffer[0x06])
+            years: int = BCD.decode(buffer[0x00])
+            months: int = BCD.decode(buffer[0x01])
+            days: int = BCD.decode(buffer[0x02])
+            weekday: int = BCD.decode(buffer[0x03])
+            hours: int = BCD.decode(buffer[0x04] & 0x7F)
+            minutes: int = BCD.decode(buffer[0x05])
+            seconds: int = BCD.decode(buffer[0x06])
             rtc_status = buffer[0x07]
             if rtc_status == 0x01:
                 rtc_status = 0x40  # old dumps had this value
 
         if advance:
             try:
-                local_timezone = _local_timezone()
-                dt_now = datetime.datetime.now(local_timezone)
-                timestamp_then = struct.unpack("<Q", buffer[-8:])[0]
+                local_timezone: datetime.tzinfo = _local_timezone()
+                dt_now: datetime.datetime = datetime.datetime.now(local_timezone)
+                timestamp_then: int = struct.unpack("<Q", buffer[-8:])[0]
                 timestamp_now = int(time.time())
                 if timestamp_then < timestamp_now:
-                    dt_then = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
-                    dt_buffer = datetime.datetime.strptime(
+                    dt_then: datetime.datetime = datetime.datetime.fromtimestamp(timestamp_then, local_timezone)
+                    dt_buffer: datetime.datetime = datetime.datetime.strptime(
                         f"{years + 2000:04d}-{months % 13:02d}-{days % 32:02d} {hours % 60:02d}:{minutes % 60:02d}:{seconds % 60:02d}",
                         "%Y-%m-%d %H:%M:%S",
                     ).replace(tzinfo=local_timezone)
                     rd = relativedelta(dt_now, dt_then)
-                    dt_new = dt_buffer + rd
+                    dt_new: datetime.datetime = dt_buffer + rd
                     years = dt_new.year - 2000
                     months = dt_new.month
                     days = dt_new.day
-                    dt_buffer_notime = dt_buffer.replace(hour=0, minute=0, second=0)
-                    dt_new_notime = dt_new.replace(hour=0, minute=0, second=0)
+                    dt_buffer_notime: datetime.datetime = dt_buffer.replace(hour=0, minute=0, second=0)
+                    dt_new_notime: datetime.datetime = dt_new.replace(hour=0, minute=0, second=0)
                     days_passed = int((dt_new_notime.timestamp() - dt_buffer_notime.timestamp()) / 60 / 60 / 24)
                     weekday += days_passed % 7
                     hours = dt_new.hour
@@ -2297,7 +2291,7 @@ class AGB_GPIO:
                 buffer[0x05] = BCD.encode(minutes)
                 buffer[0x06] = BCD.encode(seconds)
 
-                dstr = " ".join(format(x, "02X") for x in buffer)
+                dstr: str = " ".join(format(x, "02X") for x in buffer)
                 dprint(f"[{int(len(dstr) / 3) + 1:02X}] {dstr:s}")
 
             except Exception as e:
@@ -2327,22 +2321,22 @@ class AGB_GPIO:
             if has_rtc == 1:
                 return {"string": __("Not available / Battery dry")}
 
-        rtc_buffer = self.RTC_BUFFER
+        rtc_buffer: bytearray | None = self.RTC_BUFFER
         if rtc_buffer is None:
-            result = self.ReadRTC()
+            result: bytearray | bool = self.ReadRTC()
             if not isinstance(result, bytearray):
                 msg = "Could not read AGB RTC data"
                 raise RuntimeError(msg)
             rtc_buffer = result
 
         # weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-        rtc_y = (rtc_buffer[0] & 0x0F) + ((rtc_buffer[0] >> 4) * 10)
-        rtc_m = (rtc_buffer[1] & 0x0F) + ((rtc_buffer[1] >> 4) * 10)
-        rtc_d = (rtc_buffer[2] & 0x0F) + ((rtc_buffer[2] >> 4) * 10)
-        rtc_w = (rtc_buffer[3] & 0x0F) + ((rtc_buffer[3] >> 4) * 10)
-        rtc_h = (rtc_buffer[4] & 0x0F) + (((rtc_buffer[4] >> 4) & 0x7) * 10)
-        rtc_i = (rtc_buffer[5] & 0x0F) + ((rtc_buffer[5] >> 4) * 10)
-        rtc_s = (rtc_buffer[6] & 0x0F) + ((rtc_buffer[6] >> 4) * 10)
+        rtc_y: int = (rtc_buffer[0] & 0x0F) + ((rtc_buffer[0] >> 4) * 10)
+        rtc_m: int = (rtc_buffer[1] & 0x0F) + ((rtc_buffer[1] >> 4) * 10)
+        rtc_d: int = (rtc_buffer[2] & 0x0F) + ((rtc_buffer[2] >> 4) * 10)
+        rtc_w: int = (rtc_buffer[3] & 0x0F) + ((rtc_buffer[3] >> 4) * 10)
+        rtc_h: int = (rtc_buffer[4] & 0x0F) + (((rtc_buffer[4] >> 4) & 0x7) * 10)
+        rtc_i: int = (rtc_buffer[5] & 0x0F) + ((rtc_buffer[5] >> 4) * 10)
+        rtc_s: int = (rtc_buffer[6] & 0x0F) + ((rtc_buffer[6] >> 4) * 10)
 
         d: RTCDict = {
             "rtc_y": rtc_y,
