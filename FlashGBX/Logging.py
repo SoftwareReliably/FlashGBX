@@ -21,6 +21,7 @@ from .app import AppContext, AppInfo
 from .i18n import __
 
 if TYPE_CHECKING:
+    from io import TextIOWrapper
     from types import TracebackType
 
 _PRINT_LOG_LIMIT = 16 * 1024
@@ -36,11 +37,11 @@ class _LoguruLogger(Protocol):
     def add(self, sink: object, **kwargs: object) -> int: ...
 
 
-logger = cast("_LoguruLogger", _loguru_logger)
+logger: _LoguruLogger = cast("_LoguruLogger", _loguru_logger)
 
 
 def _format_message(args: tuple[object, ...], kwargs: dict[str, object]) -> str:
-    separator = kwargs.get("sep", " ")
+    separator: object = kwargs.get("sep", " ")
     if separator is None:
         separator = " "
     return str(separator).join(map(str, args))
@@ -75,12 +76,12 @@ class Logger:
         )
 
     def write(self, *args: object, **kwargs: object) -> int:
-        msg = _format_message(args, kwargs)
+        msg: str = _format_message(args, kwargs)
         if msg.strip():
             if ANSI.RED in msg:
                 self.LOG_ERROR = True
             _append_capped(AppContext.PRINT_LOG, _ANSI_ESCAPE_RE.sub("", msg.strip()), _PRINT_LOG_LIMIT)
-        output_stream = sys.__stdout__
+        output_stream: TextIOWrapper | None = sys.__stdout__
         if output_stream is not None and output_stream is not self:
             output_stream.write(msg)
         return len(msg)
@@ -101,11 +102,11 @@ class Logger:
 
     @classmethod
     def dprint(cls, *args: object, **kwargs: object) -> None:
-        stack = traceback.extract_stack(limit=2)[0]
-        timestamp = datetime.datetime.now().astimezone()
-        filename = Path(stack.filename).name
-        message = _format_message(args, kwargs)
-        msg = f"[{timestamp!s}] [{filename}:{stack.lineno}] {stack.name}(): {message}"
+        stack: traceback.FrameSummary = traceback.extract_stack(limit=2)[0]
+        timestamp: datetime.datetime = datetime.datetime.now().astimezone()
+        filename: str = Path(stack.filename).name
+        message: str = _format_message(args, kwargs)
+        msg: str = f"[{timestamp!s}] [{filename}:{stack.lineno}] {stack.name}(): {message}"
         cls.write_debug_message(msg)
 
     @classmethod
@@ -121,9 +122,11 @@ class Logger:
             else:
                 msg += "No device connected\n"
 
-        launch_time = datetime.datetime.fromtimestamp(AppContext.LAUNCH_TIMESTAMP).astimezone().replace(microsecond=0)
-        now = datetime.datetime.now().astimezone().replace(microsecond=0)
-        runtime = now - launch_time
+        launch_time: datetime.datetime = (
+            datetime.datetime.fromtimestamp(AppContext.LAUNCH_TIMESTAMP).astimezone().replace(microsecond=0)
+        )
+        now: datetime.datetime = datetime.datetime.now().astimezone().replace(microsecond=0)
+        runtime: datetime.timedelta = now - launch_time
         days, hours, minutes, seconds = (
             runtime.days,
             runtime.seconds // 3600,
@@ -134,9 +137,9 @@ class Logger:
         msg += f"Log generated: {now.isoformat():s}\n"
         msg += f"Runtime: {days}d {hours}h {minutes}m {seconds}s\n\n"
 
-        log_path = Path(AppContext.CONFIG_PATH) / "debug.log"
-        line_separator = "\r\n" if platform.system() == "Windows" else "\n"
-        content = line_separator.join(AppContext.PRINT_LOG)
+        log_path: Path = Path(AppContext.CONFIG_PATH) / "debug.log"
+        line_separator: Literal["\r\n", "\n"] = "\r\n" if platform.system() == "Windows" else "\n"
+        content: str = line_separator.join(AppContext.PRINT_LOG)
         content += msg.replace("\n", line_separator)
         content += line_separator.join(AppContext.DEBUG_LOG)
         try:
@@ -159,7 +162,7 @@ class Logger:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        exception_text = "EXCEPTION OCCURRED\n" + "".join(
+        exception_text: str = "EXCEPTION OCCURRED\n" + "".join(
             traceback.format_exception(exc_type, exc_value, exc_traceback),
         )
         print(exception_text)
