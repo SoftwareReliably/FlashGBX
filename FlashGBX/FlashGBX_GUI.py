@@ -447,6 +447,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.LOG_ERROR_TIMER.timeout.connect(self.LogErrorCheck)
         self.LOG_ERROR_TIMER.start(200)
 
+    def _CreateDeviceStatusLayout(self) -> None:
+        self.layout_devices = QtWidgets.QHBoxLayout()
+        self.lblDevice = QtWidgets.QLabel()
+        self.lblDevice.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
+        self.lblDevice.setToolTip("")
+        self.lblDevice.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.cmbDevice = QtWidgets.QComboBox()
+        self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
+        self.lblWarning = QtWidgets.QLabel("⚠️")
+        self.lblWarning.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
+        self.lblWarning.setToolTip("")
+        self.lblWarning.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.lblWarning.setVisible(False)
+
+        self.layout_devices.addWidget(self.lblDevice)
+        self.layout_devices.addWidget(self.cmbDevice)
+        self.layout_devices.addWidget(self.lblWarning)
+        self.layout_devices.addStretch()
+
     def _ConfigureColorScheme(self) -> None:
         try:
             if self.SETTINGS.value("AllowDarkMode", default="enabled") == "disabled":
@@ -494,23 +513,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.main_layout.addLayout(self.layout_left, 0, 0)
         self.main_layout.addLayout(self.layout_right, 0, 1)
 
-        self.layout_devices = QtWidgets.QHBoxLayout()
-        self.lblDevice = QtWidgets.QLabel()
-        self.lblDevice.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
-        self.lblDevice.setToolTip("")
-        self.lblDevice.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.cmbDevice = QtWidgets.QComboBox()
-        self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
-        self.lblWarning = QtWidgets.QLabel("⚠️")
-        self.lblWarning.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
-        self.lblWarning.setToolTip("")
-        self.lblWarning.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.lblWarning.setVisible(False)
-
-        self.layout_devices.addWidget(self.lblDevice)
-        self.layout_devices.addWidget(self.cmbDevice)
-        self.layout_devices.addWidget(self.lblWarning)
-        self.layout_devices.addStretch()
+        self._CreateDeviceStatusLayout()
 
         self.mnuTools = QtWidgets.QMenu()
         self.mnuTools.addAction("", self.ShowPocketCameraWindow)

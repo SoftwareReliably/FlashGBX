@@ -349,6 +349,43 @@ def _print_banner() -> None:
     print("https://github.com/Lesserkuma/FlashGBX")
 
 
+def _create_argument_parser(examples: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(formatter_class=ArgParseCustomFormatter, epilog=examples)
+    try:
+        # pylint: disable=protected-access
+        parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")  # noqa: SLF001
+    except Exception as e:
+        logger.exception(f"Failed to customize the argparse action-group title: {e}")
+    parser.add_argument(
+        "--cli",
+        help=c__("Command Line Help", "force command line interface mode"),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--reset",
+        help=c__(
+            "Command Line Help",
+            "clears all settings such as last used directory information",
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--debug",
+        help=c__("Command Line Help", "enable debug messages used for development"),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--language",
+        action="store",
+        help=c__(
+            "Command Line Help",
+            "sets the language of the program (e.g. “auto”, “en”, “de”, ...)",
+        ),
+    )
+    parser.add_argument_group("")
+    return parser
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -383,40 +420,7 @@ def main(portableMode: bool = False) -> int | None:
         + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
     )
 
-    parser = argparse.ArgumentParser(formatter_class=ArgParseCustomFormatter, epilog=examples)
-    try:
-        # pylint: disable=protected-access
-        parser._action_groups[1].title = c__("Command Line Arguments Category", "General arguments")  # noqa: SLF001
-    except Exception as e:
-        logger.exception(f"Failed to customize the argparse action-group title: {e}")
-    parser.add_argument(
-        "--cli",
-        help=c__("Command Line Help", "force command line interface mode"),
-        action="store_true",
-    )
-    parser.add_argument(
-        "--reset",
-        help=c__(
-            "Command Line Help",
-            "clears all settings such as last used directory information",
-        ),
-        action="store_true",
-    )
-    parser.add_argument(
-        "--debug",
-        help=c__("Command Line Help", "enable debug messages used for development"),
-        action="store_true",
-    )
-    parser.add_argument(
-        "--language",
-        action="store",
-        help=c__(
-            "Command Line Help",
-            "sets the language of the program (e.g. “auto”, “en”, “de”, ...)",
-        ),
-    )
-
-    parser.add_argument_group("")
+    parser = _create_argument_parser(examples)
     ap_config = parser.add_argument_group(c__("Command Line Arguments Category", "Configuration arguments"))
     if "appdata" in cp:
         ap_config.add_argument(
