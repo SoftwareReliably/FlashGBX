@@ -96,7 +96,7 @@ class RomFileDMG:
             ix = 0
             while True:
                 x += 1
-                nibble = (data[i] & 0xF) if (y % 2) else (data[i] >> 4)
+                nibble: int = (data[i] & 0xF) if (y % 2) else (data[i] >> 4)
                 for b in range(3, -1, -1):
                     if (nibble >> b) & 1:
                         pixels[ix, y] = 1
@@ -150,7 +150,7 @@ class RomFileDMG:
             data["game_title_raw"] = bytearray(buffer[0x134:0x143]).decode("ascii", "replace")
         else:
             data["game_title_raw"] = bytearray(buffer[0x134:0x144]).decode("ascii", "replace")
-        game_title = data["game_title_raw"]
+        game_title: str = data["game_title_raw"]
         game_title = re.sub(r"(\x00+)$", "", game_title)
         game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "_")
         game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
@@ -1251,7 +1251,7 @@ class RomFileDMG:
         database_path: Path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
         if database_path.exists():
             with database_path.open(encoding="UTF-8") as f:
-                db_raw = f.read()
+                db_raw: str = f.read()
                 try:
                     db: dict = json.loads(db_raw)
                 except (json.JSONDecodeError, ValueError) as e:
@@ -1283,11 +1283,11 @@ class RomFileDMG:
             return None
 
         if cls.BATTERYLESS_SRAM_DB is None:
-            config_paths = [Path(__file__).resolve().parent / "config"]
+            config_paths: list[Path] = [Path(__file__).resolve().parent / "config"]
             if AppContext.CONFIG_PATH:
                 config_paths.insert(0, Path(AppContext.CONFIG_PATH))
             for config_path in config_paths:
-                db_path = config_path / "db_DMG_bl.json"
+                db_path: Path = config_path / "db_DMG_bl.json"
                 if not db_path.exists():
                     continue
                 try:
@@ -1336,7 +1336,7 @@ def from_isx(buffer: bytearray) -> bytearray:
     temp = 32 * 1024
     while 1:
         try:
-            rec_type = struct.unpack("B", data_input.read(1))[0]
+            rec_type: int = struct.unpack("B", data_input.read(1))[0]
             if rec_type == 4:
                 break
             if rec_type != 1:
@@ -1347,13 +1347,13 @@ def from_isx(buffer: bytearray) -> bytearray:
                     ),
                 )
                 continue
-            bank = struct.unpack("B", data_input.read(1))[0]
-            offset = struct.unpack("<H", data_input.read(2))[0] % 0x4000
-            realoffset = bank * 16 * 1024 + offset
-            size = struct.unpack("<H", data_input.read(2))[0]
+            bank: int = struct.unpack("B", data_input.read(1))[0]
+            offset: int = struct.unpack("<H", data_input.read(2))[0] % 0x4000
+            realoffset: int = bank * 16 * 1024 + offset
+            size: int = struct.unpack("<H", data_input.read(2))[0]
             data_output[realoffset : realoffset + size] = data_input.read(size)
-            rom_size = max(rom_size, realoffset + size)
-            temp = 32 * 1024
+            rom_size: int = max(rom_size, realoffset + size)
+            temp: int = 32 * 1024
             while temp < rom_size:
                 temp *= 2
         except Exception:
