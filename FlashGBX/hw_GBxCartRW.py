@@ -1725,8 +1725,7 @@ try:
                     answer = msgbox.exec()
                     if answer == QtWidgets.QMessageBox.StandardButton.Yes:
                         time.sleep(1)
-                        return 3
-                    return 2
+                    return 3 if answer == QtWidgets.QMessageBox.StandardButton.Yes else 2
 
             for i in range(iterations):
                 self.APP.QT_APP.processEvents()

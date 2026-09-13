@@ -261,6 +261,42 @@ class FlashGBX_CLI:
         self.CONN.SetAGBReadMethod(method=2)
         return True
 
+    def _RunCartridgeAction(self, args: argparse.Namespace, header: HeaderData) -> int | None:
+        try:
+            if args.action == "backup-rom":
+                self.BackupROM(args, header)
+
+            elif args.action == "backup-save":
+                self.BackupRestoreRAM(args, header)
+
+            elif args.action == "restore-save":
+                if args.path == "auto":
+                    args.path = input(__("Enter file path of save data file:") + " ").strip().replace('"', "")
+                    print()
+                    if args.path == "":
+                        print(__("Canceled."))
+                        return 0
+                self.BackupRestoreRAM(args, header)
+
+            elif args.action in {"erase-save", "debug-test-save"}:
+                self.BackupRestoreRAM(args, header)
+
+            elif args.action == "flash-rom":
+                if args.path == "auto":
+                    args.path = input(__("Enter file path of ROM file:") + " ").strip().replace('"', "")
+                    print()
+                    if args.path == "":
+                        print(__("Canceled."))
+                        return 0
+                self.FlashROM(args, header)
+
+            if args.action != "info":
+                print()
+
+        except KeyboardInterrupt:
+            print("\n\n" + __("Operation stopped."))
+        return None
+
     def run(self) -> int:
         sys.stdout = Logger()
         config_ret = self.ARGS["config_ret"]
@@ -458,44 +494,9 @@ class FlashGBX_CLI:
         print("\n" + __("Cartridge Information:"))
         print(s_header)
 
-        try:
-            if args.action == "backup-rom":
-                self.BackupROM(args, header)
-
-            elif args.action == "backup-save":
-                self.BackupRestoreRAM(args, header)
-
-            elif args.action == "restore-save":
-                if args.path == "auto":
-                    args.path = input(__("Enter file path of save data file:") + " ").strip().replace('"', "")
-                    print()
-                    if args.path == "":
-                        print(__("Canceled."))
-                        self.DisconnectDevice()
-                        return 0
-                self.BackupRestoreRAM(args, header)
-
-            elif args.action in {"erase-save", "debug-test-save"}:
-                self.BackupRestoreRAM(args, header)
-
-            elif args.action == "flash-rom":
-                if args.path == "auto":
-                    args.path = input(__("Enter file path of ROM file:") + " ").strip().replace('"', "")
-                    print()
-                    if args.path == "":
-                        print(__("Canceled."))
-                        self.DisconnectDevice()
-                        return 0
-                self.FlashROM(args, header)
-
-            if args.action != "info":
-                print()
-
-        except KeyboardInterrupt:
-            print("\n\n" + __("Operation stopped."))
-
+        action_result = self._RunCartridgeAction(args, header)
         self.DisconnectDevice()
-        return self.RETVAL
+        return self.RETVAL if action_result is None else action_result
 
     def WaitProgress(self, args: ProgressPayload) -> None:
         if args["user_action"] == "REINSERT_CART":
@@ -1582,9 +1583,67 @@ class FlashGBX_CLI:
             signal=self.PROGRESS.SetProgress,
         )
 
+    def _LoadFlashROMFile(
+        self,
+        args: argparse.Namespace,
+        carts: Sequence[Mapping[str, Any]],
+        cart_type: int,
+    ) -> tuple[Path, bytearray] | None:
+        rom_path = Path(args.path)
+        try:
+            rom_size = rom_path.stat().st_size
+            if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
+                print(
+                    ANSI.RED
+                    + __(
+                        "ROM files bigger than 512{mib} are not supported.",
+                        mib=__(" MiB"),
+                    )
+                    + ANSI.RESET,
+                )
+                return None
+            if rom_size < 0x400:
+                print(
+                    ANSI.RED
+                    + __(
+                        "ROM files smaller than 1{kib} are not supported.",
+                        kib=__(" KiB"),
+                    )
+                    + ANSI.RESET,
+                )
+                return None
+
+            with rom_path.open("rb") as file:
+                if rom_path.suffix.lower() == ".isx":
+                    buffer = from_isx(bytearray(file.read()))
+                else:
+                    buffer = bytearray(file.read(0x1000))
+            if "flash_size" in carts[cart_type] and rom_size > carts[cart_type]["flash_size"]:
+                print(
+                    ANSI.YELLOW
+                    + __(
+                        "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}. You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
+                        max_size=Formatter.file_size(carts[cart_type]["flash_size"]),
+                        file_size=Formatter.file_size(rom_size),
+                    )
+                    + ANSI.RESET,
+                )
+                answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
+                print()
+                if answer != "y":
+                    print(__("Canceled."))
+                    return None
+
+        except PermissionError:
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=args.path) + ANSI.RESET)
+            return None
+        except FileNotFoundError:
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=args.path) + ANSI.RESET)
+            return None
+        return rom_path, buffer
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
-        path = ""
         mbc = 0
 
         mode = self.CONN.GetMode()
@@ -1654,60 +1713,10 @@ class FlashGBX_CLI:
             print(ANSI.RED + __("No ROM file for writing was selected.") + ANSI.RESET)
             return
         path = args.path
-        rom_path = Path(path)
-
-        try:
-            rom_size = rom_path.stat().st_size
-            if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
-                print(
-                    ANSI.RED
-                    + __(
-                        "ROM files bigger than 512{mib} are not supported.",
-                        mib=__(" MiB"),
-                    )
-                    + ANSI.RESET,
-                )
-                return
-            if rom_size < 0x400:
-                print(
-                    ANSI.RED
-                    + __(
-                        "ROM files smaller than 1{kib} are not supported.",
-                        kib=__(" KiB"),
-                    )
-                    + ANSI.RESET,
-                )
-                return
-
-            with rom_path.open("rb") as file:
-                ext = rom_path.suffix
-                if ext.lower() == ".isx":
-                    buffer = bytearray(file.read())
-                    buffer = from_isx(buffer)
-                else:
-                    buffer = bytearray(file.read(0x1000))
-            if "flash_size" in carts[cart_type] and rom_size > carts[cart_type]["flash_size"]:
-                print(
-                    ANSI.YELLOW
-                    + __(
-                        "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}. You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
-                        max_size=Formatter.file_size(carts[cart_type]["flash_size"]),
-                        file_size=Formatter.file_size(rom_size),
-                    )
-                    + ANSI.RESET,
-                )
-                answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-
-        except PermissionError:
-            print(ANSI.RED + __("Couldn't access file “{path}”.", path=args.path) + ANSI.RESET)
+        loaded_rom = self._LoadFlashROMFile(args, carts, cart_type)
+        if loaded_rom is None:
             return
-        except FileNotFoundError:
-            print(ANSI.RED + __("Couldn't find file “{path}”.", path=args.path) + ANSI.RESET)
-            return
+        rom_path, buffer = loaded_rom
 
         override_voltage = False
         voltage_fallback = False
@@ -1892,6 +1901,65 @@ class FlashGBX_CLI:
 
         buffer = None
 
+    def _ConfirmSaveAction(self, args: argparse.Namespace, target_path: Path) -> bool:
+        if args.action == "backup-save":
+            if not args.overwrite and target_path.exists():
+                answer = (
+                    input(
+                        __(
+                            "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
+                            file_path=str(target_path),
+                        )
+                        + " [y/N]: ",
+                    )
+                    .strip()
+                    .lower()
+                )
+                print()
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+            print(
+                __("The cartridge save data will now be read and saved to the following file:")
+                + "\n"
+                + str(target_path),
+            )
+        elif args.action == "restore-save":
+            if not args.overwrite:
+                answer = (
+                    input(
+                        __("Do you want to overwrite the existing save data that's currently on the cartridge?")
+                        + " [y/N]: ",
+                    )
+                    .strip()
+                    .lower()
+                )
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+            print(
+                __("The following save data file will now be written to the cartridge:") + "\n" + str(target_path),
+            )
+        elif args.action == "erase-save":
+            if not args.overwrite:
+                answer = (
+                    input(__("Do you really want to erase the save data from the cartridge?") + " [y/N]: ")
+                    .strip()
+                    .lower()
+                )
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+            print(__("The cartridge save data will now be erased from the cartridge."))
+        elif args.action == "debug-test-save":
+            print(
+                __("The cartridge save data size will now be examined.")
+                + "\n"
+                + __("Note: This is for debug use only.")
+                + "\n",
+            )
+        return True
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2006,62 +2074,8 @@ class FlashGBX_CLI:
 
         buffer = None
         target_path = Path(path).resolve()
-        if args.action == "backup-save":
-            if not args.overwrite and target_path.exists():
-                answer = (
-                    input(
-                        __(
-                            "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                            file_path=str(target_path),
-                        )
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(
-                __("The cartridge save data will now be read and saved to the following file:")
-                + "\n"
-                + str(target_path),
-            )
-        elif args.action == "restore-save":
-            if not args.overwrite:
-                answer = (
-                    input(
-                        __("Do you want to overwrite the existing save data that's currently on the cartridge?")
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(
-                __("The following save data file will now be written to the cartridge:") + "\n" + str(target_path),
-            )
-        elif args.action == "erase-save":
-            if not args.overwrite:
-                answer = (
-                    input(__("Do you really want to erase the save data from the cartridge?") + " [y/N]: ")
-                    .strip()
-                    .lower()
-                )
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(__("The cartridge save data will now be erased from the cartridge."))
-        elif args.action == "debug-test-save":
-            print(
-                __("The cartridge save data size will now be examined.")
-                + "\n"
-                + __("Note: This is for debug use only.")
-                + "\n",
-            )
+        if not self._ConfirmSaveAction(args, target_path):
+            return
 
         if self.CONN.GetMode() == "DMG":
             if mbc in DMG_Mapper().GetAllMapperIds():
@@ -2742,13 +2756,12 @@ class FlashGBX_CLI:
                     print(err)
                     return False
 
-            if ret == 1:
+            update_succeeded = ret == 1
+            if update_succeeded:
                 print(__("The firmware update is complete!"))
-                return True
-            if ret == 3:
+            elif ret == 3:
                 print(__("Please re-install the application."))
-                return False
-            return False  # noqa: TRY300
+            return update_succeeded  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)

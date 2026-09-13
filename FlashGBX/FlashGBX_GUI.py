@@ -219,8 +219,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
     MSGBOX_DISPLAYING: bool
     DEFAULT_STYLESHEET: str
 
-    def __init__(self, args: GuiArgs) -> None:
-        sys.excepthook = Logger.exception_hook
+    def _InitializeState(self, args: GuiArgs) -> None:
         self.CONN = None
         self.DEVICES = {}
         self.TBPROG = None
@@ -234,6 +233,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SETTINGS = IniSettings(path=Path(args["config_path"]) / "settings.ini")
         self.FLASHCARTS = args["flashcarts"]
         self.PROGRESS = Progress(self.UpdateProgress, self.WaitProgress)
+
+    def __init__(self, args: GuiArgs) -> None:
+        sys.excepthook = Logger.exception_hook
+        self._InitializeState(args)
 
         try:
             if self.SETTINGS.value("AllowDarkMode", default="enabled") == "disabled":
@@ -3100,6 +3103,61 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         return mode, path, setting_name, last_dir, carts, cart_type, cart_profile
 
+    def _LoadFlashROMFile(
+        self,
+        path: str,
+        setting_name: str,
+        cart_profile: dict[str, Any],
+    ) -> bytearray | None:
+        rom_path = Path(path)
+        self.SETTINGS.setValue(setting_name, str(rom_path.parent))
+        rom_size = rom_path.stat().st_size
+        if rom_size == 0:
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("The selected ROM file is empty."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return None
+        if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __(
+                    "ROM files bigger than 512{mib} are not supported.",
+                    mib=__(" MiB"),
+                ),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return None
+
+        with rom_path.open("rb") as file:
+            if rom_path.suffix.lower() == ".isx":
+                buffer = from_isx(bytearray(file.read()))
+            else:
+                buffer = bytearray(file.read(0x1000))
+        flash_size = cart_profile.get("flash_size")
+        if isinstance(flash_size, int) and rom_size > flash_size:
+            msg = __(
+                "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}.",
+                max_size=Formatter.file_size(flash_size),
+                file_size=Formatter.file_size(rom_size),
+            )
+            msg += " " + __(
+                "You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
+            )
+            answer = QtWidgets.QMessageBox.warning(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                msg,
+                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+                return None
+        return buffer
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3158,55 +3216,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if not isinstance(path, str):
                 msg_0 = "ROM path must be a string when not erasing the cartridge."
                 raise TypeError(msg_0)
-            rom_path = Path(path)
-            self.SETTINGS.setValue(setting_name, str(rom_path.parent))
-            rom_size: int = rom_path.stat().st_size
-            if rom_size == 0:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("The selected ROM file is empty."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
+            loaded_buffer = self._LoadFlashROMFile(path, setting_name, cart_profile)
+            if loaded_buffer is None:
                 return
-            if rom_size > 0x20000000:  # reject too large files to avoid exploding RAM
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __(
-                        "ROM files bigger than 512{mib} are not supported.",
-                        mib=__(" MiB"),
-                    ),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return
-
-            with rom_path.open("rb") as file:
-                ext = rom_path.suffix
-                if ext.lower() == ".isx":
-                    buffer = bytearray(file.read())
-                    buffer = from_isx(buffer)
-                else:
-                    buffer = bytearray(file.read(0x1000))
-            flash_size = cart_profile.get("flash_size")
-            if isinstance(flash_size, int) and rom_size > flash_size:
-                msg = __(
-                    "The selected flashcart profile seems to support ROMs that are up to {max_size} in size, but the file you selected is {file_size}.",
-                    max_size=Formatter.file_size(flash_size),
-                    file_size=Formatter.file_size(rom_size),
-                )
-                msg += " " + __(
-                    "You can still give it a try, but it's possible that it's too large which may cause the ROM writing to fail.",
-                )
-                answer = QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    msg,
-                    QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                    QtWidgets.QMessageBox.StandardButton.Cancel,
-                )
-                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return
+            buffer = loaded_buffer
 
         override_voltage = False
         voltage_fallback = False
@@ -3564,10 +3577,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         return True
 
     def BackupRAM(self, dpath: str = "") -> None:
-        if not self.CheckDeviceAlive():
-            return
-
-        mode: Literal["DMG", "AGB"] | None = self._device.GetMode()
+        mode: Literal["DMG", "AGB"] | None = self._device.GetMode() if self.CheckDeviceAlive() else None
         if mode not in ("DMG", "AGB"):
             return
         rtc = False
@@ -4885,17 +4895,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.EditRTC(event)
 
     def EditRTC(self, _: QtGui.QMouseEvent) -> bool | None:
-        if not self.CheckDeviceAlive():
-            return None
-        if not self.CheckHeader():
+        if not self.CheckDeviceAlive() or not self.CheckHeader():
             return None
 
         data = self._device.INFO
-        if "dump_info" not in data:
-            return None
-        if "has_rtc" not in data or data["has_rtc"] is not True:
-            return None
-        if "rtc_dict" not in data or len(data["rtc_dict"]) == 0:
+        if (
+            "dump_info" not in data
+            or "has_rtc" not in data
+            or data["has_rtc"] is not True
+            or "rtc_dict" not in data
+            or len(data["rtc_dict"]) == 0
+        ):
             return None
         rtc_data = data["rtc_dict"]
         args: dict[str, Any] | None = None
@@ -5931,6 +5941,40 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             + " {game_title:s}<br>".format(game_title=parsed["title"].replace("\0", ""))
         )
 
+    def _ResumeDetectedCartridgeAction(self, cart_type: int | None) -> None:
+        waiting = None
+        if "detected_cart_type" in self.STATUS and self.STATUS["detected_cart_type"] in (
+            "WAITING_FLASH",
+            "WAITING_SAVE_READ",
+            "WAITING_SAVE_WRITE",
+        ):
+            waiting = self.STATUS["detected_cart_type"]
+            self.STATUS["detected_cart_type"] = cart_type
+        self.STATUS["can_skip_message"] = False
+
+        if waiting == "WAITING_FLASH":
+            if "detect_cartridge_args" in self.STATUS:
+                self.FlashROM(dpath=self.STATUS["detect_cartridge_args"]["dpath"])
+                del self.STATUS["detect_cartridge_args"]
+            else:
+                self.FlashROM()
+        elif waiting == "WAITING_SAVE_READ":
+            if "detect_cartridge_args" in self.STATUS:
+                self.BackupRAM(dpath=self.STATUS["detect_cartridge_args"]["dpath"])
+                del self.STATUS["detect_cartridge_args"]
+            else:
+                self.BackupRAM()
+        elif waiting == "WAITING_SAVE_WRITE":
+            if "detect_cartridge_args" in self.STATUS:
+                self.WriteRAM(
+                    dpath=self.STATUS["detect_cartridge_args"]["dpath"],
+                    erase=self.STATUS["detect_cartridge_args"]["erase"],
+                    skip_warning=True,
+                )
+                del self.STATUS["detect_cartridge_args"]
+            else:
+                self.WriteRAM()
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self.lblStatus1aResult.setText("-")
         self.lblStatus2aResult.setText("-")
@@ -6374,38 +6418,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SetProgressBars(min=0, max=100, value=0)
         self.lblStatus4a.setText(__("Ready."))
 
-        waiting = None
-        if "detected_cart_type" in self.STATUS and self.STATUS["detected_cart_type"] in (
-            "WAITING_FLASH",
-            "WAITING_SAVE_READ",
-            "WAITING_SAVE_WRITE",
-        ):
-            waiting = self.STATUS["detected_cart_type"]
-            self.STATUS["detected_cart_type"] = cart_type
-        self.STATUS["can_skip_message"] = False
-
-        if waiting == "WAITING_FLASH":
-            if "detect_cartridge_args" in self.STATUS:
-                self.FlashROM(dpath=self.STATUS["detect_cartridge_args"]["dpath"])
-                del self.STATUS["detect_cartridge_args"]
-            else:
-                self.FlashROM()
-        elif waiting == "WAITING_SAVE_READ":
-            if "detect_cartridge_args" in self.STATUS:
-                self.BackupRAM(dpath=self.STATUS["detect_cartridge_args"]["dpath"])
-                del self.STATUS["detect_cartridge_args"]
-            else:
-                self.BackupRAM()
-        elif waiting == "WAITING_SAVE_WRITE":
-            if "detect_cartridge_args" in self.STATUS:
-                self.WriteRAM(
-                    dpath=self.STATUS["detect_cartridge_args"]["dpath"],
-                    erase=self.STATUS["detect_cartridge_args"]["erase"],
-                    skip_warning=True,
-                )
-                del self.STATUS["detect_cartridge_args"]
-            else:
-                self.WriteRAM()
+        self._ResumeDetectedCartridgeAction(cart_type)
 
     def WaitProgress(self, args: Mapping[str, Any]) -> None:
         if args["user_action"] == "REINSERT_CART":
