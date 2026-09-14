@@ -3717,6 +3717,15 @@ class LK_Device(ABC):
         self._cart_write_flash([[0, 0xF0]], flashcart=True)
         return flash_id_text
 
+    def _SearchFlashIdentifiersIfNeeded(
+        self,
+        flash_types: Sequence[int],
+        context: _FlashIdSearchContext,
+    ) -> str:
+        if flash_types:
+            return context.flash_id_text
+        return self._SearchFlashIdentifiers(context)
+
     def _PrepareFlashDetectionMode(self, mode: DeviceMode, limit_voltage: bool) -> bytearray:
         if mode == "DMG":
             voltage_command = "SET_VOLTAGE_3_3V" if limit_voltage else "SET_VOLTAGE_5V"
@@ -3935,19 +3944,19 @@ class LK_Device(ABC):
             flash_id_s = "[    ROM    ] " + rom_s + "\n"
             we_pins = [""]
 
-        if len(flash_types) == 0:
-            flash_id_s = self._SearchFlashIdentifiers(
-                _FlashIdSearchContext(
-                    mode,
-                    rom,
-                    flash_id_cmds,
-                    cfi_buffer,
-                    read_cfi_cmds,
-                    flash_id_methods,
-                    flash_id_s,
-                    we_pins,
-                ),
-            )
+        flash_id_s = self._SearchFlashIdentifiersIfNeeded(
+            flash_types,
+            _FlashIdSearchContext(
+                mode,
+                rom,
+                flash_id_cmds,
+                cfi_buffer,
+                read_cfi_cmds,
+                flash_id_methods,
+                flash_id_s,
+                we_pins,
+            ),
+        )
 
         self._MatchDetectedFlashTypes(
             supported_carts,

@@ -6630,6 +6630,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.setEnabled(enabled)
         self.mnuLanguage.setEnabled(enabled)
 
+    def _ShowProgressError(self, error: object) -> None:
+        self.lblStatus4a.setText(__("Failed!"))
+        self._SetProgressControlsEnabled(enabled=True)
+        self.btnCancel.setEnabled(False)
+        error_text = str(error)
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Critical,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=error_text,
+            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        if "\n" not in error_text:
+            msgbox.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        msgbox.exec()
+        self.LimitBaudRateGBxCartRW()
+
     def UpdateProgress(self, args: Mapping[str, Any] | None) -> None:
         if args is None or self.CONN is None:
             return
@@ -6638,20 +6655,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self._UpdateProgressMethodTitle(args)
 
         if "error" in args:
-            self.lblStatus4a.setText(__("Failed!"))
-            self._SetProgressControlsEnabled(enabled=True)
-            self.btnCancel.setEnabled(False)
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Critical,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text=str(args["error"]),
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            if "\n" not in str(args["error"]):
-                msgbox.setTextFormat(QtCore.Qt.TextFormat.RichText)
-            msgbox.exec()
-            self.LimitBaudRateGBxCartRW()
+            self._ShowProgressError(args["error"])
             return
 
         self._SetProgressControlsEnabled(enabled=False)

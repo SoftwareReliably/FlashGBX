@@ -1012,6 +1012,12 @@ class FlashGBX_CLI:
             return AgbSaveTypes(database_save_type).GetString()
         return c__("Game Data", "No database entry")
 
+    @staticmethod
+    def _WriteBootLogoIfMissing(path: Path, boot_logo: bytes | bytearray) -> None:
+        if not path.exists():
+            with path.open("wb") as file:
+                file.write(boot_logo)
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -1055,9 +1061,7 @@ class FlashGBX_CLI:
             if data["logo_correct"] and data["header_checksum_correct"]:
                 rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
                 bootlogo_path: Path = Path(AppContext.CONFIG_PATH) / "bootlogo_dmg.bin"
-                if not bootlogo_path.exists():
-                    with bootlogo_path.open("wb") as f:
-                        f.write(data["raw"][0x104:0x134])
+                self._WriteBootLogoIfMissing(bootlogo_path, data["raw"][0x104:0x134])
             else:
                 rows.append(
                     (
@@ -1135,9 +1139,7 @@ class FlashGBX_CLI:
             if data["logo_correct"]:
                 rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
                 bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
-                if not bootlogo_path.exists():
-                    with bootlogo_path.open("wb") as f:
-                        f.write(data["raw"][0x04:0xA0])
+                self._WriteBootLogoIfMissing(bootlogo_path, data["raw"][0x04:0xA0])
             else:
                 rows.append(
                     (
@@ -1736,6 +1738,17 @@ class FlashGBX_CLI:
         print()
         return answer != "n"
 
+    @staticmethod
+    def _ShowFlashEraseMethodHint(cart: Mapping[str, Any], *, prefer_chip_erase: bool) -> None:
+        commands = cart["commands"]
+        if not prefer_chip_erase and "chip_erase" in commands and "sector_erase" in commands:
+            print(
+                __(
+                    "This flash cartridge supports both Sector Erase and Full Chip Erase methods. You can use the “{switch}” command line switch if necessary.",
+                    switch="--prefer-chip-erase",
+                ),
+            )
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
         mbc = 0
@@ -1817,17 +1830,7 @@ class FlashGBX_CLI:
         )
 
         prefer_chip_erase = args.prefer_chip_erase is True
-        if (
-            not prefer_chip_erase
-            and "chip_erase" in carts[cart_type]["commands"]
-            and "sector_erase" in carts[cart_type]["commands"]
-        ):
-            print(
-                __(
-                    "This flash cartridge supports both Sector Erase and Full Chip Erase methods. You can use the “{switch}” command line switch if necessary.",
-                    switch="--prefer-chip-erase",
-                ),
-            )
+        self._ShowFlashEraseMethodHint(carts[cart_type], prefer_chip_erase=prefer_chip_erase)
 
         verify_write = args.no_verify_write is False
         compare_sectors = args.compare_sectors is True
