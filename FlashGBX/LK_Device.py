@@ -1916,13 +1916,7 @@ class LK_Device(ABC):
                 )
             mbc.EnableRAM(enable=False)
 
-    def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
-        if not self.IsConnected():
-            msg = "Couldn't access the the device."
-            raise ConnectionError(msg)
-        data = {}
-        self.SIGNAL = None
-
+    def _PrepareHeaderRead(self) -> bytearray | Literal[False]:
         if self.CanPowerCycleCart():
             self.ResetLEDs()
             self.CartPowerOn()
@@ -1944,10 +1938,21 @@ class LK_Device(ABC):
             return False
 
         header = self.ReadROM(0, 0x180)
-
         if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
             with (Path(AppContext.CONFIG_PATH) / "debug_header.bin").open("wb") as f:
                 f.write(header)
+        return header
+
+    def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
+        if not self.IsConnected():
+            msg = "Couldn't access the the device."
+            raise ConnectionError(msg)
+        data = {}
+        self.SIGNAL = None
+
+        header = self._PrepareHeaderRead()
+        if header is False:
+            return False
 
         # Parse ROM header
         if self.MODE == "DMG":
@@ -2021,7 +2026,7 @@ class LK_Device(ABC):
                 bytearray([0xFF] * 0x9C),
             ):
                 self.ReadROM(0x1FFFFE0, 20)
-                header: bytearray = self.ReadROM(0, 0x180)
+                header = self.ReadROM(0, 0x180)
 
             data: AGBHeader = RomFileAGB(header).GetHeader()
             if data["logo_correct"] is False:  # workaround for strange bootlegs
