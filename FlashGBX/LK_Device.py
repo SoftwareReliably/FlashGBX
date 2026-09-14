@@ -175,6 +175,12 @@ class _FlashResetMapper(Protocol):
     def SelectBankROM(self, bank: int) -> object: ...
 
 
+class _FlashBankMapper(Protocol):
+    def HasFlashBanks(self) -> bool: ...
+
+    def SelectBankFlash(self, bank: int) -> object: ...
+
+
 ProgressCallback = Callable[[ProgressUpdate], object]
 
 
@@ -4615,6 +4621,17 @@ class LK_Device(ABC):
         else:
             file.write(chunk)
 
+    def _SetTemporaryVerificationReadMethod(
+        self,
+        enabled: bool,
+        agb_read_method: int,
+        dmg_read_method: int,
+    ) -> None:
+        if self.MODE == "AGB":
+            self.SetAGBReadMethod(0 if enabled else agb_read_method)
+        elif self.MODE == "DMG":
+            self.SetDMGReadMethod(2 if enabled else dmg_read_method)
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = self._OpenROMBackupFile(args["path"])
@@ -4705,20 +4722,22 @@ class LK_Device(ABC):
                     temp = self.ReadROM_GBAMP(address=pos, length=buffer_len, max_length=max_length)
                 else:
                     if self.FW["fw_ver"] >= 10 and "verify_write" in args:
-                        if self.MODE == "AGB":
-                            self.SetAGBReadMethod(0)
-                        if self.MODE == "DMG":
-                            self.SetDMGReadMethod(2)
+                        self._SetTemporaryVerificationReadMethod(
+                            enabled=True,
+                            agb_read_method=agb_read_method,
+                            dmg_read_method=dmg_read_method,
+                        )
                         temp = self.ReadROM(
                             address=pos,
                             length=buffer_len,
                             skip_init=skip_init,
                             max_length=max_length,
                         )
-                        if self.MODE == "AGB":
-                            self.SetAGBReadMethod(agb_read_method)
-                        if self.MODE == "DMG":
-                            self.SetDMGReadMethod(dmg_read_method)
+                        self._SetTemporaryVerificationReadMethod(
+                            enabled=False,
+                            agb_read_method=agb_read_method,
+                            dmg_read_method=dmg_read_method,
+                        )
                     else:
                         # Normal read
                         temp = self.ReadROM(
@@ -6344,6 +6363,26 @@ class LK_Device(ABC):
         if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
             (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").write_bytes(b"")
 
+    @staticmethod
+    def _RecordFlashVerificationFailure(
+        sector: list[int],
+        broken_sectors: list[list[int]],
+        verified_size: ROMBackupResult,
+    ) -> None:
+        if verified_size is None:
+            dprint(
+                "Verification failed! Sector: {sector}",
+                sector=str(sector),
+            )
+        else:
+            dprint(
+                "Verification failed at {address}! Sector: {sector}",
+                address=f"0x{sector[0] + verified_size:X}",
+                sector=str(sector),
+            )
+        if sector not in broken_sectors:
+            broken_sectors.append(sector)
+
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
         args = context.args
         cart_type = context.cart_type
@@ -6516,19 +6555,7 @@ class LK_Device(ABC):
                         self._AbortFlashVerification()
                         return None
                     if (verified_size is not True) and (verify_args["verify_len"] != verified_size):
-                        if verified_size is None:
-                            dprint(
-                                "Verification failed! Sector: {sector}",
-                                sector=str(sector),
-                            )
-                        else:
-                            dprint(
-                                "Verification failed at {address}! Sector: {sector}",
-                                address=f"0x{sector[0] + verified_size:X}",
-                                sector=str(sector),
-                            )
-                        if sector not in broken_sectors:
-                            broken_sectors.append(sector)
+                        self._RecordFlashVerificationFailure(sector, broken_sectors, verified_size)
                         continue
                     dprint(
                         f"Verification between 0x{sector[0]:X} and 0x{sector[0] + sector[1]:X} successful by normal reading.",
@@ -7469,6 +7496,15 @@ class LK_Device(ABC):
 
         return self._WritePreparedFlashROM(args, mode, preparation)
 
+    def _PowerCycleFlashWriteCart(self, delay: float, mbc: _FlashBankMapper, bank: int) -> None:
+        if not self.CanPowerCycleCart():
+            return
+        self.CartPowerOff()
+        time.sleep(delay)
+        self.CartPowerOn()
+        if self.MODE == "DMG" and mbc.HasFlashBanks():
+            mbc.SelectBankFlash(bank)
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -7788,12 +7824,7 @@ class LK_Device(ABC):
                             },
                         )
                         delay = 0.5  # + (100-retry_hp)/100
-                        if self.CanPowerCycleCart():
-                            self.CartPowerOff()
-                            time.sleep(delay)
-                            self.CartPowerOn()
-                            if self.MODE == "DMG" and _mbc.HasFlashBanks():
-                                _mbc.SelectBankFlash(bank)
+                        self._PowerCycleFlashWriteCart(delay, _mbc, bank)
                         time.sleep(delay)
                         if self.DEVICE is None:
                             raise ConnectionAbortedError(

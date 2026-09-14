@@ -4802,6 +4802,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SetStatus4aResult("")
         qt_app.processEvents()
 
+    @staticmethod
+    def _get_default_bl_location_index(rom_size: int, locations: list[int]) -> int:
+        location_index = 0
+        for location in locations:
+            if location + 0x40000 >= rom_size:
+                break
+            location_index += 1
+        if location_index >= len(locations):
+            return len(locations) - 1
+        return location_index
+
     def GetBLArgs(
         self,
         rom_size: int,
@@ -4877,13 +4888,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         bl_args = {}
         if loc_index is None:
-            loc_index = 0
-            for location in locs:
-                if location + 0x40000 >= rom_size:
-                    break
-                loc_index += 1
-            if loc_index >= len(locs):
-                loc_index = len(locs) - 1
+            loc_index = self._get_default_bl_location_index(rom_size, locs)
         if len_index is None:
             if mode == "AGB":
                 len_index = 2

@@ -254,6 +254,18 @@ def _application_path() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _store_translation_message(
+    messages: dict[bytes, bytes],
+    msgctxt: bytes | None,
+    msgid: bytes,
+    msgstr: bytes,
+    fuzzy: bool,
+) -> None:
+    if not fuzzy and msgstr:
+        key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
+        messages[key] = msgstr
+
+
 def loadTranslation(language: str) -> gettext.GNUTranslations:
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
     messages: dict[bytes, bytes] = {}
@@ -280,9 +292,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
 
             if line.startswith("#"):
                 if section == "STR":
-                    key: bytes = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
-                    if not fuzzy and msgstr:
-                        messages[key] = msgstr
+                    _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
                 section = msgctxt = None
                 fuzzy = False
                 continue
@@ -294,9 +304,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
                 value_source = line[7:].strip()
             elif line.startswith("msgid") and not line.startswith("msgid_plural"):
                 if section == "STR":
-                    key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
-                    if not fuzzy and msgstr:
-                        messages[key] = msgstr
+                    _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
                 section = "ID"
                 msgid = msgstr = b""
                 is_plural = False
@@ -337,9 +345,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
                 msgstr += encoded_value
 
     if section == "STR":
-        key = b"%b\x04%b" % (msgctxt, msgid) if msgctxt else msgid
-        if not fuzzy and msgstr:
-            messages[key] = msgstr
+        _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
 
     keys: list[bytes] = sorted(messages.keys())
     offsets: list[tuple[int, int, int, int]] = []
