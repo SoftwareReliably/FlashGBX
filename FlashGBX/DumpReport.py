@@ -129,12 +129,18 @@ class DumpReport:
                 )
         return lines
 
+    @staticmethod
+    def _resolved_header(di: dict[str, Any]) -> dict[str, Any]:
+        """Return the report header without mutating the caller's data."""
+        source = di["header"]
+        header = dict(source.get("unchanged", source))
+        if "db" in source:
+            header["db"] = source["db"]
+        return header
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
-        # Resolve header into a shallow copy so we never mutate the caller's dict
-        header = dict(di["header"].get("unchanged", di["header"]))
-        if "db" in di["header"]:
-            header["db"] = di["header"]["db"]
+        header = cls._resolved_header(di)
 
         mode = di["system"]
         if mode not in ("DMG", "AGB"):

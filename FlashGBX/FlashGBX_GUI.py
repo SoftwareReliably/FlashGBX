@@ -6193,6 +6193,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return "<b>" + __("Mapper Type:") + f"</b> {DMG_Mapper().GetMapperType(mapper):s}<br>"
         return ""
 
+    @staticmethod
+    def _FormatDetectedCartProfile(cart_types: Sequence[int], selected_name: str) -> str:
+        if len(cart_types) > 1:
+            return (
+                "<b>"
+                + __("Flashcart Profile:")
+                + f"</b> {selected_name:s} ("
+                + c__(
+                    "Flashcart Profile: PROFILE NAME (or compatble)",
+                    "or compatible",
+                )
+                + ")<br>"
+            )
+        return "<b>" + __("Flashcart Profile:") + f"</b> {selected_name:s}<br>"
+
     def _ApplyDetectedSaveType(self, save_type: int | Literal[False] | None) -> None:
         if self.STATUS["can_skip_message"] or save_type is None or save_type is False:
             return
@@ -6348,19 +6363,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             found_supported = False
             is_generic = False
             if cart_type is not None:
-                if len(cart_types) > 1:
-                    msg_cart_type_s = (
-                        "<b>"
-                        + __("Flashcart Profile:")
-                        + f"</b> {msg_cart_type_used:s} ("
-                        + c__(
-                            "Flashcart Profile: PROFILE NAME (or compatble)",
-                            "or compatible",
-                        )
-                        + ")<br>"
-                    )
-                else:
-                    msg_cart_type_s = "<b>" + __("Flashcart Profile:") + f"</b> {msg_cart_type_used:s}<br>"
+                msg_cart_type_s = self._FormatDetectedCartProfile(cart_types, msg_cart_type_used)
                 msg_cart_type_s_detail = "<b>" + __("Compatible Flashcart Profiles:") + f"</b><br>{msg_cart_type:s}<br>"
                 found_supported = True
 

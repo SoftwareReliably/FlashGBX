@@ -1021,6 +1021,37 @@ class FlashGBX_CLI:
             with path.open("wb") as file:
                 file.write(boot_logo)
 
+    @staticmethod
+    def _AppendOptionalRow(
+        rows: list[tuple[str, str | None]],
+        label: str,
+        value: str | None,
+    ) -> None:
+        if value is not None:
+            rows.append((label, value))
+
+    @staticmethod
+    def _FormatCompatibleCartridges(
+        cart_types: Sequence[int],
+        selected_type: int,
+        names: Sequence[str],
+    ) -> str:
+        lines: list[str] = []
+        for cart_type in cart_types:
+            if cart_type == selected_type:
+                lines.append(
+                    "- {:s} ← {:s}".format(
+                        names[cart_type],
+                        c__(
+                            "Flashcart Profile List “- PROFILE NAME ← selected”",
+                            "selected",
+                        ),
+                    ),
+                )
+            else:
+                lines.append(f"- {names[cart_type]:s}")
+        return "\n".join(lines)
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -1188,8 +1219,7 @@ class FlashGBX_CLI:
                 rom_checksum_str = c__("Game Data", "No database entry")
                 rom_size_str = c__("Game Data", "Not detected")
                 bad_read = True
-            if rom_checksum_str is not None:
-                rows.append((__("ROM Checksum:"), rom_checksum_str))
+            self._AppendOptionalRow(rows, __("ROM Checksum:"), rom_checksum_str)
             rows.append((__("ROM Size:"), rom_size_str))
 
             rows.append((__("Save Type:"), self._AgbSaveTypeString(data, db_agb_entry)))
@@ -1274,18 +1304,7 @@ class FlashGBX_CLI:
             self.CONN.GetSupportedCartridgesDMG() if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()
         )
 
-        for i in range(len(cart_types)):
-            if cart_types[i] == cart_type_id:
-                msg_cart_type += "- {:s} ← {:s}\n".format(
-                    supp_cart_types[0][cart_types[i]],
-                    c__(
-                        "Flashcart Profile List “- PROFILE NAME ← selected”",
-                        "selected",
-                    ),
-                )
-            else:
-                msg_cart_type += f"- {supp_cart_types[0][cart_types[i]]:s}\n"
-        msg_cart_type = msg_cart_type[:-1]
+        msg_cart_type = self._FormatCompatibleCartridges(cart_types, cart_type_id, supp_cart_types[0])
 
         # Messages
         # Header

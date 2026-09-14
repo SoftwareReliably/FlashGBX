@@ -678,6 +678,22 @@ class CFI:
             info["buffer_write"] = False
 
     @staticmethod
+    def _set_erase_timings(info: CFIInfo, buffer: bytearray) -> None:
+        if 0 < buffer[0x42] < 0xFF:
+            info["sector_erase"] = True
+            info["sector_erase_time_avg"] = int(math.pow(2, buffer[0x42]))
+            info["sector_erase_time_max"] = int(math.pow(2, buffer[0x4A]) * info["sector_erase_time_avg"])
+        else:
+            info["sector_erase"] = False
+
+        if 0 < buffer[0x44] < 0xFF:
+            info["chip_erase"] = True
+            info["chip_erase_time_avg"] = int(math.pow(2, buffer[0x44]))
+            info["chip_erase_time_max"] = int(math.pow(2, buffer[0x4C]) * info["chip_erase_time_avg"])
+        else:
+            info["chip_erase"] = False
+
+    @staticmethod
     def _get_data_swaps(magic: str) -> list[tuple[int, int]] | None:
         swaps_by_magic: dict[str, list[tuple[int, int]]] = {
             "QRY": [(0, 0)],  # Nothing swapped
@@ -722,20 +738,7 @@ class CFI:
 
             self._set_single_write_timing(info, buffer)
             self._set_buffer_write_timing(info, buffer)
-
-            if buffer[0x42] > 0 and buffer[0x42] < 0xFF:
-                info["sector_erase"] = True
-                info["sector_erase_time_avg"] = int(math.pow(2, buffer[0x42]))
-                info["sector_erase_time_max"] = int(math.pow(2, buffer[0x4A]) * info["sector_erase_time_avg"])
-            else:
-                info["sector_erase"] = False
-
-            if buffer[0x44] > 0 and buffer[0x44] < 0xFF:
-                info["chip_erase"] = True
-                info["chip_erase_time_avg"] = int(math.pow(2, buffer[0x44]))
-                info["chip_erase_time_max"] = int(math.pow(2, buffer[0x4C]) * info["chip_erase_time_avg"])
-            else:
-                info["chip_erase"] = False
+            self._set_erase_timings(info, buffer)
 
             info["tb_boot_sector"] = False
             info["tb_boot_sector_raw"] = 0
