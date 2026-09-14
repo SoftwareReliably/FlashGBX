@@ -151,6 +151,16 @@ class Flashcart:
                 value: int = command[1]
                 self._cart_write(address, value, flashcart=fast_write, sram=sram)
 
+    def _SetWriteEnablePin(self, write_enable: str | None) -> None:
+        if write_enable == "WR":
+            self._set_we_pin_wr()
+        elif write_enable == "AUDIO":
+            self._set_we_pin_audio()
+
+    def _RestoreWriteEnablePin(self, write_enable: str | None) -> None:
+        if write_enable is not None:
+            self._SetWriteEnablePin(self._default_we)
+
     def GetCommandSetType(self) -> str:
         return self._config["_command_set"].upper()
 
@@ -436,16 +446,9 @@ class Flashcart:
                 we = None
 
             if addr is not None:
-                if we == "WR":
-                    self._set_we_pin_wr()
-                elif we == "AUDIO":
-                    self._set_we_pin_audio()
+                self._SetWriteEnablePin(we)
                 self.CartWrite([[addr, data]])
-                if we is not None:
-                    if self._default_we == "WR":
-                        self._set_we_pin_wr()
-                    elif self._default_we == "AUDIO":
-                        self._set_we_pin_audio()
+                self._RestoreWriteEnablePin(we)
 
             time.sleep(0.1)
             if self._config["commands"]["chip_erase_wait_for"][i][0] is not None:
@@ -465,16 +468,9 @@ class Flashcart:
                         for j in range(len(self._config["commands"]["read_status_register"])):
                             sr_data = self._config["commands"]["read_status_register"][j][1]
 
-                            if we == "WR":
-                                self._set_we_pin_wr()
-                            elif we == "AUDIO":
-                                self._set_we_pin_audio()
+                            self._SetWriteEnablePin(we)
                             self.CartWrite([[addr, sr_data]])
-                            if we is not None:
-                                if self._default_we == "WR":
-                                    self._set_we_pin_wr()
-                                elif self._default_we == "AUDIO":
-                                    self._set_we_pin_audio()
+                            self._RestoreWriteEnablePin(we)
 
                     self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
                     temp: bytearray = self.CartRead(addr, 2)
@@ -546,16 +542,9 @@ class Flashcart:
 
                 addr = self._ResolveSectorAddress(addr, pos)
                 if addr is not None:
-                    if we == "WR":
-                        self._set_we_pin_wr()
-                    elif we == "AUDIO":
-                        self._set_we_pin_audio()
+                    self._SetWriteEnablePin(we)
                     self.CartWrite([[addr, data]])
-                    if we is not None:
-                        if self._default_we == "WR":
-                            self._set_we_pin_wr()
-                        elif self._default_we == "AUDIO":
-                            self._set_we_pin_audio()
+                    self._RestoreWriteEnablePin(we)
 
                 if self._config["commands"]["sector_erase_wait_for"][i][0] is not None:
                     addr = self._config["commands"]["sector_erase_wait_for"][i][0]
@@ -572,16 +561,9 @@ class Flashcart:
                                 sr_addr = self._config["commands"]["read_status_register"][j][0]
                                 sr_data = self._config["commands"]["read_status_register"][j][1]
 
-                                if we == "WR":
-                                    self._set_we_pin_wr()
-                                elif we == "AUDIO":
-                                    self._set_we_pin_audio()
+                                self._SetWriteEnablePin(we)
                                 self.CartWrite([[sr_addr, sr_data]])
-                                if we is not None:
-                                    if self._default_we == "WR":
-                                        self._set_we_pin_wr()
-                                    elif self._default_we == "AUDIO":
-                                        self._set_we_pin_audio()
+                                self._RestoreWriteEnablePin(we)
 
                         self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
                         temp: bytearray = self.CartRead(addr, 2)

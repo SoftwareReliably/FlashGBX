@@ -7272,6 +7272,10 @@ class LK_Device(ABC):
     def _FlashcartHasRumble(flashcart: Flashcart) -> bool:
         return "rumble" in flashcart.CONFIG and flashcart.CONFIG["rumble"] is True
 
+    def _SelectFlashCommandBank(self, flashcart: Flashcart, mbc: _FlashResetMapper, bank: int) -> None:
+        if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
+            mbc.SelectBankROM(bank)
+
     def _PowerOnIfSupported(self) -> None:
         if self.CanPowerCycleCart():
             self.CartPowerOn()
@@ -7397,8 +7401,7 @@ class LK_Device(ABC):
             )
 
         dprint(f"Skipping sector #{context.sector_position:d}, because the CRC32 matched")
-        if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
-            preparation.mbc.SelectBankROM(bank)
+        self._SelectFlashCommandBank(flashcart, preparation.mbc, bank)
         self.NO_PROG_UPDATE = True
         sector_erase_result = flashcart.SectorErase(
             pos=pos,
@@ -7609,8 +7612,7 @@ class LK_Device(ABC):
                         self._PowerOnIfSupported()
 
                         sector_pos += 1
-                        if self.MODE == "DMG" and flashcart.FlashCommandsOnBank1():
-                            _mbc.SelectBankROM(bank)
+                        self._SelectFlashCommandBank(flashcart, _mbc, bank)
                         self.NO_PROG_UPDATE = True
                         se_ret = flashcart.SectorErase(pos=pos, buffer_pos=buffer_pos, skip=False)
                         self.NO_PROG_UPDATE = False

@@ -2230,6 +2230,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         return False
 
+    def _SetRequestedMode(self, mode: PlatformMode | None) -> None:
+        if mode == "DMG":
+            self.optDMG.setChecked(True)
+            self.SetMode()
+        elif mode == "AGB":
+            self.optAGB.setChecked(True)
+            self.SetMode()
+
     def FindDevices(
         self,
         connectToFirst: bool = False,
@@ -2389,12 +2397,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if len(self.DEVICES) == 0:
             return False
 
-        if mode == "DMG":
-            self.optDMG.setChecked(True)
-            self.SetMode()
-        elif mode == "AGB":
-            self.optAGB.setChecked(True)
-            self.SetMode()
+        self._SetRequestedMode(mode)
 
         return True
 
