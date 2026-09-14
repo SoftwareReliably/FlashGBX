@@ -715,6 +715,32 @@ class FlashGBX_CLI:
             sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
         return sectors, sector_count
 
+    def _WriteDumpReport(self, time_elapsed: float | None, speed: str | None) -> None:
+        if self.ARGS["argparsed"].generate_dump_report is not True:
+            return
+        try:
+            dump_report = self.CONN.GetDumpReport()
+            if dump_report is False:
+                return
+            if time_elapsed is not None and speed is not None:
+                dump_report = dump_report.replace(
+                    "%TRANSFER_RATE%",
+                    "{:.2f}".format((self.CONN.INFO["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
+                )
+                dump_report = dump_report.replace(
+                    "%TIME_ELAPSED%",
+                    Formatter.progress_time(time_elapsed, localized=False),
+                )
+            else:
+                dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
+                dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
+            dumpinfo_file = Path(self.CONN.INFO["last_path"]).with_suffix(".txt")
+            with dumpinfo_file.open("wb") as f:
+                f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
+                f.write(dump_report.encode("UTF-8"))
+        except Exception as e:
+            print(__("Error:") + " " + str(e))
+
     def FinishOperation(self) -> None:
         time_elapsed = None
         speed = None
@@ -745,30 +771,7 @@ class FlashGBX_CLI:
 
         elif self.CONN.INFO["last_action"] == 1:  # Backup ROM
             self.CONN.INFO["last_action"] = 0
-            dump_report = False
-            dumpinfo_file = ""
-            if self.ARGS["argparsed"].generate_dump_report is True:
-                try:
-                    dump_report = self.CONN.GetDumpReport()
-                    if dump_report is not False:
-                        if time_elapsed is not None and speed is not None:
-                            dump_report = dump_report.replace(
-                                "%TRANSFER_RATE%",
-                                "{:.2f}".format((self.CONN.INFO["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
-                            )
-                            dump_report = dump_report.replace(
-                                "%TIME_ELAPSED%",
-                                Formatter.progress_time(time_elapsed, localized=False),
-                            )
-                        else:
-                            dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
-                            dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
-                        dumpinfo_file = Path(self.CONN.INFO["last_path"]).with_suffix(".txt")
-                        with dumpinfo_file.open("wb") as f:
-                            f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
-                            f.write(dump_report.encode("UTF-8"))
-                except Exception as e:
-                    print(__("Error:") + " " + str(e))
+            self._WriteDumpReport(time_elapsed, speed)
 
             if self.CONN.GetMode() == "DMG":
                 print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))

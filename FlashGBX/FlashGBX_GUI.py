@@ -2681,6 +2681,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return dump_report, dumpinfo_file, generate_report, button_dump_report, button_open_dir
 
+    def _HandleROMBackupReportAction(
+        self,
+        msgbox: QtWidgets.QMessageBox,
+        report: tuple[str | Literal[False], str, bool, QtWidgets.QPushButton | None, QtWidgets.QPushButton],
+    ) -> None:
+        dump_report, dumpinfo_file, report_generated, button_dump_report, button_open_dir = report
+        if msgbox.clickedButton() == button_dump_report:
+            if dump_report is not False and dumpinfo_file:
+                try:
+                    if not report_generated:
+                        with Path(dumpinfo_file).open("wb") as f:
+                            f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
+                            f.write(dump_report.encode("UTF-8"))
+                    self.OpenPath(dumpinfo_file)
+                except Exception as e:
+                    print(f"Error: {e!s:s}")
+        elif msgbox.clickedButton() == button_open_dir:
+            self.OpenPath(self.STATUS["last_path"], select_file=True)
+
     def _PrepareOperationFinish(self) -> None:
         if self.lblStatus2aResult.text() == __("Pending..."):
             self.lblStatus2aResult.setText("-")
@@ -2737,7 +2756,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if self._device.INFO["last_action"] == 1:  # Backup ROM
             self._device.INFO["last_action"] = 0
-            dump_report, dumpinfo_file, temp, button_dump_report, button_open_dir = self._PrepareROMBackupReport(
+            report = self._PrepareROMBackupReport(
                 msgbox,
                 time_elapsed,
                 speed,
@@ -2861,18 +2880,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     msgbox.setText(msg + msg_te)
                     msgbox.exec()
 
-            if msgbox.clickedButton() == button_dump_report:
-                if dump_report is not False and dumpinfo_file:
-                    try:
-                        if not temp:
-                            with Path(dumpinfo_file).open("wb") as f:
-                                f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
-                                f.write(dump_report.encode("UTF-8"))
-                        self.OpenPath(dumpinfo_file)
-                    except Exception as e:
-                        print(f"Error: {e!s:s}")
-            elif msgbox.clickedButton() == button_open_dir:
-                self.OpenPath(self.STATUS["last_path"], select_file=True)
+            self._HandleROMBackupReportAction(msgbox, report)
 
         elif self._device.INFO["last_action"] == 2:  # Backup RAM
             if self._FinishRAMBackup(msgbox, msg_te, check_box_default=dontShowAgain):
@@ -5722,6 +5730,24 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.grpAGBCartridgeInfo.setVisible(False)
         self.grpDMGCartridgeInfo.setVisible(True)
 
+    def _SetAgbRomSize(self, data: dict[str, Any]) -> None:
+        if data["db"] is not None:
+            size_index = RomSizes().GetIndex(data["db"]["rs"])
+            if size_index is not None:
+                self.cmbAGBHeaderROMSizeResult.setCurrentIndex(size_index)
+            if data["rom_size_calc"] < 0x400000:
+                self.lblAGBHeaderROMChecksumResult.setText(
+                    c__("Game Data", "In database") + " (0x{:06X})".format(data["db"]["rc"]),
+                )
+        elif data["rom_size"] != 0:
+            if data["rom_size"] not in RomSizes().GetStringList():
+                data["rom_size"] = 0x2000000
+            size_index = RomSizes().GetIndex(data["rom_size"])
+            if size_index is not None:
+                self.cmbAGBHeaderROMSizeResult.setCurrentIndex(size_index)
+        else:
+            self.cmbAGBHeaderROMSizeResult.setCurrentIndex(0)
+
     def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
         self._PrepareAgbHeaderControls(data, reset_status=reset_status)
 
@@ -5776,22 +5802,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if data["db"] is None:
             self.lblAGBHeaderROMChecksumResult.setText(c__("Game Data", "(No database entry)"))
-        if data["db"] is not None:
-            size_index = RomSizes().GetIndex(data["db"]["rs"])
-            if size_index is not None:
-                self.cmbAGBHeaderROMSizeResult.setCurrentIndex(size_index)
-            if data["rom_size_calc"] < 0x400000:
-                self.lblAGBHeaderROMChecksumResult.setText(
-                    c__("Game Data", "In database") + " (0x{:06X})".format(data["db"]["rc"]),
-                )
-        elif data["rom_size"] != 0:
-            if data["rom_size"] not in RomSizes().GetStringList():
-                data["rom_size"] = 0x2000000
-            size_index = RomSizes().GetIndex(data["rom_size"])
-            if size_index is not None:
-                self.cmbAGBHeaderROMSizeResult.setCurrentIndex(size_index)
-        else:
-            self.cmbAGBHeaderROMSizeResult.setCurrentIndex(0)
+        self._SetAgbRomSize(data)
 
         if data["save_type"] is None:
             self.cmbAGBSaveTypeResult.setCurrentIndex(0)
@@ -6253,6 +6264,24 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.DetectCartridge()
         return True
 
+    @staticmethod
+    def _AddGenericProfileButton(
+        msgbox: QtWidgets.QMessageBox,
+        profile_name: str | None,
+    ) -> QtWidgets.QPushButton | None:
+        if profile_name is None:
+            return None
+        button = msgbox.addButton(
+            c__(
+                "Button (& = Keyboard Shortcut)",
+                "&Try “{generic_type}”",
+                generic_type="Generic Type",
+            ),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button.setToolTip(profile_name)
+        return button
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self._ResetDetectionLabels()
 
@@ -6448,18 +6477,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 msgbox.setDefaultButton(button_ok)
                 msgbox.setEscapeButton(button_ok)
-                if try_this is not None:
-                    button_try = msgbox.addButton(
-                        c__(
-                            "Button (& = Keyboard Shortcut)",
-                            "&Try “{generic_type}”",
-                            generic_type="Generic Type",
-                        ),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                    button_try.setToolTip(f"{try_this:s}")
-                else:
-                    button_try = None
+                button_try = self._AddGenericProfileButton(msgbox, try_this)
 
                 if not is_generic:
                     msg_fw = f'<br><span style="font-size: 8pt;"><i>{AppInfo.NAME:s} {AppInfo.VERSION:s} | {self._device.GetFullNameExtended():s}</i></span><br>'

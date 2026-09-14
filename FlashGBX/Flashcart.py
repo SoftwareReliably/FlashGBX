@@ -669,6 +669,15 @@ class CFI:
             info["single_write"] = False
 
     @staticmethod
+    def _set_buffer_write_timing(info: CFIInfo, buffer: bytearray) -> None:
+        if 0 < buffer[0x40] < 0xFF:
+            info["buffer_write"] = True
+            info["buffer_write_time_avg"] = int(math.pow(2, buffer[0x40]))
+            info["buffer_write_time_max"] = int(math.pow(2, buffer[0x48]) * info["buffer_write_time_avg"])
+        else:
+            info["buffer_write"] = False
+
+    @staticmethod
     def _get_data_swaps(magic: str) -> list[tuple[int, int]] | None:
         swaps_by_magic: dict[str, list[tuple[int, int]]] = {
             "QRY": [(0, 0)],  # Nothing swapped
@@ -712,13 +721,7 @@ class CFI:
             info["vdd_max"] = (buffer[0x38] >> 4) + ((buffer[0x38] & 0x0F) / 10)
 
             self._set_single_write_timing(info, buffer)
-
-            if buffer[0x40] > 0 and buffer[0x40] < 0xFF:
-                info["buffer_write"] = True
-                info["buffer_write_time_avg"] = int(math.pow(2, buffer[0x40]))
-                info["buffer_write_time_max"] = int(math.pow(2, buffer[0x48]) * info["buffer_write_time_avg"])
-            else:
-                info["buffer_write"] = False
+            self._set_buffer_write_timing(info, buffer)
 
             if buffer[0x42] > 0 and buffer[0x42] < 0xFF:
                 info["sector_erase"] = True
