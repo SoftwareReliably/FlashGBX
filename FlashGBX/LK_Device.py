@@ -1949,6 +1949,19 @@ class LK_Device(ABC):
                 f.write(header)
         return header
 
+    def _CheckAgbFlashDacs(self, data: AGBHeader) -> None:
+        if self.ReadROM(0x1FFE000, 0x0C) != b"AGBFLASHDACS":
+            return
+        data["dacs_8m"] = True
+        if self.FW["pcb_name"] == "GBFlash" and self.FW["pcb_ver"] < 13:
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Note: This cartridge may not be fully compatible with your GBFlash hardware revision. Upgrade to v1.3 or newer for better compatibility.",
+                )
+                + ANSI.RESET,
+            )
+
     def ReadHeader(self, checkRtc: bool = True) -> dict[str, Any] | Literal[False]:
         if not self.IsConnected():
             msg = "Couldn't access the the device."
@@ -2080,16 +2093,7 @@ class LK_Device(ABC):
 
                 data["rom_size"] = currAddr
 
-            if self.ReadROM(0x1FFE000, 0x0C) == b"AGBFLASHDACS":
-                data["dacs_8m"] = True
-                if self.FW["pcb_name"] == "GBFlash" and self.FW["pcb_ver"] < 13:
-                    print(
-                        ANSI.YELLOW
-                        + __(
-                            "Note: This cartridge may not be fully compatible with your GBFlash hardware revision. Upgrade to v1.3 or newer for better compatibility.",
-                        )
-                        + ANSI.RESET,
-                    )
+            self._CheckAgbFlashDacs(data)
 
             self._ReadAgbRtc(data, header, checkRtc)
 
@@ -3848,6 +3852,10 @@ class LK_Device(ABC):
 
         return None
 
+    @staticmethod
+    def _SkipAutomaticFlashDetection(cart_type: Mapping[str, Any]) -> bool:
+        return "command_set" not in cart_type or cart_type.get("manual_select") is True
+
     def DetectFlash(self, limitVoltage: bool = False) -> tuple[Any, ...]:
         mode = self.MODE
         if mode is None:
@@ -3882,9 +3890,7 @@ class LK_Device(ABC):
             key=lambda c: "m29w640" not in c,
         ):  # m29w640 first because of corruption risk
             f = supported_carts.index(cart_type)
-            if "command_set" not in cart_type:
-                continue
-            if "manual_select" in cart_type and cart_type["manual_select"] is True:
+            if self._SkipAutomaticFlashDetection(cart_type):
                 continue
             special_match = self._ProbeSpecialFlashCart(cart_type)
             if special_match is not None:
@@ -6391,6 +6397,50 @@ class LK_Device(ABC):
         if sector not in broken_sectors:
             broken_sectors.append(sector)
 
+    def _VerifyFlashSectorByReading(
+        self,
+        context: _FlashVerificationContext,
+        sector: list[int],
+        broken_sectors: list[list[int]],
+    ) -> bool | None:
+        verify_args = copy.copy(context.args)
+        verify_args.update(
+            {
+                "verify_write": context.data_import[sector[0] : sector[0] + sector[1]],
+                "rom_size": len(context.data_import),
+                "verify_from": sector[0],
+                "path": "",
+                "rtc_area": context.flashcart.HasRTC(),
+                "verify_mbc": context.mbc,
+            },
+        )
+        verify_args["verify_base_pos"] = sector[0]
+        verify_args["verify_len"] = len(verify_args["verify_write"])
+        verify_args["rom_size"] = len(verify_args["verify_write"])
+
+        self.NO_PROG_UPDATE = True
+        self.ReadROM(0, 4)  # dummy read
+        self.NO_PROG_UPDATE = False
+
+        verified_size = self._BackupROM(verify_args)
+        if isinstance(verified_size, int):
+            dprint(
+                'args["verify_len"]=0x{:X}, verified_size=0x{:X}'.format(
+                    verify_args["verify_len"],
+                    verified_size,
+                ),
+            )
+        if self.CANCEL or self.ERROR:
+            self._AbortFlashVerification()
+            return None
+        if verified_size is not True and verify_args["verify_len"] != verified_size:
+            self._RecordFlashVerificationFailure(sector, broken_sectors, verified_size)
+            return False
+        dprint(
+            f"Verification between 0x{sector[0]:X} and 0x{sector[0] + sector[1]:X} successful by normal reading.",
+        )
+        return True
+
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
         args = context.args
         cart_type = context.cart_type
@@ -6530,44 +6580,13 @@ class LK_Device(ABC):
                         bank += 1
 
                 if not verified:
-                    verify_args = copy.copy(args)
-                    verify_args.update(
-                        {
-                            "verify_write": data_import[sector[0] : sector[0] + sector[1]],
-                            "rom_size": len(data_import),
-                            "verify_from": sector[0],
-                            "path": "",
-                            "rtc_area": flashcart.HasRTC(),
-                            "verify_mbc": _mbc,
-                        },
-                    )
-                    verify_args["verify_base_pos"] = sector[0]
-                    verify_args["verify_len"] = len(verify_args["verify_write"])
-                    verify_args["rom_size"] = len(verify_args["verify_write"])
-
-                    self.NO_PROG_UPDATE = True
-                    self.ReadROM(0, 4)  # dummy read
-                    self.NO_PROG_UPDATE = False
                     start_address = 0
                     end_address = buffer_pos
-
-                    verified_size = self._BackupROM(verify_args)
-                    if isinstance(verified_size, int):
-                        dprint(
-                            'args["verify_len"]=0x{:X}, verified_size=0x{:X}'.format(
-                                verify_args["verify_len"],
-                                verified_size,
-                            ),
-                        )
-                    if self.CANCEL or self.ERROR:
-                        self._AbortFlashVerification()
+                    read_verified = self._VerifyFlashSectorByReading(context, sector, broken_sectors)
+                    if read_verified is None:
                         return None
-                    if (verified_size is not True) and (verify_args["verify_len"] != verified_size):
-                        self._RecordFlashVerificationFailure(sector, broken_sectors, verified_size)
+                    if not read_verified:
                         continue
-                    dprint(
-                        f"Verification between 0x{sector[0]:X} and 0x{sector[0] + sector[1]:X} successful by normal reading.",
-                    )
                     verified = True
 
             self.SetProgress(
@@ -7513,6 +7532,10 @@ class LK_Device(ABC):
         if self.MODE == "DMG" and mbc.HasFlashBanks():
             mbc.SelectBankFlash(bank)
 
+    @staticmethod
+    def _NextFlashWriteBank(bank: int, status: DeviceWriteResult) -> int:
+        return bank if status is False else bank + 1
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -7873,8 +7896,7 @@ class LK_Device(ABC):
                     pos += buffer_len
                     self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
 
-                if status is not False:
-                    bank += 1
+                bank = self._NextFlashWriteBank(bank, status)
             first_sector_written = True
 
         return self._FinishFlashWrite(args, mode, preparation, buffer_len)
