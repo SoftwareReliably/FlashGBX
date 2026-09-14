@@ -708,6 +708,23 @@ class FlashGBX_CLI:
 
         print(__("The save data backup is complete!"))
 
+    def _FormatBrokenSectors(self) -> tuple[str, int]:
+        sectors = ""
+        sector_count = 0
+        for sector in self.CONN.INFO["broken_sectors"]:
+            sector_count += 1
+            if sector_count > 10:
+                sectors += (
+                    c__(
+                        "Shortened list of Broken Sectors (e.g. 0x0000~0x07FF and others)",
+                        "and others",
+                    )
+                    + "  "
+                )
+                break
+            sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
+        return sectors, sector_count
+
     def FinishOperation(self) -> None:
         time_elapsed = None
         speed = None
@@ -721,20 +738,7 @@ class FlashGBX_CLI:
             if self.PROGRESS.PROGRESS.get("verified"):
                 print(ANSI.GREEN + __("The ROM was written and verified successfully!") + ANSI.RESET)
             elif "broken_sectors" in self.CONN.INFO:
-                s = ""
-                sc = 0
-                for sector in self.CONN.INFO["broken_sectors"]:
-                    sc += 1
-                    if sc > 10:
-                        s += (
-                            c__(
-                                "Shortened list of Broken Sectors (e.g. 0x0000~0x07FF and others)",
-                                "and others",
-                            )
-                            + "  "
-                        )
-                        break
-                    s += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
+                s, sc = self._FormatBrokenSectors()
                 print(
                     ANSI.RED
                     + ___(
@@ -1263,8 +1267,7 @@ class FlashGBX_CLI:
         ) = ret
 
         # Save Type
-        if save_type is None:
-            save_type = 0
+        save_type = 0 if save_type is None else save_type
 
         # Cart Type
         cart_type = None
@@ -1864,9 +1867,7 @@ class FlashGBX_CLI:
         fix_header = self._PromptHeaderChecksumFix(hdr, mbc)
 
         print()
-        v = carts[cart_type]["voltage"]
-        if override_voltage:
-            v: float = override_voltage
+        v: float = override_voltage or carts[cart_type]["voltage"]
         print(
             __(
                 "The following ROM file will now be written to the flash cartridge at {voltage}V:",

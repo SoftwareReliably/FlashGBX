@@ -2695,6 +2695,29 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.SETTINGS.setValue("SkipFinishMessage", "enabled")
         self.SetProgressBars(min=0, max=1, value=1)
 
+    def _RetryBackupWithGmmc1(self) -> None:
+        self.cmbDMGHeaderMapperResult.setCurrentIndex(ConvertMapperToMapperType(0x105)[2])
+        self.cmbDMGHeaderROMSizeResult.setCurrentIndex(5)
+        cart_type = 0
+        cart_types = self._device.GetSupportedCartridgesDMG()
+        for i in range(len(cart_types[0])):
+            if "dmg-mmsa-jpn" in cart_types[1][i]:
+                self.cmbDMGCartridgeTypeResult.setCurrentIndex(i)
+                cart_type = i
+        self.STATUS["args"]["mbc"] = 0x105
+        self.STATUS["args"]["rom_size"] = 1048576
+        self.STATUS["args"]["cart_type"] = cart_type
+        self.STATUS["time_start"] = time.time()
+        QtCore.QTimer.singleShot(
+            1,
+            lambda: [
+                self._device.BackupROM(
+                    fncSetProgress=self.PROGRESS.SetProgress,
+                    args=self.STATUS["args"],
+                ),
+            ],
+        )
+
     def FinishOperation(self) -> None:
         self._PrepareOperationFinish()
 
@@ -2779,27 +2802,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
                         msgbox.exec()
                         if msgbox.clickedButton() == button_gmmc1 and self.CheckDeviceAlive():
-                            self.cmbDMGHeaderMapperResult.setCurrentIndex(ConvertMapperToMapperType(0x105)[2])
-                            self.cmbDMGHeaderROMSizeResult.setCurrentIndex(5)
-                            cart_type = 0
-                            cart_types = self._device.GetSupportedCartridgesDMG()
-                            for i in range(len(cart_types[0])):
-                                if "dmg-mmsa-jpn" in cart_types[1][i]:
-                                    self.cmbDMGCartridgeTypeResult.setCurrentIndex(i)
-                                    cart_type = i
-                            self.STATUS["args"]["mbc"] = 0x105
-                            self.STATUS["args"]["rom_size"] = 1048576
-                            self.STATUS["args"]["cart_type"] = cart_type
-                            self.STATUS["time_start"] = time.time()
-                            QtCore.QTimer.singleShot(
-                                1,
-                                lambda: [
-                                    self._device.BackupROM(
-                                        fncSetProgress=self.PROGRESS.SetProgress,
-                                        args=self.STATUS["args"],
-                                    ),
-                                ],
-                            )
+                            self._RetryBackupWithGmmc1()
                             return
             elif self._device.GetMode() == "AGB":
                 if "db" in self._device.INFO and self._device.INFO["db"] is not None:
