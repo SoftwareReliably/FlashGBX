@@ -6771,10 +6771,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
             elif args["action"] == "PROGRESS":
                 self.SetProgressBars(min=0, max=size, value=pos)
-                if "abortable" in args:
-                    self.btnCancel.setEnabled(args["abortable"])
-                else:
-                    self.btnCancel.setEnabled(True)
+                self.btnCancel.setEnabled(args.get("abortable", True))
                 self.lblStatus1aResult.setText(f"{Formatter.file_size(pos):s}")
                 if speed > 0:
                     self.lblStatus2aResult.setText(format_decimal(speed, precision=2) + __(" KiB/s"))

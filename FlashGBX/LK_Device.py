@@ -6062,12 +6062,11 @@ class LK_Device(ABC):
                 self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
 
             if self.FW["fw_ver"] >= 12:
-                if "status_register_mask" in cart_type:
-                    self._set_fw_variable("STATUS_REGISTER_MASK", cart_type["status_register_mask"])
-                    self._set_fw_variable("STATUS_REGISTER_VALUE", cart_type["status_register_value"])
-                else:
-                    self._set_fw_variable("STATUS_REGISTER_MASK", 0x80)
-                    self._set_fw_variable("STATUS_REGISTER_VALUE", 0x80)
+                has_status_register = "status_register_mask" in cart_type
+                status_register_mask = cart_type["status_register_mask"] if has_status_register else 0x80
+                status_register_value = cart_type["status_register_value"] if has_status_register else 0x80
+                self._set_fw_variable("STATUS_REGISTER_MASK", status_register_mask)
+                self._set_fw_variable("STATUS_REGISTER_VALUE", status_register_value)
 
         if self.FW["fw_ver"] >= 12:
             self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)

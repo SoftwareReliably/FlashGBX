@@ -443,12 +443,12 @@ class FlashGBX_CLI:
                             return 0
                         print()
 
-        if args.mode == "dmg":
-            print(__("Platform: {platform}", platform=__("Game Boy or Game Boy Color")))
-            self.CONN.SetMode("DMG")
-        else:
-            print(__("Platform: {platform}", platform=__("Game Boy Advance")))
-            self.CONN.SetMode("AGB")
+        platform_name = {
+            "dmg": __("Game Boy or Game Boy Color"),
+            "agb": __("Game Boy Advance"),
+        }.get(args.mode, __("Game Boy Advance"))
+        print(__("Platform: {platform}", platform=platform_name))
+        self.CONN.SetMode("DMG" if args.mode == "dmg" else "AGB")
         # time.sleep(0.2)
 
         if args.action == "interactive":
@@ -1265,7 +1265,7 @@ class FlashGBX_CLI:
         save_type = 0 if save_type is None else save_type
 
         # Cart Type
-        cart_type = None
+        cart_type = cart_type_id if cart_types else None
         msg_cart_type = ""
         mode = self.CONN.GetMode()
         if mode not in ("DMG", "AGB"):
@@ -1274,20 +1274,18 @@ class FlashGBX_CLI:
             self.CONN.GetSupportedCartridgesDMG() if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()
         )
 
-        if len(cart_types) > 0:
-            cart_type = cart_type_id
-            for i in range(len(cart_types)):
-                if cart_types[i] == cart_type_id:
-                    msg_cart_type += "- {:s} ← {:s}\n".format(
-                        supp_cart_types[0][cart_types[i]],
-                        c__(
-                            "Flashcart Profile List “- PROFILE NAME ← selected”",
-                            "selected",
-                        ),
-                    )
-                else:
-                    msg_cart_type += f"- {supp_cart_types[0][cart_types[i]]:s}\n"
-            msg_cart_type: str = msg_cart_type[:-1]
+        for i in range(len(cart_types)):
+            if cart_types[i] == cart_type_id:
+                msg_cart_type += "- {:s} ← {:s}\n".format(
+                    supp_cart_types[0][cart_types[i]],
+                    c__(
+                        "Flashcart Profile List “- PROFILE NAME ← selected”",
+                        "selected",
+                    ),
+                )
+            else:
+                msg_cart_type += f"- {supp_cart_types[0][cart_types[i]]:s}\n"
+        msg_cart_type = msg_cart_type[:-1]
 
         # Messages
         # Header
@@ -1757,12 +1755,9 @@ class FlashGBX_CLI:
         mbc = 0
 
         mode = self.CONN.GetMode()
-        if mode == "DMG":
-            carts = self.CONN.GetSupportedCartridgesDMG()[1]
-        elif mode == "AGB":
-            carts = self.CONN.GetSupportedCartridgesAGB()[1]
-        else:
+        if mode not in ("DMG", "AGB"):
             return
+        carts = self.CONN.GetSupportedCartridgesDMG()[1] if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()[1]
 
         cart_type = 0
 
