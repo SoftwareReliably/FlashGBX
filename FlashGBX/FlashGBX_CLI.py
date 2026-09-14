@@ -538,21 +538,11 @@ class FlashGBX_CLI:
             print("{:s}{:s}{:s}".format(ANSI.RED, args["error"], ANSI.RESET))
             return
 
-        pos = 0
-        size = 0
-        speed = 0
-        elapsed = 0
-        left = 0
-        if "pos" in args:
-            pos = args["pos"]
-        if "size" in args:
-            size = args["size"]
-        if "speed" in args:
-            speed = args["speed"]
-        if "time_elapsed" in args:
-            elapsed = args["time_elapsed"]
-        if "time_left" in args:
-            left = args["time_left"]
+        pos = args.get("pos", 0)
+        size = args.get("size", 0)
+        speed = args.get("speed", 0)
+        elapsed = args.get("time_elapsed", 0)
+        left = args.get("time_left", 0)
 
         if "action" in args:
             if args["action"] == "INITIALIZE":

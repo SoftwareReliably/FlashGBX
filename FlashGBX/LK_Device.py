@@ -6354,8 +6354,7 @@ class LK_Device(ABC):
         # ↓↓↓ Flash verify
         verified = False
         crc32_errors = 0
-        if "broken_sectors" in self.INFO:
-            del self.INFO["broken_sectors"]
+        self.INFO.pop("broken_sectors", None)
         if "verify_write" in args and args["verify_write"] is True:
             self.SetProgress(
                 {
@@ -7452,6 +7451,11 @@ class LK_Device(ABC):
             preparation.rom_bank_size,
         )
 
+    @staticmethod
+    def _IncludeFlashVerificationSector(sector: list[int], verify_sectors: list[list[int]]) -> None:
+        if sector not in verify_sectors:
+            verify_sectors.append(sector)
+
     def _StartFlashROMWrite(self, args: dict[str, Any]) -> tuple[DeviceMode, _FlashWritePreparation | None]:
         mode = self._require_cartridge_mode("writing ROM")
         self.FAST_READ = True
@@ -7618,8 +7622,7 @@ class LK_Device(ABC):
                         self.NO_PROG_UPDATE = False
                         if self.CANCEL_ARGS.get("from_user"):
                             continue
-                        if sector not in verify_sectors:
-                            verify_sectors.append(sector)
+                        self._IncludeFlashVerificationSector(sector, verify_sectors)
 
                         ts_se_elapsed = time.time() - ts_se_start
                         if se_ret:
