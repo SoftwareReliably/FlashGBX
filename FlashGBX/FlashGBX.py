@@ -443,6 +443,30 @@ def _add_primary_cli_arguments(
     )
 
 
+def _prepare_base_args(
+    parsed_args: argparse.Namespace,
+    config_paths: ConfigPaths,
+    config_path: str,
+    app_path: str,
+) -> tuple[str, BaseArgs]:
+    parsed_cfgdir = getattr(parsed_args, "cfgdir", None)
+    if parsed_cfgdir == "appdata":
+        parsed_config_path = config_paths["appdata"]
+    elif parsed_cfgdir == "subdir":
+        parsed_config_path = config_paths["subdir"]
+    else:
+        parsed_config_path = config_path
+    if parsed_config_path is not None and parsed_config_path != config_path:
+        config_path = parsed_config_path
+
+    if parsed_args.mode is not None or parsed_args.action is not None:
+        parsed_args.cli = True
+    if parsed_args.debug:
+        AppContext.DEBUG = True
+
+    return config_path, {"app_path": app_path, "config_path": config_path, "argparsed": parsed_args}
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -678,23 +702,7 @@ def main(portableMode: bool = False) -> int | None:
         input("\n\n" + __("Press ENTER to exit.") + "\n")
         return 0
 
-    parsed_cfgdir = getattr(parsed_args, "cfgdir", None)
-    if parsed_cfgdir == "appdata":
-        parsed_config_path = cp["appdata"]
-    elif parsed_cfgdir == "subdir":
-        parsed_config_path = cp["subdir"]
-    else:
-        parsed_config_path = config_path
-    if parsed_config_path is not None and parsed_config_path != config_path:
-        config_path = parsed_config_path
-
-    if parsed_args.mode is not None or parsed_args.action is not None:
-        parsed_args.cli = True
-
-    if parsed_args.debug:
-        AppContext.DEBUG = True
-
-    base_args: BaseArgs = {"app_path": app_path, "config_path": config_path, "argparsed": parsed_args}
+    config_path, base_args = _prepare_base_args(parsed_args, cp, config_path, app_path)
     while True:
         try:
             config_dir = Path(config_path)

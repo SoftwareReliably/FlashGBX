@@ -1137,6 +1137,18 @@ try:
             "Mini v1.0": "fw_GBxCart_RW_Mini_v1_0.zip",
         }
 
+        def _LoadFirmwareInfo(self) -> None:
+            with (
+                zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
+                archive.open("fw.ini") as file,
+            ):
+                ini_file = file.read()
+            self.INI = IniSettings(ini=ini_file.decode(encoding="utf-8"), main_section="Firmware")
+            self.CFW_VER = str(self.INI.GetValue("cfw_ver") or "")
+            self.CFW_TEXT = str(self.INI.GetValue("cfw_text") or "")
+            self.OFW_VER = str(self.INI.GetValue("ofw_ver") or "")
+            self.OFW_TEXT = str(self.INI.GetValue("ofw_text") or "")
+
         def __init__(
             self,
             app: QtWidgets.QWidget,
@@ -1168,17 +1180,7 @@ try:
                 & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
             )
 
-            with zipfile.ZipFile(
-                self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER],
-            ) as archive:
-                with archive.open("fw.ini") as f:
-                    ini_file = f.read()
-                ini_file = ini_file.decode(encoding="utf-8")
-                self.INI = IniSettings(ini=ini_file, main_section="Firmware")
-                self.CFW_VER = str(self.INI.GetValue("cfw_ver") or "")
-                self.CFW_TEXT = str(self.INI.GetValue("cfw_text") or "")
-                self.OFW_VER = str(self.INI.GetValue("ofw_ver") or "")
-                self.OFW_TEXT = str(self.INI.GetValue("ofw_text") or "")
+            self._LoadFirmwareInfo()
 
             self.main_layout = QtWidgets.QGridLayout()
             self.main_layout.setContentsMargins(-1, 8, -1, 8)

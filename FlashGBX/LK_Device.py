@@ -7569,17 +7569,11 @@ class LK_Device(ABC):
             verify_sectors,
         ) = preparation
 
-        pos = 0
         rumble = self._FlashcartHasRumble(flashcart)
-        sector_pos = 0
-
+        pos = sector_pos = start_bank = start_address = buffer_pos = retry_hp = 0
         current_bank: int | None = 0
-        start_bank: int = 0
-        start_address: int = 0
-        buffer_pos: int = 0
-        retry_hp: int = 0
         first_sector_written = False
-        end_address: int = len(data_import)
+        end_address = len(data_import)
         dprint("ROM banks:", end_bank)
 
         for sector in write_sectors:

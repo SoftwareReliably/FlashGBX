@@ -56,19 +56,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         app_path: str | PathLike[str] = ".",
     ) -> None:
         super().__init__(app)
-        self.CUR_PIC: ImageQt | None = None
-        self.CUR_THUMBS: list[ImageQt] = []
-        self.CUR_INDEX = 0
-        self.CUR_BICUBIC = False
-        self.CUR_FILE: CameraSource | None = file
-        self.CUR_EXPORT_PATH = ""
-        self.CUR_PC: PocketCamera | None = None
-        self.CUR_PALETTE = 3
-        self.APP_PATH = Path(app_path)
-        self.CONFIG_PATH = Path(config_path)
-        self.APP: FlashGBX_GUI = app
-        self.FORCE_EXIT = False
-        self._palettes = list(self.PALETTES)
+        self._InitializeState(app, file, config_path, app_path)
 
         self.setAcceptDrops(True)
         if icon is not None:
@@ -221,6 +209,27 @@ class PocketCameraWindow(QtWidgets.QDialog):
             return
 
         self._InitializeDefaultButton()
+
+    def _InitializeState(
+        self,
+        app: FlashGBX_GUI,
+        file: CameraSource | None,
+        config_path: str | PathLike[str],
+        app_path: str | PathLike[str],
+    ) -> None:
+        self.CUR_PIC: ImageQt | None = None
+        self.CUR_THUMBS: list[ImageQt] = []
+        self.CUR_INDEX = 0
+        self.CUR_BICUBIC = False
+        self.CUR_FILE: CameraSource | None = file
+        self.CUR_EXPORT_PATH = ""
+        self.CUR_PC: PocketCamera | None = None
+        self.CUR_PALETTE = 3
+        self.APP_PATH = Path(app_path)
+        self.CONFIG_PATH = Path(config_path)
+        self.APP: FlashGBX_GUI = app
+        self.FORCE_EXIT = False
+        self._palettes = list(self.PALETTES)
 
     def _SetMainLayout(self) -> None:
         self.main_layout.addLayout(self.layout_options1, 0, 0)

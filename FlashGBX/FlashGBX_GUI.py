@@ -475,6 +475,28 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         except Exception:
             logger.exception("Failed to configure the Qt color scheme")
 
+    def _CreateLanguageMenu(self) -> None:
+        self.mnuLanguage = QtWidgets.QMenu()
+        self.languageActionGroup = QtGui.QActionGroup(self.mnuLanguage)
+        self.languageActionGroup.setExclusive(True)
+        for code, names in sorted(LANGUAGES.items()):
+            native_name = names[1] if isinstance(names, tuple) else names
+            action = self.mnuLanguage.addAction(native_name + (f" ({code})"))
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, lang=code: self.ChangeLanguage(lang))
+            self.languageActionGroup.addAction(action)
+            if code == CONFIGURED_LANGUAGE:
+                action.setChecked(True)
+
+    def _ConfigurePlatformLayoutSpacing(self) -> None:
+        if platform.system() != "Linux":
+            return
+        self.main_layout.setHorizontalSpacing(8)
+        self.main_layout.setVerticalSpacing(5)
+        self.layout_left.setSpacing(5)
+        self.layout_right.setSpacing(5)
+        self.layout_devices.setSpacing(6)
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -684,17 +706,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.addAction("", self.ReEnableMessages)
         self._ApplyConfigMenuSettings()
 
-        self.mnuLanguage = QtWidgets.QMenu()
-        self.languageActionGroup = QtGui.QActionGroup(self.mnuLanguage)
-        self.languageActionGroup.setExclusive(True)
-        for code, names in sorted(LANGUAGES.items()):
-            native_name = names[1] if isinstance(names, tuple) else names
-            action = self.mnuLanguage.addAction(native_name + (f" ({code})"))
-            action.setCheckable(True)
-            action.triggered.connect(lambda _checked=False, lang=code: self.ChangeLanguage(lang))
-            self.languageActionGroup.addAction(action)
-            if code == CONFIGURED_LANGUAGE:
-                action.setChecked(True)
+        self._CreateLanguageMenu()
 
         self.mnuThirdParty = QtWidgets.QMenu()
         self.mnuDeviceSupport = self.mnuThirdParty.addAction("", self.AboutConnectedDevice)
@@ -724,12 +736,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.layout_devices.addWidget(self.btnMainMenu)
         self.layout_devices.addWidget(self.btnConnect)
 
-        if platform.system() == "Linux":
-            self.main_layout.setHorizontalSpacing(8)
-            self.main_layout.setVerticalSpacing(5)
-            self.layout_left.setSpacing(5)
-            self.layout_right.setSpacing(5)
-            self.layout_devices.setSpacing(6)
+        self._ConfigurePlatformLayoutSpacing()
 
         self.InitWidgetTexts()
 
@@ -947,7 +954,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         super().resizeEvent(event)
         self._UpdateDMGGameNameLayout()
 
-    def InitWidgetTexts(self) -> None:
+    def _ResetWidgetTexts(self) -> None:
         default_stylesheet = self.DEFAULT_STYLESHEET if self.DEFAULT_STYLESHEET is not None else ""
         for label in (
             self.lblDMGGameNameResult,
@@ -983,6 +990,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblStatus3aResult.setText("-")
         self.SetStatus4aResult("")
         self.SetDMGPlatformBadge(None)
+
+    def InitWidgetTexts(self) -> None:
+        self._ResetWidgetTexts()
 
         # DMG Cartridge Info
         self.grpDMGCartridgeInfo.setTitle(__("Game Boy Cartridge Information"))
@@ -1158,6 +1168,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._dmgGameNameDefaultColWidth = max_width
         self._UpdateDMGGameNameLayout()
 
+    def _CreateDMGRomTitleRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowDMGRomTitle = QtWidgets.QHBoxLayout()
+        self.lblDMGRomTitle = QtWidgets.QLabel()
+        self.lblDMGRomTitle.setContentsMargins(0, 1, 3, 1)
+        rowDMGRomTitle.addWidget(self.lblDMGRomTitle)
+        resultDMGRomTitle = QtWidgets.QHBoxLayout()
+        resultDMGRomTitle.setContentsMargins(0, 0, 0, 0)
+        resultDMGRomTitle.setSpacing(0)
+        self.lblDMGRomTitleResult = QtWidgets.QLabel("")
+        resultDMGRomTitle.addWidget(self.lblDMGRomTitleResult)
+        rowDMGRomTitle.addLayout(resultDMGRomTitle)
+        rowDMGRomTitle.setStretch(0, 9)
+        rowDMGRomTitle.setStretch(1, 15)
+        group_layout.addLayout(rowDMGRomTitle)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1198,19 +1223,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._dmgGameNameFullText = ""
         self._dmgGameNameDefaultColWidth = 0
 
-        rowDMGRomTitle = QtWidgets.QHBoxLayout()
-        self.lblDMGRomTitle = QtWidgets.QLabel()
-        self.lblDMGRomTitle.setContentsMargins(0, 1, 3, 1)
-        rowDMGRomTitle.addWidget(self.lblDMGRomTitle)
-        resultDMGRomTitle = QtWidgets.QHBoxLayout()
-        resultDMGRomTitle.setContentsMargins(0, 0, 0, 0)
-        resultDMGRomTitle.setSpacing(0)
-        self.lblDMGRomTitleResult = QtWidgets.QLabel("")
-        resultDMGRomTitle.addWidget(self.lblDMGRomTitleResult)
-        rowDMGRomTitle.addLayout(resultDMGRomTitle)
-        rowDMGRomTitle.setStretch(0, 9)
-        rowDMGRomTitle.setStretch(1, 15)
-        group_layout.addLayout(rowDMGRomTitle)
+        self._CreateDMGRomTitleRow(group_layout)
 
         rowDMGGameCodeRevision = QtWidgets.QHBoxLayout()
         self.lblDMGGameCodeRevision = QtWidgets.QLabel()
@@ -6302,6 +6315,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         button.setToolTip(profile_name)
         return button
 
+    @staticmethod
+    def _CopyHtmlToClipboard(html: str) -> None:
+        clipboard = QtWidgets.QApplication.clipboard()
+        doc = QtGui.QTextDocument()
+        doc.setHtml(html)
+        clipboard.setText(doc.toPlainText())
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self._ResetDetectionLabels()
 
@@ -6510,11 +6530,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 msgbox.setTextFormat(QtCore.Qt.TextFormat.RichText)
                 msgbox.exec()
                 if msgbox.clickedButton() == button_clipboard:
-                    clipboard = QtWidgets.QApplication.clipboard()
-                    doc = QtGui.QTextDocument()
-                    doc.setHtml(temp)
-                    temp = doc.toPlainText()
-                    clipboard.setText(temp)
+                    self._CopyHtmlToClipboard(temp)
                 elif msgbox.clickedButton() == button_try:
                     if try_this in supp_cart_types[0]:
                         cart_type = supp_cart_types[0].index(try_this)
