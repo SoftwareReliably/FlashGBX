@@ -6201,6 +6201,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SetProgressBars(min=0, max=100, value=0)
         self.lblStatus4a.setText(__("Ready."))
 
+    def _ResetDetectionLabels(self) -> None:
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
+
+    def _HandleFailedCartridgeDetection(self) -> None:
+        QtWidgets.QMessageBox.critical(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            __(
+                "An error occured while trying to analyze the cartridge and you may need to physically reconnect the device.",
+            )
+            + "\n\n"
+            + __("This cartridge may not be auto-detectable, please select the flashcart profile manually."),
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        self.LimitBaudRateGBxCartRW()
+        self.DisconnectDevice()
+
     def _RetryDetectionWithoutVoltageLimit(
         self,
         *,
@@ -6230,25 +6249,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         return True
 
     def FinishDetectCartridge(self, ret: object) -> None:
-        self.lblStatus1aResult.setText("-")
-        self.lblStatus2aResult.setText("-")
-        self.lblStatus3aResult.setText("-")
+        self._ResetDetectionLabels()
 
         limitVoltage = str(self.SETTINGS.value("AutoDetectLimitVoltage", default="disabled")).lower() == "enabled"
         if ret is False or not isinstance(ret, (list, tuple)) or len(ret) < 11:
-            QtWidgets.QMessageBox.critical(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __(
-                    "An error occured while trying to analyze the cartridge and you may need to physically reconnect the device.",
-                )
-                + "\n\n"
-                + __("This cartridge may not be auto-detectable, please select the flashcart profile manually."),
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            self.LimitBaudRateGBxCartRW()
-            self.DisconnectDevice()
-            cart_type = None
+            cart_type = self._HandleFailedCartridgeDetection()
         else:
             (
                 header,
@@ -6611,6 +6616,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         QtCore.QTimer.singleShot(1, lambda: [self.ReadCartridge(resetStatus=False)])
 
+    def _SetProgressControlsEnabled(self, enabled: bool) -> None:
+        self.grpDMGCartridgeInfo.setEnabled(enabled)
+        self.grpAGBCartridgeInfo.setEnabled(enabled)
+        self.grpActions.setEnabled(enabled)
+        self.mnuTools.setEnabled(enabled)
+        self.mnuConfig.setEnabled(enabled)
+        self.mnuLanguage.setEnabled(enabled)
+
     def UpdateProgress(self, args: Mapping[str, Any] | None) -> None:
         if args is None:
             return
@@ -6622,12 +6635,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if "error" in args:
             self.lblStatus4a.setText(__("Failed!"))
-            self.grpDMGCartridgeInfo.setEnabled(True)
-            self.grpAGBCartridgeInfo.setEnabled(True)
-            self.grpActions.setEnabled(True)
-            self.mnuTools.setEnabled(True)
-            self.mnuConfig.setEnabled(True)
-            self.mnuLanguage.setEnabled(True)
+            self._SetProgressControlsEnabled(enabled=True)
             self.btnCancel.setEnabled(False)
             msgbox = _create_message_box(
                 parent=self,
@@ -6642,12 +6650,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.LimitBaudRateGBxCartRW()
             return
 
-        self.grpDMGCartridgeInfo.setEnabled(False)
-        self.grpAGBCartridgeInfo.setEnabled(False)
-        self.grpActions.setEnabled(False)
-        self.mnuTools.setEnabled(False)
-        self.mnuConfig.setEnabled(False)
-        self.mnuLanguage.setEnabled(False)
+        self._SetProgressControlsEnabled(enabled=False)
 
         pos = args.get("pos", 0)
         size = args.get("size", 0)

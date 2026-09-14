@@ -1598,6 +1598,35 @@ try:
                     show_bootloader_error(__("Bootloader timeout."))
                     return None
 
+        def _FinishFirmwareUpdate(self, dev: serial.Serial, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
+            self.APP.QT_APP.processEvents()
+            time.sleep(0.1)
+            fncSetStatus(__("Restarting the device..."))
+            dev.write(b"?")
+            dev.flush()
+            time.sleep(0.00125)
+            dev.close()
+            self.APP.QT_APP.processEvents()
+            time.sleep(0.8)
+            fncSetStatus(__("Done!"))
+            self.APP.QT_APP.processEvents()
+            time.sleep(0.2)
+            self.DEVICE = None
+            self.btnUpdate.setEnabled(True)
+            self.btnClose.setEnabled(True)
+            self.grpAvailableFwUpdates.setEnabled(True)
+            text = __("The firmware update is complete!")
+            msgbox = _message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Information,
+                windowTitle=AppInfo.NAME,
+                text=text,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            self.reject()
+            return 1
+
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
             fw_buffer: bytearray = data
             bootloader = self._ConnectBootloader(fncSetStatus)
@@ -1795,33 +1824,6 @@ try:
             time.sleep(0.00125)
             dev.read(0x41)
 
-            # Restart
-            self.APP.QT_APP.processEvents()
-            time.sleep(0.1)
-            fncSetStatus(__("Restarting the device..."))
-            dev.write(b"?")
-            dev.flush()
-            time.sleep(0.00125)
-            dev.close()
-            self.APP.QT_APP.processEvents()
-            time.sleep(0.8)
-            fncSetStatus(__("Done!"))
-            self.APP.QT_APP.processEvents()
-            time.sleep(0.2)
-            self.DEVICE = None
-            self.btnUpdate.setEnabled(True)
-            self.btnClose.setEnabled(True)
-            self.grpAvailableFwUpdates.setEnabled(True)
-            text = __("The firmware update is complete!")
-            msgbox = _message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Information,
-                windowTitle=AppInfo.NAME,
-                text=text,
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            answer = msgbox.exec()
-            self.reject()
-            return 1
+            return self._FinishFirmwareUpdate(dev, fncSetStatus)
 except ImportError:
     pass

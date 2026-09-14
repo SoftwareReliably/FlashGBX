@@ -215,15 +215,21 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.layout_photos.addWidget(self.grpPhotoThumbs)
         self.layout_photos.addWidget(self.grpPhotoView)
 
+        self._SetMainLayout()
+
+        if not self._load_settings():
+            return
+
+        self._InitializeDefaultButton()
+
+    def _SetMainLayout(self) -> None:
         self.main_layout.addLayout(self.layout_options1, 0, 0)
         self.main_layout.addLayout(self.layout_options2, 1, 0)
         self.main_layout.addLayout(self.layout_photos, 2, 0)
         self.main_layout.addLayout(self.layout_options3, 3, 0)
         self.setLayout(self.main_layout)
 
-        if not self._load_settings():
-            return
-
+    def _InitializeDefaultButton(self) -> None:
         self.btnSaveAll.setDefault(True)
         self.btnSaveAll.setAutoDefault(True)
         self.btnSaveAll.setFocus()

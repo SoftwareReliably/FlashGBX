@@ -386,6 +386,63 @@ def _create_argument_parser(examples: str) -> argparse.ArgumentParser:
     return parser
 
 
+def _add_primary_cli_arguments(
+    parser: argparse.ArgumentParser,
+    config_paths: ConfigPaths,
+    cfgdir_default: str,
+) -> None:
+    ap_config = parser.add_argument_group(c__("Command Line Arguments Category", "Configuration arguments"))
+    if "appdata" in config_paths:
+        ap_config.add_argument(
+            "--cfgdir",
+            choices=["appdata", "subdir"],
+            type=str.lower,
+            default=cfgdir_default,
+            help=c__(
+                "Configuration Help",
+                "sets the config directory to either the OS-provided local app config directory ({appdata}), or a subdirectory of this application ({subdir})",
+                appdata=config_paths["appdata"],
+                subdir=config_paths["subdir"],
+            ),
+        )
+
+    ap_cli = parser.add_argument_group(c__("Command Line Arguments Category", "Main command line interface arguments"))
+    ap_cli.add_argument(
+        "--mode",
+        choices=["dmg", "agb"],
+        type=str.lower,
+        default=None,
+        help=c__(
+            "Command Line Help",
+            "set platform to “dmg” (Game Boy) or “agb” (Game Boy Advance)",
+        ),
+    )
+    ap_cli.add_argument(
+        "--action",
+        choices=ALL_ACTIONS,
+        type=str.lower,
+        default=None,
+        help=c__("Command Line Help", "select program action"),
+    )
+    ap_cli.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=c__(
+            "Command Line Help",
+            "overwrite without asking if target file already exists",
+        ),
+    )
+    ap_cli.add_argument(
+        "path",
+        nargs="?",
+        default="auto",
+        help=c__(
+            "Command Line Help",
+            "target or source file path (optional when reading, required when writing)",
+        ),
+    )
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -420,56 +477,7 @@ def main(portableMode: bool = False) -> int | None:
     )
 
     parser = _create_argument_parser(examples)
-    ap_config = parser.add_argument_group(c__("Command Line Arguments Category", "Configuration arguments"))
-    if "appdata" in cp:
-        ap_config.add_argument(
-            "--cfgdir",
-            choices=["appdata", "subdir"],
-            type=str.lower,
-            default=cfgdir_default,
-            help=c__(
-                "Configuration Help",
-                "sets the config directory to either the OS-provided local app config directory ({appdata}), or a subdirectory of this application ({subdir})",
-                appdata=cp["appdata"],
-                subdir=cp["subdir"],
-            ),
-        )
-
-    ap_cli1 = parser.add_argument_group(c__("Command Line Arguments Category", "Main command line interface arguments"))
-    ap_cli1.add_argument(
-        "--mode",
-        choices=["dmg", "agb"],
-        type=str.lower,
-        default=None,
-        help=c__(
-            "Command Line Help",
-            "set platform to “dmg” (Game Boy) or “agb” (Game Boy Advance)",
-        ),
-    )
-    ap_cli1.add_argument(
-        "--action",
-        choices=ALL_ACTIONS,
-        type=str.lower,
-        default=None,
-        help=c__("Command Line Help", "select program action"),
-    )
-    ap_cli1.add_argument(
-        "--overwrite",
-        action="store_true",
-        help=c__(
-            "Command Line Help",
-            "overwrite without asking if target file already exists",
-        ),
-    )
-    ap_cli1.add_argument(
-        "path",
-        nargs="?",
-        default="auto",
-        help=c__(
-            "Command Line Help",
-            "target or source file path (optional when reading, required when writing)",
-        ),
-    )
+    _add_primary_cli_arguments(parser, cp, cfgdir_default)
 
     ap_cli2 = parser.add_argument_group(
         c__(
