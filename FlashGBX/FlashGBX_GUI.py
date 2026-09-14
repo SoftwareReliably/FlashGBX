@@ -132,6 +132,42 @@ class _SaveWritePathOptions(NamedTuple):
     skip_warning: bool
 
 
+class _DetectedCartProfileContext(NamedTuple):
+    header: Mapping[str, Any]
+    cart_type: int | None
+    cart_types: Sequence[int]
+    cart_type_id: int
+    supported_cart_types: tuple[list[str], list[Any]]
+    compatible_profiles: str
+    selected_name: str
+    detected_size: int
+    flash_id: str
+    cfi_data: str
+    limit_voltage: bool
+
+
+class _DetectedCartDetails(NamedTuple):
+    cart_type_message: str
+    cart_type_details: str
+    flash_size_message: str
+    flash_id_message: str
+    cfi_message: str
+    flash_mapper_message: str
+    generic_profile: str | None
+    found_supported: bool
+    is_generic: bool
+
+
+class _SaveStressTestResult(NamedTuple):
+    tests_completed: int
+    pattern_names: list[str]
+    elapsed_message: str
+    first_save: bytearray | None
+    second_save: bytearray
+    written_data: bytearray
+    readback_data: bytearray
+
+
 def _format_batteryless_sram_details(save_size: int, info: BatterylessSramInfo) -> str:
     """Build the save-size and ROM-location text shown after auto-detection."""
     save_size_text = __("unknown size") if save_size == 0 else Formatter.file_size(save_size, as_int=True)
@@ -497,6 +533,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.layout_right.setSpacing(5)
         self.layout_devices.setSpacing(6)
 
+    def _CreateDeviceAndToolsMenus(self) -> None:
+        self._CreateDeviceStatusLayout()
+        self.mnuTools = QtWidgets.QMenu()
+        self.mnuTools.addAction("", self.ShowPocketCameraWindow)
+        self.mnuTools.addAction("", self.ShowInteractiveConsoleWindow)
+        self.mnuTools.addSeparator()
+        self.mnuTools.addAction("", self.ShowFirmwareUpdateWindow)
+        self.mnuTools.actions()[1].setEnabled(False)
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -535,14 +580,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.main_layout.addLayout(self.layout_left, 0, 0)
         self.main_layout.addLayout(self.layout_right, 0, 1)
 
-        self._CreateDeviceStatusLayout()
-
-        self.mnuTools = QtWidgets.QMenu()
-        self.mnuTools.addAction("", self.ShowPocketCameraWindow)
-        self.mnuTools.addAction("", self.ShowInteractiveConsoleWindow)
-        self.mnuTools.addSeparator()
-        self.mnuTools.addAction("", self.ShowFirmwareUpdateWindow)
-        self.mnuTools.actions()[1].setEnabled(False)
+        self._CreateDeviceAndToolsMenus()
 
         self.mnuConfig = QtWidgets.QMenu()
         self.mnuConfig.addAction("", lambda: [self.EnableUpdateCheck()])
@@ -1168,29 +1206,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._dmgGameNameDefaultColWidth = max_width
         self._UpdateDMGGameNameLayout()
 
-    def _CreateDMGRomTitleRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
-        rowDMGRomTitle = QtWidgets.QHBoxLayout()
-        self.lblDMGRomTitle = QtWidgets.QLabel()
-        self.lblDMGRomTitle.setContentsMargins(0, 1, 3, 1)
-        rowDMGRomTitle.addWidget(self.lblDMGRomTitle)
-        resultDMGRomTitle = QtWidgets.QHBoxLayout()
-        resultDMGRomTitle.setContentsMargins(0, 0, 0, 0)
-        resultDMGRomTitle.setSpacing(0)
-        self.lblDMGRomTitleResult = QtWidgets.QLabel("")
-        resultDMGRomTitle.addWidget(self.lblDMGRomTitleResult)
-        rowDMGRomTitle.addLayout(resultDMGRomTitle)
-        rowDMGRomTitle.setStretch(0, 9)
-        rowDMGRomTitle.setStretch(1, 15)
-        group_layout.addLayout(rowDMGRomTitle)
-
-    def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
-        self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
-        self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
-        group_layout = QtWidgets.QVBoxLayout()
-        group_layout.setContentsMargins(-1, 5, -1, -1)
-        if platform.system() == "Linux":
-            group_layout.setSpacing(4)
-
+    def _CreateDMGGameNameRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
         rowDMGGameName = QtWidgets.QHBoxLayout()
         self.lblDMGGameName = QtWidgets.QLabel()
         self.lblDMGGameName.setContentsMargins(0, 1, 3, 1)
@@ -1222,6 +1238,31 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._resultDMGGameName = resultDMGGameName
         self._dmgGameNameFullText = ""
         self._dmgGameNameDefaultColWidth = 0
+
+    def _CreateDMGRomTitleRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowDMGRomTitle = QtWidgets.QHBoxLayout()
+        self.lblDMGRomTitle = QtWidgets.QLabel()
+        self.lblDMGRomTitle.setContentsMargins(0, 1, 3, 1)
+        rowDMGRomTitle.addWidget(self.lblDMGRomTitle)
+        resultDMGRomTitle = QtWidgets.QHBoxLayout()
+        resultDMGRomTitle.setContentsMargins(0, 0, 0, 0)
+        resultDMGRomTitle.setSpacing(0)
+        self.lblDMGRomTitleResult = QtWidgets.QLabel("")
+        resultDMGRomTitle.addWidget(self.lblDMGRomTitleResult)
+        rowDMGRomTitle.addLayout(resultDMGRomTitle)
+        rowDMGRomTitle.setStretch(0, 9)
+        rowDMGRomTitle.setStretch(1, 15)
+        group_layout.addLayout(rowDMGRomTitle)
+
+    def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
+        self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
+        self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
+        group_layout = QtWidgets.QVBoxLayout()
+        group_layout.setContentsMargins(-1, 5, -1, -1)
+        if platform.system() == "Linux":
+            group_layout.setSpacing(4)
+
+        self._CreateDMGGameNameRow(group_layout)
 
         self._CreateDMGRomTitleRow(group_layout)
 
@@ -1313,14 +1354,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         return self.grpDMGCartridgeInfo
 
-    def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
-        self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
-        self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
-        group_layout = QtWidgets.QVBoxLayout()
-        group_layout.setContentsMargins(-1, 5, -1, -1)
-        if platform.system() == "Linux":
-            group_layout.setSpacing(4)
-
+    def _CreateAGBGameNameRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
         rowAGBGameName = QtWidgets.QHBoxLayout()
         self.lblAGBGameName = QtWidgets.QLabel()
         self.lblAGBGameName.setContentsMargins(0, 1, 3, 1)
@@ -1330,6 +1364,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowAGBGameName.setStretch(0, 9)
         rowAGBGameName.setStretch(1, 15)
         group_layout.addLayout(rowAGBGameName)
+
+    def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
+        self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
+        self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
+        group_layout = QtWidgets.QVBoxLayout()
+        group_layout.setContentsMargins(-1, 5, -1, -1)
+        if platform.system() == "Linux":
+            group_layout.setSpacing(4)
+
+        self._CreateAGBGameNameRow(group_layout)
 
         rowAGBRomTitle = QtWidgets.QHBoxLayout()
         self.lblAGBRomTitle = QtWidgets.QLabel()
@@ -4444,6 +4488,46 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             time.sleep(0.02)
         transfer.join()
 
+    def _ShowSaveStressTestResult(self, result: _SaveStressTestResult) -> None:
+        if result.tests_completed == len(result.pattern_names) + 1:
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Information,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("All tests completed successfully!") + result.elapsed_message,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return
+
+        try:
+            written_data = result.written_data
+            readback_data = result.readback_data
+            if result.tests_completed == 0:
+                written_data = result.first_save or bytearray()
+                readback_data = result.second_save
+            with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as file:
+                file.write(written_data[: len(readback_data)])
+            with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as file:
+                file.write(readback_data)
+        except Exception:
+            logger.exception("Failed to write cartridge stress-test diagnostics")
+        if result.tests_completed > 0:
+            msg = __(
+                "Test {num} ({pattern}) failed!",
+                num=result.tests_completed + 1,
+                pattern=result.pattern_names[result.tests_completed],
+            )
+            msg += result.elapsed_message
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Warning,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=msg,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4615,41 +4699,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         qt_app.processEvents()
 
         if "stresstest_running" in self.STATUS:
-            if test_ok == len(test_patterns) + 1:
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Information,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("All tests completed successfully!") + msg_te,
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-            else:
-                try:
-                    if test_ok == 0:
-                        towrite = save1 or bytearray()
-                        readback = save2
-                    with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as f:
-                        f.write(towrite[: len(readback)])
-                    with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as f:
-                        f.write(readback)
-                except Exception:
-                    logger.exception("Failed to write cartridge stress-test diagnostics")
-                if test_ok > 0:
-                    msg = __(
-                        "Test {num} ({pattern}) failed!",
-                        num=test_ok + 1,
-                        pattern=test_patterns_names[test_ok],
-                    )
-                    msg += msg_te
-                    msgbox = _create_message_box(
-                        parent=self,
-                        icon=QtWidgets.QMessageBox.Icon.Warning,
-                        windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        text=msg,
-                        standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-                    msgbox.exec()
+            self._ShowSaveStressTestResult(
+                _SaveStressTestResult(test_ok, test_patterns_names, msg_te, save1, save2, towrite, readback),
+            )
         else:
             msgbox = _create_message_box(
                 parent=self,
@@ -6215,6 +6267,73 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
         return "<b>" + __("Flashcart Profile:") + f"</b> {selected_name:s}<br>"
 
+    def _FormatDetectedCartDetails(self, context: _DetectedCartProfileContext) -> _DetectedCartDetails:
+        cart_type_message = ""
+        cart_type_details = ""
+        flash_size_message = ""
+        flash_mapper_message = ""
+        generic_profile = None
+        found_supported = False
+        is_generic = False
+
+        if context.cart_type is not None:
+            cart_type_message = self._FormatDetectedCartProfile(context.cart_types, context.selected_name)
+            cart_type_details = (
+                "<b>" + __("Compatible Flashcart Profiles:") + f"</b><br>{context.compatible_profiles:s}<br>"
+            )
+            found_supported = True
+            size = (
+                context.detected_size
+                if context.detected_size > 0
+                else context.supported_cart_types[1][context.cart_type_id].get("flash_size", 0)
+            )
+            if size > 0:
+                flash_size_message = "<b>" + __("ROM Size:") + f"</b> {Formatter.file_size(size, as_int=True):s}<br>"
+            flash_mapper_message = self._FormatDetectedFlashMapper(
+                context.supported_cart_types[1][context.cart_type_id],
+            )
+        elif (len(context.flash_id.split("\n")) > 2) and (
+            self._device.GetMode() == "DMG" or ("dacs_8m" in context.header and context.header["dacs_8m"] is not True)
+        ):
+            cart_type_message = "<b>" + __("Flashcart Profile:") + "</b> " + __("Unknown flash cartridge")
+            generic_profile = _generic_flash_profile(context.flash_id)
+            if generic_profile is not None:
+                cart_type_message += " " + __(
+                    "For ROM writing, you can give the option called “{option}” a try at your own risk.",
+                    option=generic_profile,
+                )
+            cart_type_message += "<br>"
+        else:
+            cart_type_message = (
+                "<b>"
+                + __("Flashcart Profile:")
+                + "</b> "
+                + "Generic ROM Cartridge"
+                + " ("
+                + __("not rewritable or not auto-detectable")
+                + ")"
+                + "<br>"
+            )
+            is_generic = True
+
+        flash_id_message, cfi_message = self._FormatFlashDetectionDetails(
+            context.flash_id,
+            context.cfi_data,
+            is_generic=is_generic,
+            limit_voltage=context.limit_voltage,
+        )
+        return _DetectedCartDetails(
+            cart_type_message,
+            cart_type_details or cart_type_message,
+            flash_size_message,
+            flash_id_message,
+            cfi_message,
+            flash_mapper_message,
+            generic_profile,
+            found_supported,
+            is_generic,
+        )
+
     def _ApplyDetectedSaveType(self, save_type: int | Literal[False] | None) -> None:
         if self.STATUS["can_skip_message"] or save_type is None or save_type is False:
             return
@@ -6366,60 +6485,32 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 header,
             )
 
-            # Cart Type
-            msg_cart_type_s = ""
-            msg_cart_type_s_detail = ""
-            msg_flash_size_s = ""
-            msg_flash_id_s = ""
-            msg_cfi_s = ""
-            msg_flash_mapper_s = ""
-            try_this = None
-            found_supported = False
-            is_generic = False
-            if cart_type is not None:
-                msg_cart_type_s = self._FormatDetectedCartProfile(cart_types, msg_cart_type_used)
-                msg_cart_type_s_detail = "<b>" + __("Compatible Flashcart Profiles:") + f"</b><br>{msg_cart_type:s}<br>"
-                found_supported = True
-
-                size = detected_size if detected_size > 0 else supp_cart_types[1][cart_type_id].get("flash_size", 0)
-                msg_flash_size_s = (
-                    "<b>" + __("ROM Size:") + f"</b> {Formatter.file_size(size, as_int=True):s}<br>" if size > 0 else ""
-                )
-
-                msg_flash_mapper_s = self._FormatDetectedFlashMapper(supp_cart_types[1][cart_type_id])
-
-            elif (len(flash_id.split("\n")) > 2) and (
-                (self._device.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
-            ):
-                msg_cart_type_s = "<b>" + __("Flashcart Profile:") + "</b> " + __("Unknown flash cartridge")
-                try_this = _generic_flash_profile(flash_id)
-                if try_this is not None:
-                    msg_cart_type_s += " " + __(
-                        "For ROM writing, you can give the option called “{option}” a try at your own risk.",
-                        option=try_this,
-                    )
-                msg_cart_type_s += "<br>"
-            else:
-                msg_cart_type_s = (
-                    "<b>"
-                    + __("Flashcart Profile:")
-                    + "</b> "
-                    + "Generic ROM Cartridge"
-                    + " ("
-                    + __("not rewritable or not auto-detectable")
-                    + ")"
-                    + "<br>"
-                )
-                is_generic = True
-
-            msg_flash_id_s, msg_cfi_s = self._FormatFlashDetectionDetails(
-                flash_id,
-                cfi_s,
-                is_generic=is_generic,
-                limit_voltage=limitVoltage,
+            details = self._FormatDetectedCartDetails(
+                _DetectedCartProfileContext(
+                    header,
+                    cart_type,
+                    cart_types,
+                    cart_type_id,
+                    supp_cart_types,
+                    msg_cart_type,
+                    msg_cart_type_used,
+                    detected_size,
+                    flash_id,
+                    cfi_s,
+                    limitVoltage,
+                ),
             )
-
-            msg_cart_type_s_detail = msg_cart_type_s_detail or msg_cart_type_s
+            (
+                msg_cart_type_s,
+                msg_cart_type_s_detail,
+                msg_flash_size_s,
+                msg_flash_id_s,
+                msg_cfi_s,
+                msg_flash_mapper_s,
+                try_this,
+                found_supported,
+                is_generic,
+            ) = details
             self.SetProgressBars(min=0, max=100, value=100)
             show_details = False
 

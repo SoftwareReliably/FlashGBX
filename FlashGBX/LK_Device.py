@@ -419,6 +419,24 @@ class _FlashMatchResult(NamedTuple):
     buffer_length: int
 
 
+class _FlashSectorEraseContext(NamedTuple):
+    preparation: _FlashWritePreparation
+    sector: list[int]
+    bank: int
+    position: int
+    buffer_position: int
+    sector_position: int
+    sector_size: int
+
+
+class _FlashSectorEraseResult(NamedTuple):
+    status: DeviceWriteResult
+    sector_position: int
+    sector_size: int
+    erased: bool
+    canceled: bool
+
+
 class LK_Device(ABC):
     DEVICE_NAME: str = ""
     DEVICE_MIN_FW: ClassVar[int] = 0
@@ -4637,6 +4655,17 @@ class LK_Device(ABC):
         else:
             file.write(chunk)
 
+    def _InitializeROMDumpInfo(self, args: Mapping[str, Any]) -> None:
+        self.INFO["dump_info"].update(
+            {
+                "timestamp": datetime.datetime.now().astimezone().replace(microsecond=0).isoformat(),
+                "file_name": args["path"],
+                "file_size": args["rom_size"],
+                "cart_type": args["cart_type"],
+                "system": self.MODE,
+            },
+        )
+
     def _SetTemporaryVerificationReadMethod(
         self,
         enabled: bool,
@@ -4660,11 +4689,7 @@ class LK_Device(ABC):
 
         self._apply_legacy_flashcart_compatibility(cart_type, flashcart)
 
-        self.INFO["dump_info"]["timestamp"] = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
-        self.INFO["dump_info"]["file_name"] = args["path"]
-        self.INFO["dump_info"]["file_size"] = args["rom_size"]
-        self.INFO["dump_info"]["cart_type"] = args["cart_type"]
-        self.INFO["dump_info"]["system"] = self.MODE
+        self._InitializeROMDumpInfo(args)
 
         configuration = self._PrepareROMRead(device_mode, args, cart_type, flashcart)
         if configuration is None:
@@ -7536,6 +7561,74 @@ class LK_Device(ABC):
     def _NextFlashWriteBank(bank: int, status: DeviceWriteResult) -> int:
         return bank if status is False else bank + 1
 
+    def _EraseFlashSector(self, context: _FlashSectorEraseContext) -> _FlashSectorEraseResult:
+        preparation = context.preparation
+        if preparation.chip_erase or (
+            context.sector_position >= len(preparation.sector_offsets)
+            or context.buffer_position != preparation.sector_offsets[context.sector_position][0]
+        ):
+            return _FlashSectorEraseResult(
+                status=None,
+                sector_position=context.sector_position,
+                sector_size=context.sector_size,
+                erased=False,
+                canceled=False,
+            )
+
+        started_at = time.time()
+        dprint(
+            f"Erasing sector #{context.sector_position:d} at position "
+            f"0x{context.buffer_position:X} (0x{context.position:X})",
+        )
+        self.SetProgress(
+            {
+                "action": "UPDATE_POS",
+                "pos": context.buffer_position,
+                "force_update": True,
+            },
+        )
+        self._PowerOnIfSupported()
+
+        sector_position = context.sector_position + 1
+        self._SelectFlashCommandBank(preparation.flashcart, preparation.mbc, context.bank)
+        self.NO_PROG_UPDATE = True
+        status = preparation.flashcart.SectorErase(
+            pos=context.position,
+            buffer_pos=context.buffer_position,
+            skip=False,
+        )
+        self.NO_PROG_UPDATE = False
+        if self.CANCEL_ARGS.get("from_user"):
+            return _FlashSectorEraseResult(
+                status=status,
+                sector_position=sector_position,
+                sector_size=context.sector_size,
+                erased=True,
+                canceled=True,
+            )
+        self._IncludeFlashVerificationSector(context.sector, preparation.verify_sectors)
+
+        sector_size = context.sector_size
+        if status:
+            self.SetProgress(
+                {
+                    "action": "UPDATE_POS",
+                    "pos": context.buffer_position,
+                    "sector_pos": sector_position,
+                    "sector_erase_time": time.time() - started_at,
+                    "force_update": True,
+                },
+            )
+            sector_size = status
+            dprint(f"Next sector size: 0x{sector_size:X}")
+        return _FlashSectorEraseResult(
+            status=status,
+            sector_position=sector_position,
+            sector_size=sector_size,
+            erased=True,
+            canceled=False,
+        )
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -7563,7 +7656,7 @@ class LK_Device(ABC):
             _json_file,
             chip_erase,
             buffer_len,
-            verify_sectors,
+            _verify_sectors,
         ) = preparation
 
         rumble = self._FlashcartHasRumble(flashcart)
@@ -7667,46 +7760,14 @@ class LK_Device(ABC):
                     if self._AbortFlashWriteIfCanceled():
                         return None
 
-                    # ↓↓↓ Sector erase
-                    se_ret = None
-                    if chip_erase is False and (
-                        sector_pos < len(sector_offsets) and buffer_pos == sector_offsets[sector_pos][0]
-                    ):
-                        ts_se_start = time.time()
-                        dprint(f"Erasing sector #{sector_pos:d} at position 0x{buffer_pos:X} (0x{pos:X})")
-                        self.SetProgress(
-                            {
-                                "action": "UPDATE_POS",
-                                "pos": buffer_pos,
-                                "force_update": True,
-                            },
-                        )
-                        self._PowerOnIfSupported()
-
-                        sector_pos += 1
-                        self._SelectFlashCommandBank(flashcart, _mbc, bank)
-                        self.NO_PROG_UPDATE = True
-                        se_ret = flashcart.SectorErase(pos=pos, buffer_pos=buffer_pos, skip=False)
-                        self.NO_PROG_UPDATE = False
-                        if self.CANCEL_ARGS.get("from_user"):
-                            continue
-                        self._IncludeFlashVerificationSector(sector, verify_sectors)
-
-                        ts_se_elapsed = time.time() - ts_se_start
-                        if se_ret:
-                            self.SetProgress(
-                                {
-                                    "action": "UPDATE_POS",
-                                    "pos": buffer_pos,
-                                    "sector_pos": sector_pos,
-                                    "sector_erase_time": ts_se_elapsed,
-                                    "force_update": True,
-                                },
-                            )
-                            sector_size = se_ret
-                            dprint(f"Next sector size: 0x{sector_size:X}")
+                    erase_result = self._EraseFlashSector(
+                        _FlashSectorEraseContext(preparation, sector, bank, pos, buffer_pos, sector_pos, sector_size),
+                    )
+                    se_ret, sector_pos, sector_size, sector_erased, erase_canceled = erase_result
+                    if erase_canceled:
+                        continue
+                    if sector_erased:
                         skip_init = False
-                    # ↑↑↑ Sector erase
 
                     if se_ret is not False:
                         status, buffer_len = self._WriteFlashChunk(

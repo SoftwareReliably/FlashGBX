@@ -47,6 +47,49 @@ class PocketCameraWindow(QtWidgets.QDialog):
     PHOTO_SAVE_SIZE: ClassVar[int] = 0x100000
     PALETTES: ClassVar[tuple[Palette, ...]] = PocketCamera.PALETTES
 
+    def _CreatePhotoThumbnailGroup(self) -> None:
+        self.grpPhotoThumbs = QtWidgets.QGroupBox(__("Photo Album"))
+        self.grpPhotoThumbsLayout = QtWidgets.QVBoxLayout()
+        self.grpPhotoThumbsLayout.setSpacing(2)
+        self.grpPhotoThumbsLayout.setContentsMargins(-1, 3, -1, -1)
+        self.lblPhoto = []
+        rowsPhotos = []
+        for row in range(5):
+            rowsPhotos.append(QtWidgets.QHBoxLayout())
+            rowsPhotos[row].setSpacing(2)
+            for _ in range(6):
+                self.lblPhoto.append(QtWidgets.QLabel(self))
+                self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
+                self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
+                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(
+                    self.lblPhoto_Clicked,
+                    index=len(self.lblPhoto) - 1,
+                )
+                self.lblPhoto[len(self.lblPhoto) - 1].setCursor(
+                    QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor),
+                )
+                self.lblPhoto[len(self.lblPhoto) - 1].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                self.lblPhoto[len(self.lblPhoto) - 1].setStyleSheet(
+                    "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #fefefe; border-right: 1px solid #fefefe;",
+                )
+                rowsPhotos[row].addWidget(self.lblPhoto[len(self.lblPhoto) - 1])
+            self.grpPhotoThumbsLayout.addLayout(rowsPhotos[row])
+
+        rowActionsGeneral3 = QtWidgets.QHBoxLayout()
+        self.btnShowGameFace = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Game Face"))
+        self.btnShowGameFace.setStyleSheet("padding: 5px 10px;")
+        self.btnShowGameFace.clicked.connect(self.btnShowGameFace_Clicked)
+        rowActionsGeneral3.addWidget(self.btnShowGameFace)
+        self.btnShowLastSeen = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Last Seen Image"))
+        self.btnShowLastSeen.setStyleSheet("padding: 5px 10px;")
+        self.btnShowLastSeen.clicked.connect(self.btnShowLastSeen_Clicked)
+        rowActionsGeneral3.addWidget(self.btnShowLastSeen)
+        self.grpPhotoThumbsLayout.addStretch()
+        self.grpPhotoThumbsLayout.addLayout(rowActionsGeneral3)
+
+        self.grpPhotoThumbsLayout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        self.grpPhotoThumbs.setLayout(self.grpPhotoThumbsLayout)
+
     def __init__(
         self,
         app: FlashGBX_GUI,
@@ -158,47 +201,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.grpPhotoView.setLayout(self.grpPhotoViewLayout)
 
         # Photo List
-        self.grpPhotoThumbs = QtWidgets.QGroupBox(__("Photo Album"))
-        self.grpPhotoThumbsLayout = QtWidgets.QVBoxLayout()
-        self.grpPhotoThumbsLayout.setSpacing(2)
-        self.grpPhotoThumbsLayout.setContentsMargins(-1, 3, -1, -1)
-        self.lblPhoto = []
-        rowsPhotos = []
-        for row in range(5):
-            rowsPhotos.append(QtWidgets.QHBoxLayout())
-            rowsPhotos[row].setSpacing(2)
-            for _ in range(6):
-                self.lblPhoto.append(QtWidgets.QLabel(self))
-                self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
-                self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
-                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(
-                    self.lblPhoto_Clicked,
-                    index=len(self.lblPhoto) - 1,
-                )
-                self.lblPhoto[len(self.lblPhoto) - 1].setCursor(
-                    QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor),
-                )
-                self.lblPhoto[len(self.lblPhoto) - 1].setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-                self.lblPhoto[len(self.lblPhoto) - 1].setStyleSheet(
-                    "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #fefefe; border-right: 1px solid #fefefe;",
-                )
-                rowsPhotos[row].addWidget(self.lblPhoto[len(self.lblPhoto) - 1])
-            self.grpPhotoThumbsLayout.addLayout(rowsPhotos[row])
-
-        rowActionsGeneral3 = QtWidgets.QHBoxLayout()
-        self.btnShowGameFace = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Game Face"))
-        self.btnShowGameFace.setStyleSheet("padding: 5px 10px;")
-        self.btnShowGameFace.clicked.connect(self.btnShowGameFace_Clicked)
-        rowActionsGeneral3.addWidget(self.btnShowGameFace)
-        self.btnShowLastSeen = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Last Seen Image"))
-        self.btnShowLastSeen.setStyleSheet("padding: 5px 10px;")
-        self.btnShowLastSeen.clicked.connect(self.btnShowLastSeen_Clicked)
-        rowActionsGeneral3.addWidget(self.btnShowLastSeen)
-        self.grpPhotoThumbsLayout.addStretch()
-        self.grpPhotoThumbsLayout.addLayout(rowActionsGeneral3)
-
-        self.grpPhotoThumbsLayout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        self.grpPhotoThumbs.setLayout(self.grpPhotoThumbsLayout)
+        self._CreatePhotoThumbnailGroup()
 
         self.layout_photos.addWidget(self.grpPhotoThumbs)
         self.layout_photos.addWidget(self.grpPhotoView)

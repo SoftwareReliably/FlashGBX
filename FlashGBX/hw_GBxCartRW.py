@@ -798,6 +798,42 @@ try:
         FW_VER: str
         PCB_VER: str
 
+        def _CreateCurrentFirmwareGroup(self) -> None:
+            self.grpDeviceInfo = QtWidgets.QGroupBox(__("Current Firmware"))
+            self.grpDeviceInfo.setMinimumWidth(420)
+            self.grpDeviceInfoLayout = QtWidgets.QVBoxLayout()
+            self.grpDeviceInfoLayout.setContentsMargins(-1, 3, -1, -1)
+            rowDeviceInfo1 = QtWidgets.QHBoxLayout()
+            self.lblDeviceName = QtWidgets.QLabel(__("Device:"))
+            self.lblDeviceName.setMinimumWidth(120)
+            self.lblDeviceNameResult = QtWidgets.QLabel("GBxCart RW")
+            rowDeviceInfo1.addWidget(self.lblDeviceName)
+            rowDeviceInfo1.addWidget(self.lblDeviceNameResult)
+            rowDeviceInfo1.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo1)
+            rowDeviceInfo3 = QtWidgets.QHBoxLayout()
+            self.lblDeviceFWVer = QtWidgets.QLabel(__("Firmware version:"))
+            self.lblDeviceFWVer.setMinimumWidth(120)
+            self.lblDeviceFWVerResult = QtWidgets.QLabel("")
+            rowDeviceInfo3.addWidget(self.lblDeviceFWVer)
+            rowDeviceInfo3.addWidget(self.lblDeviceFWVerResult)
+            rowDeviceInfo3.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo3)
+            rowDeviceInfo2 = QtWidgets.QHBoxLayout()
+            self.lblDevicePCBVer = QtWidgets.QLabel(__("PCB version:"))
+            self.lblDevicePCBVer.setMinimumWidth(120)
+            self.optDevicePCBVer14 = QtWidgets.QRadioButton("v1.4")
+            self.optDevicePCBVer14.clicked.connect(self.SetPCBVersion)
+            self.optDevicePCBVer14a = QtWidgets.QRadioButton("v1.4a/b/c")
+            self.optDevicePCBVer14a.clicked.connect(self.SetPCBVersion)
+            rowDeviceInfo2.addWidget(self.lblDevicePCBVer)
+            rowDeviceInfo2.addWidget(self.optDevicePCBVer14)
+            rowDeviceInfo2.addWidget(self.optDevicePCBVer14a)
+            rowDeviceInfo2.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo2)
+            self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
+            self.layout_device.addWidget(self.grpDeviceInfo)
+
         def __init__(
             self,
             app: QtWidgets.QWidget,
@@ -838,42 +874,7 @@ try:
             self.main_layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
             self.layout_device = QtWidgets.QVBoxLayout()
 
-            # ↓↓↓ Current Device Information
-            self.grpDeviceInfo = QtWidgets.QGroupBox(__("Current Firmware"))
-            self.grpDeviceInfo.setMinimumWidth(420)
-            self.grpDeviceInfoLayout = QtWidgets.QVBoxLayout()
-            self.grpDeviceInfoLayout.setContentsMargins(-1, 3, -1, -1)
-            rowDeviceInfo1 = QtWidgets.QHBoxLayout()
-            self.lblDeviceName = QtWidgets.QLabel(__("Device:"))
-            self.lblDeviceName.setMinimumWidth(120)
-            self.lblDeviceNameResult = QtWidgets.QLabel("GBxCart RW")
-            rowDeviceInfo1.addWidget(self.lblDeviceName)
-            rowDeviceInfo1.addWidget(self.lblDeviceNameResult)
-            rowDeviceInfo1.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo1)
-            rowDeviceInfo3 = QtWidgets.QHBoxLayout()
-            self.lblDeviceFWVer = QtWidgets.QLabel(__("Firmware version:"))
-            self.lblDeviceFWVer.setMinimumWidth(120)
-            self.lblDeviceFWVerResult = QtWidgets.QLabel("")
-            rowDeviceInfo3.addWidget(self.lblDeviceFWVer)
-            rowDeviceInfo3.addWidget(self.lblDeviceFWVerResult)
-            rowDeviceInfo3.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo3)
-            rowDeviceInfo2 = QtWidgets.QHBoxLayout()
-            self.lblDevicePCBVer = QtWidgets.QLabel(__("PCB version:"))
-            self.lblDevicePCBVer.setMinimumWidth(120)
-            self.optDevicePCBVer14 = QtWidgets.QRadioButton("v1.4")
-            self.optDevicePCBVer14.clicked.connect(self.SetPCBVersion)
-            self.optDevicePCBVer14a = QtWidgets.QRadioButton("v1.4a/b/c")
-            self.optDevicePCBVer14a.clicked.connect(self.SetPCBVersion)
-            rowDeviceInfo2.addWidget(self.lblDevicePCBVer)
-            rowDeviceInfo2.addWidget(self.optDevicePCBVer14)
-            rowDeviceInfo2.addWidget(self.optDevicePCBVer14a)
-            rowDeviceInfo2.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo2)
-            self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
-            self.layout_device.addWidget(self.grpDeviceInfo)
-            # ↑↑↑ Current Device Information
+            self._CreateCurrentFirmwareGroup()
 
             # ↓↓↓ Available Firmware Updates
             self.grpAvailableFwUpdates = QtWidgets.QGroupBox(__("Available Firmware"))
@@ -1149,6 +1150,38 @@ try:
             self.OFW_VER = str(self.INI.GetValue("ofw_ver") or "")
             self.OFW_TEXT = str(self.INI.GetValue("ofw_text") or "")
 
+        def _CreateCurrentDeviceGroup(self) -> None:
+            self.grpDeviceInfo = QtWidgets.QGroupBox(__("Current Device Information"))
+            self.grpDeviceInfo.setMinimumWidth(420)
+            self.grpDeviceInfoLayout = QtWidgets.QVBoxLayout()
+            self.grpDeviceInfoLayout.setContentsMargins(-1, 3, -1, -1)
+            rowDeviceInfo1 = QtWidgets.QHBoxLayout()
+            self.lblDeviceName = QtWidgets.QLabel(__("Device Name:"))
+            self.lblDeviceName.setMinimumWidth(120)
+            self.lblDeviceNameResult = QtWidgets.QLabel("GBxCart RW")
+            rowDeviceInfo1.addWidget(self.lblDeviceName)
+            rowDeviceInfo1.addWidget(self.lblDeviceNameResult)
+            rowDeviceInfo1.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo1)
+            rowDeviceInfo2 = QtWidgets.QHBoxLayout()
+            self.lblDevicePCBVer = QtWidgets.QLabel(__("PCB version:"))
+            self.lblDevicePCBVer.setMinimumWidth(120)
+            self.lblDevicePCBVerResult = QtWidgets.QLabel("1.3")
+            rowDeviceInfo2.addWidget(self.lblDevicePCBVer)
+            rowDeviceInfo2.addWidget(self.lblDevicePCBVerResult)
+            rowDeviceInfo2.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo2)
+            rowDeviceInfo3 = QtWidgets.QHBoxLayout()
+            self.lblDeviceFWVer = QtWidgets.QLabel(__("Firmware version:"))
+            self.lblDeviceFWVer.setMinimumWidth(120)
+            self.lblDeviceFWVerResult = QtWidgets.QLabel("R26")
+            rowDeviceInfo3.addWidget(self.lblDeviceFWVer)
+            rowDeviceInfo3.addWidget(self.lblDeviceFWVerResult)
+            rowDeviceInfo3.addStretch(1)
+            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo3)
+            self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
+            self.layout_device.addWidget(self.grpDeviceInfo)
+
         def __init__(
             self,
             app: QtWidgets.QWidget,
@@ -1187,38 +1220,7 @@ try:
             self.main_layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
             self.layout_device = QtWidgets.QVBoxLayout()
 
-            # ↓↓↓ Current Device Information
-            self.grpDeviceInfo = QtWidgets.QGroupBox(__("Current Device Information"))
-            self.grpDeviceInfo.setMinimumWidth(420)
-            self.grpDeviceInfoLayout = QtWidgets.QVBoxLayout()
-            self.grpDeviceInfoLayout.setContentsMargins(-1, 3, -1, -1)
-            rowDeviceInfo1 = QtWidgets.QHBoxLayout()
-            self.lblDeviceName = QtWidgets.QLabel(__("Device Name:"))
-            self.lblDeviceName.setMinimumWidth(120)
-            self.lblDeviceNameResult = QtWidgets.QLabel("GBxCart RW")
-            rowDeviceInfo1.addWidget(self.lblDeviceName)
-            rowDeviceInfo1.addWidget(self.lblDeviceNameResult)
-            rowDeviceInfo1.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo1)
-            rowDeviceInfo2 = QtWidgets.QHBoxLayout()
-            self.lblDevicePCBVer = QtWidgets.QLabel(__("PCB version:"))
-            self.lblDevicePCBVer.setMinimumWidth(120)
-            self.lblDevicePCBVerResult = QtWidgets.QLabel("1.3")
-            rowDeviceInfo2.addWidget(self.lblDevicePCBVer)
-            rowDeviceInfo2.addWidget(self.lblDevicePCBVerResult)
-            rowDeviceInfo2.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo2)
-            rowDeviceInfo3 = QtWidgets.QHBoxLayout()
-            self.lblDeviceFWVer = QtWidgets.QLabel(__("Firmware version:"))
-            self.lblDeviceFWVer.setMinimumWidth(120)
-            self.lblDeviceFWVerResult = QtWidgets.QLabel("R26")
-            rowDeviceInfo3.addWidget(self.lblDeviceFWVer)
-            rowDeviceInfo3.addWidget(self.lblDeviceFWVerResult)
-            rowDeviceInfo3.addStretch(1)
-            self.grpDeviceInfoLayout.addLayout(rowDeviceInfo3)
-            self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
-            self.layout_device.addWidget(self.grpDeviceInfo)
-            # ↑↑↑ Current Device Information
+            self._CreateCurrentDeviceGroup()
 
             # ↓↓↓ Available Firmware Updates
             self.grpAvailableFwUpdates = QtWidgets.QGroupBox(__("Firmware Update Options"))
@@ -1629,14 +1631,8 @@ try:
             self.reject()
             return 1
 
-        def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
-            fw_buffer: bytearray = data
-            bootloader = self._ConnectBootloader(fncSetStatus)
-            if bootloader is None:
-                return 2
-            dev, buffer = bootloader
-
-            fncSetStatus(__("Reading bootloader information..."))
+        @staticmethod
+        def _ParseBootloaderInfo(buffer: bytes) -> BootloaderInfo:
             (
                 magic,
                 tsb_version,
@@ -1655,7 +1651,7 @@ try:
                 jmp_mode, device_type = "absolute", "attiny"
             elif avr_jmp_identifier == 0xAA:
                 jmp_mode, device_type = "relative", "atmega"
-            info: BootloaderInfo = {
+            return {
                 "magic": magic,
                 "tsb_version": tsb_version,
                 "tsb_status": tsb_status,
@@ -1669,6 +1665,16 @@ try:
                 "device_type": device_type,
                 "tsb_timeout": 0,
             }
+
+        def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
+            fw_buffer: bytearray = data
+            bootloader = self._ConnectBootloader(fncSetStatus)
+            if bootloader is None:
+                return 2
+            dev, buffer = bootloader
+
+            fncSetStatus(__("Reading bootloader information..."))
+            info = self._ParseBootloaderInfo(buffer)
 
             if (
                 info["page_size"] != 64

@@ -467,6 +467,43 @@ def _prepare_base_args(
     return config_path, {"app_path": app_path, "config_path": config_path, "argparsed": parsed_args}
 
 
+def _add_device_cli_arguments(ap_cli: argparse._ArgumentGroup) -> None:
+    ap_cli.add_argument(
+        "--device-port",
+        help=c__("Command Line Help", "override device port"),
+        default=None,
+    )
+    baudrate_group = ap_cli.add_mutually_exclusive_group()
+    baudrate_group.add_argument(
+        "--gbxcartrw-baudrate",
+        "--device-baudrate",
+        dest="gbxcartrw_baudrate",
+        choices=GBXCART_RW_BAUD_RATES,
+        type=int,
+        default=None,
+        help=c__("Command Line Help", "set the GBxCart RW baud rate"),
+    )
+    baudrate_group.add_argument(
+        "--device-limit-baudrate",
+        action="store_true",
+        help=c__("Command Line Help", "limit connection to a slower baud rate"),
+    )
+    ap_cli.add_argument(
+        "--compare-sectors",
+        action="store_true",
+        help=c__(
+            "Command Line Help",
+            "compare sectors and only write those that differ when writing a ROM (only for flash carts that support this feature)",
+        ),
+        default=True,
+    )
+    ap_cli.add_argument(
+        "--wait",
+        action="store_true",
+        help=c__("Command Line Help", "wait for key press after the program has ended"),
+    )
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -662,40 +699,7 @@ def main(portableMode: bool = False) -> int | None:
             "automatically extract Game Boy Camera pictures after backing up save data",
         ),
     )
-    ap_cli2.add_argument(
-        "--device-port",
-        help=c__("Command Line Help", "override device port"),
-        default=None,
-    )
-    baudrate_group = ap_cli2.add_mutually_exclusive_group()
-    baudrate_group.add_argument(
-        "--gbxcartrw-baudrate",
-        "--device-baudrate",
-        dest="gbxcartrw_baudrate",
-        choices=GBXCART_RW_BAUD_RATES,
-        type=int,
-        default=None,
-        help=c__("Command Line Help", "set the GBxCart RW baud rate"),
-    )
-    baudrate_group.add_argument(
-        "--device-limit-baudrate",
-        action="store_true",
-        help=c__("Command Line Help", "limit connection to a slower baud rate"),
-    )
-    ap_cli2.add_argument(
-        "--compare-sectors",
-        action="store_true",
-        help=c__(
-            "Command Line Help",
-            "compare sectors and only write those that differ when writing a ROM (only for flash carts that support this feature)",
-        ),
-        default=True,
-    )
-    ap_cli2.add_argument(
-        "--wait",
-        action="store_true",
-        help=c__("Command Line Help", "wait for key press after the program has ended"),
-    )
+    _add_device_cli_arguments(ap_cli2)
     try:
         parsed_args, _ = parser.parse_known_args()
     except SystemExit:

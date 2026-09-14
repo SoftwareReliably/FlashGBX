@@ -161,6 +161,12 @@ class DumpReport:
         ]
         return fields
 
+    @staticmethod
+    def _rom_size_string(rom_size: int) -> str:
+        if rom_size in RomSizes():
+            return RomSizes(rom_size).GetString(localized=False)
+        return f"{rom_size:,} bytes"
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
@@ -171,11 +177,7 @@ class DumpReport:
 
         system_name: Literal["Game Boy", "Game Boy Advance"] = "Game Boy" if mode == "DMG" else "Game Boy Advance"
 
-        rom_size_int: int = di["rom_size"]
-        if rom_size_int in RomSizes():
-            rom_size_str: str = RomSizes(rom_size_int).GetString(localized=False)
-        else:
-            rom_size_str = f"{rom_size_int:,} bytes"
+        rom_size_str = cls._rom_size_string(di["rom_size"])
 
         keys = list(device.SUPPORTED_CARTS[mode].keys())
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
