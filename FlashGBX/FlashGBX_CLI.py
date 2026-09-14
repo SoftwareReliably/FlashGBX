@@ -316,6 +316,20 @@ class FlashGBX_CLI:
             elif status == 2:
                 print(f"{ANSI.RED:s}{message:s}{ANSI.RESET:s}")
 
+    @staticmethod
+    def _FirmwareUpdateActions() -> set[str]:
+        actions: set[str] = set()
+        for hw_mod in HW_DEVICES:
+            try:
+                dev = hw_mod.GbxDevice()
+                if dev.SupportsFirmwareUpdates():
+                    action = dev.FirmwareUpdateAction()
+                    if action is not None:
+                        actions.add(action)
+            except Exception:
+                logger.exception("Failed to inspect a firmware-update action")
+        return actions
+
     def run(self) -> int:
         sys.stdout = Logger()
         self._PrintConfigMessages(self.ARGS["config_ret"])
@@ -355,16 +369,7 @@ class FlashGBX_CLI:
             except Exception:
                 logger.exception("Failed to add a firmware-update action to the CLI menu")
 
-        fwupdate_actions: set[str] = set()
-        for hw_mod in HW_DEVICES:
-            try:
-                dev = hw_mod.GbxDevice()
-                if dev.SupportsFirmwareUpdates():
-                    action = dev.FirmwareUpdateAction()
-                    if action is not None:
-                        fwupdate_actions.add(action)
-            except Exception:
-                logger.exception("Failed to inspect a firmware-update action")
+        fwupdate_actions = self._FirmwareUpdateActions()
 
         # Ask interactively if no args set
         if args.action is None:
@@ -1052,6 +1057,18 @@ class FlashGBX_CLI:
                 lines.append(f"- {names[cart_type]:s}")
         return "\n".join(lines)
 
+    def _WarnUnsupportedDmgMapper(self, data: HeaderData) -> None:
+        if data["logo_correct"] and not self.CONN.IsSupportedMbc(data["mapper_raw"]):
+            print(
+                ANSI.YELLOW
+                + "\n"
+                + __(
+                    "Warning: This cartridge uses a mapper that may not be completely supported by FlashGBX using the current firmware version of the {device_name}. Please check for firmware updates.",
+                    device_name=self.CONN.GetFullName(),
+                )
+                + ANSI.RESET,
+            )
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -1131,16 +1148,7 @@ class FlashGBX_CLI:
                 )
                 bad_read = True
 
-            if data["logo_correct"] and not self.CONN.IsSupportedMbc(data["mapper_raw"]):
-                print(
-                    ANSI.YELLOW
-                    + "\n"
-                    + __(
-                        "Warning: This cartridge uses a mapper that may not be completely supported by FlashGBX using the current firmware version of the {device_name}. Please check for firmware updates.",
-                        device_name=self.CONN.GetFullName(),
-                    )
-                    + ANSI.RESET,
-                )
+            self._WarnUnsupportedDmgMapper(data)
 
         elif self.CONN.GetMode() == "AGB":
             game_name = None
@@ -1769,6 +1777,33 @@ class FlashGBX_CLI:
                 ),
             )
 
+    def _ConfirmSafeFlashVoltage(
+        self,
+        voltage: float,
+        cart: Mapping[str, Any],
+        *,
+        device_voltage_locked: bool,
+    ) -> bool:
+        unsafe_voltage = (
+            (voltage == 3.3 or "voltage_variants" in cart) and device_voltage_locked and self.CONN.GetMode() == "DMG"
+        )
+        if not unsafe_voltage:
+            return True
+
+        print()
+        print(
+            ANSI.YELLOW
+            + __(
+                "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
+            )
+            + ANSI.RESET,
+        )
+        answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
+        if answer == "y":
+            return True
+        print(__("Canceled."))
+        return False
+
     def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         del header
         mbc = 0
@@ -1900,23 +1935,8 @@ class FlashGBX_CLI:
                     ),
                 )
 
-        if (
-            (v == 3.3 or "voltage_variants" in carts[cart_type])
-            and device_voltage_locked
-            and self.CONN.GetMode() == "DMG"
-        ):
-            print()
-            print(
-                ANSI.YELLOW
-                + __(
-                    "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
-                )
-                + ANSI.RESET,
-            )
-            answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
-            if answer != "y":
-                print(__("Canceled."))
-                return
+        if not self._ConfirmSafeFlashVoltage(v, carts[cart_type], device_voltage_locked=device_voltage_locked):
+            return
 
         print()
         if len(buffer) > 0x1000:

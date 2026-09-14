@@ -5963,6 +5963,10 @@ class LK_Device(ABC):
         if self.FW["fw_ver"] >= 12:
             self.wait_for_ack()
 
+    def _configure_agb_irq(self, cart_type: Mapping[str, Any]) -> None:
+        if self.FW["fw_ver"] >= 12:
+            self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
+
     def _load_flash_commands(
         self,
         cart_type: dict[str, Any],
@@ -6074,8 +6078,7 @@ class LK_Device(ABC):
                 self._set_fw_variable("STATUS_REGISTER_MASK", status_register_mask)
                 self._set_fw_variable("STATUS_REGISTER_VALUE", status_register_value)
 
-        if self.FW["fw_ver"] >= 12:
-            self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
+        self._configure_agb_irq(cart_type)
 
         return command_set_type, we
 

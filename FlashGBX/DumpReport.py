@@ -138,6 +138,29 @@ class DumpReport:
             header["db"] = source["db"]
         return header
 
+    @staticmethod
+    def _general_fields(di: dict[str, Any], device: LK_Device) -> list[tuple[str, str]]:
+        fields = [
+            (
+                "Hardware",
+                f"{device.GetFullName()} - Firmware {device.GetFirmwareVersion()}",
+            ),
+            ("Software", f"{AppInfo.NAME} {AppInfo.VERSION}"),
+            (
+                "OS Platform",
+                f"{AppInfo.os_string()}, {platform.machine()}, {i18n.OS_LANGUAGE}",
+            ),
+        ]
+        if device.GetName() == "GBxCart RW":
+            fields.append(("Baud Rate", f"{device.GetBaudRate():d}"))
+        fields += [
+            ("Dump Time", di["timestamp"]),
+            ("Time Elapsed", "%TIME_ELAPSED% (%TRANSFER_RATE%)"),
+            ("Transfer Buffer", f"{di['transfer_size']:d} bytes"),
+            ("Retries", f"{device.GetReadErrors():d}"),
+        ]
+        return fields
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
@@ -178,26 +201,7 @@ class DumpReport:
         )
 
         lines += ["", "== General Information =="]
-        general_fields: list[tuple[str, str]] = [
-            (
-                "Hardware",
-                f"{device.GetFullName()} - Firmware {device.GetFirmwareVersion()}",
-            ),
-            ("Software", f"{AppInfo.NAME} {AppInfo.VERSION}"),
-            (
-                "OS Platform",
-                f"{AppInfo.os_string()}, {platform.machine()}, {i18n.OS_LANGUAGE}",
-            ),
-        ]
-        if device.GetName() == "GBxCart RW":
-            general_fields.append(("Baud Rate", f"{device.GetBaudRate():d}"))
-        general_fields += [
-            ("Dump Time", di["timestamp"]),
-            ("Time Elapsed", "%TIME_ELAPSED% (%TRANSFER_RATE%)"),
-            ("Transfer Buffer", f"{di['transfer_size']:d} bytes"),
-            ("Retries", f"{device.GetReadErrors():d}"),
-        ]
-        lines += cls._fields_to_lines(general_fields)
+        lines += cls._fields_to_lines(cls._general_fields(di, device))
 
         lines += ["", "== Dumping Settings =="]
         dumping_fields: list[tuple[str, str]] = [

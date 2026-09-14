@@ -3649,6 +3649,30 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
         return True
 
+    def _PromptBackupRtc(self, mbc: int) -> bool | None:
+        if self._device.INFO["has_rtc"] is not True:
+            return False
+        if self._device.GetMode() == "DMG" and mbc in (0x10, 0x110) and not self._device.IsClkConnected():
+            return False
+
+        msg = __(
+            "A Real Time Clock cartridge was detected. Do you want the cartridge's Real Time Clock register values also to be saved?",
+        )
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Question,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=msg,
+            standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No
+            | QtWidgets.QMessageBox.StandardButton.Cancel,
+        )
+        msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
+        answer = msgbox.exec()
+        if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+            return None
+        return answer == QtWidgets.QMessageBox.StandardButton.Yes
+
     def BackupRAM(self, dpath: str = "") -> None:
         mode: Literal["DMG", "AGB"] | None = self._device.GetMode() if self.CheckDeviceAlive() else None
         if mode not in ("DMG", "AGB"):
@@ -3726,28 +3750,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         verify_read = self.SETTINGS.value("VerifyData", default="enabled")
         verify_read = bool(verify_read and verify_read.lower() == "enabled")
 
-        rtc = False
-        if self._device.INFO["has_rtc"] is True:
-            if self._device.GetMode() == "DMG" and mbc in (0x10, 0x110) and not self._device.IsClkConnected():
-                rtc = False
-            else:
-                msg = __(
-                    "A Real Time Clock cartridge was detected. Do you want the cartridge's Real Time Clock register values also to be saved?",
-                )
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Question,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=msg,
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
-                    | QtWidgets.QMessageBox.StandardButton.No
-                    | QtWidgets.QMessageBox.StandardButton.Cancel,
-                )
-                msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
-                answer = msgbox.exec()
-                if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                    return
-                rtc = answer == QtWidgets.QMessageBox.StandardButton.Yes
+        rtc = self._PromptBackupRtc(mbc)
+        if rtc is None:
+            return
 
         bl_args = {}
         if (
@@ -6668,12 +6673,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         msgbox.exec()
         self.LimitBaudRateGBxCartRW()
 
+    def _MaybeUpdateProgressMethodTitle(self, args: Mapping[str, Any]) -> None:
+        if "method" in args:
+            self._UpdateProgressMethodTitle(args)
+
     def UpdateProgress(self, args: Mapping[str, Any] | None) -> None:
         if args is None or self.CONN is None:
             return
 
-        if "method" in args:
-            self._UpdateProgressMethodTitle(args)
+        self._MaybeUpdateProgressMethodTitle(args)
 
         if "error" in args:
             self._ShowProgressError(args["error"])
