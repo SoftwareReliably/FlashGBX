@@ -6331,13 +6331,24 @@ class LK_Device(ABC):
             self.INFO["verify_error_params"]["mapper_max_size"] = context.mbc.GetMaxROMSize()
         return True
 
+    def _InitializeFlashVerification(self, context: _FlashVerificationContext) -> None:
+        self.SetProgress(
+            {
+                "action": "INITIALIZE",
+                "method": "ROM_WRITE_VERIFY",
+                "size": len(context.data_import),
+                "flash_offset": context.flash_offset,
+                "voltage": context.active_voltage,
+            },
+        )
+        if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
+            (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").write_bytes(b"")
+
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
         args = context.args
         cart_type = context.cart_type
         flashcart = context.flashcart
         data_import = context.data_import
-        flash_offset = context.flash_offset
-        active_voltage = context.active_voltage
         verify_sectors = context.verify_sectors
         rom_bank_size = context.rom_bank_size
         _mbc = context.mbc
@@ -6356,17 +6367,7 @@ class LK_Device(ABC):
         crc32_errors = 0
         self.INFO.pop("broken_sectors", None)
         if "verify_write" in args and args["verify_write"] is True:
-            self.SetProgress(
-                {
-                    "action": "INITIALIZE",
-                    "method": "ROM_WRITE_VERIFY",
-                    "size": len(data_import),
-                    "flash_offset": flash_offset,
-                    "voltage": active_voltage,
-                },
-            )
-            if ".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG:
-                (Path(AppContext.CONFIG_PATH) / "debug_verify.bin").write_bytes(b"")
+            self._InitializeFlashVerification(context)
 
             current_bank: int | None = None
             broken_sectors = []
@@ -7465,6 +7466,15 @@ class LK_Device(ABC):
         mode, preparation = self._StartFlashROMWrite(args)
         if preparation is None:
             return False
+
+        return self._WritePreparedFlashROM(args, mode, preparation)
+
+    def _WritePreparedFlashROM(
+        self,
+        args: dict[str, Any],
+        mode: DeviceMode,
+        preparation: _FlashWritePreparation,
+    ) -> bool | None:
         (
             cart_name,
             cart_type,

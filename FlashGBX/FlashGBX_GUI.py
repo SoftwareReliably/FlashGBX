@@ -2238,6 +2238,80 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.optAGB.setChecked(True)
             self.SetMode()
 
+    def _ShowNoDevicesFoundMessage(self, messages: Sequence[str], first_run: bool) -> None:
+        if messages:
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                "\n\n".join(messages),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return
+        if first_run:
+            return
+
+        compatible_devices = []
+        for hw_device in HW_DEVICES:
+            device_name = getattr(hw_device.GbxDevice, "DEVICE_NAME", None)
+            if not device_name or device_name in compatible_devices:
+                continue
+            if device_name == "Joey Jr":
+                device_name += (
+                    " ("
+                    + c__(
+                        "Joey Jr is compatible, but requires a firmware update",
+                        "firmware update required",
+                    )
+                    + ")"
+                )
+            compatible_devices.append(device_name)
+
+        compatible_devices_text = "".join(f"- {device_name}\n" for device_name in compatible_devices)
+        msg = (
+            __("No compatible devices found. Please ensure the device is connected properly.")
+            + "\n\n"
+            + __("Compatible devices:")
+            + "\n"
+            + compatible_devices_text
+            + "\n"
+            + __(
+                "Troubleshooting advice:\n"
+                "- Re-connect the device with different USB cables and ports\n"
+                "- Avoid battery charging cables and passive USB hubs\n"
+                "- Perform a Firmware Update",
+            )
+        )
+        if platform.system() == "Darwin":
+            msg += "\n\n" + __(
+                "<b>For Joey Jr on macOS:</b>\nAn extra step is necessary to update the firmware: {url}",
+                url='<a href="https://github.com/Lesserkuma/JoeyJr_FWUpdater">https://github.com/Lesserkuma/JoeyJr_FWUpdater</a>',
+            )
+        elif platform.system() == "Linux":
+            msg += "\n\n" + __(
+                "<b>For Linux users:</b>\nEnsure your user account has permissions to use the device. See the {readme} file for more information.",
+                readme="<b>README.md</b>",
+            )
+
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Question,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=msg.replace("\n", "<br>"),
+        )
+        button_ok = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&OK"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_fwupdate = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Firmware-Updater"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        msgbox.setDefaultButton(button_ok)
+        msgbox.setEscapeButton(button_ok)
+        msgbox.exec()
+        if msgbox.clickedButton() == button_fwupdate:
+            self.ShowFirmwareUpdateWindow()
+
     def FindDevices(
         self,
         connectToFirst: bool = False,
@@ -2297,81 +2371,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
 
         if len(self.DEVICES) == 0:
-            if len(messages) > 0:
-                msg = ""
-                for message in messages:
-                    msg += message + "\n\n"
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    msg[:-2],
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-            elif not firstRun:
-                compatible_devices = []
-                for hw_device in HW_DEVICES:
-                    device_name = getattr(hw_device.GbxDevice, "DEVICE_NAME", None)
-                    if not device_name or device_name in compatible_devices:
-                        continue
-                    if device_name == "Joey Jr":
-                        device_name += (
-                            " ("
-                            + c__(
-                                "Joey Jr is compatible, but requires a firmware update",
-                                "firmware update required",
-                            )
-                            + ")"
-                        )
-                    compatible_devices.append(device_name)
-
-                compatible_devices_text = ""
-                for device_name in compatible_devices:
-                    compatible_devices_text += "- " + device_name + "\n"
-
-                msg = (
-                    __("No compatible devices found. Please ensure the device is connected properly.")
-                    + "\n\n"
-                    + __("Compatible devices:")
-                    + "\n"
-                    + compatible_devices_text
-                    + "\n"
-                    + __(
-                        "Troubleshooting advice:\n"
-                        "- Re-connect the device with different USB cables and ports\n"
-                        "- Avoid battery charging cables and passive USB hubs\n"
-                        "- Perform a Firmware Update",
-                    )
-                )
-                if platform.system() == "Darwin":
-                    msg += "\n\n" + __(
-                        "<b>For Joey Jr on macOS:</b>\nAn extra step is necessary to update the firmware: {url}",
-                        url='<a href="https://github.com/Lesserkuma/JoeyJr_FWUpdater">https://github.com/Lesserkuma/JoeyJr_FWUpdater</a>',
-                    )
-                elif platform.system() == "Linux":
-                    msg += "\n\n" + __(
-                        "<b>For Linux users:</b>\nEnsure your user account has permissions to use the device. See the {readme} file for more information.",
-                        readme="<b>README.md</b>",
-                    )
-
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Question,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=msg.replace("\n", "<br>"),
-                )
-                button_ok = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&OK"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-                button_fwupdate = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&Firmware-Updater"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-                msgbox.setDefaultButton(button_ok)
-                msgbox.setEscapeButton(button_ok)
-                msgbox.exec()
-                if msgbox.clickedButton() == button_fwupdate:
-                    self.ShowFirmwareUpdateWindow()
+            self._ShowNoDevicesFoundMessage(messages, firstRun)
 
             self.lblDevice.setText(__("No devices found."))
             self.lblDevice.setStyleSheet("")
