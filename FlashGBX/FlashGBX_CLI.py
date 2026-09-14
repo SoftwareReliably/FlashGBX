@@ -535,6 +535,41 @@ class FlashGBX_CLI:
             answer = input(msg).strip().lower()
             self.CONN.USER_ANSWER = answer in ("y", "yes")
 
+    def _RenderProgressBar(self, pos: int, size: int, speed: float, elapsed: int, left: int) -> None:
+        if size <= 0:
+            return
+        # pv style progress status
+        prog_str = "{:s}/{:s} {:s} [{:s}{:s}] [{:s}] {:s}% {:s} {:s} ".format(
+            Formatter.file_size(pos, space="", short=True).replace(" ", "").rjust(8),
+            Formatter.file_size(size, space="", short=True).replace(" ", ""),
+            Formatter.progress_time_short(elapsed),
+            format_decimal(speed, precision=2).rjust(6),
+            __(" KiB/s").replace(" ", ""),
+            "%PROG_BAR%",
+            f"{int(pos / size * 100):d}".rjust(3),
+            c__("Estimated Time abbreviation (3 characters)", "ETA"),
+            Formatter.progress_time_short(left),
+        )
+        prog_width = max(
+            1,
+            shutil.get_terminal_size((80, 20))[0] - (len(prog_str) - 10),
+        )
+        progress = min(1, max(0, pos / size))
+        whole_width = math.floor(progress * prog_width)
+        remainder_width = (progress * prog_width) % 1
+        part_width = math.floor(remainder_width * 8)
+        try:
+            part_char = self.prog_bar_part_chars[part_width]
+            if (prog_width - whole_width - 1) < 0:
+                part_char = ""
+            prog_bar = "█" * whole_width + part_char + " " * (prog_width - whole_width - 1)
+            print(prog_str.replace("%PROG_BAR%", prog_bar), end="\r")
+        except UnicodeEncodeError:
+            prog_bar = "#" * whole_width + " " * (prog_width - whole_width)
+            print(prog_str.replace("%PROG_BAR%", prog_bar), end="\r", flush=True)
+        except Exception:
+            logger.exception("Failed to render the CLI progress bar")
+
     def UpdateProgress(self, args: ProgressPayload | None) -> None:
         if args is None:
             return
@@ -604,39 +639,7 @@ class FlashGBX_CLI:
                         print(args["info_msg"])
                 return
             elif args["action"] == "PROGRESS":
-                if size <= 0:
-                    return
-                # pv style progress status
-                prog_str = "{:s}/{:s} {:s} [{:s}{:s}] [{:s}] {:s}% {:s} {:s} ".format(
-                    Formatter.file_size(pos, space="", short=True).replace(" ", "").rjust(8),
-                    Formatter.file_size(size, space="", short=True).replace(" ", ""),
-                    Formatter.progress_time_short(elapsed),
-                    format_decimal(speed, precision=2).rjust(6),
-                    __(" KiB/s").replace(" ", ""),
-                    "%PROG_BAR%",
-                    f"{int(pos / size * 100):d}".rjust(3),
-                    c__("Estimated Time abbreviation (3 characters)", "ETA"),
-                    Formatter.progress_time_short(left),
-                )
-                prog_width = max(
-                    1,
-                    shutil.get_terminal_size((80, 20))[0] - (len(prog_str) - 10),
-                )
-                progress = min(1, max(0, pos / size))
-                whole_width = math.floor(progress * prog_width)
-                remainder_width = (progress * prog_width) % 1
-                part_width = math.floor(remainder_width * 8)
-                try:
-                    part_char = self.prog_bar_part_chars[part_width]
-                    if (prog_width - whole_width - 1) < 0:
-                        part_char = ""
-                    prog_bar = "█" * whole_width + part_char + " " * (prog_width - whole_width - 1)
-                    print(prog_str.replace("%PROG_BAR%", prog_bar), end="\r")
-                except UnicodeEncodeError:
-                    prog_bar = "#" * whole_width + " " * (prog_width - whole_width)
-                    print(prog_str.replace("%PROG_BAR%", prog_bar), end="\r", flush=True)
-                except Exception:
-                    logger.exception("Failed to render the CLI progress bar")
+                self._RenderProgressBar(pos, size, speed, elapsed, left)
 
     def _FinishBackupRAM(self) -> None:
         self.CONN.INFO["last_action"] = 0

@@ -18,6 +18,7 @@ import traceback
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from itertools import takewhile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, ClassVar, Literal, NamedTuple, Protocol, overload
 
@@ -2357,6 +2358,14 @@ class LK_Device(ABC):
                 self.INFO["dump_info"]["batteryless_sram"] = batteryless
         return save_type, save_size
 
+    def _SetDetectionProgress(
+        self,
+        text: str,
+        signal: ProgressSignal | ProgressCallback | None,
+    ) -> None:
+        if signal is not None:
+            self.SetProgress({"action": "UPDATE_INFO", "text": text}, signal=signal)
+
     def _DetectCartridge_Worker(
         self,
         mbc: int | None = None,
@@ -2375,8 +2384,7 @@ class LK_Device(ABC):
         _apot = 0
 
         # Header
-        if signal is not None:
-            self.SetProgress({"action": "UPDATE_INFO", "text": __("Detecting ROM...")}, signal=signal)
+        self._SetDetectionProgress(__("Detecting ROM..."), signal)
         info = self.ReadHeader(checkRtc=True)
         if info is False:
             return False
@@ -2395,11 +2403,7 @@ class LK_Device(ABC):
                 self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
 
         # Detect Flash Cart
-        if signal is not None:
-            self.SetProgress(
-                {"action": "UPDATE_INFO", "text": __("Detecting Flash...")},
-                signal=signal,
-            )
+        self._SetDetectionProgress(__("Detecting Flash..."), signal)
         ret = self.DetectFlash(limitVoltage=limitVoltage)
         if ret is False:
             return False
@@ -3857,10 +3861,7 @@ class LK_Device(ABC):
         return "command_set" not in cart_type or cart_type.get("manual_select") is True
 
     def DetectFlash(self, limitVoltage: bool = False) -> tuple[Any, ...]:
-        mode = self.MODE
-        if mode is None:
-            msg = "Cartridge mode must be selected before detecting flash"
-            raise RuntimeError(msg)
+        mode = self._require_cartridge_mode("detecting flash")
         supported_carts: list[Any] = list(self.SUPPORTED_CARTS[mode].values())
         fc_fncptr: FlashcartCallbacks = {
             "cart_write_fncptr": self._cart_write,
@@ -5692,8 +5693,7 @@ class LK_Device(ABC):
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("accessing save data")
         self.FAST_READ = False
-        if "rtc" not in args:
-            args["rtc"] = False
+        args.setdefault("rtc", False)
 
         # Prepare some stuff
         command: Any = None
@@ -6472,13 +6472,10 @@ class LK_Device(ABC):
             current_bank: int | None = None
             broken_sectors = []
 
-            for sector in verify_sectors:
+            for sector in takewhile(lambda item: item[0] < len(data_import), verify_sectors):
                 if self.CANCEL:
                     self._AbortFlashVerification()
                     return None
-
-                if sector[0] >= len(data_import):
-                    break
 
                 verified = False
                 if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
@@ -7666,12 +7663,9 @@ class LK_Device(ABC):
                 pos = start_address
                 dprint(f"buffer_pos=0x{buffer_pos:X}, start_address=0x{start_address:X}, end_address=0x{end_address:X}")
 
-                while pos < end_address:
+                while pos < end_address and buffer_pos < len(data_import):
                     if self._AbortFlashWriteIfCanceled():
                         return None
-
-                    if buffer_pos >= len(data_import):
-                        break
 
                     # ↓↓↓ Sector erase
                     se_ret = None

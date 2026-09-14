@@ -301,6 +301,14 @@ class RomFileDMG:
         if logo is not False:
             data["logo_sachen"] = logo
 
+    def _ApplyDatabaseMetadata(self, data: dict[str, Any]) -> None:
+        data["db"] = self.GetDatabaseEntry()
+        batteryless_sram = self.GetBatterylessSramConfig(data)
+        if batteryless_sram is not None:
+            data["batteryless_sram"] = batteryless_sram
+        if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
+            data["game_code"] = data["db"]["gc"][4:]
+
     def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
         buffer: bytearray = self.ROMFILE
         if len(buffer) < 0x180:
@@ -659,12 +667,7 @@ class RomFileDMG:
             )
 
         self.DATA = data
-        data["db"] = self.GetDatabaseEntry()
-        batteryless_sram = self.GetBatterylessSramConfig(data)
-        if batteryless_sram is not None:
-            data["batteryless_sram"] = batteryless_sram
-        if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
-            data["game_code"] = data["db"]["gc"][4:]
+        self._ApplyDatabaseMetadata(data)
         return data
 
     def GetDatabaseEntry(self) -> dict | None:

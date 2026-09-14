@@ -3406,30 +3406,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             mbc = 0
 
         if path == "":
-            if mode == "DMG":
-                path = QtWidgets.QFileDialog.getOpenFileName(
-                    self,
-                    __("Write ROM"),
-                    last_dir,
-                    __("Game Boy ROM File")
-                    + " ("
-                    + " ".join("*" + e for e in ROM_EXTS_DMG)
-                    + ");;"
-                    + __("All Files")
-                    + " (*.*)",
-                )[0]
-            else:
-                path = QtWidgets.QFileDialog.getOpenFileName(
-                    self,
-                    __("Write ROM"),
-                    last_dir,
-                    __("Game Boy Advance ROM File")
-                    + " ("
-                    + " ".join("*" + e for e in ROM_EXTS_AGB)
-                    + ");;"
-                    + __("All Files")
-                    + " (*.*)",
-                )[0]
+            file_type_name, rom_extensions = {
+                "DMG": ("Game Boy ROM File", ROM_EXTS_DMG),
+                "AGB": ("Game Boy Advance ROM File", ROM_EXTS_AGB),
+            }[mode]
+            path = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                __("Write ROM"),
+                last_dir,
+                __(file_type_name)
+                + " ("
+                + " ".join("*" + extension for extension in rom_extensions)
+                + ");;"
+                + __("All Files")
+                + " (*.*)",
+            )[0]
 
         if path == "":
             msg = __("No ROM file was selected. Do you want to wipe the ROM contents of the cartridge instead?")
@@ -4916,10 +4907,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if loc_index is None:
             loc_index = self._get_default_bl_location_index(rom_size, locs)
         if len_index is None:
-            if mode == "AGB":
-                len_index = 2
-            elif mode == "DMG":
-                len_index = 1
+            len_index = {"AGB": 2, "DMG": 1}[mode]
         if lay_index is None:
             lay_index = 2
 
@@ -5388,21 +5376,22 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 return True
         return False
 
+    def _GetSelectedMode(self, mode: PlatformMode | None) -> PlatformMode | None:
+        if mode == "DMG" and not self.optDMG.isChecked():
+            return "AGB"
+        if mode == "AGB" and not self.optAGB.isChecked():
+            return "DMG"
+        if self.optDMG.isChecked():
+            return "DMG"
+        if self.optAGB.isChecked():
+            return "AGB"
+        return None
+
     def SetMode(self) -> bool | None:
-        setTo: PlatformMode | None = None
         mode = self._device.GetMode()
-        if mode == "DMG":
-            if self.optDMG.isChecked():
-                return None
-            setTo = "AGB"
-        elif mode == "AGB":
-            if self.optAGB.isChecked():
-                return None
-            setTo = "DMG"
-        elif self.optDMG.isChecked():
-            setTo = "DMG"
-        elif self.optAGB.isChecked():
-            setTo = "AGB"
+        setTo = self._GetSelectedMode(mode)
+        if setTo == mode:
+            return None
 
         if setTo is None:
             return False
