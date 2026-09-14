@@ -6331,8 +6331,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 found_supported = True
 
                 size = detected_size if detected_size > 0 else supp_cart_types[1][cart_type_id].get("flash_size", 0)
-                if size > 0:
-                    msg_flash_size_s = "<b>" + __("ROM Size:") + f"</b> {Formatter.file_size(size, as_int=True):s}<br>"
+                msg_flash_size_s = (
+                    "<b>" + __("ROM Size:") + f"</b> {Formatter.file_size(size, as_int=True):s}<br>" if size > 0 else ""
+                )
 
                 msg_flash_mapper_s = self._FormatDetectedFlashMapper(supp_cart_types[1][cart_type_id])
 
@@ -6625,9 +6626,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuLanguage.setEnabled(enabled)
 
     def UpdateProgress(self, args: Mapping[str, Any] | None) -> None:
-        if args is None:
-            return
-        if self.CONN is None:
+        if args is None or self.CONN is None:
             return
 
         if "method" in args:

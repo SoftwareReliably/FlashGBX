@@ -678,11 +678,9 @@ class CFI:
         return swaps_by_magic.get(magic)
 
     def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
-        if buffer is False or buffer == b"":
+        if buffer is False or len(buffer) < 0x400:
             return False
         buffer = bytearray(buffer)
-        if len(buffer) < 0x400:
-            return False
         magic: str = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
 
         d_swap = self._get_data_swaps(magic)

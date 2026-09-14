@@ -1021,13 +1021,13 @@ class FlashGBX_CLI:
         rows: list[tuple[str, str | None]] = []
         if self.CONN.GetMode() == "DMG":
             # Use (label_with_colon, value) pairs to match existing GUI translation keys
-            game_name = None
             if data["db"]:
-                game_name: str | None = Path(
-                    generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None),
-                ).stem
-            if game_name is not None:
-                rows.append((__("Game Name:"), game_name))
+                rows.append(
+                    (
+                        __("Game Name:"),
+                        Path(generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)).stem,
+                    ),
+                )
 
             rows.append((__("ROM Title:"), Formatter.title(data["game_title"])))
 
@@ -1262,12 +1262,12 @@ class FlashGBX_CLI:
         # Cart Type
         cart_type = None
         msg_cart_type = ""
-        if self.CONN.GetMode() == "DMG":
-            supp_cart_types = self.CONN.GetSupportedCartridgesDMG()
-        elif self.CONN.GetMode() == "AGB":
-            supp_cart_types = self.CONN.GetSupportedCartridgesAGB()
-        else:
+        mode = self.CONN.GetMode()
+        if mode not in ("DMG", "AGB"):
             raise NotImplementedError
+        supp_cart_types = (
+            self.CONN.GetSupportedCartridgesDMG() if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()
+        )
 
         if len(cart_types) > 0:
             cart_type = cart_type_id
@@ -1751,9 +1751,7 @@ class FlashGBX_CLI:
         cart_type = 0
 
         for i in range(len(carts)):
-            if "names" not in carts[i]:
-                continue
-            if carts[i]["type"] != mode:
+            if "names" not in carts[i] or carts[i]["type"] != mode:
                 continue
             if args.flashcart_type in carts[i]["names"]:
                 print(
