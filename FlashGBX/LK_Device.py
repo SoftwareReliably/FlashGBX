@@ -4564,12 +4564,9 @@ class LK_Device(ABC):
                 with debug_path.open("ab") as debug_file:
                     debug_file.write(chunk)
 
-            for index in range(position):
-                is_mismatch = (
-                    index < len(args["verify_write"]) - 1
-                    and index < position - 1
-                    and args["verify_write"][index] != buffer[index]
-                )
+            comparison_length = min(position, len(args["verify_write"]), len(buffer))
+            for index in range(comparison_length):
+                is_mismatch = args["verify_write"][index] != buffer[index]
                 if not is_mismatch:
                     continue
                 if args["rtc_area"] is True and index in (0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9):
