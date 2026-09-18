@@ -5273,7 +5273,7 @@ class LK_Device(ABC):
             return False
         if self.MODE == "DMG" and mbc.GetName() == "MBC2":
             verified_data = bytearray(verified_data)
-            for index in range(len(verified_data)):
+            for index in range(min(len(verified_data), len(buffer))):
                 verified_data[index] &= 0x0F
                 buffer[index] &= 0x0F
 
@@ -5282,13 +5282,14 @@ class LK_Device(ABC):
             buffer[0xFF80:0x10000] = verified_data[0xFF80:0x10000]
             buffer[0x1FF80:0x20000] = verified_data[0xFF80:0x10000]
 
-        if verified_data[:end_address] == buffer[:end_address]:
+        expected_data = buffer[:end_address]
+        if verified_data[:end_address] == expected_data:
             return True
 
         differences = []
         difference_count = 0
         time_start = time.time()
-        for index, (actual, expected) in enumerate(zip(verified_data, buffer[:end_address], strict=False)):
+        for index, (actual, expected) in enumerate(zip(verified_data, expected_data, strict=False)):
             if time.time() > time_start + 10:
                 self.SetProgress(
                     {
@@ -5303,8 +5304,20 @@ class LK_Device(ABC):
                 difference_count += 1
                 if len(differences) < 10:
                     differences.append(f"- 0x{index:06X}: {actual:02X}≠{expected:02X}")
-                elif len(differences) == 10:
-                    differences.append("(" + __("more than 10 differences found") + ")")
+
+        missing_count = max(0, len(expected_data) - len(verified_data))
+        first_missing = len(verified_data)
+        missing_details = min(missing_count, 10 - len(differences))
+        differences.extend(
+            f"- 0x{index:06X}: --≠{expected_data[index]:02X}"
+            for index in range(first_missing, first_missing + missing_details)
+        )
+        difference_count += missing_count
+        if difference_count > len(differences):
+            differences.append("(" + __("more than 10 differences found") + ")")
+
+        verification_size = len(expected_data)
+        difference_percent = difference_count / verification_size * 100 if verification_size > 0 else 0
 
         self.SetProgress(
             {
@@ -5315,7 +5328,7 @@ class LK_Device(ABC):
                     "The save data was written completely, but {count} bytes ({percent}%) didn't pass the verification check.",
                     n=difference_count,
                     count=difference_count,
-                    percent=f"{difference_count / len(verified_data) * 100:.2f}",
+                    percent=f"{difference_percent:.2f}",
                 )
                 + "\n\n"
                 + "\n".join(differences),
