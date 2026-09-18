@@ -6855,7 +6855,7 @@ class LK_Device(ABC):
                     for sector in sector_offsets:
                         if flash_offset > sector[0]:
                             continue
-                        if flash_offset + flash_size < sector[0]:
+                        if flash_offset + flash_size <= sector[0]:
                             break
                         batteryless_sectors.append(sector)
                     write_sectors = batteryless_sectors
