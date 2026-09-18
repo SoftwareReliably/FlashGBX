@@ -1,0 +1,69 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.14
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run scoped coverage gate
+        env:
+          COVERAGE_FILE: coverage-scoped.data
+        run: >-
+          uv run --locked pytest
+          --cov
+          --cov-report=term-missing
+          --cov-report=json:coverage-scoped.json
+          --cov-report=xml:coverage-scoped.xml
+
+      - name: Run expanded package coverage diagnostic
+        if: always()
+        env:
+          COVERAGE_FILE: coverage-expanded.data
+        run: >-
+          uv run --locked pytest
+          --cov=FlashGBX
+          --cov-fail-under=0
+          --cov-report=term-missing
+          --cov-report=json:coverage-expanded.json
+          --cov-report=xml:coverage-expanded.xml
+
+      - name: Upload coverage diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-3.14
+          if-no-files-found: warn
+          path: |
+            coverage-scoped.data
+            coverage-scoped.json
+            coverage-scoped.xml
+            coverage-expanded.data
+            coverage-expanded.json
+            coverage-expanded.xml

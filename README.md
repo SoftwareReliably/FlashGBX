@@ -396,11 +396,11 @@ FlashGBX can also be run in a local Python environment like so. PySide6 is insta
 
 ## Testing
 
-Install the development dependencies and run the pytest suite with:
+Install the locked development dependencies and run the pytest suite with:
 
 ```shell
-uv sync --group dev
-uv run pytest
+uv sync --locked --group dev
+uv run --locked pytest
 ```
 
 Install the Git pre-commit and pre-push hooks after syncing the development dependencies:
@@ -424,11 +424,26 @@ Run the pre-push checks manually with:
 uv run pre-commit run --all-files --hook-stage pre-push
 ```
 
-Run the branch-coverage report and enforce the current 60% floor with:
+Run the scoped branch-coverage report and enforce its current 68% floor with:
 
 ```shell
-uv run pytest --cov
+uv run --locked pytest --cov
 ```
+
+This gate measures the modules listed in `tool.coverage.run.source` in `pyproject.toml`, so it remains
+comparable with the coverage baseline used while the test suite is expanded. It is not whole-package
+coverage.
+
+Run the broader package diagnostic with:
+
+```shell
+uv run --locked pytest --cov=FlashGBX --cov-fail-under=0
+```
+
+The broader report includes modules outside the scoped allowlist, including the shared device engine,
+transfer worker, startup module, and logging. Both reports omit the currently untested GameBub, GBFlash,
+and Joey Jr. hardware backends. The broader result is diagnostic and does not yet enforce a minimum.
+The test workflow publishes separate JSON and XML reports for both measurements.
 
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
 

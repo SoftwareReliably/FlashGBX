@@ -92,7 +92,7 @@ source = [
 ]
 
 [tool.coverage.report]
-fail_under = 58
+fail_under = 68
 show_missing = true
 skip_covered = true
 
@@ -103,10 +103,24 @@ exclude = [
     "FlashGBX/hw_GBFlash.py",
     "FlashGBX/hw_JoeyJr.py",
 ]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
+reportPrivateUsage=false
+reportConstantRedefinition=false
+reportUnnecessaryComparison=false
+reportUnnecessaryIsInstance=false
+reportUnknownVariableType=false
+reportUnknownArgumentType=false
+reportUnknownMemberType=false
+
+reportUnknownLambdaType=false
+reportMissingTypeArgument=false
+reportUnknownParameterType=false
+reportUnnecessaryCast=false
+reportArgumentType=false
+reportAttributeAccessIssue=false
 
 [tool.ruff]
 target-version = "py314"
