@@ -16,7 +16,7 @@ from FlashGBX.FlashGBX_CLI import CLIConfig, FlashGBX_CLI
 from FlashGBX.PocketCamera import PocketCamera
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 
@@ -649,16 +649,18 @@ def test_backup_rom_transfers_generated_dmg_path(
 
     cli.BackupROM(args, dmg_header())
 
-    assert (
-        conn.transfer_calls[0].items()
-        >= {
+    assert conn.transfer_calls == [
+        {
             "mode": 1,
             "path": str(tmp_path / "backup.gb"),
             "mbc": 0x13,
             "rom_size": 0x200000,
+            "agb_rom_size": 0x200000,
+            "start_addr": 0,
+            "fast_read_mode": True,
             "cart_type": 1,
-        }.items()
-    )
+        },
+    ]
 
 
 def test_backup_rom_handles_invalid_header_and_overwrite_cancel(
@@ -727,12 +729,22 @@ def test_flash_rom_writes_through_selected_mock_profile(
 
     cli.FlashROM(args, dmg_header())
 
-    transfer = conn.transfer_calls[0]
-    assert transfer["mode"] == 4
-    assert transfer["path"] == str(rom_path)
-    assert transfer["cart_type"] == 1
-    assert transfer["mbc"] == 0x19
-    assert transfer["verify_write"] is True
+    assert conn.transfer_calls == [
+        {
+            "mode": 4,
+            "path": str(rom_path),
+            "cart_type": 1,
+            "override_voltage": False,
+            "prefer_chip_erase": False,
+            "fast_read_mode": True,
+            "verify_write": True,
+            "fix_header": False,
+            "fix_bootlogo": False,
+            "mbc": 0x19,
+            "compare_sectors": False,
+            "voltage_fallback": False,
+        },
+    ]
 
 
 @pytest.mark.parametrize(
@@ -807,9 +819,34 @@ def test_backup_restore_ram_covers_backup_restore_and_erase(
     erase_args = make_args(action="erase-save", path=str(tmp_path / "unused.sav"))
     cli.BackupRestoreRAM(erase_args, dmg_header())
 
-    assert [call["mode"] for call in conn.transfer_calls] == [2, 3, 3]
-    assert conn.transfer_calls[1]["erase"] is False
-    assert conn.transfer_calls[2]["erase"] is True
+    assert conn.transfer_calls == [
+        {
+            "mode": 2,
+            "path": str(tmp_path / "backup.sav"),
+            "mbc": 0x13,
+            "save_type": 3,
+            "rtc": False,
+        },
+        {
+            "mode": 3,
+            "path": str(restore_path),
+            "mbc": 0x13,
+            "save_type": 3,
+            "erase": False,
+            "rtc": False,
+            "verify_write": True,
+            "cart_type": 0,
+        },
+        {
+            "mode": 3,
+            "path": str(tmp_path / "unused.sav"),
+            "mbc": 0x13,
+            "save_type": 3,
+            "erase": True,
+            "rtc": False,
+            "cart_type": 0,
+        },
+    ]
 
 
 @pytest.mark.parametrize(("mode", "save_field"), [("DMG", {"ram_size_raw": 0}), ("AGB", {"save_type": None})])
@@ -1084,3 +1121,343 @@ def test_run_camera_extract_uses_mock_camera(
     assert cli.run() == 0
     assert len(exports) == 32
     assert exports[0][1].name == "IMG_PC01.png"
+
+
+@pytest.mark.parametrize("action", ["restore-save", "flash-rom"])
+def test_run_canceled_file_prompt_disconnects_without_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+) -> None:
+    args = make_args(action=action, path="auto")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.header = dmg_header()
+    cli.DEVICE = ("Mock Reader", conn)
+    cli.CONN = conn
+    output = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: output)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "FindDevices", lambda *, port: port is None)
+    monkeypatch.setattr(cli, "ConnectDevice", lambda: True)
+    monkeypatch.setattr(cli, "ReadCartridge", lambda header: (False, "header", header))
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    assert cli.run() == 0
+
+    assert conn.transfer_calls == []
+    assert ("close", True) in conn.calls
+    assert args.path == ""
+
+
+def test_run_connection_failure_does_not_read_or_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = make_cli(tmp_path, make_args(action="flash-rom"))
+    conn = FakeConnection()
+    cli.DEVICE = ("Mock Reader", conn)
+    cli.CONN = conn
+    output = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: output)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "FindDevices", lambda *, port: port is None)
+    monkeypatch.setattr(cli, "ConnectDevice", lambda: False)
+
+    assert cli.run() == 1
+
+    assert conn.transfer_calls == []
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+def test_run_invalid_cartridge_header_stops_before_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = make_cli(tmp_path, make_args(action="backup-rom"))
+    conn = FakeConnection()
+    conn.header = dmg_header()
+    cli.DEVICE = ("Mock Reader", conn)
+    cli.CONN = conn
+    output = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: output)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "FindDevices", lambda *, port: port is None)
+    monkeypatch.setattr(cli, "ConnectDevice", lambda: True)
+    monkeypatch.setattr(cli, "ReadCartridge", lambda header: (True, "invalid header", header))
+
+    assert cli.run() == 1
+
+    assert conn.transfer_calls == []
+    assert ("close", True) in conn.calls
+
+
+def test_run_transfer_abort_returns_failure_and_disconnects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="backup-save", path=str(tmp_path / "backup.sav"))
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.header = dmg_header()
+    conn.INFO = dmg_header()
+    cli.DEVICE = ("Mock Reader", conn)
+    cli.CONN = conn
+    output = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: output)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "FindDevices", lambda *, port: port is None)
+    monkeypatch.setattr(cli, "ConnectDevice", lambda: True)
+    monkeypatch.setattr(cli, "ReadCartridge", lambda header: (False, "header", header))
+
+    def aborting_transfer(*, args: dict[str, Any], signal: Callable[[dict[str, object]], None]) -> bool:
+        conn.transfer_calls.append(args)
+        signal({"action": "ABORT", "info_type": "msgbox_critical", "info_msg": "Transfer failed"})
+        return False
+
+    monkeypatch.setattr(conn, "TransferData", aborting_transfer)
+
+    assert cli.run() == 1
+
+    assert len(conn.transfer_calls) == 1
+    assert conn.transfer_calls[0]["mode"] == 2
+    assert ("close", True) in conn.calls
+
+
+def test_backup_rom_overwrite_refusal_preserves_existing_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "backup.gb"
+    output_path.write_bytes(b"original backup")
+    args = make_args(action="backup-rom", path=str(output_path), overwrite=False)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    cli.BackupROM(args, dmg_header())
+
+    assert output_path.read_bytes() == b"original backup"
+    assert conn.transfer_calls == []
+
+
+def test_flash_rom_unsafe_voltage_refusal_does_not_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rom_path = tmp_path / "input.gb"
+    rom_path.write_bytes(bytes(0x1000))
+    args = make_args(action="flash-rom", path=str(rom_path), flashcart_type="3V Profile")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.INFO["voltage_autoswitch"] = True
+    conn.INFO["voltage_code"] = False
+    conn.INFO["dmg_carts"] = (
+        ["Generic", "3V Profile"],
+        [{}, {"type": "DMG", "names": ["3V Profile"], "voltage": 3.3, "commands": {}}],
+    )
+    cli.CONN = conn
+    monkeypatch.setattr(
+        cli_module,
+        "RomFileDMG",
+        lambda _buffer: SimpleNamespace(GetHeader=lambda: {"logo_correct": True, "header_checksum_correct": True}),
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    cli.FlashROM(args, dmg_header())
+
+    assert rom_path.read_bytes() == bytes(0x1000)
+    assert conn.transfer_calls == []
+
+
+@pytest.mark.parametrize("action", ["backup-save", "restore-save", "erase-save"])
+def test_save_overwrite_refusal_does_not_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+) -> None:
+    save_path = tmp_path / "existing.sav"
+    save_path.write_bytes(b"existing save")
+    args = make_args(action=action, path=str(save_path), overwrite=False)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    cli.BackupRestoreRAM(args, dmg_header())
+
+    assert save_path.read_bytes() == b"existing save"
+    assert conn.transfer_calls == []
+
+
+def test_restore_save_invalid_type_stops_before_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_path = tmp_path / "restore.sav"
+    save_path.write_bytes(b"save")
+    args = make_args(action="restore-save", path=str(save_path), dmg_savetype="unknown")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+
+    cli.BackupRestoreRAM(args, dmg_header())
+
+    assert conn.transfer_calls == []
+    assert save_path.read_bytes() == b"save"
+
+
+def test_flash_verification_failure_reports_broken_sectors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    conn.INFO = {"last_action": 4, "transferred": 0x2000, "broken_sectors": [[0x1000, 0x1000]]}
+    cli.CONN = conn
+    cli.PROGRESS.PROGRESS["verified"] = False
+
+    cli.FinishOperation()
+
+    assert cli.RETVAL == 1
+    assert conn.INFO["last_action"] == 0
+    output = capsys.readouterr().out
+    assert "verification" in output.lower()
+    assert "0x1000" in output.lower()
+    assert "verified successfully" not in output.lower()
+
+
+@pytest.mark.parametrize(("rolls", "expected_count"), [(1, 32), (8, 256)])
+def test_finish_backup_ram_exports_camera_rolls_to_expected_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rolls: int,
+    expected_count: int,
+) -> None:
+    save_path = tmp_path / "camera.sav"
+    save_path.write_bytes(b"".join(bytes([roll]) * 0x20000 for roll in range(rolls)))
+    args = make_args(action="backup-save", gbcamera_extract=True, gbcamera_outfile_format="bmp")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.INFO = {
+        "last_action": 2,
+        "mapper_raw": 252,
+        "transferred": 0x20000 * rolls,
+        "last_path": str(save_path),
+        "dump_info": {"header": {"ram_size_raw": 0x204 if rolls == 8 else 3}},
+    }
+    cli.CONN = conn
+    loaded: list[object] = []
+    exported: list[tuple[int, Path, int]] = []
+    palettes: list[int] = []
+
+    class FakeCamera:
+        PALETTE_NAMES = PocketCamera.PALETTE_NAMES
+
+        def LoadFile(self, source: object) -> bool:
+            loaded.append(source)
+            return True
+
+        def SetPalette(self, palette: int) -> None:
+            palettes.append(palette)
+
+        def ExportPicture(self, index: int, path: Path, *, scale: int) -> None:
+            exported.append((index, path, scale))
+
+    monkeypatch.setattr(cli_module, "PocketCamera", FakeCamera)
+
+    cli._FinishBackupRAM()
+
+    assert cli.RETVAL == 0
+    assert conn.INFO["last_action"] == 0
+    assert len(loaded) == rolls
+    if rolls == 1:
+        assert loaded == [str(save_path)]
+    else:
+        assert loaded == [bytearray(bytes([roll]) * 0x20000) for roll in range(rolls)]
+    assert len(exported) == expected_count
+    assert {scale for _index, _path, scale in exported} == {1}
+    assert palettes == [0]
+    destination = save_path.with_suffix("")
+    assert destination.is_dir()
+    assert all(path.parent == destination for _index, path, _scale in exported)
+    assert [index for index, _path, _scale in exported] == list(range(32)) * rolls
+    assert exported[0][1].name == ("IMG_PC00.bmp" if rolls == 1 else "IMG_P100.bmp")
+    assert exported[-1][1].name == ("IMG_PC31.bmp" if rolls == 1 else "IMG_P831.bmp")
+
+
+def test_finish_backup_ram_does_not_extract_when_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = make_cli(tmp_path, make_args(gbcamera_extract=False))
+    conn = FakeConnection()
+    conn.INFO = {
+        "last_action": 2,
+        "mapper_raw": 252,
+        "transferred": 0x20000,
+        "last_path": str(tmp_path / "camera.sav"),
+        "dump_info": {"header": {}},
+    }
+    cli.CONN = conn
+
+    def unexpected_camera() -> None:
+        msg = "Camera extraction was disabled"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(cli_module, "PocketCamera", unexpected_camera)
+
+    cli._FinishBackupRAM()
+
+    assert cli.RETVAL == 0
+    assert conn.INFO["last_action"] == 0
+    assert not (tmp_path / "camera").exists()
+
+
+@pytest.mark.parametrize("rolls", [1, 8])
+def test_finish_backup_ram_destination_collision_stops_exports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rolls: int,
+) -> None:
+    save_path = tmp_path / "camera.sav"
+    save_path.write_bytes(bytes(0x20000 * rolls))
+    destination = save_path.with_suffix("")
+    destination.write_bytes(b"existing destination")
+    cli = make_cli(tmp_path, make_args(gbcamera_extract=True))
+    conn = FakeConnection()
+    conn.INFO = {
+        "last_action": 2,
+        "mapper_raw": 252,
+        "transferred": 0x20000 * rolls,
+        "last_path": str(save_path),
+        "dump_info": {"header": {"ram_size_raw": 0x204 if rolls == 8 else 3}},
+    }
+    cli.CONN = conn
+    exports: list[Path] = []
+
+    class FakeCamera:
+        PALETTE_NAMES = PocketCamera.PALETTE_NAMES
+
+        def LoadFile(self, _source: object) -> bool:
+            return True
+
+        def SetPalette(self, _palette: int) -> None:
+            pass
+
+        def ExportPicture(self, _index: int, path: Path, *, scale: int) -> None:
+            del scale
+            exports.append(path)
+
+    monkeypatch.setattr(cli_module, "PocketCamera", FakeCamera)
+
+    cli._FinishBackupRAM()
+
+    assert cli.RETVAL == 1
+    assert conn.INFO["last_action"] == 0
+    assert destination.read_bytes() == b"existing destination"
+    assert exports == []
