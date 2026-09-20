@@ -7,7 +7,7 @@ import hashlib
 import json
 import zlib
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -65,6 +65,9 @@ class DecisionFlashcart:
 
     def GetMBC(self) -> object:
         return self.mbc
+
+    def HasRTC(self) -> bool:
+        return False
 
 
 class VerificationMapper:
@@ -363,6 +366,90 @@ def verification_context(
         rom_bank_size=0x4000,
         mbc=mapper,
         buffer_len=64,
+    )
+
+
+def test_verify_flash_write_uses_crc_for_each_agb_sector_and_clears_stale_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"fw_ver": 12}
+    device.POS = 0
+    device.INFO["broken_sectors"] = [[0, 64]]
+    cart = DecisionFlashcart()
+    mapper = VerificationMapper()
+    data = bytearray(range(128))
+    context = verification_context(cart, mapper, data)._replace(
+        args={"verify_write": True},
+        cart_type={"command_set": "AMD"},
+        verify_sectors=[[0, 64], [64, 64]],
+        rom_bank_size=64,
+    )
+    progress = Mock()
+    compare = Mock(return_value=True)
+    readback = Mock(side_effect=AssertionError("Successful CRC should not read the ROM"))
+    monkeypatch.setattr(device, "SetProgress", progress)
+    monkeypatch.setattr(device, "CompareCRC32", compare)
+    monkeypatch.setattr(device, "_VerifyFlashSectorByReading", readback)
+
+    assert device._verify_flash_write(context) is True
+
+    assert compare.call_args_list == [
+        call(buffer=data, offset=0, length=64, address=0, flashcart=cart, reset=False, mbc=mapper, bank=0),
+        call(buffer=data, offset=64, length=64, address=64, flashcart=cart, reset=False, mbc=mapper, bank=1),
+    ]
+    readback.assert_not_called()
+    assert progress.call_args_list == [
+        call({"action": "INITIALIZE", "method": "ROM_WRITE_VERIFY", "size": 128, "flash_offset": 0, "voltage": 5}),
+        call({"action": "UPDATE_POS", "pos": 64}),
+        call({"action": "UPDATE_POS", "pos": 128}),
+        call({"action": "UPDATE_POS", "pos": 128, "force_update": True, "skipping": True}),
+    ]
+    assert "broken_sectors" not in device.INFO
+
+
+def test_verify_flash_write_records_sector_when_crc_and_readback_disagree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"fw_ver": 12}
+    device.POS = 0
+    cart = DecisionFlashcart()
+    mapper = VerificationMapper()
+    data = bytearray(range(64))
+    sector = [0, 64]
+    context = verification_context(cart, mapper, data)._replace(
+        args={"verify_write": True},
+        cart_type={"command_set": "AMD"},
+        verify_sectors=[sector],
+        rom_bank_size=64,
+    )
+    progress = Mock()
+    compare = Mock(return_value=(0, 1))
+    read_rom = Mock()
+    backup_rom = Mock(return_value=0)
+    monkeypatch.setattr(device, "SetProgress", progress)
+    monkeypatch.setattr(device, "CompareCRC32", compare)
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+    monkeypatch.setattr(device, "_BackupROM", backup_rom)
+
+    assert device._verify_flash_write(context) is False
+
+    compare.assert_called_once()
+    read_rom.assert_called_once_with(0, 4)
+    backup_rom.assert_called_once()
+    request = backup_rom.call_args.args[0]
+    assert request["verify_write"] == data
+    assert request["verify_from"] == 0
+    assert request["verify_len"] == 64
+    assert request["rtc_area"] is False
+    assert device.NO_PROG_UPDATE is False
+    assert device.INFO["broken_sectors"] == [sector]
+    assert device.INFO["verify_error_params"] == {"rom_size": 64}
+    assert progress.call_args_list[-1] == call(
+        {"action": "UPDATE_POS", "pos": 64, "force_update": True, "skipping": True},
     )
 
 

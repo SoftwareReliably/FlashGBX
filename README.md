@@ -424,26 +424,28 @@ Run the pre-push checks manually with:
 uv run pre-commit run --all-files --hook-stage pre-push
 ```
 
-Run the scoped branch-coverage report and enforce its current 68% floor with:
+Run the package-wide statement and branch coverage gate with:
 
 ```shell
 uv run --locked pytest --cov
 ```
 
-This gate measures the modules listed in `tool.coverage.run.source` in `pyproject.toml`, so it remains
-comparable with the coverage baseline used while the test suite is expanded. It is not whole-package
-coverage.
+The gate measures `source = ["FlashGBX"]` in `pyproject.toml`, including the shared device engine,
+transfer worker, startup module, and logging. It enforces a **60%** minimum. The GameBub, GBFlash,
+and Joey Jr. hardware backends remain explicitly omitted, so this is not a measurement of those backends.
+The test workflow runs this gate once and uploads its coverage data, JSON, and XML reports.
 
-Run the broader package diagnostic with:
+The scope change was measured locally on macOS with Python 3.14.5:
 
-```shell
-uv run --locked pytest --cov=FlashGBX --cov-fail-under=0
-```
+| Measurement | Tests | Combined coverage | Minimum |
+| --- | ---: | ---: | ---: |
+| Previous explicit module allowlist | 697 | 73.86% | 68% |
+| Previous expanded package diagnostic | 697 | 59.79% | None |
+| Current package-wide gate | 699 | 60.27% | 60% |
 
-The broader report includes modules outside the scoped allowlist, including the shared device engine,
-transfer worker, startup module, and logging. Both reports omit the currently untested GameBub, GBFlash,
-and Joey Jr. hardware backends. The broader result is diagnostic and does not yet enforce a minimum.
-The test workflow publishes separate JSON and XML reports for both measurements.
+The allowlist and package measurements have different denominators; the lower package percentage does
+not indicate a loss of tested behavior. Two flash-verification tests took the package result past the
+first 60% milestone. The next coverage goal is 70% package-wide, guided by remaining device-engine gaps.
 
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
 

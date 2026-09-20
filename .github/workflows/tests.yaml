@@ -32,38 +32,23 @@ jobs:
       - name: Install locked development dependencies
         run: uv sync --locked --group dev
 
-      - name: Run scoped coverage gate
+      - name: Run package coverage gate
         env:
-          COVERAGE_FILE: coverage-scoped.data
+          COVERAGE_FILE: coverage-package.data
         run: >-
           uv run --locked pytest
           --cov
           --cov-report=term-missing
-          --cov-report=json:coverage-scoped.json
-          --cov-report=xml:coverage-scoped.xml
+          --cov-report=json:coverage-package.json
+          --cov-report=xml:coverage-package.xml
 
-      - name: Run expanded package coverage diagnostic
-        if: always()
-        env:
-          COVERAGE_FILE: coverage-expanded.data
-        run: >-
-          uv run --locked pytest
-          --cov=FlashGBX
-          --cov-fail-under=0
-          --cov-report=term-missing
-          --cov-report=json:coverage-expanded.json
-          --cov-report=xml:coverage-expanded.xml
-
-      - name: Upload coverage diagnostics
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-python-3.14
           if-no-files-found: warn
           path: |
-            coverage-scoped.data
-            coverage-scoped.json
-            coverage-scoped.xml
-            coverage-expanded.data
-            coverage-expanded.json
-            coverage-expanded.xml
+            coverage-package.data
+            coverage-package.json
+            coverage-package.xml

@@ -67,32 +67,10 @@ omit = [
     "FlashGBX/hw_GBFlash.py",
     "FlashGBX/hw_JoeyJr.py",
 ]
-source = [
-    "FlashGBX.DumpReport",
-    "FlashGBX.CartridgeTypes",
-    "FlashGBX.Flashcart",
-    "FlashGBX.FlashGBX_CLI",
-    "FlashGBX.FlashGBX_GUI",
-    "FlashGBX.Formatter",
-    "FlashGBX.GBMemory",
-    "FlashGBX.IniSettings",
-    "FlashGBX.InteractiveConsole",
-    "FlashGBX.InteractiveConsoleWindow",
-    "FlashGBX.i18n",
-    "FlashGBX.Mapper",
-    "FlashGBX.PocketCamera",
-    "FlashGBX.PocketCameraWindow",
-    "FlashGBX.Progress",
-    "FlashGBX.pyside",
-    "FlashGBX.RomFileAGB",
-    "FlashGBX.RomFileDMG",
-    "FlashGBX.UserInputDialog",
-    "FlashGBX.hw_GBxCartRW",
-    "FlashGBX.app",
-]
+source = ["FlashGBX"]
 
 [tool.coverage.report]
-fail_under = 68
+fail_under = 60
 show_missing = true
 skip_covered = true
 
