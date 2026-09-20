@@ -201,7 +201,7 @@ class GBMemoryMap:
     @staticmethod
     def _read_header(data: ByteBuffer) -> HeaderData:
         """Read a DMG header from any supported bytes-like object."""
-        return cast("HeaderData", RomFileDMG(bytearray(data)).GetHeader())
+        return RomFileDMG(bytearray(data)).GetHeader()
 
     @staticmethod
     def _title_encoding(game_title: str) -> str:
@@ -322,7 +322,7 @@ class GBMemoryMap:
         if len(map_data) < _MAP_DATA_SIZE:
             return False
 
-        values = cast("_MapValues", struct.unpack(_MAP_FORMAT, map_data[:_MAP_DATA_SIZE]))
+        values: _MapValues = struct.unpack(_MAP_FORMAT, map_data[:_MAP_DATA_SIZE])
         (
             mapper_params,
             f_size,

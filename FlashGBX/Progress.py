@@ -7,7 +7,7 @@ import statistics
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import ClassVar, Literal, TypedDict, cast
+from typing import ClassVar, Literal, NotRequired, TypedDict, cast
 
 type ProgressAction = Literal[
     "USER_ACTION",
@@ -84,7 +84,7 @@ class ProgressState(_OptionalProgressState):
     """Complete state maintained for an active transfer."""
 
     action: ProgressStateAction
-    method: str
+    method: NotRequired[str]  # Removed when the transfer finishes.
     flash_offset: int
     size: int
     pos: int
@@ -243,7 +243,7 @@ class Progress:
     ) -> None:
         """Apply a read/write position event and emit it when due."""
         action = event["action"]
-        method: str = state["method"]
+        method: str | None = state.get("method")
         if (action == "READ" and method in ("SAVE_WRITE", "ROM_WRITE")) or (
             action == "WRITE" and method in ("SAVE_READ", "ROM_READ", "ROM_WRITE_VERIFY")
         ):

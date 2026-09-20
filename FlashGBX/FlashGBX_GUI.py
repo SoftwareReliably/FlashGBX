@@ -486,13 +486,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
     def _CreateDeviceStatusLayout(self) -> None:
         self.layout_devices = QtWidgets.QHBoxLayout()
         self.lblDevice = QtWidgets.QLabel()
-        self.lblDevice.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
+        # PySide supports assigning an event callback on the instance.
+        self.lblDevice.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)  # ty: ignore[invalid-assignment]
         self.lblDevice.setToolTip("")
         self.lblDevice.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.cmbDevice = QtWidgets.QComboBox()
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
         self.lblWarning = QtWidgets.QLabel("⚠️")
-        self.lblWarning.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)
+        # PySide supports assigning an event callback on the instance.
+        self.lblWarning.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)  # ty: ignore[invalid-assignment]
         self.lblWarning.setToolTip("")
         self.lblWarning.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.lblWarning.setVisible(False)
@@ -1281,7 +1283,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblDMGHeaderRtc.setContentsMargins(0, 1, 3, 1)
         rowDMGHeaderRtc.addWidget(self.lblDMGHeaderRtc)
         self.lblDMGHeaderRtcResult = QtWidgets.QLabel("")
-        self.lblDMGHeaderRtcResult.mousePressEvent = self._EditRTCFromMouseEvent
+        # PySide supports assigning an event callback on the instance.
+        self.lblDMGHeaderRtcResult.mousePressEvent = self._EditRTCFromMouseEvent  # ty: ignore[invalid-assignment]
         rowDMGHeaderRtc.addWidget(self.lblDMGHeaderRtcResult)
         rowDMGHeaderRtc.setStretch(0, 9)
         rowDMGHeaderRtc.setStretch(1, 15)
@@ -1400,7 +1403,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblAGBGpioRtc.setContentsMargins(0, 1, 3, 1)
         rowAGBGpioRtc.addWidget(self.lblAGBGpioRtc)
         self.lblAGBGpioRtcResult = QtWidgets.QLabel("")
-        self.lblAGBGpioRtcResult.mousePressEvent = self._EditRTCFromMouseEvent
+        # PySide supports assigning an event callback on the instance.
+        self.lblAGBGpioRtcResult.mousePressEvent = self._EditRTCFromMouseEvent  # ty: ignore[invalid-assignment]
         rowAGBGpioRtc.addWidget(self.lblAGBGpioRtcResult)
         rowAGBGpioRtc.setStretch(0, 9)
         rowAGBGpioRtc.setStretch(1, 15)

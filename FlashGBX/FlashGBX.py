@@ -94,7 +94,7 @@ def _parse_macos_version(version: str) -> tuple[int, ...]:
 
 def _enable_windows_ansi() -> None:
     try:
-        kernel32 = ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
+        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - only available on Windows
         output_handle = kernel32.GetStdHandle(-11)
         console_mode = ctypes.c_uint()
         if output_handle not in (0, -1) and kernel32.GetConsoleMode(output_handle, ctypes.byref(console_mode)):
@@ -334,7 +334,7 @@ def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | No
     for i, arg in enumerate(sys.argv):
         if arg == "--cfgdir" and i + 1 < len(sys.argv):
             cfgdir_choice = sys.argv[i + 1].lower()
-            if cfgdir_choice in cp:
+            if cfgdir_choice in ("subdir", "appdata"):
                 config_path = cp[cfgdir_choice]
         elif arg == "--language" and i + 1 < len(sys.argv):
             language_choice = sys.argv[i + 1].lower()

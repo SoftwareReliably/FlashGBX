@@ -541,13 +541,13 @@ class LK_Device(ABC):
     SUPPORTED_CARTS: dict[str, dict[str, Any]] = {}  # noqa: RUF012 - copied into each initialized instance
 
     FW: Any = {}  # noqa: RUF012 - legacy fallback for backends that do not call super().__init__
-    FW_UPDATE_REQ = False
+    FW_UPDATE_REQ: bool | int = False
     FW_VAR = {}  # noqa: RUF012 - legacy fallback for backends that do not call super().__init__
     MODE = None
     PORT = ""
     DEVICE = None
     WORKER = None
-    INFO = {  # noqa: RUF012 - legacy fallback for backends that do not call super().__init__
+    INFO: dict[str, Any] = {  # noqa: RUF012 - legacy fallback for backends that do not call super().__init__
         "action": None,
         "last_action": None,
         "dump_info": {},
@@ -561,7 +561,7 @@ class LK_Device(ABC):
     NO_PROG_UPDATE = False
     FAST_READ = False
     SKIPPING = False
-    DEVICE_TIMEOUT = 1
+    DEVICE_TIMEOUT: float = 1
     WRITE_DELAY = False
     READ_ERRORS = 0
     WRITE_ERRORS = 0
@@ -569,7 +569,7 @@ class LK_Device(ABC):
     DMG_READ_METHODS: ClassVar[tuple[str, ...]] = ("RD", "A15", "SlowA15")
     AGB_READ_METHOD = 0
     AGB_READ_METHODS: ClassVar[tuple[str, ...]] = ("Single", "MemCpy", "Stream")
-    LAST_CHECK_ACTIVE = 0
+    LAST_CHECK_ACTIVE: float = 0
     USER_ANSWER = None
     SKIP_POWERCYCLE = False
     VOLTAGE_FALLBACK_PENDING = False

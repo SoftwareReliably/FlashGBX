@@ -61,7 +61,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
                 self.lblPhoto.append(QtWidgets.QLabel(self))
                 self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
                 self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
-                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(
+                # PySide supports assigning an event callback on the instance.
+                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(  # ty: ignore[invalid-assignment]
                     self.lblPhoto_Clicked,
                     index=len(self.lblPhoto) - 1,
                 )
@@ -183,7 +184,8 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.lblPhotoViewer.setStyleSheet(
             "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;",
         )
-        self.lblPhotoViewer.mousePressEvent = self.lblPhotoViewer_Clicked
+        # PySide supports assigning an event callback on the instance.
+        self.lblPhotoViewer.mousePressEvent = self.lblPhotoViewer_Clicked  # ty: ignore[invalid-assignment]
         self.grpPhotoViewLayout.addWidget(self.lblPhotoViewer)
 
         # Actions below Viewer

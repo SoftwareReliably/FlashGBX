@@ -54,6 +54,7 @@ dev = [
     "pyright>=1.1.411",
     "ruff>=0.16.4",
     "pytest-cov>=7.1.0",
+    "ty>=0.0.82",
 ]
 
 [tool.pytest.ini_options]
@@ -73,6 +74,19 @@ source = ["FlashGBX"]
 fail_under = 60
 show_missing = true
 skip_covered = true
+
+[tool.ty.environment]
+# Check platform-specific APIs for all supported operating systems.
+python-platform = "all"
+
+[tool.ty.src]
+include = ["FlashGBX"]
+# Keep the same application scope as Pyright and Ruff.
+exclude = [
+    "FlashGBX/hw_GameBub.py",
+    "FlashGBX/hw_GBFlash.py",
+    "FlashGBX/hw_JoeyJr.py",
+]
 
 [tool.pyright]
 include = ["FlashGBX"]

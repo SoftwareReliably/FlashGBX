@@ -25,7 +25,8 @@ class IniSettings:
                 return
             self.FILENAME = settings_path
             self.SETTINGS = configparser.RawConfigParser()
-            self.SETTINGS.optionxform = lambda optionstr: optionstr
+            # ConfigParser supports an instance-level option-name transform.
+            self.SETTINGS.optionxform = lambda optionstr: optionstr  # ty: ignore[invalid-assignment]
             try:
                 self.reload()
             except configparser.MissingSectionHeaderError:
@@ -37,7 +38,8 @@ class IniSettings:
             self.FILENAME = None
             self.SETTINGS = configparser.RawConfigParser()
             self.SETTINGS.read_string(ini)
-            self.SETTINGS.optionxform = lambda optionstr: optionstr
+            # ConfigParser supports an instance-level option-name transform.
+            self.SETTINGS.optionxform = lambda optionstr: optionstr  # ty: ignore[invalid-assignment]
 
         self.MAIN_SECTION: str = main_section
 

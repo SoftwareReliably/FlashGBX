@@ -29,6 +29,8 @@ from .Logging import dprint, logger
 if TYPE_CHECKING:
     from PySide6.QtCore import QRect
 
+    from .FlashGBX_GUI import FlashGBX_GUI
+
 
 class FirmwareInfo(TypedDict):
     """Firmware metadata reported by the GBxCart RW protocol."""
@@ -312,7 +314,8 @@ class GbxDevice(LK_Device):
                             ],
                         )
 
-            if not self.FW or self.DEVICE is None:
+            # Firmware reads populate FW through method side effects.
+            if not self.FW or self.DEVICE is None:  # ty: ignore[redundant-condition]
                 self.FW = None
                 continue
             target_baudrate = max(baudrate for baudrate in self.SUPPORTED_BAUD_RATES if baudrate <= max_baud)
@@ -836,7 +839,7 @@ try:
 
         def __init__(
             self,
-            app: QtWidgets.QWidget,
+            app: FlashGBX_GUI,
             app_path: str | Path,
             file: str | None = None,
             icon: str | Path | QtGui.QIcon | None = None,
@@ -1184,7 +1187,7 @@ try:
 
         def __init__(
             self,
-            app: QtWidgets.QWidget,
+            app: FlashGBX_GUI,
             app_path: str | Path,
             file: str | None = None,
             icon: str | Path | QtGui.QIcon | None = None,
@@ -1231,11 +1234,13 @@ try:
             self.optCFW = QtWidgets.QRadioButton(f"{self.CFW_VER:s}")
             self.lblCFW_Info = QtWidgets.QLabel(f"{self.CFW_TEXT:s}")
             self.lblCFW_Info.setWordWrap(True)
-            self.lblCFW_Info.mousePressEvent = self._select_cfw
+            # PySide supports assigning an event callback on the instance.
+            self.lblCFW_Info.mousePressEvent = self._select_cfw  # ty: ignore[invalid-assignment]
             self.optOFW = QtWidgets.QRadioButton(f"{self.OFW_VER:s}")
             self.lblOFW_Info = QtWidgets.QLabel(f"{self.OFW_TEXT:s}")
             self.lblOFW_Info.setWordWrap(True)
-            self.lblOFW_Info.mousePressEvent = self._select_ofw
+            # PySide supports assigning an event callback on the instance.
+            self.lblOFW_Info.mousePressEvent = self._select_ofw  # ty: ignore[invalid-assignment]
             self.optExternal = QtWidgets.QRadioButton(__("External firmware file"))
 
             self.rowUpdate = QtWidgets.QHBoxLayout()

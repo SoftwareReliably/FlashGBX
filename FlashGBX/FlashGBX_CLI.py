@@ -2528,8 +2528,8 @@ class FlashGBX_CLI:
         if mode == "DMG" and bl_layout is None:
             bl_layout = 0  # continuous
 
-        bl_args = {"bl_offset": bl_offset, "bl_size": bl_size}
-        if mode == "DMG":
+        bl_args: BatterylessArgs = {"bl_offset": bl_offset, "bl_size": bl_size}
+        if mode == "DMG" and bl_layout is not None:
             bl_args["bl_layout"] = bl_layout
         return bl_args
 

@@ -92,7 +92,7 @@ class InteractiveConsole:
             self.print_help()
             return True
 
-        handlers = {
+        handlers: dict[str, Callable[[list[str]], bool]] = {
             "w": self._execute_rom_write,
             "r": self._execute_rom_read,
             "s": self._execute_save,
