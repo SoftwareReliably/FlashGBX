@@ -574,6 +574,10 @@ class FakeDevice:
         del fncSetProgress
         self.calls.append(("backup_ram", args))
 
+    def RestoreRAM(self, *, fncSetProgress: object, args: dict[str, object]) -> None:
+        del fncSetProgress
+        self.calls.append(("restore_ram", args))
+
 
 def fake_qt_modules() -> tuple[ModuleType, object, object, object]:
     enum = SimpleNamespace(
@@ -708,6 +712,20 @@ def build_rom_gui(
     gui.cmbDMGHeaderROMSizeResult.setCurrentIndex(5)
     gui.cmbAGBHeaderROMSizeResult.setCurrentIndex(6)
     monkeypatch.setattr(gui_module, "generate_filename", lambda **_kwargs: "generated.gb")
+    return gui, device
+
+
+def build_save_gui(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> tuple[Any, FakeDevice]:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    device.INFO["has_rtc"] = False
+    gui.SETTINGS.values.update(LastDirSaveDataDMG=str(tmp_path), LastDirSaveDataAGB=str(tmp_path))
+    gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(4)  # 32 KiB SRAM
+    gui.cmbAGBSaveTypeResult.setCurrentIndex(3)  # 32 KiB SRAM/FRAM
     return gui, device
 
 
@@ -1974,3 +1992,302 @@ def test_flash_rom_rejected_voltage_warning_does_not_transfer(
 
     assert not any(name == "flash" for name, _args in device.calls)
     assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_backup_ram_dispatches_selected_save_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    path = tmp_path / f"{mode.lower()}.sav"
+    gui.SETTINGS.values["VerifyData"] = "enabled"
+    monkeypatch.setattr(
+        gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getSaveFileName=lambda *_args: (str(path), ""))
+    )
+
+    gui.BackupRAM()
+
+    request = {
+        "path": str(path),
+        "mbc": 0x0F if mode == "DMG" else 0,
+        "save_type": 3,
+        "rtc": False,
+        "verify_read": True,
+        "cart_type": 1,
+    }
+    assert device.calls == [("backup_ram", request)]
+    assert gui.STATUS["args"] is device.calls[0][1]
+    assert gui.STATUS["last_path"] == str(path)
+    assert gui.grpActions.isEnabled() is False
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_backup_ram_unknown_size_and_cancelled_selection_do_not_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    save_combo = gui.cmbDMGHeaderSaveTypeResult if mode == "DMG" else gui.cmbAGBSaveTypeResult
+    save_combo.setCurrentIndex(0)
+    dialog = Mock(return_value=("", ""))
+    monkeypatch.setattr(gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getSaveFileName=dialog))
+
+    gui.BackupRAM()
+
+    assert device.calls == []
+    dialog.assert_not_called()
+    assert gui.grpActions.isEnabled() is True
+
+    save_combo.setCurrentIndex(4 if mode == "DMG" else 3)
+    gui.BackupRAM()
+
+    dialog.assert_called_once()
+    assert device.calls == []
+    assert "args" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_prepare_save_write_accepts_valid_file_and_write_ram_dispatches_exact_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    path = tmp_path / f"restore-{mode.lower()}.sav"
+    path.write_bytes(bytes(0x8000))
+    gui.SETTINGS.values["VerifyData"] = "disabled"
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Ok)
+
+    preparation = gui._PrepareSaveWrite(dpath=str(path))
+    assert preparation is not None
+    assert tuple(preparation) == (mode, str(path), 0x0F if mode == "DMG" else 0, 3, 1, 0x8000, None)
+    assert device.calls == []
+
+    gui.WriteRAM(dpath=str(path))
+
+    request = {
+        "path": str(path),
+        "mbc": 0x0F if mode == "DMG" else 0,
+        "save_type": 3,
+        "rtc": False,
+        "rtc_advance": False,
+        "erase": False,
+        "verify_write": False,
+        "cart_type": 1,
+    }
+    assert device.calls == [("restore_ram", request)]
+    assert gui.STATUS["args"] is device.calls[0][1]
+    assert gui.STATUS["last_path"] == str(path)
+    assert gui.grpActions.isEnabled() is False
+
+
+@pytest.mark.parametrize("size", [0, 0x200001])
+def test_write_ram_rejects_unsupported_file_size_before_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    size: int,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "AGB")
+    path = tmp_path / "wrong-size.sav"
+    with path.open("wb") as save_file:
+        save_file.truncate(size)
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Ok)
+    critical = Mock(return_value=FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(FakeMessageBox, "critical", critical)
+
+    assert gui._PrepareSaveWrite(dpath=str(path)) is None
+    gui.WriteRAM(dpath=str(path))
+
+    assert critical.call_count == 2
+    assert "size of this file is not supported" in critical.call_args.args[2]
+    assert device.calls == []
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_write_ram_cancelled_selection_and_destructive_refusal_do_not_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    dialog = Mock(return_value=("", ""))
+    monkeypatch.setattr(gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=dialog))
+
+    gui.WriteRAM()
+
+    dialog.assert_called_once()
+    assert device.calls == []
+    assert gui.grpActions.isEnabled() is True
+
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+    gui.WriteRAM(erase=True)
+
+    assert device.calls == []
+    assert "args" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_prepare_save_write_rejects_unknown_save_size(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    save_combo = gui.cmbDMGHeaderSaveTypeResult if mode == "DMG" else gui.cmbAGBSaveTypeResult
+    save_combo.setCurrentIndex(0)
+    dialog = Mock(side_effect=AssertionError("File dialog opened"))
+    monkeypatch.setattr(gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=dialog))
+
+    assert gui._PrepareSaveWrite() is None
+    gui.WriteRAM()
+
+    dialog.assert_not_called()
+    assert device.calls == []
+    assert gui.grpActions.isEnabled() is True
+
+
+def test_write_ram_confirmed_erase_dispatches_without_a_file(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Ok)
+
+    gui.WriteRAM(erase=True)
+
+    assert device.calls == [
+        (
+            "restore_ram",
+            {
+                "path": "",
+                "mbc": 0x0F,
+                "save_type": 3,
+                "rtc": False,
+                "rtc_advance": False,
+                "erase": True,
+                "verify_write": True,
+                "cart_type": 1,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_finish_flash_rom_shows_result_and_restores_controls(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verified: bool,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    device.INFO["last_action"] = 4
+    gui.PROGRESS.PROGRESS["verified"] = verified
+    gui.grpActions.setEnabled(False)
+    gui.btnCancel.setEnabled(True)
+    refresh = Mock()
+    gui.ReadCartridge = refresh
+    boxes: list[FakeMessageBox] = []
+
+    def make_box(**_kwargs: object) -> FakeMessageBox:
+        box = FakeMessageBox()
+        boxes.append(box)
+        return box
+
+    monkeypatch.setattr(gui_module, "_create_message_box", make_box)
+
+    gui.FinishOperation()
+
+    assert len(boxes) == 1
+    expected = "written and verified successfully" if verified else "ROM writing complete"
+    assert expected in boxes[0].text()
+    assert gui.lblStatus4a.text() == "Done!"
+    assert device.INFO["last_action"] == 0
+    refresh.assert_called_once_with(resetStatus=False)
+    assert gui.grpActions.isEnabled() is True
+    assert gui.btnCancel.isEnabled() is False
+
+
+@pytest.mark.parametrize("answer", [FakeMessageBox.StandardButton.Yes, FakeMessageBox.StandardButton.No])
+def test_finish_flash_rom_verification_failure_retry_or_decline(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    sectors = [[0x2000, 0x1000]]
+    device.INFO.update(last_action=4, broken_sectors=sectors)
+    gui.STATUS["args"] = {"path": "rom.gb", "verify_write": True}
+    gui.grpActions.setEnabled(False)
+    gui.btnCancel.setEnabled(True)
+    gui.ReadCartridge = Mock()
+    warnings: list[str] = []
+
+    def warn(_parent: object, _title: str, message: str, *_args: object) -> int:
+        warnings.append(message)
+        return answer
+
+    monkeypatch.setattr(FakeMessageBox, "warning", warn)
+    boxes: list[FakeMessageBox] = []
+
+    def make_box(**_kwargs: object) -> FakeMessageBox:
+        box = FakeMessageBox()
+        boxes.append(box)
+        return box
+
+    monkeypatch.setattr(gui_module, "_create_message_box", make_box)
+
+    gui.FinishOperation()
+
+    assert len(warnings) == 1
+    assert "0x2000~0x2FFF" in warnings[0]
+    assert "failed" in warnings[0]
+    if answer == FakeMessageBox.StandardButton.Yes:
+        assert device.calls == [("flash", {"path": "rom.gb", "verify_write": True, "flash_sectors": sectors})]
+        assert device.INFO["last_action"] == 4
+        assert gui.grpActions.isEnabled() is True
+        gui.ReadCartridge.assert_not_called()
+    else:
+        assert device.calls == []
+        assert device.INFO["last_action"] == 0
+        assert "ROM writing complete" in boxes[0].text()
+        assert gui.lblStatus4a.text() == "Done!"
+        assert gui.grpActions.isEnabled() is True
+        assert gui.btnCancel.isEnabled() is False
+        gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
+def test_cancelled_flash_rom_shows_abort_result_and_restores_controls(
+    gui_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    device = FakeDevice("DMG")
+    device.INFO["last_action"] = 4
+    device.CANCEL = True
+    gui.CONN = device
+    gui.grpActions.setEnabled(False)
+    gui.btnCancel.setEnabled(True)
+    gui.ReadCartridge = Mock()
+
+    gui.UpdateProgress({"action": "ABORT", "info_type": "label", "info_msg": "ROM write cancelled"})
+
+    assert gui.lblStatus4a.text() == "ROM write cancelled"
+    assert gui.grpActions.isEnabled() is True
+    assert gui.btnCancel.isEnabled() is False
+    assert device.CANCEL is False
+    assert not any(name == "flash" for name, _args in device.calls)
+    gui.ReadCartridge.assert_not_called()
