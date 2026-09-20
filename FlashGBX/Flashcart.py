@@ -466,10 +466,11 @@ class Flashcart:
                     )
                     if self._config.get("wait_read_status_register"):
                         for j in range(len(self._config["commands"]["read_status_register"])):
+                            sr_addr = self._config["commands"]["read_status_register"][j][0]
                             sr_data = self._config["commands"]["read_status_register"][j][1]
 
                             self._SetWriteEnablePin(we)
-                            self.CartWrite([[addr, sr_data]])
+                            self.CartWrite([[sr_addr, sr_data]])
                             self._RestoreWriteEnablePin(we)
 
                     self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)

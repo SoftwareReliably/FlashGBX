@@ -2,91 +2,27 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import FlashGBX.Flashcart as flashcart_module  # noqa: N813
 from FlashGBX.Flashcart import (
     CFI,
-    CartReadCallback,
     Flashcart,
     Flashcart_AGB_GBAMP,
     Flashcart_DMG_BUNG_16M,
     Flashcart_DMG_MMSA,
-    FlashcartCallbacks,
     FlashcartProfile,
-    FlashCommands,
-    ProgressInfo,
     _profile_flash_ids,
     empty_flashcarts_map,
     has_3v_compatible_profile,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
+from tests.fakes import filled_reader, response_reader
+from tests.fakes import flashcart_callbacks as callbacks
+from tests.fakes import flashcart_profile as profile
 
 
 class MonkeyPatch(Protocol):
     def setattr(self, target: object, name: str, value: object) -> None: ...
-
-
-def callbacks() -> tuple[dict[str, list[object]], FlashcartCallbacks]:
-    calls: dict[str, list[object]] = {"read": [], "write": [], "fast": [], "progress": []}
-
-    def cart_write(address: int, value: int, *, flashcart: bool = False, sram: bool = False) -> None:
-        calls["write"].append(((address, value), {"flashcart": flashcart, "sram": sram}))
-
-    def cart_write_fast(commands: FlashCommands, *, flashcart: bool = False) -> None:
-        calls["fast"].append(((commands,), {"flashcart": flashcart}))
-
-    def cart_read(address: int, length: int) -> bytearray:
-        calls["read"].append((address, length))
-        return bytearray(length)
-
-    def record_progress(event: ProgressInfo) -> None:
-        calls["progress"].append(event)
-
-    functions: FlashcartCallbacks = {
-        "cart_write_fncptr": cart_write,
-        "cart_write_fast_fncptr": cart_write_fast,
-        "cart_read_fncptr": cart_read,
-        "cart_powercycle_fncptr": lambda: calls["progress"].append("power"),
-        "progress_fncptr": record_progress,
-        "set_we_pin_wr": lambda: calls["progress"].append("wr"),
-        "set_we_pin_audio": lambda: calls["progress"].append("audio"),
-    }
-    return calls, functions
-
-
-def profile(**overrides: object) -> FlashcartProfile:
-    value: FlashcartProfile = {
-        "type": "DMG",
-        "names": ["Test cart"],
-        "flash_ids": [[0x12, 0x34]],
-        "voltage": 5,
-        "commands": {"single_write": [[0, 0]]},
-        "command_set": "AMD",
-        "write_pin": "WR",
-        "flash_size": 0x10000,
-        "buffer_size": 4,
-    }
-    value.update(overrides)
-    return value
-
-
-def response_reader(responses: Iterator[bytearray]) -> CartReadCallback:
-    def read(address: int, length: int) -> bytearray:
-        del address, length
-        return next(responses)
-
-    return read
-
-
-def filled_reader(value: int = 0) -> CartReadCallback:
-    def read(address: int, length: int) -> bytearray:
-        del address
-        return bytearray([value] * length)
-
-    return read
 
 
 def test_flashcart_accessors_and_write_routing() -> None:
