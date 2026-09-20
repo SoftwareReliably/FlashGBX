@@ -688,6 +688,29 @@ def build_gui(gui_module: ModuleType, tmp_path: Path):
     return gui_module.FlashGBX_GUI(cast("Any", args))
 
 
+def build_rom_gui(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> tuple[Any, FakeDevice]:
+    """Prepare the existing GUI and device fakes for ROM operation tests."""
+    gui = build_gui(gui_module, tmp_path)
+    device = FakeDevice(mode)
+    gui.CONN = device
+    gui.CheckDeviceAlive = always_device_alive
+    gui.SETTINGS.values.update(LastDirRomDMG=str(tmp_path), LastDirRomAGB=str(tmp_path))
+    profile = {"type": mode, "names": ["Mock Profile"], "voltage": 5, "mbc": 0x13}
+    device.INFO[f"{mode.lower()}_carts"] = (["Generic", "Mock Profile"], [{}, profile])
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(1)
+    gui.cmbAGBCartridgeTypeResult.setCurrentIndex(1)
+    gui.cmbDMGHeaderMapperResult.setCurrentIndex(gui_module.ConvertMapperToMapperType(0x13)[2])
+    gui.cmbDMGHeaderROMSizeResult.setCurrentIndex(5)
+    gui.cmbAGBHeaderROMSizeResult.setCurrentIndex(6)
+    monkeypatch.setattr(gui_module, "generate_filename", lambda **_kwargs: "generated.gb")
+    return gui, device
+
+
 def always_device_alive(setMode: object = False) -> bool:
     """Accept the production keyword while keeping mocked checks deterministic."""
     return setMode in (False, "DMG", "AGB")
@@ -1597,3 +1620,357 @@ def test_open_path_uses_mocked_platform_launchers(
     monkeypatch.setattr(gui_module.platform, "system", lambda: "Linux")
     gui.OpenPath(str(tmp_path))
     assert launched[-1][0] == ["/mock/xdg-open", tmp_path.as_uri()]
+
+
+@pytest.mark.parametrize(("mode", "extension", "rom_size"), [("DMG", ".gb", 0x100000), ("AGB", ".gba", 0x200000)])
+def test_backup_rom_uses_selected_platform_and_exact_transfer_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    extension: str,
+    rom_size: int,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    path = tmp_path / f"backup{extension}"
+    monkeypatch.setattr(
+        gui_module.QtWidgets,
+        "QFileDialog",
+        SimpleNamespace(getSaveFileName=lambda *_args: (str(path), "")),
+    )
+
+    gui.BackupROM()
+
+    transfers = [args for name, args in device.calls if name == "backup_rom"]
+    assert transfers == [
+        {
+            "path": str(path),
+            "mbc": 0x0F,
+            "rom_size": rom_size,
+            "agb_rom_size": rom_size,
+            "fast_read_mode": True,
+            "cart_type": 1,
+            "settings": gui.SETTINGS,
+        },
+    ]
+    assert gui.STATUS["last_path"] == str(path)
+    assert gui.STATUS["args"] is transfers[0]
+    assert gui.SETTINGS.values[f"LastDirRom{mode}"] == str(tmp_path)
+    assert gui.grpActions.isEnabled() is False
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_backup_rom_cancelled_file_dialog_never_starts_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    monkeypatch.setattr(gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getSaveFileName=lambda *_args: ("", "")))
+
+    gui.BackupROM()
+
+    assert not any(name == "backup_rom" for name, _args in device.calls)
+    assert "last_path" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
+
+
+def test_backup_rom_rejected_header_check_never_opens_file_dialog(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    device.INFO["dump_info"] = {
+        "header": {"mapper_raw": 0x13, "logo_correct": False, "header_checksum_correct": False, "empty": False},
+    }
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.No)
+    monkeypatch.setattr(
+        gui_module.QtWidgets,
+        "QFileDialog",
+        SimpleNamespace(getSaveFileName=Mock(side_effect=AssertionError("File dialog opened"))),
+    )
+
+    gui.BackupROM()
+
+    assert not any(name == "backup_rom" for name, _args in device.calls)
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_prepare_flash_cart_selection_uses_selected_profile(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+
+    selection = gui._PrepareFlashCartSelection("")
+
+    assert selection is not None
+    selected_mode, path, setting_name, last_dir, carts, index, profile = selection
+    assert selected_mode == mode
+    assert path == ""
+    assert setting_name == f"LastDirRom{mode}"
+    assert last_dir == str(tmp_path)
+    assert carts is device.INFO[f"{mode.lower()}_carts"][1]
+    assert index == 1
+    assert profile is carts[1]
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+def test_prepare_flash_cart_selection_canceled_drop_clears_detected_profile(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    gui.STATUS["detected_cart_type"] = 1
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+
+    assert gui._PrepareFlashCartSelection(str(tmp_path / "drop.gb")) is None
+
+    assert "detected_cart_type" not in gui.STATUS
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+@pytest.mark.parametrize("detected", [False, None, 0])
+def test_prepare_flash_cart_selection_rejects_canceled_or_missing_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    detected: object,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
+    gui.STATUS["detected_cart_type"] = detected
+
+    assert gui._PrepareFlashCartSelection("") is None
+
+    assert "detected_cart_type" not in gui.STATUS
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+def test_prepare_flash_cart_selection_starts_profile_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
+    detection_calls: list[bool] = []
+    gui.DetectCartridge = lambda *, checkSaveType: detection_calls.append(checkSaveType)
+
+    assert gui._PrepareFlashCartSelection("") is None
+
+    assert detection_calls == [False]
+    assert gui.STATUS["detected_cart_type"] == "WAITING_FLASH"
+    assert gui.STATUS["detect_cartridge_args"] == {"dpath": ""}
+    assert gui.STATUS["can_skip_message"] is True
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+def test_prepare_flash_cart_selection_rejects_invalid_profile(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    device.INFO["dmg_carts"] = (["Generic", "Broken"], [{}, "not a profile"])
+    critical = Mock(return_value=FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(FakeMessageBox, "critical", critical)
+
+    assert gui._PrepareFlashCartSelection("") is None
+
+    critical.assert_called_once()
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+@pytest.mark.parametrize(("mode", "extension"), [("DMG", ".gb"), ("AGB", ".gba")])
+def test_flash_rom_dispatches_exact_platform_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    extension: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    path = tmp_path / f"flash{extension}"
+    path.write_bytes(bytes(0x1000))
+    monkeypatch.setattr(
+        gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: (str(path), ""))
+    )
+    rom_header = {"mapper_raw": 0x0F, "logo_correct": True, "header_checksum_correct": True}
+    rom_parser = "RomFileDMG" if mode == "DMG" else "RomFileAGB"
+    monkeypatch.setattr(gui_module, rom_parser, lambda _buffer: SimpleNamespace(GetHeader=lambda: rom_header))
+    gui.SETTINGS.values.update(PreferChipErase="enabled", VerifyData="enabled", CompareSectors="enabled")
+
+    gui.FlashROM()
+
+    transfers = [args for name, args in device.calls if name == "flash"]
+    assert transfers == [
+        {
+            "path": str(path),
+            "cart_type": 1,
+            "override_voltage": False,
+            "prefer_chip_erase": True,
+            "fast_read_mode": True,
+            "verify_write": True,
+            "fix_header": False,
+            "fix_bootlogo": False,
+            "mbc": 0x0F if mode == "DMG" else 0,
+            "flash_offset": 0,
+            "force_wr_pullup": False,
+            "voltage_fallback": False,
+            "ask_voltage_fallback": False,
+            "compare_sectors": True,
+        },
+    ]
+    assert gui.STATUS["last_path"] == str(path)
+    assert gui.STATUS["args"] is transfers[0]
+    assert gui.grpActions.isEnabled() is False
+
+
+def test_flash_rom_converted_isx_uses_in_memory_buffer_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "AGB")
+    path = tmp_path / "converted.isx"
+    path.write_bytes(b"synthetic conversion input")
+    converted = bytearray(b"R" * 0x1200)
+    conversion_inputs: list[bytearray] = []
+
+    def convert(source: bytearray) -> bytearray:
+        conversion_inputs.append(source)
+        return converted
+
+    monkeypatch.setattr(gui_module, "from_isx", convert)
+    monkeypatch.setattr(
+        gui_module,
+        "RomFileAGB",
+        lambda _buffer: SimpleNamespace(GetHeader=lambda: {"logo_correct": True, "header_checksum_correct": True}),
+    )
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(
+        gui_module.QtWidgets,
+        "QFileDialog",
+        SimpleNamespace(getOpenFileName=Mock(side_effect=AssertionError("File dialog opened"))),
+    )
+
+    gui.FlashROM(str(path))
+
+    assert conversion_inputs == [bytearray(b"synthetic conversion input")]
+    transfers = [args for name, args in device.calls if name == "flash"]
+    assert transfers == [
+        {
+            "path": "",
+            "buffer": converted,
+            "cart_type": 1,
+            "override_voltage": False,
+            "prefer_chip_erase": False,
+            "fast_read_mode": True,
+            "verify_write": True,
+            "fix_header": False,
+            "fix_bootlogo": False,
+            "mbc": 0,
+            "voltage_fallback": False,
+            "ask_voltage_fallback": False,
+            "compare_sectors": False,
+        },
+    ]
+    assert gui.STATUS["last_path"] == str(path)
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_flash_rom_cancelled_file_dialog_and_wipe_refusal_do_not_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    monkeypatch.setattr(gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: ("", "")))
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.No)
+
+    gui.FlashROM()
+
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert "last_path" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
+
+
+def test_flash_rom_rejected_drop_confirmation_does_not_read_or_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    path = tmp_path / "dropped.gb"
+    path.write_bytes(bytes(0x1000))
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+    monkeypatch.setattr(
+        gui_module.QtWidgets,
+        "QFileDialog",
+        SimpleNamespace(getOpenFileName=Mock(side_effect=AssertionError("File dialog opened"))),
+    )
+
+    gui.FlashROM(str(path))
+
+    assert path.read_bytes() == bytes(0x1000)
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("reason", ["empty", "larger_than_profile"])
+def test_flash_rom_rejects_unsuitable_input_before_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    path = tmp_path / "unsuitable.gb"
+    path.write_bytes(b"" if reason == "empty" else bytes(0x1000))
+    if reason == "larger_than_profile":
+        device.INFO["dmg_carts"][1][1]["flash_size"] = 0x800
+        monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+    monkeypatch.setattr(
+        gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: (str(path), ""))
+    )
+
+    gui.FlashROM()
+
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert gui.grpActions.isEnabled() is True
+
+
+def test_flash_rom_rejected_voltage_warning_does_not_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    path = tmp_path / "flash.gb"
+    path.write_bytes(bytes(0x1000))
+    device.INFO["dmg_carts"][1][1]["voltage"] = 3.3
+    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+    monkeypatch.setattr(
+        gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: (str(path), ""))
+    )
+    monkeypatch.setattr(
+        gui_module,
+        "RomFileDMG",
+        lambda _buffer: SimpleNamespace(
+            GetHeader=lambda: {"mapper_raw": 0x0F, "logo_correct": True, "header_checksum_correct": True}
+        ),
+    )
+
+    gui.FlashROM()
+
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert gui.grpActions.isEnabled() is True
