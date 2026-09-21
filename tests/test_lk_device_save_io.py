@@ -6,7 +6,7 @@ import pytest
 
 import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.hw_GBxCartRW import GbxDevice
-from FlashGBX.LK_Device import _SaveBankContext, _SaveReadParameters
+from FlashGBX.LK_Device import _SaveBankContext, _SaveReadParameters, _SaveWriteParameters
 
 
 class SaveIoMapper:
@@ -486,3 +486,511 @@ def test_prepare_multibank_agb_bootleg_uses_sram_bank_select(
     assert records.cart_writes == [(0x1000000, 1)]
     assert records.flash_writes == []
     assert records.sleeps == [0.05]
+
+
+class SaveWriteRecords:
+    """Recorded low-level operations for save writes."""
+
+    def __init__(self, statuses: list[object] | None = None) -> None:
+        self.events: list[str] = []
+        self.ram_writes: list[dict[str, object]] = []
+        self.rom_writes: list[dict[str, object]] = []
+        self.mbc6_writes: list[dict[str, object]] = []
+        self.mbc7_writes: list[dict[str, object]] = []
+        self.tama5_writes: list[bytearray] = []
+        self.xploder_writes: list[dict[str, object]] = []
+        self.cart_writes: list[tuple[int, int]] = []
+        self.flash_commands: list[tuple[list[list[int]], bool]] = []
+        self.cart_reads: list[tuple[int, int, bool]] = []
+        self.statuses = list(statuses or [])
+        self.sleeps: list[float] = []
+        self.progress: list[dict[str, object]] = []
+
+
+def install_write_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    statuses: list[object] | None = None,
+) -> SaveWriteRecords:
+    """Replace physical writes and status reads with finite recorders."""
+    records = SaveWriteRecords(statuses)
+
+    def write_ram(
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        command: object,
+        max_length: int | None = None,
+    ) -> None:
+        records.events.append("WriteRAM")
+        records.ram_writes.append(
+            {
+                "address": address,
+                "buffer": bytearray(buffer),
+                "command": command,
+                "max_length": max_length,
+            },
+        )
+
+    def write_rom(*, address: int, buffer: bytes | bytearray | memoryview) -> None:
+        records.events.append("WriteROM")
+        records.rom_writes.append({"address": address, "buffer": bytearray(buffer)})
+
+    def write_mbc6(
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        mapper: SaveIoMapper,
+    ) -> None:
+        records.events.append("WriteFlash_MBC6")
+        records.mbc6_writes.append(
+            {"address": address, "buffer": bytearray(buffer), "mapper": mapper.GetName()},
+        )
+
+    def write_mbc7(*, address: int, buffer: bytes | bytearray | memoryview) -> None:
+        records.events.append("WriteEEPROM_MBC7")
+        records.mbc7_writes.append({"address": address, "buffer": bytearray(buffer)})
+
+    def write_tama5(*, buffer: bytes | bytearray | memoryview) -> None:
+        records.events.append("WriteRAM_TAMA5")
+        records.tama5_writes.append(bytearray(buffer))
+
+    def write_xploder(
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        bank: int,
+    ) -> None:
+        records.events.append("WriteROM_DMG_EEPROM")
+        records.xploder_writes.append(
+            {"address": address, "buffer": bytearray(buffer), "bank": bank},
+        )
+
+    def cart_write(address: int, value: int) -> None:
+        records.events.append("cart_write")
+        records.cart_writes.append((address, value))
+
+    def cart_write_flash(commands: list[list[int]], flashcart: bool = False) -> None:
+        records.events.append("cart_write_flash")
+        records.flash_commands.append((commands, flashcart))
+
+    def cart_read(address: int, length: int, agb_save_flash: bool = False) -> object:
+        records.events.append("cart_read")
+        records.cart_reads.append((address, length, agb_save_flash))
+        assert records.statuses
+        return records.statuses.pop(0)
+
+    def record_sleep(seconds: float) -> None:
+        records.events.append("sleep")
+        records.sleeps.append(seconds)
+
+    def record_progress(event: dict[str, object]) -> None:
+        records.progress.append(dict(event))
+
+    monkeypatch.setattr(device, "WriteRAM", write_ram)
+    monkeypatch.setattr(device, "WriteROM", write_rom)
+    monkeypatch.setattr(device, "WriteFlash_MBC6", write_mbc6)
+    monkeypatch.setattr(device, "WriteEEPROM_MBC7", write_mbc7)
+    monkeypatch.setattr(device, "WriteRAM_TAMA5", write_tama5)
+    monkeypatch.setattr(device, "WriteROM_DMG_EEPROM", write_xploder)
+    monkeypatch.setattr(device, "_cart_write", cart_write)
+    monkeypatch.setattr(device, "_cart_write_flash", cart_write_flash)
+    monkeypatch.setattr(device, "_cart_read", cart_read)
+    monkeypatch.setattr(device, "SetProgress", record_progress)
+    monkeypatch.setattr(lk_device_module.time, "sleep", record_sleep)
+    return records
+
+
+@pytest.mark.parametrize(
+    ("mode", "mapper_name", "save_type", "bank", "position", "firmware", "flash_chip", "expected"),
+    [
+        (
+            "DMG",
+            "MBC3",
+            3,
+            0,
+            0x120,
+            12,
+            0,
+            ("ram_writes", {"address": 0x120, "command": 0xC3, "max_length": None}),
+        ),
+        (
+            "AGB",
+            "MBC3",
+            1,
+            0,
+            0x40,
+            12,
+            0,
+            ("ram_writes", {"address": 8, "command": 0xC3, "max_length": None}),
+        ),
+        (
+            "AGB",
+            "MBC3",
+            4,
+            0,
+            0x400,
+            12,
+            0x1F3D,
+            ("ram_writes", {"address": 8, "command": 0xC3, "max_length": None}),
+        ),
+        (
+            "DMG",
+            "MBC7",
+            1,
+            0,
+            0x120,
+            12,
+            0,
+            ("mbc7_writes", {"address": 0x120}),
+        ),
+        (
+            "DMG",
+            "MBC6",
+            0x104,
+            8,
+            0x4000,
+            1,
+            0,
+            ("mbc6_writes", {"address": 0x4000, "mapper": "MBC6"}),
+        ),
+        (
+            "DMG",
+            "MBC6",
+            0x104,
+            8,
+            0x4000,
+            2,
+            0,
+            ("rom_writes", {"address": 0x4000}),
+        ),
+        ("DMG", "TAMA5", 0x103, 0, 0, 12, 0, ("tama5_writes", {})),
+        (
+            "DMG",
+            "Xploder GB",
+            0x203,
+            2,
+            0x300,
+            12,
+            0,
+            ("xploder_writes", {"address": 0x300, "bank": 10}),
+        ),
+    ],
+    ids=["sram", "eeprom", "atmel", "mbc7", "mbc6-old-firmware", "mbc6-new-firmware", "tama5", "xploder"],
+)
+def test_write_save_chunk_routes_nonzero_buffer_slice(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    mapper_name: str,
+    save_type: int,
+    bank: int,
+    position: int,
+    firmware: int,
+    flash_chip: int,
+    expected: tuple[str, dict[str, object]],
+) -> None:
+    device = GbxDevice()
+    device.MODE = mode
+    device.FW = {"fw_ver": firmware}
+    mapper = SaveIoMapper(mapper_name)
+    records = install_write_boundaries(device, monkeypatch)
+    buffer = bytearray(b"__CHUNK__")
+    parameters = _SaveWriteParameters(
+        args={"save_type": save_type},
+        mbc=mapper,
+        bank=bank,
+        pos=position,
+        buffer=buffer,
+        buffer_offset=2,
+        buffer_len=5,
+        command=0xC3,
+        agb_flash_chip=flash_chip,
+    )
+
+    assert device._WriteSaveChunk(parameters) is True
+
+    record_name, expected_fields = expected
+    write_records = getattr(records, record_name)
+    assert len(write_records) == 1
+    if record_name == "tama5_writes":
+        assert write_records == [bytearray(b"CHUNK")]
+    else:
+        assert write_records[0]["buffer"] == bytearray(b"CHUNK")
+        assert {key: write_records[0][key] for key in expected_fields} == expected_fields
+    if mapper_name == "MBC6" and firmware == 2:
+        assert records.cart_writes == [(0x4004, 0xF0)]
+        assert records.events == ["WriteROM", "cart_write"]
+    else:
+        assert records.cart_writes == []
+
+
+FLASH_ERASE_COMMANDS = [
+    [0x5555, 0xAA],
+    [0x2AAA, 0x55],
+    [0x5555, 0x80],
+    [0x5555, 0xAA],
+    [0x2AAA, 0x55],
+    [0x240, 0x30],
+]
+
+
+def write_agb_flash_chunk(
+    device: GbxDevice,
+    mapper: SaveIoMapper,
+    *,
+    buffer: bytearray,
+    buffer_offset: int,
+    buffer_len: int,
+    position: int = 0x10240,
+) -> bool:
+    """Call the real AGB FLASH write path with explicit chunk bounds."""
+    return device._WriteSaveChunk(
+        _SaveWriteParameters(
+            args={"save_type": 5},
+            mbc=mapper,
+            bank=1,
+            pos=position,
+            buffer=buffer,
+            buffer_offset=buffer_offset,
+            buffer_len=buffer_len,
+            command=0xC4,
+            agb_flash_chip=0xC209,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("statuses", "expected_reads"),
+    [
+        ([0xFFFF], 1),
+        ([0, bytearray(b"\xff\xff")], 2),
+        ([object(), 0xFFFF], 2),
+    ],
+    ids=["immediately-ready", "busy-then-ready", "malformed-then-ready"],
+)
+def test_agb_flash_waits_for_erase_before_programming(
+    monkeypatch: pytest.MonkeyPatch,
+    statuses: list[object],
+    expected_reads: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = install_write_boundaries(device, monkeypatch, statuses=statuses)
+    buffer = bytearray(b"__FLASH__")
+
+    assert (
+        write_agb_flash_chunk(
+            device,
+            SaveIoMapper(),
+            buffer=buffer,
+            buffer_offset=2,
+            buffer_len=5,
+        )
+        is True
+    )
+
+    assert records.flash_commands == [(FLASH_ERASE_COMMANDS, False)]
+    assert records.ram_writes == [
+        {"address": 0x10240, "buffer": bytearray(b"FLASH"), "command": 0xC4, "max_length": None},
+    ]
+    assert len(records.cart_reads) == expected_reads
+    assert records.cart_reads == [(0x240, 2, True)] * expected_reads
+    assert records.sleeps == [0.01] * expected_reads
+    assert records.events.index("cart_write_flash") < records.events.index("WriteRAM")
+
+
+def test_agb_flash_all_ff_chunk_erases_without_programming(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = install_write_boundaries(device, monkeypatch, statuses=[0xFFFF])
+
+    assert (
+        write_agb_flash_chunk(
+            device,
+            SaveIoMapper(),
+            buffer=bytearray(b"__\xff\xff\xff\xff__"),
+            buffer_offset=2,
+            buffer_len=4,
+        )
+        is True
+    )
+
+    assert records.flash_commands == [(FLASH_ERASE_COMMANDS, False)]
+    assert records.ram_writes == []
+    assert records.events == ["cart_write_flash", "sleep", "cart_read"]
+
+
+def test_agb_flash_erase_exhaustion_stops_before_programming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = install_write_boundaries(device, monkeypatch, statuses=[0] * 50)
+
+    assert (
+        write_agb_flash_chunk(
+            device,
+            SaveIoMapper(),
+            buffer=bytearray(b"__FLASH__"),
+            buffer_offset=2,
+            buffer_len=5,
+        )
+        is False
+    )
+
+    assert records.flash_commands == [(FLASH_ERASE_COMMANDS, False)]
+    assert len(records.cart_reads) == 50
+    assert records.sleeps == [0.01] * 50
+    assert records.ram_writes == []
+
+
+def test_ereader_final_flash_sector_preserves_protected_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.INFO["ereader"] = True
+    records = install_write_boundaries(device, monkeypatch, statuses=[0xFFFF])
+    payload = bytearray(index % 251 for index in range(0x1000))
+    buffer = bytearray(b"HEAD") + payload
+
+    assert (
+        write_agb_flash_chunk(
+            device,
+            SaveIoMapper(),
+            buffer=buffer,
+            buffer_offset=4,
+            buffer_len=0x1000,
+            position=0x1F000,
+        )
+        is True
+    )
+
+    assert records.flash_commands[0][0][-1] == [0xF000, 0x30]
+    assert records.ram_writes == [
+        {
+            "address": 0x1F000,
+            "buffer": payload[:0xF80],
+            "command": 0xC4,
+            "max_length": 0x80,
+        },
+    ]
+    assert payload[0xF80:] not in [write["buffer"] for write in records.ram_writes]
+
+
+@pytest.mark.parametrize("write_result", [False, True], ids=["failure", "success"])
+def test_dacs_write_result_propagates_from_write_save_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+    write_result: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    calls: list[tuple[int, int, bytearray]] = []
+
+    def record_dacs_write(sector_address: int, position: int, data: bytearray) -> bool:
+        calls.append((sector_address, position, bytearray(data)))
+        return write_result
+
+    monkeypatch.setattr(device, "_WriteDACSSaveChunk", record_dacs_write)
+    parameters = _SaveWriteParameters(
+        args={"save_type": 6},
+        mbc=SaveIoMapper(),
+        bank=0,
+        pos=0x2000,
+        buffer=bytearray(b"__DACS__"),
+        buffer_offset=2,
+        buffer_len=4,
+        command=False,
+        agb_flash_chip=0,
+    )
+
+    assert device._WriteSaveChunk(parameters) is write_result
+    assert calls == [(0x1F02000, 0x2000, bytearray(b"DACS"))]
+
+
+def test_dacs_protocol_waits_for_each_command_then_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    records = install_write_boundaries(
+        device,
+        monkeypatch,
+        statuses=[bytearray(b"\x80\x00"), bytearray(b"\x80\x00")],
+    )
+
+    assert device._WriteDACSSaveChunk(0x1F00000, 0, bytearray(b"DACS")) is True
+
+    assert records.flash_commands == [
+        ([[0, 0x50], [0, 0x60], [0, 0xD0]], True),
+        ([[0, 0x50], [0x1F00000, 0x20], [0x1F00000, 0xD0]], True),
+    ]
+    assert records.cart_reads == [(0x1F00000, 2, False)] * 2
+    assert records.sleeps == [0.1, 0.1]
+    assert records.rom_writes == [{"address": 0x1F00000, "buffer": bytearray(b"DACS")}]
+    assert records.progress == []
+
+
+def test_dacs_protocol_exhaustion_aborts_without_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    records = install_write_boundaries(
+        device,
+        monkeypatch,
+        statuses=[bytearray(b"\x00\x00")] * 20,
+    )
+
+    assert device._WriteDACSSaveChunk(0x1F00000, 0, bytearray(b"DACS")) is False
+
+    assert records.flash_commands == [
+        ([[0, 0x50], [0, 0x60], [0, 0xD0]], True),
+    ]
+    assert len(records.cart_reads) == 20
+    assert records.sleeps == [0.1] * 20
+    assert records.rom_writes == []
+    assert len(records.progress) == 1
+    assert records.progress[0]["action"] == "ABORT"
+    assert records.progress[0]["info_type"] == "msgbox_critical"
+    assert records.progress[0]["abortable"] is False
+
+
+def test_save_worker_dacs_write_failure_prevents_finished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"pcb_name": "Test", "fw_ver": 12}
+    device.INFO["action"] = "RESTORE_RAM"
+    progress: list[dict[str, object]] = []
+    dacs_calls: list[tuple[int, int, bytearray]] = []
+
+    monkeypatch.setattr(device, "_require_cartridge_mode", lambda _operation: "AGB")
+    monkeypatch.setattr(device, "_prepare_save_cart_type", lambda _args, _mode: {})
+    monkeypatch.setattr(device, "_set_fw_variable", lambda _name, _value: None)
+    monkeypatch.setattr(
+        device,
+        "_configure_agb_save_transfer",
+        lambda _args, _cart_type: (4, 4, 1, 0, 0, False, 0xFF, 0),
+    )
+    monkeypatch.setattr(
+        device,
+        "_PrepareSaveTransferAction",
+        lambda _args, _parameters: (bytearray(b"FAIL"), 1, 4),
+    )
+    monkeypatch.setattr(device, "_PrepareSaveBank", lambda _context: (0, 4, 4))
+    monkeypatch.setattr(device, "_AbortSaveTransferIfCanceled", lambda: False)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+
+    def fail_dacs_write(sector_address: int, position: int, data: bytearray) -> bool:
+        dacs_calls.append((sector_address, position, bytearray(data)))
+        return False
+
+    monkeypatch.setattr(device, "_WriteDACSSaveChunk", fail_dacs_write)
+    args = {"mode": 3, "save_type": 6, "path": "failed.sav"}
+
+    assert device._BackupRestoreRAM_Worker(args) is False
+
+    assert dacs_calls == [(0x1F00000, 0, bytearray(b"FAIL"))]
+    assert all(event.get("action") != "FINISHED" for event in progress)
+    assert device.INFO["action"] == "RESTORE_RAM"

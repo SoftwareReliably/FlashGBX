@@ -5710,7 +5710,7 @@ class LK_Device(ABC):
                             status_register=f"0x{status_register:04X}",
                         )
                         print(ANSI.RED + errmsg + ANSI.RESET)
-                        break
+                        return False
                 if chunk != bytearray([0xFF] * buffer_len):
                     if "ereader" in self.INFO and self.INFO["ereader"] is True and sector_address == 0xF000:
                         self.WriteRAM(
