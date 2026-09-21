@@ -7387,7 +7387,7 @@ class LK_Device(ABC):
             if len(data_import) == 0x1FFFF00 and buffer_pos + buffer_len > len(data_import):
                 # 32 MiB ROM + EEPROM cart
                 max_buffer_write = 256
-                buffer_len = buffer_pos + buffer_len - len(data_import)
+                buffer_len = len(data_import) - buffer_pos
                 data = data_import[buffer_pos : buffer_pos + buffer_len]
             status = self.WriteROM(
                 address=pos,
