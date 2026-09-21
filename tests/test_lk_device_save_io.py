@@ -1000,7 +1000,8 @@ def test_save_worker_dacs_write_failure_prevents_finished(
 
     assert dacs_calls == [(0x1F00000, 0, bytearray(b"FAIL"))]
     assert all(event.get("action") != "FINISHED" for event in progress)
-    assert device.INFO["action"] == "RESTORE_RAM"
+    assert device.INFO["last_action"] == "RESTORE_RAM"
+    assert device.INFO["action"] is None
 
 
 class CompletionMapper:

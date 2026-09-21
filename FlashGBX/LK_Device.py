@@ -5729,6 +5729,43 @@ class LK_Device(ABC):
             self.WriteRAM(address=pos, buffer=chunk, command=command)
         return True
 
+    def _HandleIncompleteSaveRead(
+        self,
+        received_length: int,
+        expected_length: int,
+        buffer_position: int,
+        max_length: int,
+    ) -> tuple[int, bool]:
+        """Reset serial buffers and reduce a failed save-read transfer limit."""
+        exhausted = (max_length >> 1) < 64
+        if exhausted:
+            dprint(
+                f"Received 0x{received_length:X} bytes instead of 0x{expected_length:X} bytes from the device at position 0x{buffer_position:X}!",
+            )
+            max_length = 64
+        else:
+            dprint(
+                f"Received 0x{received_length:X} bytes instead of 0x{expected_length:X} bytes from the device at position 0x{buffer_position:X}! Decreasing maximum transfer buffer length to 0x{max_length >> 1:X}.",
+            )
+            max_length >>= 1
+        device = self._serial_device()
+        device.reset_input_buffer()
+        device.reset_output_buffer()
+        return max_length, exhausted
+
+    def _CleanupFailedSaveTransfer(
+        self,
+        mbc: _SaveMapper,
+        cart_type: dict[str, Any] | None,
+        buffer: bytearray,
+        audio_low: bool,
+    ) -> None:
+        """Reset save hardware and clear an action after an unsuccessful transfer."""
+        self._ResetSaveTransferHardware(mbc, cart_type, buffer, audio_low)
+        if self.INFO["action"] is not None:
+            self.INFO["last_action"] = self.INFO["action"]
+            self.INFO["action"] = None
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("accessing save data")
         self.FAST_READ = False
@@ -5795,116 +5832,117 @@ class LK_Device(ABC):
         )
         buffer, ram_banks, save_size = self._PrepareSaveTransferAction(args, transfer_parameters)
 
-        # Main loop
-        buffer_offset = 0
-        max_length = 64 if self.FW["pcb_name"] in ("GBxCart RW", "") else self.MAX_BUFFER_READ
-        for bank in range(ram_banks):
-            start_address, end_address, buffer_len = self._PrepareSaveBank(
-                _SaveBankContext(
-                    args,
-                    _mbc,
-                    bank,
-                    save_size,
-                    buffer_len,
-                    buffer_offset,
-                    agb_flash_chip,
-                ),
-            )
-
-            dprint(
-                f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, buffer_len=0x{buffer_len:X}, buffer_offset=0x{buffer_offset:X}",
-            )
-            pos = start_address
-            while pos < end_address:
-                if self._AbortSaveTransferIfCanceled():
-                    return None
-
-                if args["mode"] == 2:  # Backup
-                    in_temp = [bytearray(), bytearray()]
-                    xe = 2 if args.get("verify_read") else 1  # Read twice for detecting instabilities
-                    _read_failed = False
-                    for x in range(xe):
-                        if x == 1:
-                            self.NO_PROG_UPDATE = True
-                        else:
-                            self.NO_PROG_UPDATE = False
-
-                        in_temp[x] = self._ReadSaveChunk(
-                            _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
-                        )
-
-                        if len(in_temp[x]) != buffer_len:
-                            if (max_length >> 1) < 64:
-                                dprint(
-                                    f"Received 0x{len(in_temp[x]):X} bytes instead of 0x{buffer_len:X} bytes from the device at position 0x{len(buffer):X}!",
-                                )
-                                max_length = 64
-                            else:
-                                dprint(
-                                    f"Received 0x{len(in_temp[x]):X} bytes instead of 0x{buffer_len:X} bytes from the device at position 0x{len(buffer):X}! Decreasing maximum transfer buffer length to 0x{max_length >> 1:X}.",
-                                )
-                                max_length >>= 1
-                                _read_failed = True
-                            device = self._serial_device()
-                            device.reset_input_buffer()
-                            device.reset_output_buffer()
-                            if _read_failed:
-                                break
-
-                    if _read_failed:
-                        continue
-
-                    if xe == 2 and in_temp[0] != in_temp[1]:
-                        print(ANSI.RED + __("Error: Inconsistent reads detected.") + ANSI.RESET)
-                        print(f"- Read #1: {in_temp[0].hex()}")
-                        print(f"- Read #2: {in_temp[1].hex()}")
-                        if not args.get("detect"):
-                            self.SetProgress(
-                                {
-                                    "action": "ABORT",
-                                    "info_type": "msgbox_critical",
-                                    "info_msg": __(
-                                        "Failed to read save data consistently. Please ensure that the cartridge contacts are clean.",
-                                    ),
-                                    "abortable": False,
-                                },
-                            )
-                        return False
-
-                    temp = in_temp[0]
-                    buffer += temp
-                    self.SetProgress({"action": "UPDATE_POS", "pos": len(buffer)})
-
-                elif args["mode"] == 3:  # Restore
-                    write_parameters = _SaveWriteParameters(
+        transfer_succeeded = False
+        verification_only = False
+        try:
+            # Main loop
+            buffer_offset = 0
+            max_length = 64 if self.FW["pcb_name"] in ("GBxCart RW", "") else self.MAX_BUFFER_READ
+            for bank in range(ram_banks):
+                start_address, end_address, buffer_len = self._PrepareSaveBank(
+                    _SaveBankContext(
                         args,
                         _mbc,
                         bank,
-                        pos,
-                        buffer,
-                        buffer_offset,
+                        save_size,
                         buffer_len,
-                        command,
+                        buffer_offset,
                         agb_flash_chip,
-                    )
-                    if not self._WriteSaveChunk(write_parameters):
-                        return False
-                    self.SetProgress({"action": "UPDATE_POS", "pos": buffer_offset + buffer_len})
+                    ),
+                )
 
-                pos += buffer_len
-                buffer_offset += buffer_len
+                dprint(
+                    f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, buffer_len=0x{buffer_len:X}, buffer_offset=0x{buffer_offset:X}",
+                )
+                pos = start_address
+                while pos < end_address:
+                    if self._AbortSaveTransferIfCanceled():
+                        return None
 
-        verified = False
-        if args["mode"] == 2:  # Backup
-            verification_only, verified = self._finish_save_backup(args, _mbc, cart_type, buffer, sram_5)
-            if verification_only:
-                return True
+                    if args["mode"] == 2:  # Backup
+                        in_temp = [bytearray(), bytearray()]
+                        xe = 2 if args.get("verify_read") else 1  # Read twice for detecting instabilities
+                        _read_failed = False
+                        for x in range(xe):
+                            if x == 1:
+                                self.NO_PROG_UPDATE = True
+                            else:
+                                self.NO_PROG_UPDATE = False
 
-        elif args["mode"] == 3:  # Restore
-            verification_result = self._FinishSaveRestore(args, _mbc, buffer, buffer_offset)
-            if verification_result is not True:
-                return verification_result
-            verified = verification_result
+                            in_temp[x] = self._ReadSaveChunk(
+                                _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
+                            )
+
+                            if len(in_temp[x]) != buffer_len:
+                                max_length, exhausted = self._HandleIncompleteSaveRead(
+                                    len(in_temp[x]),
+                                    buffer_len,
+                                    len(buffer),
+                                    max_length,
+                                )
+                                if exhausted:
+                                    return False
+                                _read_failed = True
+                                break
+
+                        if _read_failed:
+                            continue
+
+                        if xe == 2 and in_temp[0] != in_temp[1]:
+                            print(ANSI.RED + __("Error: Inconsistent reads detected.") + ANSI.RESET)
+                            print(f"- Read #1: {in_temp[0].hex()}")
+                            print(f"- Read #2: {in_temp[1].hex()}")
+                            if not args.get("detect"):
+                                self.SetProgress(
+                                    {
+                                        "action": "ABORT",
+                                        "info_type": "msgbox_critical",
+                                        "info_msg": __(
+                                            "Failed to read save data consistently. Please ensure that the cartridge contacts are clean.",
+                                        ),
+                                        "abortable": False,
+                                    },
+                                )
+                            return False
+
+                        temp = in_temp[0]
+                        buffer += temp
+                        self.SetProgress({"action": "UPDATE_POS", "pos": len(buffer)})
+
+                    elif args["mode"] == 3:  # Restore
+                        write_parameters = _SaveWriteParameters(
+                            args,
+                            _mbc,
+                            bank,
+                            pos,
+                            buffer,
+                            buffer_offset,
+                            buffer_len,
+                            command,
+                            agb_flash_chip,
+                        )
+                        if not self._WriteSaveChunk(write_parameters):
+                            return False
+                        self.SetProgress({"action": "UPDATE_POS", "pos": buffer_offset + buffer_len})
+
+                    pos += buffer_len
+                    buffer_offset += buffer_len
+
+            verified = False
+            if args["mode"] == 2:  # Backup
+                verification_only, verified = self._finish_save_backup(args, _mbc, cart_type, buffer, sram_5)
+                if verification_only:
+                    return True
+
+            elif args["mode"] == 3:  # Restore
+                verification_result = self._FinishSaveRestore(args, _mbc, buffer, buffer_offset)
+                if verification_result is not True:
+                    return verification_result
+                verified = verification_result
+            transfer_succeeded = True
+        finally:
+            if not transfer_succeeded and not verification_only:
+                self._CleanupFailedSaveTransfer(_mbc, cart_type, buffer, audio_low)
 
         self._ResetSaveTransferHardware(_mbc, cart_type, buffer, audio_low)
 
