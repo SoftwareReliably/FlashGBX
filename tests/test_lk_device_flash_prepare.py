@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 import pytest
 
+from FlashGBX.Flashcart import Flashcart
 from FlashGBX.hw_GBxCartRW import GbxDevice
+from tests.fakes import flashcart_callbacks, flashcart_profile
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,6 +36,80 @@ class WritePinFlashcart:
 
     def WEisWR_RESET(self) -> bool:
         return self.pin == "WR+RESET"
+
+
+class FlashCommandRecords:
+    """Device boundary calls emitted while loading flash commands."""
+
+    def __init__(self) -> None:
+        self.writes: list[tuple[int | bytearray, bool]] = []
+        self.reads: list[int] = []
+        self.firmware_variables: list[tuple[str, int]] = []
+        self.progress: list[dict[str, object]] = []
+        self.ack_count = 0
+
+
+def make_command_flashcart(**overrides: object) -> tuple[dict[str, Any], Flashcart]:
+    """Build a real Flashcart and return its matching profile."""
+    profile = flashcart_profile(**overrides)
+    _calls, callbacks = flashcart_callbacks()
+    return profile, Flashcart(profile, callbacks)
+
+
+def install_flash_command_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    firmware: int,
+    mode: str = "DMG",
+    bank_response: int = 1,
+) -> FlashCommandRecords:
+    """Record the device protocol around real flash-command loading."""
+    records = FlashCommandRecords()
+    device.MODE = mode  # type: ignore[assignment]
+    device.FW = {"fw_ver": firmware}
+
+    def write(value: int | bytes | bytearray, wait: bool = False) -> None:
+        recorded = bytearray(value) if isinstance(value, (bytes, bytearray)) else value
+        records.writes.append((recorded, wait))
+
+    def read(count: int) -> int:
+        records.reads.append(count)
+        return bank_response
+
+    def set_firmware_variable(name: str, value: int) -> None:
+        records.firmware_variables.append((name, value))
+
+    def set_progress(update: dict[str, object]) -> None:
+        records.progress.append(dict(update))
+
+    def wait_for_ack() -> int:
+        records.ack_count += 1
+        return 1
+
+    monkeypatch.setattr(device, "_write", write)
+    monkeypatch.setattr(device, "_read", read)
+    monkeypatch.setattr(device, "_set_fw_variable", set_firmware_variable)
+    monkeypatch.setattr(device, "SetProgress", set_progress)
+    monkeypatch.setattr(device, "wait_for_ack", wait_for_ack)
+    return records
+
+
+def encode_command_records(
+    commands: list[list[int | str | None]],
+    *,
+    agb: bool = False,
+) -> list[bytearray]:
+    """Encode the six firmware records expected from a profile command list."""
+    records: list[bytearray] = []
+    for index in range(6):
+        address, value = commands[index] if index < len(commands) else (0, 0)
+        numeric_address = address if isinstance(address, int) else 0
+        numeric_value = value if isinstance(value, int) else 0
+        if agb:
+            numeric_address >>= 1
+        records.append(bytearray(struct.pack(">IH", numeric_address, numeric_value)))
+    return records
 
 
 @pytest.mark.parametrize(
@@ -354,3 +430,248 @@ def test_send_flash_commands_encodes_six_big_endian_records_and_modern_ack(
     assert len(writes) == 6
     assert all(len(record) == 6 for record in writes)
     assert wait_for_ack.call_count == (1 if firmware >= 12 else 0)
+
+
+@pytest.mark.parametrize(
+    ("commands", "expected_method", "expected_commands"),
+    [
+        (
+            {"buffer_write": [[0x1111, 0x22]], "single_write": [[0x3333, 0x44]]},
+            0x02,
+            [[0x1111, 0x22]],
+        ),
+        (
+            {"page_write": [[0x2222, 0x33]], "single_write": [[0x3333, 0x44]]},
+            0x08,
+            [[0x2222, 0x33]],
+        ),
+        ({"single_write": [[0x3333, 0x44]]}, 0x01, [[0x3333, 0x44]]),
+    ],
+    ids=["buffered", "page", "single"],
+)
+def test_load_flash_commands_selects_supported_write_method(
+    monkeypatch: pytest.MonkeyPatch,
+    commands: dict[str, list[list[int]]],
+    expected_method: int,
+    expected_commands: list[list[int | str | None]],
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=12)
+    cart_type, flashcart = make_command_flashcart(commands=commands)
+
+    result = device._load_flash_commands(cart_type, flashcart, flash_buffer_size=4)
+
+    expected_writes: list[tuple[int | bytearray, bool]] = [
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (0x01, False),
+        (expected_method, False),
+        (0x01, False),
+        *((record, False) for record in encode_command_records(expected_commands)),
+        (device.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False),
+        (0x00, True),
+    ]
+    assert result == ("AMD", 0x01)
+    assert records.writes == expected_writes
+    assert records.firmware_variables == [
+        ("FLASH_DOUBLE_DIE", 0),
+        ("FLASH_COMMANDS_BANK_1", 0),
+        ("STATUS_REGISTER_MASK", 0x80),
+        ("STATUS_REGISTER_VALUE", 0x80),
+        ("AGB_IRQ_ENABLED", 0),
+    ]
+    assert records.ack_count == 1
+    assert records.reads == []
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    ("firmware", "commands"),
+    [(11, {"page_write": [[0x2222, 0x33]]}), (12, {})],
+    ids=["page-before-firmware-12", "no-write-capability"],
+)
+def test_load_flash_commands_rejects_unsupported_write_capability_before_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: int,
+    commands: dict[str, list[list[int]]],
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=firmware)
+    cart_type, flashcart = make_command_flashcart(commands=commands)
+
+    assert device._load_flash_commands(cart_type, flashcart, flash_buffer_size=4) is None
+
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (0x01, False),
+    ]
+    assert records.firmware_variables == [("FLASH_DOUBLE_DIE", 0)]
+    assert records.ack_count == 0
+    assert records.reads == []
+    assert len(records.progress) == 1
+    assert records.progress[0]["action"] == "ABORT"
+    assert records.progress[0]["abortable"] is False
+
+
+@pytest.mark.parametrize(
+    ("command_set", "firmware", "expected_method", "legacy_pin"),
+    [
+        ("GBMEMORY", 1, None, 0x01),
+        ("GBMEMORY", 2, 0x03, None),
+        ("DMG-MBC5-32M-FLASH", 11, None, 0x02),
+        ("DMG-MBC5-32M-FLASH", 12, 0x0A, None),
+    ],
+    ids=["gbmemory-legacy", "gbmemory-modern", "e201264-legacy", "e201264-modern"],
+)
+def test_load_flash_commands_selects_legacy_and_modern_firmware_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    command_set: str,
+    firmware: int,
+    expected_method: int | None,
+    legacy_pin: int | None,
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=firmware)
+    cart_type, flashcart = make_command_flashcart(command_set=command_set, commands={})
+
+    result = device._load_flash_commands(cart_type, flashcart, flash_buffer_size=4)
+
+    if expected_method is None:
+        expected_writes: list[tuple[int | bytearray, bool]] = []
+        expected_variables = [("FLASH_DOUBLE_DIE", 0), ("FLASH_WE_PIN", legacy_pin)]
+        expected_we = 0
+    else:
+        expected_writes = [
+            (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+            (0x00, False),
+            (expected_method, False),
+            (0x01, False),
+            *((record, False) for record in encode_command_records([])),
+        ]
+        expected_variables = [("FLASH_DOUBLE_DIE", 0), ("FLASH_COMMANDS_BANK_1", 0)]
+        expected_we = 1
+        if firmware >= 6:
+            expected_writes.extend(
+                [
+                    (device.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False),
+                    (0x00, True),
+                ],
+            )
+        if firmware >= 12:
+            expected_variables.extend(
+                [
+                    ("STATUS_REGISTER_MASK", 0x80),
+                    ("STATUS_REGISTER_VALUE", 0x80),
+                    ("AGB_IRQ_ENABLED", 0),
+                ],
+            )
+    assert result == (command_set, expected_we)
+    assert records.writes == expected_writes
+    assert records.firmware_variables == expected_variables
+    assert records.ack_count == (1 if expected_method is not None and firmware >= 12 else 0)
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    ("command_set", "cart_mode", "commands", "command_set_id", "method_id", "payload_commands"),
+    [
+        (
+            "AMD",
+            "AGB",
+            {"buffer_write": [["SA+2", 0]]},
+            0x01,
+            0x05,
+            [["SA", 0xE8], ["SA", "BS"], ["PA", "PD"], ["SA", 0xD0], ["SA", 0xFF]],
+        ),
+        ("DATEL_ORBITV2", "DMG", {}, 0x00, 0x09, []),
+        ("GBAMP", "AGB", {}, 0x00, 0x0B, []),
+        ("BUNG_16M", "DMG", {}, 0x00, 0x0C, []),
+    ],
+    ids=["flash2advance", "datel-orbit-v2", "gbamp", "bung-16m"],
+)
+def test_load_flash_commands_selects_specialized_method_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    command_set: str,
+    cart_mode: str,
+    commands: dict[str, list[list[int | str]]],
+    command_set_id: int,
+    method_id: int,
+    payload_commands: list[list[int | str | None]],
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=12, mode=cart_mode)
+    cart_type, flashcart = make_command_flashcart(
+        type=cart_mode,
+        command_set=command_set,
+        commands=commands,
+    )
+
+    result = device._load_flash_commands(cart_type, flashcart, flash_buffer_size=4)
+
+    expected_writes: list[tuple[int | bytearray, bool]] = [
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (command_set_id, False),
+        (method_id, False),
+        (0x01, False),
+        *((record, False) for record in encode_command_records(payload_commands, agb=cart_mode == "AGB")),
+        (device.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False),
+        (0x00, True),
+    ]
+    assert result == (command_set, 0x01)
+    assert records.writes == expected_writes
+    assert records.firmware_variables == [
+        ("FLASH_DOUBLE_DIE", 0),
+        ("FLASH_COMMANDS_BANK_1", 0),
+        ("STATUS_REGISTER_MASK", 0x80),
+        ("STATUS_REGISTER_VALUE", 0x80),
+        ("AGB_IRQ_ENABLED", 0),
+    ]
+    assert records.ack_count == 1
+    assert records.progress == []
+
+
+def test_load_flash_commands_configures_double_die_bank_switch_status_and_irq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=12)
+    single_write = [[0x5555, 0xAA]]
+    cart_type, flashcart = make_command_flashcart(
+        commands={
+            "single_write": single_write,
+            "bank_switch": [[0x2100, "ID"], [0x3000, 7]],
+        },
+        write_pin="AUDIO",
+        double_die=True,
+        flash_commands_on_bank_1=True,
+        status_register_mask=0x12,
+        status_register_value=0x34,
+        set_irq_high=True,
+    )
+
+    result = device._load_flash_commands(cart_type, flashcart, flash_buffer_size=4)
+
+    expected_writes: list[tuple[int | bytearray, bool]] = [
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (0x01, False),
+        (0x01, False),
+        (0x02, False),
+        *((record, False) for record in encode_command_records(single_write)),
+        (device.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False),
+        (0x02, False),
+        (bytearray(struct.pack(">I", 0x2100)), False),
+        (0x00, False),
+        (bytearray(struct.pack(">I", 7)), False),
+        (0x01, False),
+    ]
+    assert result == ("AMD", 0x02)
+    assert records.writes == expected_writes
+    assert records.reads == [1]
+    assert records.firmware_variables == [
+        ("FLASH_DOUBLE_DIE", 1),
+        ("FLASH_COMMANDS_BANK_1", 1),
+        ("STATUS_REGISTER_MASK", 0x12),
+        ("STATUS_REGISTER_VALUE", 0x34),
+        ("AGB_IRQ_ENABLED", 1),
+    ]
+    assert records.ack_count == 1
+    assert records.progress == []
