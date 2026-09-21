@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import struct
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 
@@ -16,6 +18,22 @@ FLASH_BLOCK_SIZE = 0x4000
 BATTERYLESS_BLOCK_SIZE = 0x2000
 AGB_32_MIB = 0x2000000
 AGB_EEPROM_RESERVED_SIZE = 0x100
+
+
+class WritePinFlashcart:
+    """Expose the write-enable pin predicates used by command setup."""
+
+    def __init__(self, pin: str | None) -> None:
+        self.pin = pin
+
+    def WEisWR(self) -> bool:
+        return self.pin == "WR"
+
+    def WEisAUDIO(self) -> bool:
+        return self.pin == "AUDIO"
+
+    def WEisWR_RESET(self) -> bool:
+        return self.pin == "WR+RESET"
 
 
 @pytest.mark.parametrize(
@@ -217,3 +235,122 @@ def test_prepare_flash_data_keeps_reserved_area_for_malformed_eeprom_signature()
 
     assert len(result) == AGB_32_MIB
     assert result[-AGB_EEPROM_RESERVED_SIZE:] == bytearray([0xC3]) * AGB_EEPROM_RESERVED_SIZE
+
+
+@pytest.mark.parametrize(
+    ("command_set", "expected_id", "expected_status_flag"),
+    [
+        ("AMD", 0x01, None),
+        ("INTEL", 0x02, 0),
+        ("SHARP", 0x02, 1),
+        ("GBMEMORY", 0x00, None),
+        ("DMG-MBC5-32M-FLASH", 0x00, None),
+        ("BLAZE_XPLODER", 0x00, None),
+        ("DATEL_ORBITV2", 0x00, None),
+        ("EEPROM", 0x00, None),
+        ("GBAMP", 0x00, None),
+        ("BUNG_16M", 0x00, None),
+    ],
+)
+def test_configure_flash_command_set_selects_firmware_id_and_status_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    command_set: str,
+    expected_id: int,
+    expected_status_flag: int | None,
+) -> None:
+    device = GbxDevice()
+    firmware_variables: list[tuple[str, int]] = []
+    progress: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        device,
+        "_set_fw_variable",
+        lambda name, value: firmware_variables.append((name, value)),
+    )
+    monkeypatch.setattr(device, "SetProgress", lambda update: progress.append(dict(update)))
+
+    assert device._configure_flash_command_set(command_set) == expected_id
+
+    expected_variables = [] if expected_status_flag is None else [("FLASH_SHARP_VERIFY_SR", expected_status_flag)]
+    assert firmware_variables == expected_variables
+    assert progress == []
+
+
+def test_configure_flash_command_set_aborts_unsupported_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    progress: list[dict[str, object]] = []
+    monkeypatch.setattr(device, "SetProgress", lambda update: progress.append(dict(update)))
+
+    assert device._configure_flash_command_set("UNKNOWN") is None
+
+    assert len(progress) == 1
+    assert progress[0]["action"] == "ABORT"
+    assert progress[0]["info_type"] == "msgbox_critical"
+    assert progress[0]["abortable"] is False
+    assert "not supported" in str(progress[0]["info_msg"])
+
+
+@pytest.mark.parametrize(
+    ("pin", "expected_value"),
+    [("WR", 0x01), ("AUDIO", 0x02), ("WR+RESET", 0x03), (None, 0x00)],
+    ids=["wr", "audio", "wr-reset", "unset"],
+)
+def test_configure_flash_write_pin_sends_selected_value(
+    monkeypatch: pytest.MonkeyPatch,
+    pin: str | None,
+    expected_value: int,
+) -> None:
+    device = GbxDevice()
+    write = Mock()
+    monkeypatch.setattr(device, "_write", write)
+
+    result = device._configure_flash_write_pin(WritePinFlashcart(pin))  # type: ignore[arg-type]
+
+    assert result == expected_value
+    write.assert_called_once_with(expected_value)
+
+
+@pytest.mark.parametrize(
+    ("mode", "firmware", "address_divisor"),
+    [("DMG", 11, 1), ("AGB", 12, 2)],
+    ids=["dmg-firmware-11", "agb-firmware-12"],
+)
+def test_send_flash_commands_encodes_six_big_endian_records_and_modern_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    firmware: int,
+    address_divisor: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = mode  # type: ignore[assignment]
+    device.FW = {"fw_ver": firmware}
+    writes: list[bytearray] = []
+    wait_for_ack = Mock()
+
+    def record_write(record: bytearray) -> None:
+        writes.append(bytearray(record))
+
+    monkeypatch.setattr(device, "_write", record_write)
+    monkeypatch.setattr(device, "wait_for_ack", wait_for_ack)
+    commands: list[list[int | str | None]] = [
+        [0x12345678, 0x9ABC],
+        ["SA", 0x1234],
+        [0x11223344, "PD"],
+        [None, None],
+    ]
+    expected_values = [
+        (0x12345678 // address_divisor, 0x9ABC),
+        (0, 0x1234),
+        (0x11223344 // address_divisor, 0),
+        (0, 0),
+        (0, 0),
+        (0, 0),
+    ]
+
+    device._send_flash_commands(commands)
+
+    assert writes == [bytearray(struct.pack(">IH", address, value)) for address, value in expected_values]
+    assert len(writes) == 6
+    assert all(len(record) == 6 for record in writes)
+    assert wait_for_ack.call_count == (1 if firmware >= 12 else 0)
