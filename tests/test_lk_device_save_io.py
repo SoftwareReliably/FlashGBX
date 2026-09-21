@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import zlib
+from typing import TYPE_CHECKING
+
 import pytest
 
 import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.hw_GBxCartRW import GbxDevice
 from FlashGBX.LK_Device import _SaveBankContext, _SaveReadParameters, _SaveWriteParameters
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class SaveIoMapper:
@@ -994,3 +1001,379 @@ def test_save_worker_dacs_write_failure_prevents_finished(
     assert dacs_calls == [(0x1F00000, 0, bytearray(b"FAIL"))]
     assert all(event.get("action") != "FINISHED" for event in progress)
     assert device.INFO["action"] == "RESTORE_RAM"
+
+
+class CompletionMapper:
+    """Minimal mapper for save completion and hardware-reset behavior."""
+
+    def __init__(
+        self,
+        name: str = "MBC3",
+        *,
+        has_rtc: bool = False,
+        rtc_read: bytearray | bool = False,
+        rtc_size: int = 4,
+        events: list[tuple[object, ...]] | None = None,
+    ) -> None:
+        self.name = name
+        self.has_rtc = has_rtc
+        self.rtc_read = rtc_read
+        self.rtc_size = rtc_size
+        self.events = events if events is not None else []
+
+    def GetName(self) -> str:
+        return self.name
+
+    def HasRTC(self) -> bool:
+        self.events.append(("has_rtc",))
+        return self.has_rtc
+
+    def LatchRTC(self) -> None:
+        self.events.append(("latch_rtc",))
+
+    def ReadRTC(self) -> bytearray | bool:
+        self.events.append(("read_rtc",))
+        return self.rtc_read
+
+    def GetRTCBufferSize(self) -> int:
+        return self.rtc_size
+
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
+        self.events.append(("write_rtc", bytearray(buffer), advance))
+
+    def SelectBankRAM(self, bank: int) -> None:
+        self.events.append(("select_ram", bank))
+
+    def EnableRAM(self, enable: bool = True) -> None:
+        self.events.append(("enable_ram", enable))
+
+    def SelectBankROM(self, bank: int) -> None:
+        self.events.append(("select_rom", bank))
+
+
+@pytest.mark.parametrize(
+    ("mapper_name", "source", "expected"),
+    [
+        ("MBC3", bytearray(b"SAVE"), bytearray(b"SAVE")),
+        ("MBC2", bytearray([0xF1, 0xA2, 0x73, 0x44]), bytearray([1, 2, 3, 4])),
+    ],
+    ids=["ordinary", "mbc2-nibbles"],
+)
+def test_finish_save_backup_writes_final_disk_bytes_and_hashes(
+    tmp_path: Path,
+    mapper_name: str,
+    source: bytearray,
+    expected: bytearray,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = CompletionMapper(mapper_name)
+    destination = tmp_path / f"{mapper_name}.sav"
+    args = {"rtc": False, "save_type": 1, "path": destination}
+
+    result = device._finish_save_backup(args, mapper, None, source, 0)
+
+    assert result == (False, True)
+    assert destination.read_bytes() == expected
+    assert source == expected
+    assert device.INFO["transferred"] == len(expected)
+    assert device.INFO["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
+    assert device.INFO["file_sha1"] == hashlib.sha1(expected).hexdigest()
+    assert "data" not in device.INFO
+
+
+def test_finish_save_backup_memory_restores_agb_bank_byte_and_hashes() -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    buffer = bytearray(b"BANK-X-DATA")
+    expected = bytearray(buffer)
+    expected[5] = 0xA5
+    args = {"rtc": False, "save_type": 3, "path": None}
+
+    result = device._finish_save_backup(
+        args,
+        CompletionMapper(),
+        {"flash_bank_select_type": 1},
+        buffer,
+        0xA5,
+    )
+
+    assert result == (False, True)
+    assert buffer == expected
+    assert device.INFO["data"] is buffer
+    assert device.INFO["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
+    assert device.INFO["file_sha1"] == hashlib.sha1(expected).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("has_rtc", "rtc_read", "expected_rtc", "expected_events"),
+    [
+        (False, False, bytearray(), [("has_rtc",)]),
+        (
+            True,
+            bytearray(b"RTC-DATA"),
+            bytearray(b"RTC-DATA"),
+            [("has_rtc",), ("latch_rtc",), ("read_rtc",)],
+        ),
+        (True, False, bytearray(), [("has_rtc",), ("latch_rtc",), ("read_rtc",)]),
+    ],
+    ids=["absent", "valid", "failed"],
+)
+def test_finish_dmg_backup_appends_only_valid_rtc_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    has_rtc: bool,
+    rtc_read: bytearray | bool,
+    expected_rtc: bytearray,
+    expected_events: list[tuple[object, ...]],
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = CompletionMapper(has_rtc=has_rtc, rtc_read=rtc_read)
+    progress: list[dict[str, object]] = []
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    destination = tmp_path / "rtc.sav"
+    buffer = bytearray(b"SAVE")
+    args = {"rtc": True, "save_type": 3, "path": destination}
+
+    assert device._finish_save_backup(args, mapper, None, buffer, 0) == (False, True)
+
+    assert destination.read_bytes() == buffer + expected_rtc
+    assert mapper.events == expected_events
+    assert progress == [{"action": "UPDATE_POS", "pos": len(buffer) + len(expected_rtc)}]
+    assert device.NO_PROG_UPDATE is False
+    assert device.INFO["file_crc32"] == zlib.crc32(buffer) & 0xFFFFFFFF
+    assert device.INFO["file_sha1"] == hashlib.sha1(buffer).hexdigest()
+
+
+def test_finish_agb_backup_uses_firmware_rtc_bytes_and_frozen_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"fw_ver": 12}
+    raw_rtc = bytearray([0xAA, 1, 2, 3, 4, 5, 6, 7])
+    frozen_time = 1_700_000_123
+    gpio_calls: list[tuple[str, object]] = []
+    writes: list[int] = []
+    progress: list[dict[str, object]] = []
+
+    class FakeAgbGpio:
+        def __init__(self, **_kwargs: object) -> None:
+            gpio_calls.append(("init", None))
+
+        def HasRTC(self, buffer: bytearray | None = None) -> bool:
+            gpio_calls.append(("has_rtc", bytearray(buffer) if buffer is not None else None))
+            return True
+
+        def RTCReadStatus(self) -> int:
+            gpio_calls.append(("status", None))
+            return 0x40
+
+    def record_write(command: int) -> None:
+        writes.append(command)
+
+    monkeypatch.setattr(lk_device_module, "AGB_GPIO", FakeAgbGpio)
+    monkeypatch.setattr(lk_device_module.time, "time", lambda: frozen_time)
+    monkeypatch.setattr(device, "_write", record_write)
+    monkeypatch.setattr(device, "_read", lambda _length: bytearray(raw_rtc))
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    destination = tmp_path / "agb-rtc.sav"
+    buffer = bytearray(b"SAVE")
+    args = {"rtc": True, "save_type": 3, "path": destination}
+    expected_rtc = raw_rtc[1:] + bytearray([0x40]) + bytearray(frozen_time.to_bytes(8, "little"))
+
+    assert device._finish_save_backup(args, CompletionMapper(), None, buffer, 0) == (False, True)
+
+    assert destination.read_bytes() == buffer + expected_rtc
+    assert writes == [device.DEVICE_CMD["AGB_READ_GPIO_RTC"]]
+    assert gpio_calls == [("init", None), ("has_rtc", raw_rtc), ("status", None)]
+    assert progress == [{"action": "UPDATE_POS", "pos": len(buffer) + 16}]
+    assert device.NO_PROG_UPDATE is False
+
+
+def test_finish_dmg_restore_forwards_rtc_tail_and_advance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = CompletionMapper(rtc_size=4)
+    progress: list[dict[str, object]] = []
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    buffer = bytearray(b"SAVE") + bytearray(b"RTCD")
+    args = {
+        "rtc": True,
+        "rtc_advance": True,
+        "save_type": 3,
+        "erase": False,
+        "verify_write": False,
+    }
+
+    assert device._FinishSaveRestore(args, mapper, buffer, 4) is True
+
+    assert mapper.events == [("write_rtc", bytearray(b"RTCD"), True)]
+    assert progress == [
+        {"action": "UPDATE_RTC", "method": "write"},
+        {"action": "UPDATE_POS", "pos": 8, "force_update": True},
+    ]
+    assert device.INFO["transferred"] == 8
+
+
+def test_finish_agb_restore_forwards_rtc_tail_to_explicit_gpio_fake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    gpio_calls: list[tuple[bytearray, bool]] = []
+    progress: list[dict[str, object]] = []
+
+    class FakeAgbGpio:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
+            gpio_calls.append((bytearray(buffer), advance))
+
+    monkeypatch.setattr(lk_device_module, "AGB_GPIO", FakeAgbGpio)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    rtc = bytearray(range(16))
+    buffer = bytearray(b"SAVE") + rtc
+    args = {
+        "rtc": True,
+        "rtc_advance": True,
+        "save_type": 3,
+        "erase": False,
+        "verify_write": False,
+    }
+
+    assert device._FinishSaveRestore(args, CompletionMapper(), buffer, 4) is True
+
+    assert gpio_calls == [(rtc, True)]
+    assert progress == [
+        {"action": "UPDATE_RTC", "method": "write"},
+        {"action": "UPDATE_POS", "pos": 20, "force_update": True},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("verify_write", "erase", "verification_result", "expected_result", "expected_calls"),
+    [
+        (False, False, False, True, 0),
+        (True, False, True, True, 1),
+        (True, False, False, False, 1),
+        (True, False, None, None, 1),
+        (True, True, False, True, 0),
+    ],
+    ids=["disabled", "success", "failure", "canceled", "erase-skips-readback"],
+)
+def test_finish_restore_preserves_verification_result(
+    monkeypatch: pytest.MonkeyPatch,
+    verify_write: bool,
+    erase: bool,
+    verification_result: bool | None,
+    expected_result: bool | None,
+    expected_calls: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = CompletionMapper()
+    verification_calls: list[tuple[dict[str, object], CompletionMapper, bytearray, int]] = []
+    progress: list[dict[str, object]] = []
+
+    def verify(
+        args: dict[str, object],
+        verify_mapper: CompletionMapper,
+        buffer: bytearray,
+        buffer_offset: int,
+    ) -> bool | None:
+        verification_calls.append((args, verify_mapper, buffer, buffer_offset))
+        return verification_result
+
+    monkeypatch.setattr(device, "_VerifySaveWrite", verify)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    buffer = bytearray(b"SAVE")
+    args = {
+        "rtc": False,
+        "save_type": 3,
+        "erase": erase,
+        "verify_write": verify_write,
+    }
+
+    assert device._FinishSaveRestore(args, mapper, buffer, len(buffer)) is expected_result
+
+    assert len(verification_calls) == expected_calls
+    if verification_calls:
+        assert verification_calls == [(args, mapper, buffer, len(buffer))]
+    assert progress == [{"action": "UPDATE_POS", "pos": 4, "force_update": True}]
+
+
+@pytest.mark.parametrize(
+    ("firmware", "audio_low"),
+    [(11, False), (12, True)],
+    ids=["legacy-no-audio", "acknowledged-audio-restore"],
+)
+def test_reset_dmg_save_hardware_orders_mapper_pin_and_firmware_operations(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: int,
+    audio_low: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": firmware}
+    events: list[tuple[object, ...]] = []
+    mapper = CompletionMapper(events=events)
+
+    def set_fw_variable(name: str, value: int) -> None:
+        events.append(("fw_variable", name, value))
+
+    def set_pin(pins: list[str], *, set_high: bool) -> None:
+        events.append(("set_pin", pins, set_high))
+
+    def write(command: int, *, wait: bool) -> None:
+        events.append(("write", command, wait))
+
+    monkeypatch.setattr(device, "_set_fw_variable", set_fw_variable)
+    monkeypatch.setattr(device, "SetPin", set_pin)
+    monkeypatch.setattr(device, "_write", write)
+
+    device._ResetSaveTransferHardware(mapper, None, bytearray(b"SAVE"), audio_low)
+
+    expected = [
+        ("select_ram", 0),
+        ("enable_ram", False),
+        ("fw_variable", "DMG_READ_CS_PULSE", 0),
+    ]
+    if audio_low:
+        expected.extend(
+            [
+                ("fw_variable", "FLASH_WE_PIN", 0x02),
+                ("set_pin", ["PIN_AUDIO"], True),
+            ],
+        )
+    expected.append(("write", device.DEVICE_CMD["SET_ADDR_AS_INPUTS"], firmware >= 12))
+    assert events == expected
+
+
+def test_reset_agb_bank_select_restores_captured_byte_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    writes: list[tuple[int, int, bool]] = []
+
+    def cart_write(*, address: int, value: int, sram: bool) -> None:
+        writes.append((address, value, sram))
+
+    monkeypatch.setattr(device, "_cart_write", cart_write)
+    buffer = bytearray(b"BANK-\xa5DATA")
+
+    device._ResetSaveTransferHardware(
+        CompletionMapper(),
+        {"flash_bank_select_type": 1},
+        buffer,
+        False,
+    )
+
+    assert buffer[5] == 0xA5
+    assert writes == [(5, 0, True), (5, 0xA5, True)]
