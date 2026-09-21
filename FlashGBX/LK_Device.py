@@ -5463,6 +5463,10 @@ class LK_Device(ABC):
                     with Path(args["path"]).open("rb") as file:
                         buffer = bytearray(file.read())
 
+                if not buffer:
+                    msg = "Save data must not be empty"
+                    raise ValueError(msg)
+
                 if self.MODE == "DMG" and args["save_type"] == 0x204:  # Unlicensed PHOTO!
                     ram_banks = 16
                     if len(buffer) <= 0x20000:

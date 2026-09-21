@@ -264,6 +264,7 @@ Each implementation handoff must report: task ID completed; behaviors/assertions
 ## Progress log
 
 - Planning baseline: 699 passing tests; 60.27% combined package coverage; 24.05% engine coverage. No round-2 tasks implemented.
+- Task 1a: added 21 save-input preparation tests and rejected empty restore data before the repetition loop. 720 tests pass; package coverage is 60.49%, `LK_Device.py` is 24.87%, and `_PrepareSaveTransferAction` is 82.93% combined. Ruff, ty, and Pyright pass. PHOTO!/MAC-GBD special layout branches remain deferred; next task is 1b.
 
 ## Copyable prompt for the implementing model
 
