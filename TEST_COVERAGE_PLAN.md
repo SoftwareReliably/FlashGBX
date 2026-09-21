@@ -266,6 +266,7 @@ Each implementation handoff must report: task ID completed; behaviors/assertions
 - Planning baseline: 699 passing tests; 60.27% combined package coverage; 24.05% engine coverage. No round-2 tasks implemented.
 - Task 1a: added 21 save-input preparation tests and rejected empty restore data before the repetition loop. 720 tests pass; package coverage is 60.49%, `LK_Device.py` is 24.87%, and `_PrepareSaveTransferAction` is 82.93% combined. Ruff, ty, and Pyright pass. PHOTO!/MAC-GBD special layout branches remain deferred; next task is 1b.
 - Task 1b: added 19 DMG profile/mapper configuration tests. 739 tests pass; package coverage is 60.82% and `LK_Device.py` is 26.04%. `_prepare_save_cart_type` and `_configure_dmg_save_transfer` are at 100% combined coverage; `_configure_dmg_save_mapper` is 47.62% with the deferred Xploder protocol as its main remaining branch. Ruff passes. No production change was needed; next task is 1c.
+- Task 1c: added 22 AGB save configuration tests. 761 tests pass; package coverage is 61.24% and `LK_Device.py` is 27.53%. `_configure_agb_save_transfer` has 100% statement and 97.06% branch coverage; its only uncovered branch is an integer-address case for the method's hardcoded symbolic DACS command list. Ruff passes. No production change was needed; next task is 2a.
 
 ## Copyable prompt for the implementing model
 

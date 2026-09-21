@@ -126,6 +126,70 @@ def configure_dmg_boundaries(
     return records
 
 
+class AgbConfigRecords:
+    """Recorded calls at the device boundaries used by AGB configuration."""
+
+    def __init__(self) -> None:
+        self.writes: list[tuple[object, bool]] = []
+        self.firmware_variables: list[tuple[str, int]] = []
+        self.cart_writes: list[tuple[int, int, dict[str, object]]] = []
+        self.cart_reads: list[tuple[int, int, dict[str, object]]] = []
+        self.progress: list[dict[str, Any]] = []
+        self.flash_id_calls = 0
+        self.ack_count = 0
+
+
+def configure_agb_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    firmware: int = 12,
+    flash_id_result: tuple[int, str] | bool | None = None,
+    read_responses: list[bytearray | bool] | None = None,
+) -> AgbConfigRecords:
+    """Record AGB configuration commands with finite fake responses."""
+    records = AgbConfigRecords()
+    responses = [] if read_responses is None else list(read_responses)
+    device.FW = {"fw_ver": firmware, "pcb_name": "Test device"}
+
+    def cart_write(address: int, value: int, **kwargs: object) -> None:
+        records.cart_writes.append((address, value, kwargs))
+
+    def cart_read(address: int, length: int = 0, **kwargs: object) -> bytearray | bool:
+        records.cart_reads.append((address, length, kwargs))
+        if not responses:
+            msg = f"Unexpected AGB save read at 0x{address:X}"
+            raise AssertionError(msg)
+        return responses.pop(0)
+
+    def read_flash_save_id() -> tuple[int, str] | bool:
+        records.flash_id_calls += 1
+        if flash_id_result is None:
+            msg = "Unexpected AGB flash-save ID request"
+            raise AssertionError(msg)
+        return flash_id_result
+
+    def acknowledge() -> None:
+        records.ack_count += 1
+
+    monkeypatch.setattr(
+        device,
+        "_write",
+        lambda value, wait=False: records.writes.append((value, wait)),
+    )
+    monkeypatch.setattr(
+        device,
+        "_set_fw_variable",
+        lambda name, value: records.firmware_variables.append((name, value)),
+    )
+    monkeypatch.setattr(device, "_cart_write", cart_write)
+    monkeypatch.setattr(device, "_cart_read", cart_read)
+    monkeypatch.setattr(device, "ReadFlashSaveID", read_flash_save_id)
+    monkeypatch.setattr(device, "wait_for_ack", acknowledge)
+    monkeypatch.setattr(device, "SetProgress", lambda event: records.progress.append(dict(event)))
+    return records
+
+
 def prepare_action(
     device: GbxDevice,
     monkeypatch: pytest.MonkeyPatch,
@@ -668,3 +732,275 @@ def test_development_flash_id_controls_audio_pin(
     if expected_audio_low:
         expected_variables.append(("FLASH_WE_PIN", 0x01))
     assert records.firmware_variables == expected_variables
+
+
+@pytest.mark.parametrize(
+    (
+        "save_type",
+        "transfer_mode",
+        "rtc",
+        "expected_size",
+        "expected_banks",
+        "expected_buffer_len",
+        "expected_empty_byte",
+        "command_name",
+        "command_argument",
+        "flash_chip",
+    ),
+    [
+        (1, 2, False, 512, 1, 256, 0x00, "AGB_CART_READ_EEPROM", 1, 0),
+        (1, 3, False, 512, 1, 64, 0x00, "AGB_CART_WRITE_EEPROM", 1, 0),
+        (2, 2, False, 8192, 1, 256, 0x00, "AGB_CART_READ_EEPROM", 2, 0),
+        (2, 3, False, 8192, 1, 64, 0x00, "AGB_CART_WRITE_EEPROM", 2, 0),
+        (3, 2, True, 32768, 1, 0x2000, 0x00, "AGB_CART_READ_SRAM", None, 0),
+        (3, 3, False, 32768, 1, 0x2000, 0x00, "AGB_CART_WRITE_SRAM", None, 0),
+        (4, 2, False, 65536, 1, 0x1000, 0xFF, "AGB_CART_READ_SRAM", None, 0xBFD4),
+        (4, 3, False, 65536, 1, 0x1000, 0xFF, "AGB_CART_WRITE_FLASH_DATA", 1, 0xBFD4),
+        (5, 3, False, 131072, 2, 0x1000, 0xFF, "AGB_CART_WRITE_FLASH_DATA", 1, 0xC209),
+    ],
+    ids=[
+        "eeprom-4k-read",
+        "eeprom-4k-write",
+        "eeprom-64k-read",
+        "eeprom-64k-write",
+        "sram-read-with-rtc",
+        "sram-write",
+        "flash-read",
+        "flash-512k-write",
+        "flash-1m-write",
+    ],
+)
+def test_agb_save_types_select_exact_transfer_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    save_type: int,
+    transfer_mode: int,
+    rtc: bool,
+    expected_size: int,
+    expected_banks: int,
+    expected_buffer_len: int,
+    expected_empty_byte: int,
+    command_name: str,
+    command_argument: int | None,
+    flash_chip: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    flash_id_result = (flash_chip, "Test flash") if flash_chip else None
+    records = configure_agb_boundaries(device, monkeypatch, flash_id_result=flash_id_result)
+    args = {"mode": transfer_mode, "save_type": save_type, "rtc": rtc}
+
+    configuration = device._configure_agb_save_transfer(args, cart_type=None)
+
+    assert configuration is not None
+    assert configuration.buffer_len == expected_buffer_len
+    assert configuration.save_size == expected_size
+    assert configuration.ram_banks == expected_banks
+    assert configuration.flash_chip == flash_chip
+    assert configuration.sram_5 == 0
+    expected_command: int | bytearray = device.DEVICE_CMD[command_name]
+    if command_argument is not None:
+        expected_command = bytearray([expected_command, command_argument])
+    assert configuration.command == expected_command
+    assert configuration.empty_data_byte == expected_empty_byte
+    assert configuration.extra_size == (0x10 if rtc else 0)
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_MODE_AGB"], True),
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], True),
+    ]
+    assert records.flash_id_calls == (1 if flash_chip else 0)
+    assert records.firmware_variables == []
+    assert records.cart_reads == []
+    assert records.cart_writes == []
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    ("flash_chip", "expected_buffer_len", "command_argument"),
+    [
+        (0xBFD4, 0x1000, 1),
+        (0x1F3D, 0x1000, 2),
+        (0xBF4B, 0x800, 1),
+        (0xBF6D, 0x8000, 1),
+    ],
+    ids=["normal", "atmel", "bootleg-small-buffer", "bootleg-large-buffer"],
+)
+def test_agb_flash_chip_controls_buffer_and_write_command(
+    monkeypatch: pytest.MonkeyPatch,
+    flash_chip: int,
+    expected_buffer_len: int,
+    command_argument: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(
+        device,
+        monkeypatch,
+        flash_id_result=(flash_chip, "Test flash"),
+    )
+    args = {"mode": 3, "save_type": 4, "rtc": False}
+
+    configuration = device._configure_agb_save_transfer(args, cart_type=None)
+
+    assert configuration is not None
+    assert configuration.buffer_len == expected_buffer_len
+    assert configuration.flash_chip == flash_chip
+    assert configuration.command == bytearray(
+        [device.DEVICE_CMD["AGB_CART_WRITE_FLASH_DATA"], command_argument],
+    )
+    assert configuration.empty_data_byte == 0xFF
+    assert records.flash_id_calls == 1
+
+
+@pytest.mark.parametrize("detect", [False, True], ids=["interactive", "detection"])
+def test_agb_flash_id_failure_stops_before_command_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    detect: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(device, monkeypatch, flash_id_result=False)
+    args = {"mode": 3, "save_type": 4, "rtc": False, "detect": detect}
+
+    assert device._configure_agb_save_transfer(args, cart_type=None) is None
+
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_MODE_AGB"], True),
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], True),
+    ]
+    assert records.flash_id_calls == 1
+    assert records.firmware_variables == []
+    assert records.cart_reads == []
+    assert records.cart_writes == []
+    assert len(records.progress) == (0 if detect else 1)
+    if records.progress:
+        assert records.progress[0]["action"] == "ABORT"
+        assert records.progress[0]["info_type"] == "msgbox_critical"
+        assert records.progress[0]["abortable"] is False
+
+
+@pytest.mark.parametrize("firmware", [11, 12])
+def test_dacs_configuration_encodes_commands_and_acknowledges_modern_firmware(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(
+        device,
+        monkeypatch,
+        firmware=firmware,
+        read_responses=[bytearray([0xB0, 0x00, 0x9F, 0x00])],
+    )
+    args = {"mode": 3, "save_type": 6, "rtc": True}
+
+    configuration = device._configure_agb_save_transfer(args, cart_type=None)
+
+    assert configuration is not None
+    assert configuration.buffer_len == 0x2000
+    assert configuration.save_size == 0x100000
+    assert configuration.ram_banks == 1
+    assert configuration.flash_chip == 0
+    assert configuration.sram_5 == 0
+    assert configuration.command is False
+    assert configuration.empty_data_byte == 0xFF
+    assert configuration.extra_size == 0x10
+    wait = firmware >= 12
+    command_records = [
+        bytearray([0x00, 0x00, 0x00, 0x00, 0x00, value]) for value in (0x70, 0x10, 0x00, 0x00, 0x00, 0x00)
+    ]
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_MODE_AGB"], wait),
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], wait),
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (0x02, False),
+        (0x01, False),
+        (0x00, False),
+        *((record, False) for record in command_records),
+    ]
+    assert records.firmware_variables == [("FLASH_SHARP_VERIFY_SR", 1)]
+    assert records.cart_reads == [(0, 4, {})]
+    assert records.cart_writes == [(0, 0x90, {}), (0, 0x50, {}), (0, 0xFF, {})]
+    assert records.ack_count == (1 if wait else 0)
+    assert records.progress == []
+
+
+@pytest.mark.parametrize("detect", [False, True], ids=["interactive", "detection"])
+def test_dacs_unknown_id_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    detect: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(
+        device,
+        monkeypatch,
+        read_responses=[bytearray([0x00, 0x01, 0x02, 0x03])],
+    )
+    args = {"mode": 2, "save_type": 6, "rtc": False, "detect": detect}
+
+    assert device._configure_agb_save_transfer(args, cart_type=None) is None
+
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_MODE_AGB"], True),
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], True),
+    ]
+    assert records.firmware_variables == []
+    assert records.cart_reads == [(0, 4, {})]
+    assert records.cart_writes == [(0, 0x90, {}), (0, 0x50, {}), (0, 0xFF, {})]
+    assert records.ack_count == 0
+    assert len(records.progress) == (0 if detect else 1)
+    if records.progress:
+        assert "00 01 02 03" in records.progress[0]["info_msg"]
+
+
+def test_agb_bank_select_profile_captures_sram_byte_before_switching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(
+        device,
+        monkeypatch,
+        read_responses=[bytearray([0xA5])],
+    )
+    args = {"mode": 2, "save_type": 3, "rtc": False}
+
+    configuration = device._configure_agb_save_transfer(args, cart_type={"flash_bank_select_type": 1})
+
+    assert configuration is not None
+    assert configuration.sram_5 == 0xA5
+    assert configuration.command == device.DEVICE_CMD["AGB_CART_READ_SRAM"]
+    assert records.cart_reads == [(5, 1, {"agb_save_flash": True})]
+    assert records.cart_writes == [(5, 1, {"sram": True})]
+
+
+def test_agb_bank_select_profile_stops_when_sram_byte_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(device, monkeypatch, read_responses=[False])
+    args = {"mode": 3, "save_type": 3, "rtc": False}
+
+    assert device._configure_agb_save_transfer(args, cart_type={"flash_bank_select_type": 1}) is None
+
+    assert records.cart_reads == [(5, 1, {"agb_save_flash": True})]
+    assert records.cart_writes == []
+    assert records.progress == []
+
+
+def test_agb_save_configuration_rejects_unknown_save_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    records = configure_agb_boundaries(device, monkeypatch)
+    args = {"mode": 2, "save_type": 99, "rtc": False}
+
+    assert device._configure_agb_save_transfer(args, cart_type=None) is None
+
+    assert records.writes == [
+        (device.DEVICE_CMD["SET_MODE_AGB"], True),
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], True),
+    ]
+    assert records.flash_id_calls == 0
+    assert records.cart_reads == []
+    assert records.cart_writes == []
