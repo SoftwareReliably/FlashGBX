@@ -10,6 +10,7 @@ import pytest
 
 from FlashGBX.Flashcart import Flashcart
 from FlashGBX.hw_GBxCartRW import GbxDevice
+from FlashGBX.LK_Device import _FlashConfiguration, _FlashSectorPlan
 from tests.fakes import flashcart_callbacks, flashcart_profile
 
 if TYPE_CHECKING:
@@ -47,6 +48,32 @@ class FlashCommandRecords:
         self.firmware_variables: list[tuple[str, int]] = []
         self.progress: list[dict[str, object]] = []
         self.ack_count = 0
+
+
+class EraseChoiceFlashcart:
+    """Minimal flash-cart surface used to verify erase selection."""
+
+    def __init__(
+        self,
+        *,
+        supports_chip: bool,
+        supports_sector: bool,
+        chip_result: bool = True,
+    ) -> None:
+        self.supports_chip = supports_chip
+        self.supports_sector = supports_sector
+        self.chip_result = chip_result
+        self.chip_erase_calls = 0
+
+    def SupportsChipErase(self) -> bool:
+        return self.supports_chip
+
+    def SupportsSectorErase(self) -> bool:
+        return self.supports_sector
+
+    def ChipErase(self) -> bool:
+        self.chip_erase_calls += 1
+        return self.chip_result
 
 
 def make_command_flashcart(**overrides: object) -> tuple[dict[str, Any], Flashcart]:
@@ -675,3 +702,418 @@ def test_load_flash_commands_configures_double_die_bank_switch_status_and_irq(
     ]
     assert records.ack_count == 1
     assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    (
+        "supports_chip",
+        "supports_sector",
+        "prefer_chip_erase",
+        "flash_offset",
+        "has_sector_map",
+        "chip_result",
+        "expected",
+        "expected_chip_calls",
+        "expected_abort",
+    ),
+    [
+        (True, True, True, 0, True, True, True, 1, False),
+        (True, True, False, 0, True, True, False, 0, False),
+        (True, True, False, 0, False, True, True, 1, False),
+        (True, True, True, 0x2000, True, True, False, 0, False),
+        (False, True, True, 0, True, True, False, 0, False),
+        (False, False, True, 0, False, True, None, 0, True),
+        (True, False, True, 0, False, False, None, 1, False),
+    ],
+    ids=[
+        "chip-erase",
+        "sector-preferred",
+        "preference-needs-sector-map",
+        "nonzero-offset",
+        "sector-only",
+        "unavailable",
+        "chip-erase-failed",
+    ],
+)
+def test_erase_flash_for_write_selects_available_strategy(
+    supports_chip: bool,
+    supports_sector: bool,
+    prefer_chip_erase: bool,
+    flash_offset: int,
+    has_sector_map: bool,
+    chip_result: bool,
+    expected: bool | None,
+    expected_chip_calls: int,
+    expected_abort: bool,
+) -> None:
+    device = GbxDevice()
+    progress: list[dict[str, object]] = []
+    device.SetProgress = lambda update: progress.append(dict(update))  # type: ignore[method-assign]
+    flashcart = EraseChoiceFlashcart(
+        supports_chip=supports_chip,
+        supports_sector=supports_sector,
+        chip_result=chip_result,
+    )
+
+    result = device._EraseFlashForWrite(
+        {"prefer_chip_erase": prefer_chip_erase},
+        flashcart,  # type: ignore[arg-type]
+        flash_offset,
+        has_sector_map,
+    )
+
+    assert result is expected
+    assert flashcart.chip_erase_calls == expected_chip_calls
+    assert [event["action"] for event in progress] == (["ABORT"] if expected_abort else [])
+
+
+@pytest.mark.parametrize(
+    ("mode", "chip_erase", "active_voltage", "expected_write_sectors", "expected_verify_sectors"),
+    [
+        ("DMG", False, 5.0, [[0, 4], [4, 4]], []),
+        ("AGB", True, 3.3, [[0, 8]], [[0, 0x20000]]),
+    ],
+    ids=["dmg-sector-erase", "agb-chip-erase"],
+)
+def test_prepare_flash_write_builds_complete_copied_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mode: str,
+    chip_erase: bool,
+    active_voltage: float,
+    expected_write_sectors: list[list[int]],
+    expected_verify_sectors: list[list[int]],
+) -> None:
+    device = GbxDevice()
+    device.MODE = mode  # type: ignore[assignment]
+    device.FW = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
+    profile_name = f"Prepared {mode}"
+    profile = flashcart_profile(type=mode, names=[profile_name])
+    device.SUPPORTED_CARTS = {"DMG": {}, "AGB": {}, mode: {profile_name: profile}}
+    _cart_profile, flashcart = make_command_flashcart(type=mode, names=[profile_name])
+    mapper = object()
+    state_path = tmp_path / "flash-state.json"
+    sector_plan = _FlashSectorPlan(
+        data_import=bytearray(b"PREPARED"),
+        smallest_sector_size=4,
+        sector_offsets=[[0, 4], [4, 4]],
+        write_sectors=[[0, 4], [4, 4]],
+        delta_state=[[0, 4, 123]],
+        state_path=state_path,
+        has_sector_map=True,
+    )
+    progress: list[dict[str, object]] = []
+    firmware_variables: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(device, "CanPowerCycleCart", lambda: False)
+    monkeypatch.setattr(device, "_prepare_flash_data", lambda _args, _mode: (bytearray(b"PREPARED"), 0))
+    monkeypatch.setattr(device, "_create_flashcart", lambda _profile, _callbacks: flashcart)
+    monkeypatch.setattr(device, "_set_flash_voltage", lambda _args, _cart: active_voltage)
+    monkeypatch.setattr(
+        device,
+        "_configure_flashcart_for_write",
+        lambda _args, _profile, _cart, _data, _mode: _FlashConfiguration(
+            mbc=mapper,
+            end_bank=2,
+            rom_bank_size=4,
+            enable_pullup_wr=2,
+            error_message="mapper details",
+            buffer_size=16,
+        ),
+    )
+    monkeypatch.setattr(device, "_PrepareGBMemoryMap", lambda _args, _mapper, _data: bytearray(b"MAP"))
+    monkeypatch.setattr(device, "_load_flash_commands", lambda _profile, _cart, _size: ("AMD", 1))
+    monkeypatch.setattr(device, "_CheckFlashID", lambda _profile, _cart, _command_set: True)
+    monkeypatch.setattr(device, "_plan_flash_sectors", lambda *_args: sector_plan)
+    monkeypatch.setattr(device, "_EraseFlashForWrite", lambda *_args: chip_erase)
+    monkeypatch.setattr(device, "SetProgress", lambda update: progress.append(dict(update)))
+    monkeypatch.setattr(
+        device,
+        "_set_fw_variable",
+        lambda name, value: firmware_variables.append((name, value)),
+    )
+    args = {
+        "buffer": b"unused by the preparation boundary",
+        "cart_type": 0,
+        "override_voltage": False,
+        "path": tmp_path / f"prepared.{mode.lower()}",
+        "prefer_chip_erase": False,
+    }
+
+    preparation = device._prepare_flash_write(args, mode)  # type: ignore[arg-type]
+
+    assert preparation is not None
+    assert preparation.cart_name == profile_name
+    assert preparation.cart_type is not profile
+    assert preparation.cart_type["commands"] is not profile["commands"]
+    assert preparation.cart_type["_index"] == 0
+    assert "_index" not in profile
+    assert preparation.flashcart is flashcart
+    assert preparation.data_import == bytearray(b"PREPARED")
+    assert preparation.data_map_import == bytearray(b"MAP")
+    assert preparation.flash_offset == 0
+    assert preparation.active_voltage == active_voltage
+    assert preparation.mbc is mapper
+    assert preparation.end_bank == 2
+    assert preparation.rom_bank_size == 4
+    assert preparation.enable_pullup_wr == 2
+    assert preparation.error_message == "mapper details"
+    assert preparation.flash_buffer_size == 16
+    assert preparation.command_set_type == "AMD"
+    assert preparation.sector_offsets == [[0, 4], [4, 4]]
+    assert preparation.write_sectors == expected_write_sectors
+    assert preparation.delta_state == [[0, 4, 123]]
+    assert preparation.state_path == state_path
+    assert preparation.chip_erase is chip_erase
+    assert preparation.buffer_len == 4
+    assert preparation.verify_sectors == expected_verify_sectors
+    assert progress == [
+        {
+            "action": "INITIALIZE",
+            "method": "ROM_WRITE",
+            "size": 8,
+            "flash_offset": 0,
+            "sector_count": 2,
+            "voltage": active_voltage,
+        },
+        {
+            "action": "INITIALIZE",
+            "method": "ROM_WRITE",
+            "size": 8,
+            "flash_offset": 0,
+            "sector_count": len(expected_write_sectors),
+            "voltage": active_voltage,
+        },
+        {"action": "UPDATE_POS", "pos": 0},
+    ]
+    assert firmware_variables == [("FLASH_WE_PIN", 1)]
+    assert device.INFO["action"] == device.ACTIONS["ROM_WRITE"]
+
+
+@pytest.mark.parametrize(
+    "rejected_stage",
+    ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase"],
+)
+def test_flash_rom_worker_stops_at_each_preparation_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    rejected_stage: str,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
+    profile_name = "Rejected preparation"
+    profile = flashcart_profile(type="DMG", names=[profile_name])
+    if rejected_stage == "firmware":
+        profile["set_audio_high"] = True
+    device.SUPPORTED_CARTS = {"DMG": {profile_name: profile}, "AGB": {}}
+    _cart_profile, flashcart = make_command_flashcart(type="DMG", names=[profile_name])
+    calls: list[str] = []
+    expected_order = ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase"]
+    real_firmware_check = device._check_flashcart_firmware
+
+    def check_firmware(cart_type: dict[str, Any]) -> bool:
+        calls.append("firmware")
+        return real_firmware_check(cart_type)
+
+    def configure(*_args: object) -> _FlashConfiguration | None:
+        calls.append("configuration")
+        if rejected_stage == "configuration":
+            return None
+        return _FlashConfiguration(
+            mbc=object(),
+            end_bank=1,
+            rom_bank_size=0x4000,
+            enable_pullup_wr=0,
+            error_message="",
+            buffer_size=4,
+        )
+
+    def prepare_map(*_args: object) -> bytearray | None:
+        calls.append("map")
+        return None if rejected_stage == "map" else bytearray()
+
+    def load_commands(*_args: object) -> tuple[str, int] | None:
+        calls.append("commands")
+        return None if rejected_stage == "commands" else ("AMD", 0)
+
+    def check_flash_id(*_args: object) -> bool:
+        calls.append("flash-id")
+        return rejected_stage != "flash-id"
+
+    def plan_sectors(*_args: object) -> _FlashSectorPlan | None:
+        calls.append("sector-plan")
+        if rejected_stage == "sector-plan":
+            return None
+        return _FlashSectorPlan(
+            data_import=bytearray(b"DATA"),
+            smallest_sector_size=4,
+            sector_offsets=[[0, 4]],
+            write_sectors=[[0, 4]],
+            delta_state=None,
+            state_path="",
+            has_sector_map=True,
+        )
+
+    def erase(*_args: object) -> bool | None:
+        calls.append("erase")
+        return None if rejected_stage == "erase" else False
+
+    writer = Mock(return_value=True)
+    monkeypatch.setattr(device, "CanPowerCycleCart", lambda: False)
+    monkeypatch.setattr(device, "_check_flashcart_firmware", check_firmware)
+    monkeypatch.setattr(device, "_create_flashcart", lambda _profile, _callbacks: flashcart)
+    monkeypatch.setattr(device, "_set_flash_voltage", lambda _args, _cart: 5.0)
+    monkeypatch.setattr(device, "_configure_flashcart_for_write", configure)
+    monkeypatch.setattr(device, "_PrepareGBMemoryMap", prepare_map)
+    monkeypatch.setattr(device, "_load_flash_commands", load_commands)
+    monkeypatch.setattr(device, "_CheckFlashID", check_flash_id)
+    monkeypatch.setattr(device, "_plan_flash_sectors", plan_sectors)
+    monkeypatch.setattr(device, "_EraseFlashForWrite", erase)
+    monkeypatch.setattr(device, "_set_fw_variable", Mock())
+    monkeypatch.setattr(device, "SetProgress", Mock())
+    monkeypatch.setattr(device, "_WritePreparedFlashROM", writer)
+    args = {
+        "buffer": b"DATA",
+        "cart_type": 0,
+        "override_voltage": False,
+        "path": tmp_path / "rejected.gb",
+        "prefer_chip_erase": False,
+    }
+
+    result = device._FlashROM_Worker(args)
+
+    rejected_index = expected_order.index(rejected_stage)
+    assert result is False
+    assert calls == expected_order[: rejected_index + 1]
+    writer.assert_not_called()
+    assert device.FAST_READ is True
+
+
+@pytest.mark.parametrize("writer_result", [True, False, None])
+def test_flash_rom_worker_returns_prepared_writer_result(
+    monkeypatch: pytest.MonkeyPatch,
+    writer_result: bool | None,
+) -> None:
+    device = GbxDevice()
+    args = {"request": "flash"}
+    preparation = object()
+    start = Mock(return_value=("AGB", preparation))
+    writer = Mock(return_value=writer_result)
+    monkeypatch.setattr(device, "_StartFlashROMWrite", start)
+    monkeypatch.setattr(device, "_WritePreparedFlashROM", writer)
+
+    result = device._FlashROM_Worker(args)
+
+    assert result is writer_result
+    start.assert_called_once_with(args)
+    writer.assert_called_once_with(args, "AGB", preparation)
+
+
+def test_prepare_flash_write_integrates_real_input_commands_and_sector_planner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=12, mode="AGB")
+    profile_name = "Integrated AGB"
+    profile = flashcart_profile(
+        type="AGB",
+        names=[profile_name],
+        voltage=3.3,
+        flash_size=0x4000,
+        sector_size=0x1000,
+        buffer_size=4,
+        commands={
+            "single_write": [[0xAAAA, 0xAA]],
+            "sector_erase": [[0xAAAA, 0x80]],
+        },
+    )
+    del profile["flash_ids"]
+    device.SUPPORTED_CARTS = {"DMG": {}, "AGB": {profile_name: profile}}
+    rom_reads: list[tuple[int, int]] = []
+
+    def read_rom(address: int, length: int, *_args: object, **_kwargs: object) -> bytearray:
+        rom_reads.append((address, length))
+        return bytearray(length)
+
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+    source_path = tmp_path / "integrated.gba"
+    args = {
+        "buffer": b"ROM",
+        "cart_type": 0,
+        "override_voltage": False,
+        "path": source_path,
+        "prefer_chip_erase": False,
+    }
+
+    preparation = device._prepare_flash_write(args, "AGB")
+
+    assert preparation is not None
+    assert preparation.cart_name == profile_name
+    assert preparation.cart_type is not profile
+    assert preparation.cart_type["_index"] == 0
+    assert preparation.cart_type["_command_set"] == "AMD"
+    assert "_index" not in profile
+    assert "_command_set" not in profile
+    assert preparation.flashcart.CONFIG is preparation.cart_type
+    assert preparation.data_import[:3] == b"ROM"
+    assert preparation.data_import[3:] == bytearray([0xFF]) * (0x4000 - 3)
+    assert preparation.data_map_import == bytearray()
+    assert preparation.flash_offset == 0
+    assert preparation.active_voltage == 3.3
+    assert preparation.mbc is None
+    assert preparation.end_bank == 1
+    assert preparation.rom_bank_size == 0x2000000
+    assert preparation.flash_buffer_size == 4
+    assert preparation.command_set_type == "AMD"
+    assert preparation.sector_offsets == [
+        [0, 0x1000],
+        [0x1000, 0x1000],
+        [0x2000, 0x1000],
+        [0x3000, 0x1000],
+    ]
+    assert preparation.write_sectors == preparation.sector_offsets
+    assert preparation.chip_erase is False
+    assert preparation.buffer_len == 0x1000
+    assert preparation.verify_sectors == []
+    assert rom_reads == [(0, 2)]
+    assert records.writes[:6] == [
+        (device.DEVICE_CMD["SET_VOLTAGE_3_3V"], True),
+        (device.DEVICE_CMD["SET_MODE_AGB"], True),
+        (device.DEVICE_CMD["SET_FLASH_CMD"], False),
+        (0x01, False),
+        (0x01, False),
+        (0x01, False),
+    ]
+    assert records.writes[6] == (bytearray(struct.pack(">IH", 0x5555, 0xAA)), False)
+    assert records.reads == []
+    assert records.ack_count == 1
+    assert records.firmware_variables == [
+        ("AGB_IRQ_ENABLED", 0),
+        ("FLASH_DOUBLE_DIE", 0),
+        ("FLASH_COMMANDS_BANK_1", 0),
+        ("STATUS_REGISTER_MASK", 0x80),
+        ("STATUS_REGISTER_VALUE", 0x80),
+        ("AGB_IRQ_ENABLED", 0),
+        ("FLASH_WE_PIN", 1),
+    ]
+    assert records.progress == [
+        {
+            "action": "INITIALIZE",
+            "method": "ROM_WRITE",
+            "size": 0x4000,
+            "flash_offset": 0,
+            "sector_count": 4,
+            "voltage": 3.3,
+        },
+        {
+            "action": "INITIALIZE",
+            "method": "ROM_WRITE",
+            "size": 0x4000,
+            "flash_offset": 0,
+            "sector_count": 4,
+            "voltage": 3.3,
+        },
+        {"action": "UPDATE_POS", "pos": 0},
+    ]
