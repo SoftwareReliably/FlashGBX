@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import struct
 import sys
@@ -34,6 +35,9 @@ class FakeWidget:
 
     def setEnabled(self, value: bool) -> None:
         self.enabled = value
+
+    def isEnabled(self) -> bool:
+        return self.enabled
 
     def setValue(self, value: int) -> None:
         self.value = value
@@ -276,6 +280,7 @@ def make_modern_window(
         QT_APP=SimpleNamespace(processEvents=Mock()),
     )
     window.DEVICE = object()
+    window.lblDeviceFWVer2Result = FakeWidget()
     window.lblStatus = FakeWidget()
     window.prgStatus = FakeWidget()
     window.btnUpdate = FakeWidget()
@@ -347,6 +352,221 @@ def write_v13_archive(tmp_path: Path, members: dict[str, str | bytes]) -> Path:
         for name, contents in members.items():
             archive.writestr(name, contents)
     return archive_path
+
+
+def write_modern_metadata_archive(
+    tmp_path: Path,
+    archive_name: str,
+    *,
+    version: str,
+    build_timestamp: int,
+    description: str,
+) -> Path:
+    archive_path = tmp_path / "res" / archive_name
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    contents = f"[Firmware]\nfw_ver = {version}\nfw_buildts = {build_timestamp}\nfw_text = {description}\n"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("fw.ini", contents)
+    return archive_path
+
+
+@pytest.mark.parametrize(
+    ("pcb_version", "archive_name", "version", "build_timestamp", "description"),
+    [
+        ("v1.4", "fw_GBxCart_RW_v1_4.zip", "R40+L14", 1_700_000_000, "v1.4 release"),
+        ("v1.4a/b/c", "fw_GBxCart_RW_v1_4a.zip", "R41+L15", 1_750_000_000, "v1.4a/b/c release"),
+    ],
+)
+def test_modern_pcb_selection_loads_and_displays_firmware_metadata(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    pcb_version: str,
+    archive_name: str,
+    version: str,
+    build_timestamp: int,
+    description: str,
+) -> None:
+    window, _writer, _events = make_modern_window(firmware_module, tmp_path, results=[])
+    write_modern_metadata_archive(
+        tmp_path,
+        archive_name,
+        version=version,
+        build_timestamp=build_timestamp,
+        description=description,
+    )
+    window.optDevicePCBVer14.setChecked(pcb_version == "v1.4")
+    window.optDevicePCBVer14a.setChecked(pcb_version == "v1.4a/b/c")
+
+    window.SetPCBVersion()
+
+    assert version == window.OFW_VER
+    assert build_timestamp == window.OFW_BUILDTS
+    assert description == window.OFW_TEXT
+    assert window.lblDeviceFWVer2Result.text.startswith(f"{version} (")
+    displayed_timestamp = window.lblDeviceFWVer2Result.text.removeprefix(f"{version} (").removesuffix(")")
+    displayed_datetime = datetime.datetime.fromisoformat(displayed_timestamp)
+    assert displayed_datetime.microsecond == 0
+    assert displayed_datetime.timestamp() == build_timestamp
+    assert window.optDevicePCBVer14.isChecked() is (pcb_version == "v1.4")
+    assert window.optDevicePCBVer14a.isChecked() is (pcb_version == "v1.4a/b/c")
+
+
+def test_modern_pcb_selection_ignores_missing_selection(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    window, _writer, _events = make_modern_window(firmware_module, tmp_path, results=[])
+    window.lblDeviceFWVer2Result.setText("Choose a PCB")
+
+    assert window.SetPCBVersion() is None
+
+    assert window.lblDeviceFWVer2Result.text == "Choose a PCB"
+    assert not hasattr(window, "OFW_VER")
+
+
+@pytest.mark.parametrize(
+    ("set_progress", "enable_ui", "expected_progress"),
+    [(None, False, 17), (12.34, True, 123)],
+    ids=["text-only", "progress-and-enable"],
+)
+def test_modern_status_updates_text_progress_and_controls(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    set_progress: float | None,
+    enable_ui: bool,
+    expected_progress: int,
+) -> None:
+    window, _writer, _events = make_modern_window(firmware_module, tmp_path, results=[])
+    window.prgStatus.setValue(17)
+    for control in (
+        window.btnUpdate,
+        window.btnClose,
+        window.optDevicePCBVer14,
+        window.optDevicePCBVer14a,
+    ):
+        control.setEnabled(False)
+
+    window.SetStatus("Writing", enableUI=enable_ui, setProgress=set_progress)
+
+    assert window.lblStatus.text == "Status: Writing"
+    assert window.prgStatus.value == expected_progress
+    assert all(
+        control.enabled is enable_ui
+        for control in (
+            window.btnUpdate,
+            window.btnClose,
+            window.optDevicePCBVer14,
+            window.optDevicePCBVer14a,
+        )
+    )
+    window.APP.QT_APP.processEvents.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("set_progress", "enable_ui", "expected_progress"),
+    [(None, False, 17), (12.6, True, 13)],
+    ids=["text-only", "progress-and-enable"],
+)
+def test_v13_status_updates_text_progress_and_controls(
+    firmware_module: ModuleType,
+    set_progress: float | None,
+    enable_ui: bool,
+    expected_progress: int,
+) -> None:
+    window = make_window(firmware_module)
+    window.prgStatus.setValue(17)
+
+    window.SetStatus("Writing", enableUI=enable_ui, setProgress=set_progress)
+
+    assert window.lblStatus.text == "Status: Writing"
+    assert window.prgStatus.value == expected_progress
+    assert window.btnUpdate.enabled is enable_ui
+    assert window.btnClose.enabled is enable_ui
+    assert window.grpAvailableFwUpdates.enabled is enable_ui
+    window.APP.QT_APP.processEvents.assert_not_called()
+
+
+@pytest.mark.parametrize("window_kind", ["modern", "v13"])
+@pytest.mark.parametrize(
+    ("close_enabled", "answer", "expected"),
+    [
+        (True, FakeMessageBox.StandardButton.No, True),
+        (False, FakeMessageBox.StandardButton.No, False),
+        (False, FakeMessageBox.StandardButton.Yes, True),
+    ],
+    ids=["enabled", "disabled-declined", "disabled-confirmed"],
+)
+def test_firmware_window_close_safeguards(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    window_kind: str,
+    close_enabled: bool,
+    answer: int,
+    expected: bool,
+) -> None:
+    if window_kind == "modern":
+        window, _writer, _events = make_modern_window(firmware_module, tmp_path, results=[])
+    else:
+        window = make_window(firmware_module)
+    window.btnClose.setEnabled(close_enabled)
+    monkeypatch.setattr(FakeMessageBox, "next_answer", answer)
+
+    result = window.CloseDialog()
+
+    assert result is expected
+    if close_enabled:
+        assert FakeMessageBox.shown == []
+    else:
+        assert len(FakeMessageBox.shown) == 1
+        assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Warning
+        assert FakeMessageBox.shown[0].default_button == FakeMessageBox.StandardButton.No
+
+
+@pytest.mark.parametrize("pcb_version", [5, 6])
+def test_firmware_updater_class_routes_modern_pcb_versions(pcb_version: int) -> None:
+    device = gbxcartrw.GbxDevice()
+    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+
+    assert device.GetFirmwareUpdaterClass() == (gbxcartrw.FirmwareUpdater, gbxcartrw.FirmwareUpdaterWindow)
+
+
+@pytest.mark.parametrize("pcb_version", [2, 4, 90, 100, 101])
+def test_firmware_updater_class_routes_legacy_pcb_versions(pcb_version: int) -> None:
+    device = gbxcartrw.GbxDevice()
+    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+
+    assert device.GetFirmwareUpdaterClass() == (None, gbxcartrw.FirmwareUpdaterWindowV13)
+
+
+def test_firmware_updater_class_routes_missing_device_to_modern_updater() -> None:
+    assert gbxcartrw.GbxDevice.GetFirmwareUpdaterClass(None) == (
+        gbxcartrw.FirmwareUpdater,
+        gbxcartrw.FirmwareUpdaterWindow,
+    )
+
+
+def test_firmware_updater_class_rejects_unsupported_pcb_version() -> None:
+    device = gbxcartrw.GbxDevice()
+    device.FW = {"pcb_ver": 255}  # type: ignore[assignment]
+
+    assert device.GetFirmwareUpdaterClass() is None
+
+
+@pytest.mark.parametrize(
+    ("pcb_version", "missing_name"),
+    [(5, "FirmwareUpdaterWindow"), (4, "FirmwareUpdaterWindowV13")],
+)
+def test_firmware_updater_class_handles_unavailable_optional_qt_window(
+    monkeypatch: pytest.MonkeyPatch,
+    pcb_version: int,
+    missing_name: str,
+) -> None:
+    device = gbxcartrw.GbxDevice()
+    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+    monkeypatch.delattr(gbxcartrw, missing_name)
+
+    assert device.GetFirmwareUpdaterClass() is None
 
 
 def test_modern_update_rejects_missing_pcb_selection_before_disconnect(

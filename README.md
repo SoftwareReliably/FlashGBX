@@ -460,14 +460,16 @@ The scope change was measured locally on macOS with Python 3.14.5:
 | --- | ---: | ---: | ---: |
 | Previous explicit module allowlist | 697 | 73.86% | 68% |
 | Previous expanded package diagnostic | 697 | 59.79% | None |
-| Current package-wide gate | 1,014 | 68.23% | 60% |
+| Current package-wide gate | 1,127 | 70.44% | 60% |
 
 The allowlist and package measurements have different denominators; the lower package percentage does
-not indicate a loss of tested behavior. Save-transfer, flash-writing, ROM-backup, and calibration-protection
-tests raised the local package result to 68.23% combined coverage, with 71.55% statement coverage and
-59.02% branch coverage. The local result clears the next 65% gate, but the ratchet remains pending until
-the Linux result also clears it with sufficient headroom. The longer-term coverage goal remains 70%
-package-wide, guided by remaining device-engine gaps.
+not indicate a loss of tested behavior. Engine I/O and firmware-updater tests raised the local package
+result to 70.44% combined coverage, with 73.63% statement coverage and 61.61% branch coverage. The four
+round-3 focus files now measure 54.51% for `LK_Device.py`, 73.96% for `hw_GBxCartRW.py`, 62.86% for
+`FlashGBX_GUI.py`, and 64.18% for `FlashGBX_CLI.py`. The local result reached the 70% milestone, while
+the 65% gate ratchet remains pending until the same implementation has matching Linux evidence with
+sufficient headroom. The next directional package goal is 73%, guided by the remaining engine, GUI, and
+CLI gaps.
 
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
 
