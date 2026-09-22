@@ -117,7 +117,7 @@ class PocketCamera:
     def ConvertPicture(self, buffer: bytes | bytearray | memoryview, lastseen: bool = False) -> Image.Image:
         tile_width = 16
         tile_height: Literal[16, 14] = 16 if lastseen else 14
-        required_size: Literal[4096, 3584] = tile_width * tile_height * 16
+        required_size: int = tile_width * tile_height * 16
         if len(buffer) < required_size:
             msg: str = f"Camera image data is too short: expected at least {required_size} bytes"
             raise ValueError(msg)

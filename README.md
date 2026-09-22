@@ -411,7 +411,15 @@ uv run --locked ty check
 
 ty checks the `FlashGBX` package for all platforms using the project's Python version and installed dependencies.
 Like Pyright and Ruff, it excludes the GameBub, GBFlash, and Joey Jr. hardware backends.
-The test workflow also runs ty before the coverage gate.
+
+Run [Pyrefly](https://pyrefly.org/) type checking with:
+
+```shell
+uv run --locked pyrefly check
+```
+
+Pyrefly checks the same package and hardware-backend exclusions, targeting Python 3.14 across all platforms.
+The test workflow runs both ty and Pyrefly before the coverage gate.
 
 Install the Git pre-commit and pre-push hooks after syncing the development dependencies:
 
@@ -421,7 +429,7 @@ uv run pre-commit install
 
 The pre-commit hook validates repository files and the dependency lock, checks GitHub Actions
 workflows, fixes Ruff lint violations where possible, formats staged Python files, and runs
-Pyright on staged application modules. It also runs ty across the configured package when
+Pyright on staged application modules. It also runs ty and Pyrefly across the configured package when
 application code or dependency configuration changes. The pre-push hook runs the pytest suite. Run every
 pre-commit hook across the repository with:
 

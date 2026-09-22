@@ -4757,6 +4757,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self._RunSaveStressTest(preparation, rtc_advance, erase=erase)
             return
 
+        args: dict[str, Any]
         bl_args = {}
         if (
             mode == "AGB"

@@ -359,11 +359,17 @@ class GBMemoryMap:
         if not isinstance(game_title, str):
             return False
         data: ParsedMapData = {
-            **raw_data,
+            "mapper_params": raw_data["mapper_params"],
+            "f_size": raw_data["f_size"],
+            "b_size": raw_data["b_size"],
             "game_code": self._decode(raw_data["game_code"]),
             "title": self._decode(raw_data["title"], self._title_encoding(game_title)),
             "timestamp": self._decode(raw_data["timestamp"]),
             "kiosk_id": self._decode(raw_data["kiosk_id"]),
+            "write_count": raw_data["write_count"],
+            "cart_id": raw_data["cart_id"],
+            "padding": raw_data["padding"],
+            "unknown": raw_data["unknown"],
         }
         if game_title not in _MENU_TITLES:
             return data

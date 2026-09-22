@@ -1270,7 +1270,8 @@ class FlashGBX_CLI:
                 + ANSI.RESET,
             )
             return -1
-        if self.CONN.GetMode() in self.FLASHCARTS and len(self.FLASHCARTS[self.CONN.GetMode()]) == 0:
+        mode: Literal["DMG", "AGB"] | None = self.CONN.GetMode()
+        if mode is not None and mode in self.FLASHCARTS and len(self.FLASHCARTS[mode]) == 0:
             print(
                 ANSI.RED
                 + __(

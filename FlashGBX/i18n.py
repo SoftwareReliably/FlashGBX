@@ -489,6 +489,7 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
     try:
         from .IniSettings import IniSettings  # noqa: PLC0415 - IniSettings imports this module
     except ImportError:
+        # pyrefly: ignore[missing-import] - direct script execution
         from IniSettings import IniSettings  # ty: ignore[unresolved-import] # noqa: PLC0415 - direct script execution
 
     settings = IniSettings(path=Path(config_path) / "settings.ini")

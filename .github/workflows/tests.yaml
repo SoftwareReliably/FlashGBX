@@ -35,6 +35,9 @@ jobs:
       - name: Check types with ty
         run: uv run --locked ty check --output-format github
 
+      - name: Check types with Pyrefly
+        run: uv run --locked pyrefly check --output-format github
+
       - name: Run package coverage gate
         env:
           COVERAGE_FILE: coverage-package.data

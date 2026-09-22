@@ -519,7 +519,7 @@ class DMG_MBC2(DMG_Mapper):
         del index
         return (0, self.RAM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[262144]:
+    def GetMaxROMSize(self) -> int:
         return 256 * 1024
 
 
@@ -832,7 +832,7 @@ class DMG_MBC6(DMG_Mapper):
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetRAMBanks(self, ram_size: int) -> Literal[136]:  # 0x108000
+    def GetRAMBanks(self, ram_size: int) -> int:  # 0x108000
         del ram_size
         return 8 + 128
 
@@ -911,7 +911,7 @@ class DMG_MBC6(DMG_Mapper):
         self.SelectBankROM(self.CURRENT_ROM_BANK)
         return flash_id
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -928,7 +928,7 @@ class DMG_MBC7(DMG_Mapper):
         commands: list[list[int]] = [[0x0000, 0x0A if enable else 0x00], [0x4000, 0x40]]
         self.CartWrite(commands)
 
-    def GetMaxROMSize(self) -> Literal[4194304]:
+    def GetMaxROMSize(self) -> int:
         return 4 * 1024 * 1024
 
 
@@ -948,7 +948,7 @@ class DMG_MBC1M(DMG_MBC1):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -996,7 +996,7 @@ class DMG_MMM01(DMG_Mapper):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -1015,7 +1015,7 @@ class DMG_GBD(DMG_MBC5):
         self.CartWrite(commands)
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -1134,7 +1134,7 @@ class DMG_GMMC1(DMG_MBC5):
             return target_chk_value
         return super().CalcChecksum(buffer=buffer)
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -1172,7 +1172,7 @@ class DMG_M161(DMG_Mapper):
         self.CartWrite(commands)
         return (0, 0x8000)
 
-    def GetMaxROMSize(self) -> Literal[262144]:
+    def GetMaxROMSize(self) -> int:
         return 256 * 1024
 
 
@@ -1196,7 +1196,7 @@ class DMG_HuC1(DMG_MBC5):
         commands: list[list[int]] = [[0x0000, 0x0A if enable else 0x0E]]
         self.CartWrite(commands)
 
-    def GetMaxROMSize(self) -> Literal[1048576]:
+    def GetMaxROMSize(self) -> int:
         return 1 * 1024 * 1024
 
 
@@ -1384,7 +1384,7 @@ class DMG_HuC3(DMG_Mapper):
     def GetRTCString(self) -> str:
         return str(self.GetRTCDict()["string"])
 
-    def GetMaxROMSize(self) -> Literal[2097152]:
+    def GetMaxROMSize(self) -> int:
         return 2 * 1024 * 1024
 
 
@@ -1694,7 +1694,7 @@ class DMG_TAMA5(DMG_Mapper):
     def WriteWithCSPulse(self) -> Literal[True]:
         return True
 
-    def GetMaxROMSize(self) -> Literal[524288]:
+    def GetMaxROMSize(self) -> int:
         return 512 * 1024
 
 
@@ -1764,7 +1764,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
 
         return (start_address, self.RAM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[33554432]:
+    def GetMaxROMSize(self) -> int:
         return 32 * 1024 * 1024
 
 
@@ -1798,7 +1798,7 @@ class DMG_Unlicensed_WisdomTree(DMG_Mapper):
         self.CartWrite(commands)
         return (0, 0x8000)
 
-    def GetMaxROMSize(self) -> Literal[2097152]:
+    def GetMaxROMSize(self) -> int:
         return 2 * 1024 * 1024
 
 
@@ -1845,7 +1845,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
             self.CartRead(0x0102, 1)
         return self.SelectBankROM(index + 8)
 
-    def GetMaxROMSize(self) -> Literal[131072]:
+    def GetMaxROMSize(self) -> int:
         return 128 * 1024
 
 
@@ -1860,7 +1860,7 @@ class DMG_Unlicensed_Sachen(DMG_Mapper):
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[2097152]:
+    def GetMaxROMSize(self) -> int:
         return 2 * 1024 * 1024
 
 
@@ -1898,7 +1898,7 @@ class DMG_Unlicensed_DatelOrbitV2(DMG_Mapper):
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[131072]:
+    def GetMaxROMSize(self) -> int:
         return 128 * 1024
 
 
@@ -1932,7 +1932,7 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
         self.CartWrite(commands)
         return (0x4000, self.ROM_BANK_SIZE)
 
-    def GetMaxROMSize(self) -> Literal[33554432]:
+    def GetMaxROMSize(self) -> int:
         return 32 * 1024 * 1024
 
 
