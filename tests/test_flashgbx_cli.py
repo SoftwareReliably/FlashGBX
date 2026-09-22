@@ -849,6 +849,179 @@ def test_backup_restore_ram_covers_backup_restore_and_erase(
     ]
 
 
+def test_prepare_ereader_calibration_rejects_legacy_firmware(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection("AGB")
+    conn.INFO["build_date"] = ""
+    cli.CONN = conn
+
+    result = cli._PrepareEReaderCalibration(
+        make_args(action="restore-save"),
+        str(tmp_path / "unused.sav"),
+    )
+
+    assert result == (False, None)
+    assert conn.calls == []
+    assert "not supported in Legacy Mode" in capsys.readouterr().out
+
+
+def test_prepare_ereader_calibration_allows_absent_device_data(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection("AGB")
+    conn.INFO["build_date"] = "2026-01-01"
+    cli.CONN = conn
+
+    result = cli._PrepareEReaderCalibration(
+        make_args(action="restore-save"),
+        str(tmp_path / "unused.sav"),
+    )
+
+    assert result == (True, None)
+    assert conn.calls == [("read_header", True)]
+    assert "No existing e-Reader calibration data found" in capsys.readouterr().out
+
+
+def test_prepare_ereader_calibration_preserves_identical_save(
+    tmp_path: Path,
+) -> None:
+    calibration = bytes([0xA5] * 0x2000)
+    original = bytearray((index * 37 + 11) % 256 for index in range(0x20000))
+    original[0xD000:0xF000] = calibration
+    path = tmp_path / "matching-ereader.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection("AGB")
+    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.CONN = conn
+
+    continue_write, buffer = cli._PrepareEReaderCalibration(
+        make_args(action="restore-save", keep_calibration=True),
+        str(path),
+    )
+
+    assert continue_write is True
+    assert buffer == original
+    assert conn.calls == [("read_header", True)]
+
+
+@pytest.mark.parametrize("keep_calibration", [False, True])
+def test_prepare_ereader_calibration_overwrites_or_keeps_exact_range(
+    tmp_path: Path,
+    keep_calibration: bool,
+) -> None:
+    calibration = bytes([0xA5] * 0x2000)
+    original = bytearray((index * 37 + 11) % 256 for index in range(0x20000))
+    expected = original.copy()
+    if keep_calibration:
+        expected[0xD000:0xF000] = calibration
+    path = tmp_path / f"different-{keep_calibration}.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection("AGB")
+    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.CONN = conn
+    args = make_args(action="restore-save", keep_calibration=keep_calibration)
+
+    continue_write, buffer = cli._PrepareEReaderCalibration(args, str(path))
+
+    assert continue_write is True
+    assert buffer == expected
+    assert buffer is not None
+    assert buffer[:0xD000] == original[:0xD000]
+    assert buffer[0xD000:0xF000] == expected[0xD000:0xF000]
+    assert buffer[0xF000:] == original[0xF000:]
+    assert args.action == "restore-save"
+
+
+def test_prepare_ereader_erase_converts_to_buffered_restore_when_preserving(
+    tmp_path: Path,
+) -> None:
+    calibration = bytes([0xA5] * 0x2000)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection("AGB")
+    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.CONN = conn
+    args = make_args(action="erase-save", keep_calibration=True)
+
+    continue_write, buffer = cli._PrepareEReaderCalibration(
+        args,
+        str(tmp_path / "unused-erase-path.sav"),
+    )
+
+    expected = bytearray([0xFF] * 0x20000)
+    expected[0xD000:0xF000] = calibration
+    assert continue_write is True
+    assert buffer == expected
+    assert args.action == "restore-save"
+
+
+def test_backup_restore_ram_preserves_ereader_calibration_in_erase_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calibration = bytes([0xA5] * 0x2000)
+    args = make_args(
+        action="erase-save",
+        path=str(tmp_path / "unused-erase-path.sav"),
+        keep_calibration=True,
+    )
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection("AGB")
+    conn.INFO.update(
+        build_date="2026-01-01",
+        ereader=True,
+        ereader_calibration=calibration,
+    )
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.sav")
+
+    cli.BackupRestoreRAM(args, agb_header())
+
+    expected = bytearray([0xFF] * 0x20000)
+    expected[0xD000:0xF000] = calibration
+    assert args.action == "restore-save"
+    assert conn.transfer_calls == [
+        {
+            "mode": 3,
+            "path": None,
+            "mbc": 0,
+            "save_type": 1,
+            "erase": False,
+            "rtc": False,
+            "verify_write": True,
+            "cart_type": 0,
+            "buffer": expected,
+        },
+    ]
+
+
+def test_backup_restore_ram_legacy_ereader_stops_before_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = bytes([0x3C] * 0x20000)
+    path = tmp_path / "legacy-ereader.sav"
+    path.write_bytes(original)
+    args = make_args(action="restore-save", path=str(path), keep_calibration=True)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection("AGB")
+    conn.INFO.update(build_date="", ereader=True)
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.sav")
+
+    cli.BackupRestoreRAM(args, agb_header())
+
+    assert conn.calls == []
+    assert conn.transfer_calls == []
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize(("mode", "save_field"), [("DMG", {"ram_size_raw": 0}), ("AGB", {"save_type": None})])
 def test_backup_restore_ram_requires_detectable_save_type(
     tmp_path: Path,

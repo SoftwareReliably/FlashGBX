@@ -2140,8 +2140,11 @@ class FlashGBX_CLI:
             print(__("Note: No existing e-Reader calibration data found."))
             return True, None
 
-        with Path(path).open("rb") as file:
-            buffer = bytearray(file.read())
+        if args.action == "erase-save":
+            buffer = bytearray([0xFF] * 0x20000)
+        else:
+            with Path(path).open("rb") as file:
+                buffer = bytearray(file.read())
         if buffer[0xD000:0xF000] == self.CONN.INFO["ereader_calibration"]:
             return True, buffer
         if args.keep_calibration:
@@ -2391,7 +2394,7 @@ class FlashGBX_CLI:
             if args.action == "backup-save":
                 with Path(path).open("ab+"):
                     pass
-            elif args.action == "restore-save":
+            elif args.action == "restore-save" and buffer is None:
                 with Path(path).open("rb+"):
                     pass
         except PermissionError:

@@ -452,12 +452,13 @@ The scope change was measured locally on macOS with Python 3.14.5:
 | --- | ---: | ---: | ---: |
 | Previous explicit module allowlist | 697 | 73.86% | 68% |
 | Previous expanded package diagnostic | 697 | 59.79% | None |
-| Current package-wide gate | 834 | 63.13% | 60% |
+| Current package-wide gate | 1,014 | 68.23% | 60% |
 
 The allowlist and package measurements have different denominators; the lower package percentage does
-not indicate a loss of tested behavior. Save-transfer preparation, routing, completion, worker, failure,
-and cleanup tests raised the package result to 63.13%. The next gate ratchet is 65% after both local
-and Linux results clear it with sufficient headroom; the longer-term coverage goal remains 70%
+not indicate a loss of tested behavior. Save-transfer, flash-writing, ROM-backup, and calibration-protection
+tests raised the local package result to 68.23% combined coverage, with 71.55% statement coverage and
+59.02% branch coverage. The local result clears the next 65% gate, but the ratchet remains pending until
+the Linux result also clears it with sufficient headroom. The longer-term coverage goal remains 70%
 package-wide, guided by remaining device-engine gaps.
 
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
