@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, call
 
 import pytest
 
 import FlashGBX.LK_Device as lk_device_module
-from FlashGBX.Flashcart import Flashcart
+from FlashGBX.Flashcart import Flashcart, Flashcart_DMG_MMSA
 from FlashGBX.hw_GBxCartRW import GbxDevice
 from FlashGBX.LK_Device import (
     _FlashBankContext,
@@ -21,6 +23,9 @@ from FlashGBX.LK_Device import (
     _FlashWritePreparation,
 )
 from tests.fakes import flashcart_callbacks, flashcart_profile
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CHUNK_WRITERS = (
     "WriteROM",
@@ -151,6 +156,17 @@ class FailureWorkerRecords:
         self.sleep_calls: list[float] = []
         self.serial = FlashSerialRecorder()
         self.finish = Mock(return_value=True)
+
+
+class FinalizationRecords:
+    """Observable boundaries surrounding the real flash finalizer."""
+
+    def __init__(self) -> None:
+        self.progress: list[dict[str, object]] = []
+        self.modes: list[str] = []
+        self.device_writes: list[tuple[object, bool]] = []
+        self.firmware_variables: list[tuple[str, int]] = []
+        self.auto_poweroff_finish = Mock()
 
 
 def make_chunk_parameters(**overrides: object) -> _FlashChunkParameters:
@@ -369,6 +385,35 @@ def install_failure_worker_boundaries(
     monkeypatch.setattr(device, "_FinishFlashWrite", records.finish)
     monkeypatch.setattr(lk_device_module.time, "time", fake_time)
     monkeypatch.setattr(lk_device_module.time, "sleep", fake_sleep)
+    return records
+
+
+def install_finalization_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+) -> FinalizationRecords:
+    """Record mode, progress, and hardware calls while retaining finalization."""
+    records = FinalizationRecords()
+    device.FW = {"fw_ver": 12, "pcb_name": "Test device"}
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+
+    def set_progress(event: dict[str, object]) -> None:
+        records.progress.append(dict(event))
+
+    def set_mode(mode: str) -> None:
+        records.modes.append(mode)
+
+    def device_write(value: object, wait: bool = False) -> None:
+        records.device_writes.append((value, wait))
+
+    def set_firmware_variable(name: str, value: int) -> None:
+        records.firmware_variables.append((name, value))
+
+    monkeypatch.setattr(device, "SetProgress", set_progress)
+    monkeypatch.setattr(device, "SetMode", set_mode)
+    monkeypatch.setattr(device, "_write", device_write)
+    monkeypatch.setattr(device, "_set_fw_variable", set_firmware_variable)
+    monkeypatch.setattr(device, "_thread_worker_auto_poweroff_finish", records.auto_poweroff_finish)
     return records
 
 
@@ -1701,3 +1746,248 @@ def test_write_prepared_flash_rom_honors_user_cancellation_during_write(
     records.finish.assert_not_called()
     assert device.CANCEL is True
     assert device.ERROR is False
+
+
+def test_write_prepared_flash_rom_runs_real_verified_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12, "pcb_name": "Test device"}
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    mapper = SectorMapper(reset_banks={0})
+    flashcart = SectorDecisionFlashcart(sector_results=[4])
+    state_path = tmp_path / "flash-state.json"
+    preparation = make_single_sector_preparation(flashcart, mapper)._replace(
+        delta_state=[[0, 4]],
+        state_path=state_path,
+    )
+    real_finish = device._FinishFlashWrite
+    records = install_successful_worker_boundaries(device, monkeypatch)
+    verify = Mock(return_value=True)
+    set_mode = Mock()
+    auto_poweroff_finish = Mock()
+    monkeypatch.setattr(device, "_FinishFlashWrite", real_finish)
+    monkeypatch.setattr(device, "_verify_flash_write", verify)
+    monkeypatch.setattr(device, "SetMode", set_mode)
+    monkeypatch.setattr(device, "_thread_worker_auto_poweroff_finish", auto_poweroff_finish)
+    args = {"compare_sectors": False, "verify_write": True}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB")),
+        (2, bytearray(b"CD")),
+    ]
+    verification_context = verify.call_args.args[0]
+    assert verification_context.args is args
+    assert verification_context.data_import == bytearray(b"ABCD")
+    assert verification_context.verify_sectors == [[0, 4]]
+    assert verification_context.buffer_len == 2
+    assert json.loads(state_path.read_text(encoding="utf-8-sig")) == [[0, 4]]
+    assert mapper.reset_requests == [0, 0]
+    assert mapper.selected_rom_banks == [0, 0]
+    assert records.device_writes == [
+        (device.DEVICE_CMD["DMG_MBC_RESET"], True),
+        (device.DEVICE_CMD["DMG_MBC_RESET"], True),
+    ]
+    assert records.firmware_variables == [("DMG_ROM_BANK", 0), ("DMG_ROM_BANK", 0)]
+    assert flashcart.reset_calls == [True]
+    set_mode.assert_called_once_with("DMG")
+    auto_poweroff_finish.assert_called_once_with()
+    assert records.progress[-1] == {"action": "FINISHED", "verified": True}
+    assert device.INFO["last_action"] == device.ACTIONS["ROM_WRITE"]
+    assert device.INFO["action"] is None
+
+
+def test_finish_flash_write_without_verification_reports_unverified_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_finalization_boundaries(device, monkeypatch)
+
+    result = device._FinishFlashWrite({}, "DMG", preparation, 2)
+
+    assert result is True
+    assert records.progress == [
+        {"action": "UPDATE_POS", "pos": 4, "force_update": True},
+        {"action": "FINISHED", "verified": False},
+    ]
+    assert flashcart.reset_calls == [True]
+    assert mapper.selected_rom_banks == [0]
+    assert records.firmware_variables == [("DMG_ROM_BANK", 0)]
+    assert records.modes == ["DMG"]
+    records.auto_poweroff_finish.assert_called_once_with()
+
+
+def test_finish_flash_write_mismatch_still_reports_completed_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_finalization_boundaries(device, monkeypatch)
+    verify = Mock(return_value=False)
+    monkeypatch.setattr(device, "_verify_flash_write", verify)
+
+    result = device._FinishFlashWrite({"verify_write": True}, "DMG", preparation, 2)
+
+    assert result is True
+    verify.assert_called_once()
+    assert records.progress[-1] == {"action": "FINISHED", "verified": False}
+    assert mapper.selected_rom_banks == [0]
+    assert records.modes == ["DMG"]
+    records.auto_poweroff_finish.assert_called_once_with()
+
+
+def test_finish_flash_write_verification_cancellation_stops_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+    state_path = tmp_path / "canceled-state.json"
+    preparation = make_single_sector_preparation(flashcart, mapper)._replace(
+        delta_state=[[0, 4]],
+        state_path=state_path,
+    )
+    records = install_finalization_boundaries(device, monkeypatch)
+    monkeypatch.setattr(device, "_verify_flash_write", Mock(return_value=None))
+
+    result = device._FinishFlashWrite({"verify_write": True}, "DMG", preparation, 2)
+
+    assert result is None
+    assert records.progress == [{"action": "UPDATE_POS", "pos": 4, "force_update": True}]
+    assert not state_path.exists()
+    assert flashcart.reset_calls == [True]
+    assert mapper.selected_rom_banks == []
+    assert records.firmware_variables == []
+    assert records.modes == []
+    records.auto_poweroff_finish.assert_not_called()
+    assert device.INFO["action"] == device.ACTIONS["ROM_WRITE"]
+
+
+def test_finish_flash_write_photo_mode_suppresses_completion_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_finalization_boundaries(device, monkeypatch)
+    monkeypatch.setattr(device, "_verify_flash_write", Mock(return_value=True))
+
+    result = device._FinishFlashWrite({"photo_mode": True}, "DMG", preparation, 2)
+
+    assert result is True
+    assert records.progress == [{"action": "UPDATE_POS", "pos": 4, "force_update": True}]
+    assert mapper.selected_rom_banks == [0]
+    assert records.modes == ["DMG"]
+    records.auto_poweroff_finish.assert_not_called()
+    assert device.INFO["action"] == device.ACTIONS["ROM_WRITE"]
+    assert device.INFO["last_action"] is None
+
+
+def test_finish_flash_write_hidden_map_failure_stops_before_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    _, callbacks = flashcart_callbacks()
+    flashcart = Flashcart_DMG_MMSA(
+        flashcart_profile(command_set="GBMEMORY"),
+        callbacks,
+    )
+    erase_hidden_sector = Mock(return_value=True)
+    monkeypatch.setattr(flashcart, "EraseHiddenSector", erase_hidden_sector)
+    preparation = make_preparation(
+        flashcart=flashcart,
+        command_set_type="GBMEMORY",
+        data_map_import=bytearray(b"hidden map"),
+    )
+    progress: list[dict[str, object]] = []
+    verify = Mock(side_effect=AssertionError("Map failure must stop before verification"))
+    write_map = Mock(return_value=False)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    monkeypatch.setattr(device, "_verify_flash_write", verify)
+    monkeypatch.setattr(device, "WriteROM_GBMEMORY", write_map)
+
+    result = device._FinishFlashWrite({}, "DMG", preparation, 2)
+
+    assert result is False
+    erase_hidden_sector.assert_called_once_with(buffer=bytearray(b"hidden map"))
+    write_map.assert_called_once_with(
+        address=0,
+        buffer=bytearray(b"hidden map"),
+        bank=1,
+    )
+    verify.assert_not_called()
+    assert progress[0] == {"action": "UPDATE_POS", "pos": 8, "force_update": True}
+    assert progress[1]["action"] == "ABORT"
+    assert progress[1]["info_type"] == "msgbox_critical"
+    assert progress[1]["abortable"] is False
+
+
+@pytest.mark.parametrize(
+    ("delta_state", "chip_erase", "broken_sectors", "expected_write"),
+    [
+        ([[0, 4], [4, 4]], False, False, True),
+        (None, False, False, False),
+        ([[0, 4]], True, False, False),
+        ([[0, 4]], False, True, False),
+    ],
+    ids=["applicable", "no-delta", "chip-erased", "broken-sector"],
+)
+def test_save_flash_delta_state_writes_only_reusable_sector_state(
+    tmp_path: Path,
+    delta_state: list[list[int]] | None,
+    chip_erase: bool,
+    broken_sectors: bool,
+    expected_write: bool,
+) -> None:
+    device = GbxDevice()
+    state_path = tmp_path / "flash-state.json"
+    if broken_sectors:
+        device.INFO["broken_sectors"] = [[0, 4]]
+
+    device._SaveFlashDeltaState(delta_state, chip_erase, state_path)
+
+    assert state_path.exists() is expected_write
+    if expected_write:
+        assert state_path.read_bytes().startswith(b"\xef\xbb\xbf")
+        assert json.loads(state_path.read_text(encoding="utf-8-sig")) == delta_state
+
+
+@pytest.mark.parametrize(
+    ("bank_select_type", "expected_banks"),
+    [(0, []), (1, [0])],
+    ids=["single-bank", "banked"],
+)
+def test_restore_first_rom_bank_selects_agb_bank_zero_when_required(
+    bank_select_type: int,
+    expected_banks: list[int],
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+
+    device._RestoreFirstROMBank(
+        mapper,
+        {"flash_bank_select_type": bank_select_type},
+        flashcart,
+    )
+
+    assert mapper.selected_rom_banks == []
+    assert flashcart.selected_rom_banks == expected_banks
