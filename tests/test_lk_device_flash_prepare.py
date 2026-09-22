@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.Flashcart import Flashcart
 from FlashGBX.hw_GBxCartRW import GbxDevice
 from FlashGBX.LK_Device import _FlashConfiguration, _FlashSectorPlan
@@ -74,6 +75,99 @@ class EraseChoiceFlashcart:
     def ChipErase(self) -> bool:
         self.chip_erase_calls += 1
         return self.chip_result
+
+
+class RecordingFlashMapper:
+    """Small mapper surface used by flashcart write configuration tests."""
+
+    def __init__(
+        self,
+        events: list[tuple[object, ...]],
+        *,
+        bank_size: int = 0x4000,
+        max_size: int = 0x8000,
+        name: str = "Test MBC",
+    ) -> None:
+        self.events = events
+        self.bank_size = bank_size
+        self.max_size = max_size
+        self.name = name
+
+    def GetROMBankSize(self) -> int:
+        return self.bank_size
+
+    def GetMaxROMSize(self) -> int:
+        return self.max_size
+
+    def GetName(self) -> str:
+        return self.name
+
+    def EnableMapper(self) -> bool:
+        self.events.append(("mapper-enable",))
+        return True
+
+
+class RecordingMapperFactory:
+    """Record mapper construction and return one deterministic mapper."""
+
+    def __init__(self, mapper: RecordingFlashMapper, events: list[tuple[object, ...]]) -> None:
+        self.mapper = mapper
+        self.events = events
+        self.arguments: list[dict[str, object]] = []
+
+    def GetInstance(self, **kwargs: object) -> RecordingFlashMapper:
+        self.arguments.append(kwargs)
+        args = kwargs["args"]
+        assert isinstance(args, dict)
+        self.events.append(("mapper-create", args["mbc"]))
+        return self.mapper
+
+
+class FlashConfigurationRecords:
+    """Calls made while configuring a flashcart for writing."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[object, ...]] = []
+        self.writes: list[tuple[int, bool]] = []
+        self.variables: list[tuple[str, int]] = []
+        self.progress: list[dict[str, object]] = []
+
+
+def install_flash_configuration_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    firmware: int,
+    mapper_bank_size: int = 0x4000,
+    mapper_max_size: int = 0x8000,
+) -> tuple[FlashConfigurationRecords, RecordingMapperFactory]:
+    """Record setup boundaries while retaining real profile accessors."""
+    records = FlashConfigurationRecords()
+    device.FW = {"fw_ver": firmware}
+    mapper = RecordingFlashMapper(
+        records.events,
+        bank_size=mapper_bank_size,
+        max_size=mapper_max_size,
+    )
+    factory = RecordingMapperFactory(mapper, records.events)
+
+    def write(value: int, wait: bool = False) -> None:
+        records.writes.append((value, wait))
+        records.events.append(("write", value, wait))
+
+    def set_firmware_variable(name: str, value: int) -> None:
+        records.variables.append((name, value))
+        records.events.append(("variable", name, value))
+
+    def set_progress(update: dict[str, object]) -> None:
+        records.progress.append(dict(update))
+        records.events.append(("progress", update["action"]))
+
+    monkeypatch.setattr(device, "_write", write)
+    monkeypatch.setattr(device, "_set_fw_variable", set_firmware_variable)
+    monkeypatch.setattr(device, "SetProgress", set_progress)
+    monkeypatch.setattr(lk_device_module, "DMG_Mapper", lambda: factory)
+    return records, factory
 
 
 def make_command_flashcart(**overrides: object) -> tuple[dict[str, Any], Flashcart]:
@@ -705,6 +799,264 @@ def test_load_flash_commands_configures_double_die_bank_switch_status_and_irq(
 
 
 @pytest.mark.parametrize(
+    ("firmware", "pullups", "irq_setting", "expected_prefix", "expected_irq"),
+    [
+        (7, True, None, [], None),
+        (8, None, None, [], None),
+        (8, True, None, [("ENABLE_PULLUPS", True)], None),
+        (8, False, None, [("DISABLE_PULLUPS", True)], None),
+        (11, None, None, [], None),
+        (12, None, None, [], 0),
+        (12, None, True, [], 1),
+        (12, None, False, [], 1),
+    ],
+    ids=[
+        "firmware-7-ignores-pullups",
+        "firmware-8-absent-pullups",
+        "firmware-8-enables-pullups",
+        "firmware-8-disables-pullups",
+        "firmware-11-no-ack",
+        "firmware-12-ack-no-irq-key",
+        "firmware-12-irq-key-enabled",
+        "firmware-12-irq-key-disabled-value",
+    ],
+)
+def test_configure_flashcart_for_write_honors_agb_firmware_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: int,
+    pullups: bool | None,
+    irq_setting: bool | None,
+    expected_prefix: list[tuple[str, bool]],
+    expected_irq: int | None,
+) -> None:
+    device = GbxDevice()
+    records, factory = install_flash_configuration_boundaries(device, monkeypatch, firmware=firmware)
+    overrides: dict[str, object] = {"type": "AGB"}
+    if pullups is not None:
+        overrides["enable_pullups"] = pullups
+    if irq_setting is not None:
+        overrides["set_irq_high"] = irq_setting
+    _profile, flashcart = make_command_flashcart(**overrides)
+
+    result = device._configure_flashcart_for_write(
+        {},
+        flashcart.CONFIG,
+        flashcart,
+        bytearray(0x4000),
+        "AGB",
+    )
+
+    pullup_commands = [(device.DEVICE_CMD[name], wait) for name, wait in expected_prefix]
+    assert records.writes == [
+        *pullup_commands,
+        (device.DEVICE_CMD["SET_MODE_AGB"], firmware >= 12),
+    ]
+    assert records.variables == ([] if expected_irq is None else [("AGB_IRQ_ENABLED", expected_irq)])
+    assert result == _FlashConfiguration(
+        mbc=None,
+        end_bank=1,
+        rom_bank_size=0x2000000,
+        enable_pullup_wr=0,
+        error_message="",
+        buffer_size=4,
+    )
+    assert factory.arguments == []
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    ("firmware", "profile_pullup", "forced_pullup", "expected_pullup"),
+    [
+        (11, True, None, None),
+        (12, None, None, 0),
+        (12, False, False, 0),
+        (12, True, None, 2),
+        (12, None, True, 2),
+    ],
+    ids=[
+        "firmware-11-no-wr-setting",
+        "firmware-12-settings-absent",
+        "firmware-12-settings-disabled",
+        "firmware-12-profile-enabled",
+        "firmware-12-manually-forced",
+    ],
+)
+def test_configure_flashcart_for_write_honors_dmg_wr_pullup_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    firmware: int,
+    profile_pullup: bool | None,
+    forced_pullup: bool | None,
+    expected_pullup: int | None,
+) -> None:
+    device = GbxDevice()
+    records, factory = install_flash_configuration_boundaries(device, monkeypatch, firmware=firmware)
+    overrides: dict[str, object] = {"mbc": 0x19}
+    if profile_pullup is not None:
+        overrides["enable_pullup_wr"] = profile_pullup
+    _profile, flashcart = make_command_flashcart(**overrides)
+    args: dict[str, Any] = {"mbc": 0}
+    if forced_pullup is not None:
+        args["force_wr_pullup"] = forced_pullup
+
+    result = device._configure_flashcart_for_write(
+        args,
+        flashcart.CONFIG,
+        flashcart,
+        bytearray(0x4000),
+        "DMG",
+    )
+
+    expected_variables = [("FLASH_PULSE_RESET", 0)]
+    if expected_pullup is not None:
+        expected_variables.insert(0, ("PULLUPS_ENABLED", expected_pullup))
+    assert records.writes == [(device.DEVICE_CMD["SET_MODE_DMG"], firmware >= 12)]
+    assert records.variables == expected_variables
+    assert result is not None
+    assert result.enable_pullup_wr == (expected_pullup or 0)
+    assert args["mbc"] == 0x19
+    assert len(factory.arguments) == 1
+    assert records.events[-1] == ("mapper-enable",)
+
+
+@pytest.mark.parametrize(
+    (
+        "profile_mbc",
+        "selected_mbc",
+        "expected_mbc",
+        "data_length",
+        "pulse_reset",
+        "expected_banks",
+        "selection_text",
+        "size_advisory",
+    ),
+    [
+        (0x01, 0x03, 0x01, 0x8000, False, 2, "forced by selected flashcart profile", False),
+        ("manual", 0x03, 0x03, 0x8001, True, 3, "manual selection", True),
+        (None, 0x00, 0x19, 0x4000, False, 1, "forced by selected flashcart profile", False),
+    ],
+    ids=["forced-exact-banks", "manual-partial-bank", "default-mbc5"],
+)
+def test_configure_flashcart_for_write_selects_dmg_mapper_and_geometry(
+    monkeypatch: pytest.MonkeyPatch,
+    profile_mbc: int | str | None,
+    selected_mbc: int,
+    expected_mbc: int,
+    data_length: int,
+    pulse_reset: bool,
+    expected_banks: int,
+    selection_text: str,
+    size_advisory: bool,
+) -> None:
+    device = GbxDevice()
+    records, factory = install_flash_configuration_boundaries(device, monkeypatch, firmware=11)
+    overrides: dict[str, object] = {"pulse_reset_after_write": pulse_reset}
+    if profile_mbc is not None:
+        overrides["mbc"] = profile_mbc
+    _profile, flashcart = make_command_flashcart(**overrides)
+    args: dict[str, Any] = {"mbc": selected_mbc}
+
+    result = device._configure_flashcart_for_write(
+        args,
+        flashcart.CONFIG,
+        flashcart,
+        bytearray(data_length),
+        "DMG",
+    )
+
+    assert result is not None
+    assert result.mbc is factory.mapper
+    assert result.end_bank == expected_banks
+    assert result.rom_bank_size == 0x4000
+    assert result.enable_pullup_wr == 0
+    assert "Test MBC" in result.error_message
+    assert selection_text in result.error_message
+    assert ("ROM size limit" in result.error_message) is size_advisory
+    assert result.buffer_size == 4
+    assert args["mbc"] == expected_mbc
+    assert len(factory.arguments) == 1
+    assert factory.arguments[0]["args"] is args
+    assert records.events == [
+        ("write", device.DEVICE_CMD["SET_MODE_DMG"], False),
+        ("mapper-create", expected_mbc),
+        ("variable", "FLASH_PULSE_RESET", int(pulse_reset)),
+        ("mapper-enable",),
+    ]
+    assert records.progress == []
+
+
+def test_configure_flashcart_for_write_rejects_unsupported_mapper_before_enable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    records, factory = install_flash_configuration_boundaries(device, monkeypatch, firmware=11)
+    _profile, flashcart = make_command_flashcart(mbc=0x7F)
+    args: dict[str, Any] = {"mbc": 0x01}
+
+    result = device._configure_flashcart_for_write(
+        args,
+        flashcart.CONFIG,
+        flashcart,
+        bytearray(0x4000),
+        "DMG",
+    )
+
+    assert result is None
+    assert args["mbc"] == 0x7F
+    assert records.writes == [(device.DEVICE_CMD["SET_MODE_DMG"], False)]
+    assert records.variables == []
+    assert factory.arguments == []
+    assert len(records.progress) == 1
+    assert records.progress[0]["action"] == "ABORT"
+    assert records.progress[0]["info_type"] == "msgbox_critical"
+    assert records.progress[0]["abortable"] is False
+
+
+@pytest.mark.parametrize(
+    ("bank_size", "data_length", "expected_banks", "expected_bank_size"),
+    [
+        (None, 0x4000, 1, 0x2000000),
+        (0x100000, 0x200000, 2, 0x100000),
+        (0x100000, 0x200001, 3, 0x100000),
+    ],
+    ids=["default-geometry", "exact-banked-geometry", "partial-banked-geometry"],
+)
+def test_configure_flashcart_for_write_calculates_agb_bank_geometry(
+    monkeypatch: pytest.MonkeyPatch,
+    bank_size: int | None,
+    data_length: int,
+    expected_banks: int,
+    expected_bank_size: int,
+) -> None:
+    device = GbxDevice()
+    records, factory = install_flash_configuration_boundaries(device, monkeypatch, firmware=12)
+    overrides: dict[str, object] = {"type": "AGB", "buffer_size": 32}
+    if bank_size is not None:
+        overrides["flash_bank_size"] = bank_size
+    _profile, flashcart = make_command_flashcart(**overrides)
+
+    result = device._configure_flashcart_for_write(
+        {},
+        flashcart.CONFIG,
+        flashcart,
+        bytearray(data_length),
+        "AGB",
+    )
+
+    assert result == _FlashConfiguration(
+        mbc=None,
+        end_bank=expected_banks,
+        rom_bank_size=expected_bank_size,
+        enable_pullup_wr=0,
+        error_message="",
+        buffer_size=32,
+    )
+    assert records.writes == [(device.DEVICE_CMD["SET_MODE_AGB"], True)]
+    assert records.variables == [("AGB_IRQ_ENABLED", 0)]
+    assert factory.arguments == []
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
     (
         "supports_chip",
         "supports_sector",
@@ -1065,6 +1417,8 @@ def test_prepare_flash_write_integrates_real_input_commands_and_sector_planner(
     assert preparation.mbc is None
     assert preparation.end_bank == 1
     assert preparation.rom_bank_size == 0x2000000
+    assert preparation.enable_pullup_wr == 0
+    assert preparation.error_message == ""
     assert preparation.flash_buffer_size == 4
     assert preparation.command_set_type == "AMD"
     assert preparation.sector_offsets == [
