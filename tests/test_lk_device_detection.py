@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
-from FlashGBX.CartridgeTypes import DmgSaveTypes
+from FlashGBX.CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 from FlashGBX.hw_GBxCartRW import GbxDevice
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.parametrize(
@@ -119,3 +124,205 @@ def test_detect_dmg_upper_region_mismatch_retains_128k(
 
     assert result == (0x20000, DmgSaveTypes(size=0x20000).GetMbc())
     assert bytes(device.INFO["data"]) == original
+
+
+@pytest.mark.parametrize("flash_result", [False, (0, 0)], ids=["read-failure", "zero-id"])
+def test_detect_agb_flash_no_id_preserves_candidate_size(
+    monkeypatch: pytest.MonkeyPatch,
+    flash_result: tuple[int, int] | bool,
+) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(device, "ReadFlashSaveID", lambda: flash_result)
+
+    assert device._DetectAgbFlashSaveType(0x2000) == (None, 0x2000, None)
+
+
+def test_detect_agb_flash_unknown_id_reports_unknown_chip(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (0xBEEF, 0))
+
+    save_type, save_size, save_chip = device._DetectAgbFlashSaveType(0x10000)
+
+    assert (save_type, save_size) == (0, 0)
+    assert save_chip is not None
+    assert "Unknown FLASH save chip" in save_chip
+    assert "0xBEEF" in save_chip
+
+
+def test_detect_agb_flash_missing_probe_data_returns_unknown_chip(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (0xBF4B, 0))
+
+    result = device._DetectAgbFlashSaveType(0)
+
+    assert result == (0, 0, "Unknown FLASH save chip (0xBF4B)")
+    assert "Error: Couldn't check save type with FLASH save ID 0xBF4B" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("flash_id", "expected_size", "expected_type"),
+    [(0xBFD4, 0x10000, 4), (0xC209, 0x20000, 5)],
+)
+def test_detect_agb_flash_known_chip_uses_real_chip_table(
+    monkeypatch: pytest.MonkeyPatch,
+    flash_id: int,
+    expected_size: int,
+    expected_type: int,
+) -> None:
+    device = GbxDevice()
+    data = bytearray([0x31] * 0x20000)
+    original = bytes(data)
+    device.INFO["data"] = data
+    monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (flash_id, 0))
+
+    result = device._DetectAgbFlashSaveType(0)
+
+    assert result == (expected_type, expected_size, AgbSaveTypes().GetFlashChipName(flash_id))
+    assert bytes(device.INFO["data"]) == original
+
+
+@pytest.mark.parametrize(
+    ("data_factory", "expected_type"),
+    [
+        (lambda: bytearray([0xFF] * 0x20000), 5),
+        (lambda: bytearray([0x22] * 0x20000), 4),
+        (
+            lambda: bytearray([0x22] * 0x10000) + bytearray([0x33] * 0x10000),
+            5,
+        ),
+    ],
+    ids=["blank", "mirrored-banks", "distinct-banks"],
+)
+def test_detect_agb_bootleg_flash_bank_patterns(
+    monkeypatch: pytest.MonkeyPatch,
+    data_factory: Callable[[], bytearray],
+    expected_type: int,
+) -> None:
+    data = data_factory()
+    original = bytes(data)
+    device = GbxDevice()
+    device.INFO["data"] = data
+    flash_id = 0xBF4B
+    monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (flash_id, 0))
+
+    result = device._DetectAgbFlashSaveType(0)
+
+    assert result == (
+        expected_type,
+        AgbSaveTypes().GetFlashChipSize(flash_id),
+        AgbSaveTypes().GetFlashChipName(flash_id),
+    )
+    assert bytes(device.INFO["data"]) == original
+
+
+def test_detect_agb_resolved_flash_type_skips_non_flash_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+
+    def fail_if_probed() -> bool:
+        pytest.fail("resolved FLASH types must bypass SRAM and EEPROM detection")
+
+    monkeypatch.setattr(device, "CheckBatterylessSRAM", fail_if_probed)
+
+    assert device._DetectAgbNonFlashSaveType(4, 0x10000, 0, {"dacs_8m": True}) == (4, 0x10000)
+
+
+@pytest.mark.parametrize(
+    ("save_size", "expected_type", "expected_size"),
+    [
+        (32768, 3, 32768),
+        (65536, 7, 65536),
+        (131072, 8, 131072),
+        (8192, 2, 8192),
+        (12345, None, 0),
+    ],
+)
+def test_detect_agb_non_flash_sram_size_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+    save_size: int,
+    expected_type: int | None,
+    expected_size: int,
+) -> None:
+    device = GbxDevice()
+    batteryless_calls: list[bool] = []
+    monkeypatch.setattr(device, "CheckBatterylessSRAM", lambda: batteryless_calls.append(True) or False)
+
+    result = device._DetectAgbNonFlashSaveType(None, save_size, 0, {"dacs_8m": False})
+
+    assert result == (expected_type, expected_size)
+    assert batteryless_calls == [True]
+
+
+def test_detect_agb_non_flash_dacs_size_and_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    monkeypatch.setattr(device, "CheckBatterylessSRAM", lambda: False)
+
+    assert device._DetectAgbNonFlashSaveType(None, 0, 0, {"dacs_8m": True}) == (6, 0x100000)
+
+
+@pytest.mark.parametrize(
+    ("is_dacs", "save_size", "expected_size"),
+    [(False, 0x8000, 0x8000), (True, 0, 0x100000)],
+    ids=["sram", "dacs"],
+)
+def test_detect_agb_batteryless_override_updates_both_metadata_locations(
+    monkeypatch: pytest.MonkeyPatch,
+    is_dacs: bool,
+    save_size: int,
+    expected_size: int,
+) -> None:
+    device = GbxDevice()
+    info: dict[str, object] = {"dacs_8m": is_dacs}
+    batteryless = {"bl_offset": 0x1234, "bl_size": 0x2000}
+    monkeypatch.setattr(device, "CheckBatterylessSRAM", lambda: batteryless)
+
+    result = device._DetectAgbNonFlashSaveType(None, save_size, 0, info)
+
+    assert result == (9, expected_size)
+    assert info["batteryless_sram"] == batteryless
+    assert device.INFO["dump_info"]["batteryless_sram"] == batteryless
+
+
+@pytest.mark.parametrize(
+    ("eeprom_64k", "expected"),
+    [
+        (bytearray([0] * 0x2000), (0, 0)),
+        (bytearray([0xFF] * 0x2000), (0, 0)),
+        (bytearray((index % 251) + 1 for index in range(0x2000)), (2, 0x2000)),
+        (bytearray([0x42] * 0x2000), (1, 512)),
+    ],
+    ids=["all-zero", "all-ff", "matching-prefix-64k", "different-prefix-4k"],
+)
+def test_detect_agb_eeprom_uses_two_exact_reads_and_skips_batteryless_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    eeprom_64k: bytearray,
+    expected: tuple[int | None, int],
+) -> None:
+    eeprom_4k = bytearray((index % 251) + 1 for index in range(512))
+    if expected == (1, 512):
+        eeprom_4k = bytearray([0x43] * 512)
+    reads = iter([eeprom_4k, eeprom_64k])
+    device = GbxDevice()
+    backup_calls: list[dict[str, object]] = []
+
+    def backup_restore(*, args: dict[str, object]) -> None:
+        backup_calls.append(args.copy())
+        device.INFO["data"] = bytearray(next(reads))
+
+    def fail_if_batteryless_probe() -> bool:
+        pytest.fail("EEPROM detection must not run the batteryless SRAM probe")
+
+    monkeypatch.setattr(device, "_BackupRestoreRAM", backup_restore)
+    monkeypatch.setattr(device, "CheckBatterylessSRAM", fail_if_batteryless_probe)
+
+    result = device._DetectAgbNonFlashSaveType(None, 0, 7, {"dacs_8m": False})
+
+    assert result == expected
+    assert backup_calls == [
+        {"mode": 2, "path": None, "mbc": 7, "save_type": 1, "rtc": False, "detect": True},
+        {"mode": 2, "path": None, "mbc": 7, "save_type": 2, "rtc": False, "detect": True},
+    ]
