@@ -98,6 +98,19 @@ class SectorDecisionFlashcart:
         return self.sector_results.pop(0)
 
 
+class SuccessfulWorkerRecords:
+    """Device I/O and completion calls from a successful flash loop."""
+
+    def __init__(self, comparison_results: list[bool] | None = None) -> None:
+        self.comparison_results = list(comparison_results or [])
+        self.comparisons: list[dict[str, object]] = []
+        self.rom_writes: list[dict[str, object]] = []
+        self.firmware_variables: list[tuple[str, int]] = []
+        self.device_writes: list[tuple[object, bool]] = []
+        self.progress: list[dict[str, object]] = []
+        self.finish = Mock(return_value=True)
+
+
 def make_chunk_parameters(**overrides: object) -> _FlashChunkParameters:
     """Build a small write request with explicit, reusable defaults."""
     values: dict[str, object] = {
@@ -144,6 +157,85 @@ def make_preparation(**overrides: object) -> _FlashWritePreparation:
     }
     values.update(overrides)
     return _FlashWritePreparation(**values)
+
+
+def install_successful_worker_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    comparison_results: list[bool] | None = None,
+) -> SuccessfulWorkerRecords:
+    """Record physical I/O while retaining the real successful worker loop."""
+    records = SuccessfulWorkerRecords(comparison_results)
+    clock = [10.0]
+
+    def write_rom(
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        flash_buffer_size: int | bool = False,
+        skip_init: bool = False,
+        rumble_stop: bool = False,
+        max_length: int = 0x400,
+    ) -> None:
+        records.rom_writes.append(
+            {
+                "address": address,
+                "buffer": bytearray(buffer),
+                "flash_buffer_size": flash_buffer_size,
+                "skip_init": skip_init,
+                "rumble_stop": rumble_stop,
+                "max_length": max_length,
+            },
+        )
+
+    def compare_crc32(
+        *,
+        buffer: bytes | bytearray | memoryview,
+        offset: int,
+        length: int,
+        address: int,
+        flashcart: object,
+        reset: bool,
+        mbc: object,
+        bank: int,
+    ) -> bool:
+        records.comparisons.append(
+            {
+                "buffer": buffer,
+                "offset": offset,
+                "length": length,
+                "address": address,
+                "flashcart": flashcart,
+                "reset": reset,
+                "mbc": mbc,
+                "bank": bank,
+            },
+        )
+        if not records.comparison_results:
+            msg = "Unexpected CompareCRC32 call without a finite response"
+            raise AssertionError(msg)
+        return records.comparison_results.pop(0)
+
+    def set_firmware_variable(name: str, value: int) -> None:
+        records.firmware_variables.append((name, value))
+
+    def device_write(value: object, wait: bool = False) -> None:
+        records.device_writes.append((value, wait))
+
+    def fake_time() -> float:
+        value = clock[0]
+        clock[0] += 0.25
+        return value
+
+    monkeypatch.setattr(device, "WriteROM", write_rom)
+    monkeypatch.setattr(device, "CompareCRC32", compare_crc32)
+    monkeypatch.setattr(device, "_set_fw_variable", set_firmware_variable)
+    monkeypatch.setattr(device, "_write", device_write)
+    monkeypatch.setattr(device, "SetProgress", lambda event: records.progress.append(dict(event)))
+    monkeypatch.setattr(device, "CanPowerCycleCart", lambda: False)
+    monkeypatch.setattr(device, "_FinishFlashWrite", records.finish)
+    monkeypatch.setattr(lk_device_module.time, "time", fake_time)
+    return records
 
 
 def install_chunk_writers(
@@ -948,3 +1040,249 @@ def test_erase_flash_sector_propagates_user_cancellation(
     assert preparation.verify_sectors == []
     progress.assert_called_once_with({"action": "UPDATE_POS", "pos": 0, "force_update": True})
     assert device.NO_PROG_UPDATE is False
+
+
+def test_write_prepared_flash_rom_writes_two_sectors_across_bank_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12}
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4, 4])
+    sectors = [[0, 4], [4, 4]]
+    preparation = make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCDEFGH"),
+        end_bank=2,
+        rom_bank_size=4,
+        flash_buffer_size=4,
+        sector_offsets=sectors,
+        write_sectors=sectors,
+        buffer_len=2,
+    )
+    records = install_successful_worker_boundaries(device, monkeypatch)
+    args = {"compare_sectors": False}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert records.rom_writes == [
+        {
+            "address": 0,
+            "buffer": bytearray(b"AB"),
+            "flash_buffer_size": 4,
+            "skip_init": False,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+        {
+            "address": 2,
+            "buffer": bytearray(b"CD"),
+            "flash_buffer_size": 4,
+            "skip_init": True,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+        {
+            "address": 4,
+            "buffer": bytearray(b"EF"),
+            "flash_buffer_size": 4,
+            "skip_init": False,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+        {
+            "address": 6,
+            "buffer": bytearray(b"GH"),
+            "flash_buffer_size": 4,
+            "skip_init": True,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+    ]
+    assert flashcart.sector_erase_calls == [
+        {"pos": 0, "buffer_pos": 0, "skip": False},
+        {"pos": 4, "buffer_pos": 4, "skip": False},
+    ]
+    assert flashcart.physical_erase_calls == flashcart.sector_erase_calls
+    assert flashcart.sector_results == []
+    assert preparation.verify_sectors == sectors
+    assert mapper.selected_rom_banks == [0, 1]
+    assert records.firmware_variables == [("DMG_ROM_BANK", 0), ("DMG_ROM_BANK", 1)]
+    assert records.device_writes == []
+    assert records.comparisons == []
+    assert records.progress == [
+        {"action": "UPDATE_POS", "pos": 0, "force_update": True},
+        {
+            "action": "UPDATE_POS",
+            "pos": 0,
+            "sector_pos": 1,
+            "sector_erase_time": 0.25,
+            "force_update": True,
+        },
+        {"action": "UPDATE_POS", "pos": 2},
+        {"action": "UPDATE_POS", "pos": 4},
+        {"action": "UPDATE_POS", "pos": 4, "force_update": True},
+        {
+            "action": "UPDATE_POS",
+            "pos": 4,
+            "sector_pos": 2,
+            "sector_erase_time": 0.25,
+            "force_update": True,
+        },
+        {"action": "UPDATE_POS", "pos": 6},
+        {"action": "UPDATE_POS", "pos": 8},
+    ]
+    records.finish.assert_called_once_with(args, "DMG", preparation, 2)
+    assert device.CANCEL is False
+    assert device.ERROR is False
+
+
+@pytest.mark.parametrize("second_sector_matches", [False, True], ids=["second-changed", "both-match"])
+def test_write_prepared_flash_rom_programs_only_changed_sectors(
+    monkeypatch: pytest.MonkeyPatch,
+    second_sector_matches: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12}
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4, 4])
+    sectors = [[0, 4], [4, 4]]
+    preparation = make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCDEFGH"),
+        end_bank=2,
+        rom_bank_size=4,
+        sector_offsets=sectors,
+        write_sectors=sectors,
+        buffer_len=2,
+    )
+    records = install_successful_worker_boundaries(
+        device,
+        monkeypatch,
+        comparison_results=[True, second_sector_matches],
+    )
+    args = {"compare_sectors": True}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert [(item["offset"], item["length"], item["address"], item["bank"]) for item in records.comparisons] == [
+        (0, 4, 0, 0),
+        (4, 4, 4, 1),
+    ]
+    assert records.comparison_results == []
+    if second_sector_matches:
+        assert records.rom_writes == []
+        assert flashcart.sector_erase_calls == [
+            {"pos": 0, "buffer_pos": 0, "skip": True},
+            {"pos": 4, "buffer_pos": 4, "skip": True},
+        ]
+        assert flashcart.physical_erase_calls == []
+        assert mapper.selected_rom_banks == [0, 1]
+        assert preparation.verify_sectors == []
+    else:
+        assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+            (4, bytearray(b"EF")),
+            (6, bytearray(b"GH")),
+        ]
+        assert flashcart.sector_erase_calls == [
+            {"pos": 0, "buffer_pos": 0, "skip": True},
+            {"pos": 4, "buffer_pos": 4, "skip": False},
+        ]
+        assert flashcart.physical_erase_calls == [{"pos": 4, "buffer_pos": 4, "skip": False}]
+        assert mapper.selected_rom_banks == [0, 1, 1]
+        assert preparation.verify_sectors == [[4, 4]]
+    records.finish.assert_called_once_with(args, "DMG", preparation, 2)
+
+
+def test_write_prepared_flash_rom_chip_erased_path_skips_sector_erase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12}
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart()
+    preparation = make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCDEFGH"),
+        end_bank=2,
+        rom_bank_size=4,
+        sector_offsets=[[0, 4], [4, 4]],
+        write_sectors=[[0, 8]],
+        chip_erase=True,
+        buffer_len=2,
+    )
+    records = install_successful_worker_boundaries(device, monkeypatch)
+    args = {"compare_sectors": True}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB")),
+        (2, bytearray(b"CD")),
+        (4, bytearray(b"EF")),
+        (6, bytearray(b"GH")),
+    ]
+    assert flashcart.sector_erase_calls == []
+    assert flashcart.physical_erase_calls == []
+    assert records.comparisons == []
+    assert mapper.selected_rom_banks == [0, 1]
+    records.finish.assert_called_once_with(args, "DMG", preparation, 2)
+
+
+def test_write_prepared_flash_rom_nonzero_sector_preserves_earlier_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12}
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4])
+    sector_offsets = [[0, 4], [4, 4]]
+    preparation = make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCDEFGH"),
+        end_bank=2,
+        rom_bank_size=4,
+        sector_offsets=sector_offsets,
+        write_sectors=[[4, 4]],
+        buffer_len=2,
+    )
+    records = install_successful_worker_boundaries(device, monkeypatch)
+    args = {"compare_sectors": False}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert records.rom_writes == [
+        {
+            "address": 4,
+            "buffer": bytearray(b"EF"),
+            "flash_buffer_size": 4,
+            "skip_init": False,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+        {
+            "address": 6,
+            "buffer": bytearray(b"GH"),
+            "flash_buffer_size": 4,
+            "skip_init": True,
+            "rumble_stop": False,
+            "max_length": device.MAX_BUFFER_WRITE,
+        },
+    ]
+    assert flashcart.sector_erase_calls == [{"pos": 4, "buffer_pos": 4, "skip": False}]
+    assert preparation.verify_sectors == [[4, 4]]
+    assert all(item["address"] >= 4 for item in records.rom_writes)
+    assert [event for event in records.progress if event.get("pos") in (2, 3)] == []
+    records.finish.assert_called_once_with(args, "DMG", preparation, 2)
