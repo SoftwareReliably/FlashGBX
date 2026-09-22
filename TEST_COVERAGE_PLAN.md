@@ -1,291 +1,252 @@
-# Test coverage plan — round 2
+# Test coverage plan — round 3
 
-This replaces the completed first-round plan. It is an implementation handoff for a smaller model: implement **one lettered task per turn**, in the order below. Do not implement this entire document in one pass. Each task names the real methods to exercise, the allowed test boundaries, and observable acceptance criteria.
+Implementation handoff for a smaller model. Rounds 1 and 2 are complete; the completed round-2 plan and progress log are preserved in [TEST_COVERAGE_PLAN_ROUND_2.md](TEST_COVERAGE_PLAN_ROUND_2.md). Implement **one lettered task per turn**, in the order below, and stop after recording its results. This round prioritizes the four lowest-covered included files.
 
-Only this planning document was changed while preparing the plan. No tests or application behavior have been implemented for round 2.
+Only planning documents were changed to prepare this handoff. No round-3 tests or production fixes have been implemented.
 
-## Measured starting point
+## Fresh baseline
 
-Fresh local run on Python 3.14.5, macOS, using the existing `.venv`:
+Measured September 21, 2026, on macOS/Python 3.14.5 using the existing environment:
 
 ```sh
-COVERAGE_FILE=/private/tmp/flashgbx-next-plan.coverage QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest --cov --cov-report=json:/private/tmp/flashgbx-next-plan.json --cov-report=term -q
+COVERAGE_FILE=/private/tmp/flashgbx-round3-plan.coverage QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest --cov --cov-report=json:/private/tmp/flashgbx-round3-plan.json --cov-report=term:skip-covered -q
 ```
 
-**699 passed in 3.93 seconds.** Coverage includes statements and branches.
+**1,014 passed in 4.60 seconds.** Combined coverage counts covered statements and branch exits together; it is not line coverage alone.
 
-| Measurement | Current result |
-| --- | ---: |
-| Configured package coverage | **60.27%** |
-| Statements | **64.27%** — 11,360 / 17,675 |
-| Branches | **49.15%** — 3,131 / 6,370 |
-| Enforced minimum | **60%** |
-| `LK_Device.py` | **24.05%** — 3,404 missing statements, 1,726 missing branches |
-| `FlashGBX_GUI.py` | **60.57%** — 1,349 missing statements, 771 missing branches |
-| `FlashGBX_CLI.py` | **62.45%** — 584 missing statements, 349 missing branches |
-| `Flashcart.py` | **79.62%** |
-| `hw_GBxCartRW.py` | **60.05%** |
-| `FlashGBX.py` | **86.26%** |
-| `DataTransfer.py` | **100%** |
+| File/scope | Combined | Statements | Branches | Missing statements / branches | Round-3 direction |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `LK_Device.py` | 49.71% | 52.77% | 42.58% | 2,241 / 1,168 | 60% |
+| `hw_GBxCartRW.py` | 60.05% | 58.70% | 65.46% | 501 / 105 | 70% |
+| `FlashGBX_GUI.py` | 62.86% | 68.16% | 47.78% | 1,267 / 730 | 70% |
+| `FlashGBX_CLI.py` | 64.18% | 66.71% | 58.91% | 560 / 332 | 70% |
+| Configured package | **68.23%** | **71.55%** | **59.02%** | **5,035 / 2,614** | **70%, then 73%** |
 
-`pyproject.toml` already uses `source = ["FlashGBX"]`. It still omits `hw_GameBub.py`, `hw_GBFlash.py`, and `hw_JoeyJr.py`; “package coverage” in this document means that configured scope, not every backend. `.github/workflows/tests.yaml` already runs locked dependencies, ty, and the package gate, and uploads JSON/XML/data reports. **Do not recreate CI, restore the old source allowlist, or run separate old-scope/expanded measurements.**
+These four files contain approximately 90.3% of the package's missing statement/branch opportunities. Every other included file is at least 80% covered. Prioritize behavior in these four even if polishing another file would be easier.
 
-The previous round covered dispatch, ROM-range/checksum helpers, save readback verification, flash-sector planning, erase protocols, and basic UI operation routing. Its directional engine/CLI/Flashcart percentages were not all reached; completion does not mean those areas are exhausted. This round addresses specific remaining behavior rather than repeating those tasks.
+The denominator is 17,699 statements plus 6,378 branch exits. At this denominator, 70% needs **426** additional covered opportunities, 73% needs **1,149**, and 75% needs **1,630**. Targets are directional checkpoints, not guaranteed outcomes or reasons to expand a task indefinitely. Recompute after production changes. Report module gains separately so package growth cannot hide an untouched low-covered file.
 
-The largest useful gaps are the real save and flash workers: `_BackupRestoreRAM_Worker` and `_WritePreparedFlashROM` both have **0%** function coverage, despite tests of nearby helpers. `_configure_agb_save_transfer`, `_prepare_flash_data`, `_load_flash_commands`, `_prepare_flash_write`, and `_PrepareROMRead` also have **0%**. Existing ROM worker tests replace preparation, result processing, and hardware-reset helpers; those replacements are intentional seams to fill in this round.
+`pyproject.toml` already measures `source = ["FlashGBX"]`, uses branch coverage, and enforces 60%. It omits `hw_GameBub.py`, `hw_GBFlash.py`, and `hw_JoeyJr.py`. Keep that scope. Linux CI already installs locked dependencies, runs ty and Pyrefly, enforces package coverage, and uploads reports. No CI rebuild is needed; no Linux run was performed during planning.
 
-## Goals and boundaries
+## Rules for every task
 
-1. Establish reliable tests of ordinary DMG/AGB save backup and restore, including failures that must not report completion.
-2. Exercise real flash preparation, bank/sector transitions, skipping, retry, cancellation, and completion with synthetic devices.
-3. Connect existing ROM tests to real preparation and result handling.
-4. Reach **65% combined coverage**, then work toward **70%**, with **45% engine coverage** as an intermediate directional target. These are checkpoints, not promises about a fixed number of tests.
-
-At the current denominator, 65% requires another **1,139 covered statement/branch opportunities**, and 70% requires **2,341**. Recompute after changes; production fixes can change the denominator. Do not claim 70% just because all listed tasks are checked off. If the bounded work ends below it, report the remaining gap and name the next uncovered functions.
-
-Do not spend this round on omitted backends, firmware widget construction, save stress tools, exhaustive detection signatures, or modules already near 100%. Real Qt/event-loop testing and cross-platform CI expansion remain separate projects.
-
-## Implementation rules
-
-- Start each task with `git status --short`. The only pre-existing tracked modification at planning time was **`uv.lock`**. Preserve it and any subsequent user changes. Do not sync/update dependencies or rewrite configuration to make tests pass. Inspect applicable `AGENTS.md` files if present.
-- Keep `tests/conftest.py::prevent_real_hardware`. Never initialize actual hardware, enumerate real ports, download firmware, launch the application, or touch normal user configuration. Use `tmp_path` for files and generated bytes for ROM/save data.
-- Instantiate `GbxDevice()` without `Initialize`. Assign fresh instance state: `MODE`, firmware fields required by the tested path, `INFO` including `dump_info`, cancellation/error dictionaries, counters, and a fake `DEVICE` where needed. Do not mutate class-level profile/state dictionaries. Copy argument dictionaries for every parameterized case.
-- Reuse `MockSerial`, `EchoSerial`, `flashcart_profile`, and callbacks in `tests/fakes.py`. `MockSerial` by itself does not validate every command: add explicit expected-call assertions or a finite response queue where protocol order matters.
-- Keep new helpers local until a second file needs them. Then extract only those helpers to `tests/fakes.py` or a narrowly scoped test-support module. Never import one test module from another. Do not build a general cartridge emulator or refactor production methods just to simplify tests.
-- Use the existing `_Save…`, `_Flash…`, and `_ROMReadConfiguration` parameter/result types. Construct them with named fields where supported. Avoid anonymous tuples with dozens of positional values or permissive mocks that silently invent attributes.
-- Unit tasks may replace named subordinate collaborators. Worker tasks must retain the real loop and the real helpers explicitly listed. Mock the lowest practical I/O boundary and assert bytes, addresses, ordering, progress, and final state. “Called once” or “did not crash” alone is not enough.
-- Patch sleeps locally. Use advancing fake time for deadline loops and finite response/call budgets for retries. A exhausted queue should raise `AssertionError`, never return success indefinitely. Bound both success and failure scenarios.
-- Distinguish `False`, `None`, and integer byte counts with identity/type checks. Several methods use these as different outcomes. Assert zero subsequent writes/verifications/success events after rejection where the contract requires that.
-- Freeze time when asserting RTC bytes; calculate expected checksums independently. Prefer byte ranges and structured event fields to entire translated prose.
-- Keep Qt substitutions scoped and restored. Extend existing GUI fixtures within their current file unless extraction is necessary; do not add another global Qt replacement to `conftest.py`.
-- No added exclusions, `no cover`, blanket skips, permanent xfails, threshold reductions, or tests that endorse incorrect behavior. If a test establishes a defect, make the smallest production fix with that regression test as a separate change before proceeding. Record any uncertain contract instead of inventing it.
-
-### Code-reading concerns to investigate, not contracts to preserve
-
-These observations have **not** been reproduced as failing tests during planning:
-
-- `_PrepareSaveTransferAction` repeats short save data with `while len(buffer) < save_size`. Empty input cannot grow. Never call this case unguarded in the test process. In task 1a, isolate it in a child Python process with a short `subprocess.run(..., timeout=...)` deadline; inject all doubles in that child because pytest fixtures do not cross process boundaries. The desired result is prompt rejection before a write, not timeout. After a minimal input guard is established, replace the diagnostic with an ordinary fast regression test.
-- `_BackupRestoreRAM_Worker` may accept a short read once `max_length` reaches 64. Verify that a truncated backup cannot emit a successful `FINISHED` event.
-- `_WriteSaveChunk` reaches later code after AGB flash erase-poll exhaustion, and several writer return values are ignored. Verify the contract of each writer before deciding whether `False` must stop the worker; do not assume every legacy writer returns a Boolean.
-- `_WriteFlashChunk` has special final-chunk arithmetic for a `0x1FFFF00`-byte AGB image. Check bytes remaining and exact payload length independently, rather than copying the subtraction in the implementation.
+- Read applicable `AGENTS.md` files and run `git status --short` first. The planning baseline had no tracked modifications. Preserve subsequent user changes; do not update dependencies or regenerate `uv.lock`.
+- Read the named production methods and nearby tests before editing. Function percentages below come from the baseline JSON, not estimates from file size.
+- Preserve `tests/conftest.py::prevent_real_hardware`. Never open real serial ports, enumerate actual hardware, update device firmware, contact a network service, launch external applications, or access normal user configuration. Patch only the relevant factory when injecting fake serial. Use `tmp_path` and generated ROM/save/firmware bytes.
+- Instantiate `hw_GBxCartRW.GbxDevice()` without `Initialize` for engine tests. Assign fresh instance firmware, mode, `INFO`, counters, and error state. Inspect overrides: do not accidentally test a subclass override when measuring a base implementation, or chase abstract/base placeholders solely because they are uncovered.
+- Reuse `tests/fakes.py` and existing file-local fixtures. Helpers stay local until two files need them; then extract the small shared helper to test support. Never import one test module from another. The firmware-window fixture already loads an isolated module with inert Qt classes; `test_flashgbx_gui.py` already has a substantial GUI fixture.
+- Named target methods remain real. Replace the boundary collaborators explicitly allowed by the task. Assert exact bytes, addresses, return types, final state, and consequential call order. Call counts or lack of exceptions alone are insufficient.
+- Use finite response queues that fail loudly when exhausted. `MockSerial` records writes but does not enforce a protocol script itself. Patch sleeps locally, use advancing fake time for deadlines, and bound retries. Never return success indefinitely from a fake to get past a loop.
+- Keep `False`, integer acknowledgements, and `None` distinct. Some successful writers return `None`. Read callers before deciding a return value signals failure. Rejection tests explicitly assert no later write/transfer/success event.
+- Restore Qt/import substitutions, stdout, settings, and time patches. Use existing fake widget classes when production uses `isinstance`; a generic mock is not equivalent. Run each modified GUI test file alone and in the suite.
+- No added exclusions, `no cover`, blanket skips, permanent xfails, lower thresholds, or refactors for coverage alone. If a test proves a defect, make the smallest necessary fix with its regression test and report it separately. Record ambiguous contracts instead of making unsafe behavior an expected result.
+- Parameterize meaningful decision tables, not every Cartesian combination. Complete the task's behavior checks even if a numerical target is reached early.
 
 ## Ordered tasks
 
-### 1. Save input and transfer configuration
+### 1. Engine I/O beneath the completed worker tests
 
-**Files:** new `tests/test_lk_device_save_config.py`; reuse existing save tests without duplicating `_VerifySaveWrite` coverage.
+Earlier rounds tested workers and chunk routing with these lower-level methods replaced. These are new seams, not a request to repeat the completed save/flash worker matrices.
 
-**1a — Save input preparation.** Test real `_PrepareSaveTransferAction` using `_SaveTransferActionParameters` and a recording progress callback.
+**1a — Acknowledgements and bounded recovery.** New `tests/test_lk_device_protocol.py`. Target real `LK_Device.wait_for_ack` and `_try_write` (both 0%). Read `_read`/`_write` and existing serial tests first.
 
-- Backup initializes empty data, method, size including RTC extra bytes, and bank count; verification-only reads suppress the normal initialization event.
-- Restore reads bytes/bytearray/memoryview, the `INFO["data"]` fallback, and a temporary file. Assert source selection and exact resulting bytes.
-- Short nonempty data repeats; exact-size data remains exact; DACS bypasses repetition. Include a size that is not a multiple of the input length to make its current padding behavior explicit without confusing it with bytes actually written.
-- Erase generates the configured `0x00`/`0xFF` pattern; cover the Xploder first-byte exception separately. Invalid data types and unsupported modes reject deterministically. Handle empty input as described above.
+- `wait_for_ack`: default acknowledgements `1` and `3`, custom accepted set, timeout `False`, device error `2`, other unexpected values, and user cancellation. Assert return identity, `ERROR`, `CANCEL`, error count, and structured cancellation metadata; avoid caller line numbers/full translated prose.
+- Exercise the write-delay boundary at the fourth recorded error. User cancellation must not get overwritten with a communication-error message.
+- `_try_write`: first-attempt success, failure then successful recovery, exhausted attempts, and cancellation during a write. Assert payload/`wait=True`, recovery zero bytes, input/output resets, and clearing stale error state on success.
+- Test `retries=0` rejection and the recovery probe's 20-read budget with finite scripts. Keep `_try_write` real while replacing `_write` and `_read`; test `wait_for_ack` separately with controlled `_read`.
 
-**Done:** explicit byte/progress assertions; invalid/empty input never reaches a writer. Defer camera/PHOTO! special layouts to a separately named case if needed.
+**Done:** success/failure paths for both functions, exact retry counts, and consumed response queues.
 
-**1b — DMG configuration.** Keep `_prepare_save_cart_type`, `_configure_dmg_save_transfer`, and `_configure_dmg_save_mapper` real. Supply a small mapper double through the mapper factory and record device commands.
+**1b — Ordinary RAM reads/writes.** New `tests/test_lk_device_memory_io.py`. Target real `ReadRAM` and `WriteRAM` (both 0%). Replace firmware-variable writes, `_write`, `_read`, and progress only.
 
-- Absent/zero/negative cart type; selected profile is copied; WR-pullup profile/override at firmware 11 versus 12.
-- Supported ordinary mapper, unsupported mapper, explicit save size, size derived from save type, and unresolved size. Assert complete returned configuration and no RAM enable after rejection.
-- Table-test ordinary, TAMA5, MBC7, and MBC6 mapper setup: exact buffer size, erased byte, RTC extra size, pulse variables, and flash-write enable based on transfer mode.
-- Development flash ID present/absent controls AUDIO state. Defer the Xploder command protocol until the ordinary harness passes.
+- DMG/AGB addresses, default/explicit command, device buffer caps, one/multiple chunks, progress enabled/disabled, and unsupported mode. Assert DMG access mode and CS-pulse setup/reset order.
+- Reads: exact concatenation, short reply, timeout, and legitimate one-byte reply. Check a one-byte timeout independently from a valid zero byte.
+- Writes: nonzero address, exact payload slices, representative bytes/bytearray/memoryview inputs, and action-dependent progress. A failed payload acknowledgement in the first/later chunk must stop further programming and must not report successful bytes for that chunk.
+- Include an uneven final chunk in each direction. Inspect firmware transfer-size assumptions and callers first. If such lengths are accepted, assert exact requested count, final transfer size, and progress; if alignment is required, establish deterministic rejection. Do not bless over-reading or inflated progress.
+- Connect one low-level write failure through the real save worker using its existing harness, retaining real `WriteRAM` for that regression. Do not rebuild the successful worker matrix.
 
-**1c — AGB configuration.** Keep `_configure_agb_save_transfer` real; stub only flash-ID reads and device I/O.
+**Done:** exact I/O plus timeout/failure propagation. Read the investigation notes before encoding current behavior.
 
-- SRAM, EEPROM read/write, and FLASH read/write select exact command bytes, bank counts, erased values, and buffer sizes. EEPROM writes use 64-byte chunks versus 256 for reads.
-- FLASH IDs `0x1F3D`, `0xBF4B`, `0xBF6D`, and a normal chip exercise command/buffer differences. Failed detection returns `None`; `detect=True` suppresses the interactive abort message.
-- DACS accepted/rejected ID; firmware 11/12 acknowledgement boundary; bank-select profile captures address 5 before switching it. Test failed capture without continuing.
+**1c — Ordinary flash programming protocol.** Extend `tests/test_lk_device_memory_io.py`. Target real `WriteROM` (0%); defer specialized mapper writers.
 
-**Done:** every table row checks configuration fields and relevant command order, not merely tuple length.
+- Empty input; DMG byte/AGB word addresses; transfer/buffer setup versus `skip_init`; multiple chunks and a partial final chunk.
+- Acknowledgement `1` sends a fresh `FLASH_PROGRAM` command next time; `3` permits continuation. Invalid/timeout acknowledgement stops immediately and records the failing iteration.
+- All-`0xFF` skipping when supported, followed by nonempty data: address reinitialization, `SKIPPING`, exact payloads, and progress. Include buffered writes where skipping must not occur.
+- Rumble stop executes once at a completed flash-buffer boundary with the two expected cart writes. Progress suppression does not alter payloads.
+- Assert successful `None` distinctly from failure `False`; do not change the return API for consistency alone.
 
-### 2. Save chunk routing and completion
+**1d — Remaining flashcart setup.** Extend `tests/test_lk_device_flash_prepare.py`. Target `_configure_flashcart_for_write` (31.65%); retain real profile accessors and use a small recording mapper factory.
 
-**Files:** new `tests/test_lk_device_save_io.py`; extend the existing save mapper double only as needed.
+- Firmware 7/8 pullup-command and 11/12 acknowledgement/WR-pullup/AGB IRQ boundaries; absent/enabled/disabled settings in targeted cases.
+- Forced/manual/default MBC5 selection; unsupported mapper returns `None` before mapper enable. Assert local argument mutations and returned `_FlashConfiguration` fields.
+- Exact/partial ROM banks, mapper maximum-size advisory, pulse reset, and AGB default/banked geometry. Assert command and mapper-enable ordering.
+- Extend an existing integrated preparation case to retain this helper and verify its configuration is consumed; do not duplicate the entire preparation matrix.
 
-**2a — Read and bank selection.** Real `_ReadSaveChunk` and `_PrepareSaveBank` with recording `ReadRAM`, `ReadROM`, mapper, and cart-write boundaries.
+### 2. GBxCart firmware-window decisions without real Qt or flashing
 
-- Ordinary SRAM, MBC2 nibble masking, MBC7, TAMA5, MBC6 below/above bank 7, Xploder, AGB EEPROM, and DACS. Verify physical addresses, command, transfer limit, and returned bytes.
-- DMG RAM bank boundaries and CS pulse; MBC6 flash-sector erase boundary; AGB one-bank versus multiple banks, normal FLASH bank command versus bootleg/SRAM bank select. Assert no bank switch for a single-bank save.
+**2a — Modern updater controller.** Extend `tests/test_gbxcartrw_firmware_window.py` with an inert `FirmwareUpdaterWindow` alongside the V13 harness. Target `UpdateFirmware` (0%). Replace `FWUPD.WriteFirmware`, message boxes, app disconnect, and controls; do not construct a real dialog.
 
-**2b — Writes and failure propagation.** Real `_WriteSaveChunk` using `_SaveWriteParameters`.
+- No PCB selection rejects before disconnect/write. v1.4 versus v1.4a/b/c selects the correct archive path. Canceling preparation causes no firmware write.
+- Return codes `1`, `2`, `3`: success, update failure, corrupted firmware. Assert exact path/status callback, controls disabled before writing, and restored on terminal results.
+- Success clears `DEVICE` and closes the dialog; failures do not report success. A finite writer fake must fail on unexpected retries.
 
-- Write a slice starting at a nonzero buffer offset. Table-test SRAM, EEPROM address division by 8, Atmel division by 128, MBC6 firmware boundary, and specialized DMG writers.
-- AGB FLASH: immediately ready, busy then ready, malformed status, and bounded exhaustion; all-`0xFF` chunks erase without programming. Assert erase-before-write and no programming on confirmed erase failure.
-- e-Reader final-sector write preserves the protected tail and uses the small transfer limit. DACS `False` stops the operation; separately test `_WriteDACSSaveChunk` readiness/failure with a finite response queue if its real protocol is added here.
-- Inspect return contracts and add one worker-facing regression for a low-level write failure that must prevent `FINISHED`.
+**2b — V13 loading and retry orchestration.** Same test file. Target `FirmwareUpdaterWindowV13.UpdateFirmware` (0%). Keep `_parse_intel_hex` real; replace final `WriteFirmware` transport.
 
-**2c — Finish and reset.** Real `_finish_save_backup`, `_FinishSaveRestore`, and `_ResetSaveTransferHardware`.
+- Generate minimal valid HEX and temporary ZIPs containing `cfw.hex`/`ofw.hex`. Assert custom/official selection, exact decoded writer bytes, and custom-file settings updates.
+- File-picker cancellation, unexpected custom filename, and declined confirmation produce no write. Check disconnect ordering at each boundary.
+- Malformed HEX, oversized image, non-ASCII data, missing archive member, and missing/unreadable input restore controls/reset progress without disconnecting for programming. Reuse parser patterns, not its whole validation table.
+- Writer scripts `[1]`, `[2]`, `[3, 1]` assert terminal result, retry count, and identical retry payload. V13 code `3` requests retry; modern code `3` means corruption. Do not conflate these or assume V13 cleanup belongs to this controller when it belongs to its writer.
 
-- Disk and memory backup destinations, independently calculated CRC32/SHA1, MBC2 disk bytes, and restoring captured AGB byte 5.
-- DMG RTC absent/valid/failed reads, append bytes to output with frozen time where applicable; restore forwards RTC bytes and `rtc_advance`. Keep AGB GPIO as an explicit fake.
-- Verification disabled, successful, failed, and canceled: preserve `True`/`False`/`None` distinctions from `_VerifySaveWrite`. Erase must not trigger readback verification.
-- DMG RAM disable, bank zero, AUDIO restore, and firmware acknowledgement; AGB bank-select reset command sequence.
+**2c — Selection, status, and closing safeguards.** Same file, plus `tests/test_gbxcartrw.py` if appropriate. Target modern `SetPCBVersion`/`SetStatus`, both `CloseDialog` implementations, and `GbxDevice.GetFirmwareUpdaterClass` (all 0%).
 
-**Done:** completion bytes, metadata, and reset order are checked separately. Do not interpret a helper's success as proof that the worker calls it on failure; task 3 covers that wiring.
+- Select each modern PCB with temporary firmware metadata; verify version/build/text and displayed selection. Compare timestamps semantically or freeze timezone.
+- Status text, absent/present progress, UI enable behavior: modern progress scales by ten, V13 rounds directly. Modern event processing uses a fake app.
+- Enabled close bypasses confirmation; disabled close plus No/Yes returns the correct Boolean with conservative default.
+- Supported PCB IDs route to modern/V13 classes; unsupported IDs and unavailable optional Qt names return no updater. Restore patched names within the fixture.
 
-### 3. Real save-worker scenarios
+**Checkpoint:** report backend gains. Do not add constructor/layout tests merely to reach 70%.
 
-**File:** new `tests/test_lk_device_save_worker.py`. Depends on tasks 1–2.
+### 3. GUI decisions currently replaced by test doubles
 
-**3a — Successful transfers.** Call real `_BackupRestoreRAM_Worker` with real `_PrepareSaveTransferAction`, `_PrepareSaveBank`, `_ReadSaveChunk`/`_WriteSaveChunk`, finish, and reset helpers. Initially substitute only the DMG/AGB configuration results to choose small buffers. Retain at least one normal SRAM configuration path from task 1 in a final scenario.
+Extend `tests/test_flashgbx_gui.py` and its existing local fixtures throughout; no new standalone GUI fixture infrastructure.
 
-- Two banks, two chunks per bank for a synthetic DMG mapper: backup yields exact concatenated bytes; restore sends exact slices in order.
-- One AGB SRAM backup and restore; disk and in-memory destination; `verify_read=True` with identical pairs.
-- Verification-on-restore uses a controlled readback result. Assert progress positions, `INFO["last_path"]`, action reset, bank/reset operations, and one final event with the correct verified value.
+**3a — Batteryless SRAM parameters.** Target `GetBLArgs` and `_get_default_bl_location_index` (both 0%). Keep selection real; substitute a recording `UserInputDialog` returning existing fake controls and isolated settings.
 
-**3b — Failure and cleanup.** Same real worker and helpers.
+- DMG/AGB defaults; location just below/at/above the ROM-size boundary; ROM larger than every preset.
+- Detected values override remembered/default choices; invalid detected size falls back. DMG header preselection supplies location, size, and layout. Assert indices/numeric results, not the entire introduction.
+- Saved locations: valid/malformed JSON, mixed types, duplicates, unavailable remembered location. Assert sorted usable choices and fallback.
+- Accepted preset/custom hexadecimal location; DMG includes layout, AGB omits it. Assert exact persisted settings. Cancel returns `False` without settings writes; unset mode raises.
+- Investigate invalid custom text without approving an offset-zero write as safe behavior. Do not connect that case to a real writer.
 
-- Short read reduces the transfer limit and retries the same position, then succeeds. Short read at the minimum must not report complete data as successfully backed up.
-- Paired reads disagree: ordinary versus detection mode, no output success event, and no later chunk reads.
-- User cancellation before the first chunk and after one chunk; write failure; verification failure/cancellation. Assert returned outcome, absence of later transfers and `FINISHED`, and explicitly inspect cleanup/state.
-- Call through `_BackupRestoreRAM` for one raised-I/O scenario to verify the existing auto-poweroff wrapper still restores state. Distinguish wrapper cleanup from mapper cleanup; fix a confirmed resource/state leak separately.
+**3b — Save profile detection and resumption.** Target `_prepare_save_backup_cartridge` and `_prepare_save_write_cartridge` (both 9.09%), plus relevant `_ResumeDetectedCartridgeAction` branches (29.41%).
 
-**Checkpoint:** full suite and coverage report. Record the engine gain; do not add more mapper permutations solely to increase the percentage.
+- Ordinary saves bypass detection; batteryless DMG/AGB and PHOTO! require it. Write test mode bypasses it. Legacy firmware refuses before detection/transfer.
+- Selected profile plus batteryless metadata proceeds; otherwise assert waiting state, exact `detect_cartridge_args` including erase, and `DetectCartridge(checkSaveType=True)`.
+- Detection result: canceled `False`, missing `None`, zero, wrong type, valid index. Assert consumed pending state and selected platform combobox; no transfer after rejection.
+- One backup and one restore/erase resumption retain real preparation: correct saved arguments, exactly one resumed action, no duplicate detection. Patch final transfer/dialogs as needed.
 
-### 4. Flash input and firmware command preparation
+**3c — Mapper, profile, and boot-logo choices.** Target `CartridgeTypeChanged` (0%), `_ConfirmFlashMapper` (16.67%), `_ConfirmFlashBootLogo` (6.67%).
 
-**Files:** new `tests/test_lk_device_flash_prepare.py`; existing `test_lk_device_flash.py` remains the home of already-covered sector/voltage decisions.
+- Profile changes: sentinel index, active detection, DMG/AGB, recognized/missing ROM size, DMG memory-cart exception. Assert size, cached profile, and mapper update.
+- Mapper confirmation: AGB, matching DMG, compatible pair, incompatible manual keep-selected/use-ROM/cancel, forced incompatible continue/cancel. Use generated headers and real parsers for representative cases.
+- Logo: valid header/exempt mappers bypass prompting; temporary DMG/AGB files read exact byte limits. Cover fix, continue without fixing, cancel, missing file. Redirect `AppContext.CONFIG_PATH` to `tmp_path`.
+- One declined mapper/logo choice through real `FlashROM` must issue no transfer. Do not retest the existing dispatch matrix.
 
-**4a — Input transformation.** Real `_prepare_flash_data`.
+### 4. CLI branches outside completed save-calibration work
 
-- Buffer variants, temporary file, invalid type, empty input, `flash_offset`, and `start_addr` prefix; assert precise bytes and offset.
-- Lengths just below/at/above `0x4000` verify `0xFF` padding. For batteryless layouts 1/2, use one or two full `0x2000` source blocks and assert placement in the correct half-bank plus argument size mutations.
-- Generated DMG/AGB headers: requested boot-logo range and checksum repair affect the correct bytes; unrelated bytes remain intact.
-- AGB 32 MiB EEPROM signature preserves the reserved last 256 bytes by trimming output; non-EEPROM and malformed signature do not trigger the trim. Use only a few generated 32 MiB buffers, not a large parameter cross-product.
+Extend `tests/test_flashgbx_cli.py` with existing CLI/device fixtures.
 
-**4b — Command encoding.** Real `_configure_flash_command_set`, `_configure_flash_write_pin`, and `_send_flash_commands`.
+**4a — Interactive menu and platform selection.** Target `_SelectMenuAction` (0%), `_PrintConfigMessages` (8.33%), `_RunStandaloneAction` (31.82%), uncovered `run` branches (38.79%).
 
-- Command-set IDs, Intel/Sharp status flag, unsupported set abort, and WR/AUDIO/WR+RESET/unset pin values.
-- Exactly six encoded records, big-endian widths, symbolic address/value placeholders, unused zero records, AGB word-address conversion, firmware 11/12 ACK difference. Compute expected records explicitly with `struct.pack` in the test.
+- Menu: empty answer returns `info`; first/last choice; nonnumeric/out-of-range cancellation. Assert displayed item/action mapping without prose snapshots.
+- Config messages: malformed ignored; plain/warning/error statuses select correct output/color.
+- `run`: canceled menu; zero/one/multiple supported modes; switch/autodetection; DMG/AGB/default/invalid platform answers; interactive-console `KeyboardInterrupt`. Assert mode, exit status, disconnect, no cartridge work after cancellation.
+- Standalone firmware action selects the matching fake updater with requested port and no cartridge read; unmatched action returns `None`. No real updater runs or omitted backend is imported just for this test.
+- Reuse stdout/Logger handling; restore stdout after each case. Do not repeat command-line backup dispatch already covered.
 
-**4c — Loading commands.** Real `_load_flash_commands` with a real `Flashcart` built from small profiles where practical.
+**4b — Batteryless restore/refusal paths.** Target `_BatterylessSRAM` (46.74%). Retain `_ResolveBLArgs` for at least one path and control profile selection.
 
-- Buffered, page, and single writes; page-write firmware boundary; unsupported capability stops before payload commands.
-- Firmware-gated legacy/modern GBMEMORY and DMG-MBC5-32M-FLASH selection. Add specialized method-ID table rows without simulating full carts.
-- Double-die support, bank-1 commands (`ID` versus constant value), default/custom status mask/value, and IRQ setup. Assert ordered byte writes and firmware variables, not just returned mode.
+- DMG/AGB restore from temporary file; overwrite versus prompted accept/refuse; missing input and permission failure.
+- Missing region/profile, unsupported stress-test action, and erase refusal stop before transfer. Do not repeat successful erase coverage without new assertions.
+- Fixed-5V DMG with 3.3V/variable-voltage profile: refusal blocks transfer; acceptance forwards exact region/profile. Voltage-capable devices avoid the warning.
+- Assert complete transfer args: mode 4, offset/size/layout, verification/comparison flags, path, no chip erase, no header/logo fix. Erase uses exact `0xFF` bytes and empty path. Rejections preserve input files.
 
-### 5. Flash preparation and chunk contracts
+**4c — Boot-logo and save-configuration choices.** Target `_PromptBootLogoFix` (12.12%) and `_ResolveSaveConfiguration` (62.20%).
 
-**File:** extend `tests/test_lk_device_flash_prepare.py`; new `tests/test_lk_device_flash_worker.py` for chunk/loop tests.
+- Logo: valid/exempt header, missing file, exact DMG/AGB lengths, default/yes/no answers with temporary configuration. Assert bytes or `False`, no prompt on bypass.
+- Save configuration: default MBC5 when the header mapper is zero/unusable; explicit mapper; MBC2, the two MBC7 title cases, TAMA5, and MBC6 auto types; batteryless selection; PHOTO! profile detection; AGB auto/explicit type and unknown/unset mode. Choose currently uncovered rows after reading existing tests. Assert the exact `(mbc, save_type, cart_type)` tuple or `None`, and forwarding through one accepted `BackupRestoreRAM` case. RTC selection is outside this helper.
+- One refusal through a real caller must issue no transfer. Exclude completed e-Reader calibration work.
 
-**5a — Preparation orchestration.** Real `_prepare_flash_write`, `_EraseFlashForWrite`, and `_FlashROM_Worker`; replace expensive named preparation collaborators only in the orchestration unit tests.
+**Checkpoint:** report GUI/CLI gains independently. Reaching package 70% does not cancel the remaining low-file tasks.
 
-- Chip versus sector erase, preference, nonzero offset, unavailable erase, and failed chip erase. Assert `True`/`False`/`None` meanings.
-- One ordinary prepared DMG and AGB request: inspect the returned `_FlashWritePreparation`, planned write/verify ranges, buffer size, starting progress, and copied profile.
-- Table-test each rejection boundary: firmware, cart configuration, map preparation, commands, flash ID, sector planning, erase. Assert later collaborators and `_WritePreparedFlashROM` are not invoked.
-- At least one ordinary profile runs the real task-4 input/command helpers and existing sector planner together; only device/cart I/O stays fake.
+### 5. Cartridge detection with synthetic data
 
-**5b — Chunk routing.** Real `_WriteFlashChunk` and `_PrepareFlashSector`.
+New `tests/test_lk_device_detection.py`. Cover classification/orchestration, not every chip signature or destructive probe algorithm.
 
-- Exact sliced bytes and address for normal writes; `skip_init` versus `SKIPPING`; rumble flag; old/new GBMEMORY, EEPROM/Xploder, Datel packed bank address, old DMG-MBC5-32M-FLASH route.
-- Final EEPROM-reserved AGB tail: choose a chunk that crosses the `0x1FFFF00` end, and assert that sent bytes and reported advancement equal bytes remaining. Treat discrepancies as a regression, not a snapshot of existing arithmetic.
-- Sector-to-bank floor/ceiling math for aligned and crossing ranges, missing delta sector, and first/subsequent-sector retry budget.
+**5a — DMG save-size classification.** Target `_DetectDmgSaveType` (0%). Use real `DmgSaveTypes` and generated `INFO["data"]`.
 
-### 6. Flash sector state and real write loop
+- Invalid/unrecognized size, small/no-save boundary, ordinary sizes, MBC7 256/512-byte distinction.
+- 128 KiB candidate: distinct versus mirrored halves, repeated three-byte probes at `0x40` strides, upper-region checks distinguishing 32 KiB, 64 KiB, retained 128 KiB.
+- Deliberate early/late mismatches in scanned ranges. Assert `(save_size, save_type)` and unchanged input bytes. Do not duplicate implementation loops to calculate expectations.
 
-**File:** `tests/test_lk_device_flash_worker.py`. Depends on tasks 4–5. Build a named `make_preparation` helper with tiny data and explicit defaults; expand the existing decision double only when necessary.
+**5b — AGB FLASH/SRAM/EEPROM classification.** Target `_DetectAgbFlashSaveType` and `_DetectAgbNonFlashSaveType` (both 0%). Replace `ReadFlashSaveID`, `_BackupRestoreRAM`, `CheckBatterylessSRAM`; retain real tables and `_find_repeating_size`.
 
-**6a — Sector decisions.** Real `_SelectFlashWriteBank`, `_TrySkipMatchingFlashSector`, and `_EraseFlashSector`.
+- FLASH failure/zero ID, unknown ID, known 64/128 KiB chips, bootleg blank/mirrored/distinct banks. Assert size/type/chip using table-supported IDs.
+- Resolved FLASH type bypasses non-FLASH detection. DACS, supported SRAM sizes, unknown SRAM size, batteryless override: assert results and both metadata destinations.
+- EEPROM: exact two backup requests, all-zero/all-`0xFF`, matching prefixes for 8 KiB, differing prefixes for 512 bytes. No batteryless probe on EEPROM paths.
 
-- DMG bank change versus unchanged bank and AGB bank-select profile. Assert mapper/cart calls and returned address bounds.
-- Comparison disabled, unsupported firmware, chip erase, excluded GBAMP mode, all CRCs match, mismatch, and cancellation. A multi-bank sector skips only after every part matches; mismatch retains the original write position.
-- A skip may call `SectorErase(skip=True)` to advance profile state; assert it does not issue physical erase/program I/O.
-- Actual sector erase occurs once at its boundary, updates next sector size and verification list without duplicates, and propagates failure/user cancellation. No erase on interior chunks or after chip erase.
+**5c — Flash profile matching.** Target `_MatchDetectedFlashTypes` (0%). Keep matching real and record reset commands.
 
-**6b — Successful write loop.** Call real `_WritePreparedFlashROM`; retain real sector preparation, bank selection, matching, erase, chunk-routing, and cancellation helpers. Fake only mapper/cart/device I/O and initially `_FinishFlashWrite`.
+- Empty/non-dictionary profiles; missing IDs/commands; mismatched identifier command; DMG write-pin mismatch; AGB match independent of DMG pin; prefix match/no match.
+- Duplicate IDs/probe methods add one index per profile; matching profiles retain catalog order. Reset only when the matched profile defines reset commands.
+- Assert indices and reset calls. Use tiny `flashcart_profile` profiles with explicit identifier commands, not the entire special-cartridge catalog.
 
-- Two sectors with two chunks each, including a bank boundary; exact write bytes, erase order, addresses, and progress.
-- Matching first sector plus changed second sector: only the second is programmed. Both match: no program calls.
-- Chip-erased path writes the intended range without sector erase. Nonzero starting sector does not overwrite earlier bytes.
+**5d — Detection worker results and cleanup.** Target `_DetectCartridge_Worker` (0%). Control `ReadHeader`, `DetectFlash`, `_PrepareCartridgeSaveDetection`, save-read, power/I/O boundaries. Keep 5a/5b classifiers real for ordinary DMG/AGB cases.
 
-**6c — Retry and abort.** Same real loop; finite response scripts and no real sleeps.
+- Successful DMG/AGB: assert all 11 returned fields, ordered progress, save-read args, selected profile, mapper reset, final action state.
+- Detection disabled, retail DMG profile, high mapper ID, 3D-memory no-save path, early MBC6/TAMA5/G-MMC1 returns; no unnecessary save probes.
+- Header/flash failure, failed save read, raised collaborator error. Configure fake power support/firmware vars so altered auto-poweroff time is observable.
+- Restoration after success and every exit that changed timeout, including early special-mapper returns. If missing, use a narrow `try/finally` or existing cleanup helper plus regressions; do not refactor detection wholesale.
 
-- One program failure then success: rewinds to the sector boundary, retries correct bytes, resets serial buffers, and eventually finishes.
-- First-sector retry exhaustion, later-sector exhaustion, sector-erase failure, failed unlock, closed/disconnected port, and user cancellation during erase/write. Split into short tests rather than one large failure scenario.
-- Assert bounded attempts, correct cancellation/error metadata, no program after failed erase in that attempt, and no `_FinishFlashWrite` after unsuccessful termination. Successful replay may repeat bytes; it must not skip or misaddress them.
+### 6. Zero-covered GUI RTC editing
 
-**6d — Finalization.** Real `_FinishFlashWrite`, `_SaveFlashDeltaState`, and `_RestoreFirstROMBank` with `tmp_path`.
+Use existing GUI fixtures and fake RTC device/dialog; no actual RTC access. Split the large `EditRTC` method across two tasks.
 
-- Verified success, verification disabled, mismatch (`False`), and cancellation (`None`). Current completion may return `True` while emitting `FINISHED` with `verified=False`; assert the distinction deliberately rather than equating transfer completion with verification success.
-- JSON state written only for applicable delta/erase conditions; bank zero and mode restoration; `photo_mode` suppresses ordinary completion signaling.
-- Map-write failure stops before verification. Add one task-6b scenario retaining real finalization with a controlled verification result.
+**6a — Guards and DMG editing.** Target `_DmgRtcDialogValues` and DMG `EditRTC` branches (both 0%).
 
-**Checkpoint:** measure 65% progress and engine coverage; apply the gate ratchet below if supported by a passing Linux result.
+- Failed device/header check, absent/empty RTC data, unsupported mapper, canceled dialog: no `WriteRTC`.
+- MBC3/MBC30-family and HuC-3 manual versus system time. Assert spinbox/checkbox extraction, mapper, preserved day fields, exact time with frozen timezone-aware clock.
+- TAMA5 manual year offset and preserved RTC buffer. Defer current-time leap-year logic to 6b.
+- Successful/failed writes refresh with `resetStatus=False`; assert message category and returned Boolean.
 
-### 7. Fill the ROM preparation/result seams
+**6b — AGB and calendar boundaries.** Finish remaining `EditRTC` branches.
 
-**Files:** new `tests/test_lk_device_rom_prepare.py`; extend `tests/test_lk_device_rom.py`.
+- AGB manual year conversion, weekday, system override, cancel. Freeze near midnight to test the one-second day/year rollover.
+- TAMA5 system time applies two-second adjustment and leap-year state; include a leap boundary and a century that is not leap unless divisible by 400.
+- Assert exact `WriteRTC` args, no unexpected AGB mapper field, no write after cancel. Reuse 6a fixtures.
 
-**7a — Preparation and reset.** Real `_PrepareROMRead` and `_ResetROMReadState`.
+## Investigations, not assumed contracts
 
-- DMG supported/unsupported mapper, existing verification mapper versus factory, current/wrong cartridge mode, ordinary/TAMA5/Sachen initialization. Assert configuration and header metadata.
-- AGB default/requested size, bank size with a final partial bank, verification buffer bank count, 3D-memory flag, and GBAMP unlock/reconnect suppression during verification. Dummy read only when changing to AGB mode.
-- DMG reset-before-bank-zero and read-method restore; AGB bank-zero restore only for applicable profiles.
+These are code-reading concerns, **not confirmed defects from the planning run**:
 
-**7b — Result handling and integration.** Real `_process_rom_backup_result`.
+1. `ReadRAM` converts `int` before checking `False`; Booleans are integers. A one-byte timeout may become a successful zero byte. Test the distinction in 1b.
+2. `WriteRAM` ignores payload acknowledgements and returns `True`. Its advertised length/progress and `ReadRAM`'s fixed request size warrant uneven-final-chunk tests. Read callers/protocol constraints before fixing; failure must not silently become success.
+3. `_DetectCartridge_Worker` changes `AUTO_POWEROFF_TIME` before several early returns. Restore only when this call changed it; inspect each exit.
+4. `GetBLArgs` converts invalid custom text to offset zero. Test selection in isolation and inspect downstream validation before choosing a rejection fix. Do not assert that silently writing to zero is correct.
 
-- Batteryless early return; stale hidden-sector metadata clearing; repeated versus nonrepeated ROM halves; checksum metadata using existing independently checked helpers.
-- Hidden-sector read failure closes output and aborts. Success writes `.map` bytes in `tmp_path`; fake map parsing to verify child-ROM slices and rejection of invalid entries.
-- Add a two-bank DMG and an AGB worker scenario that retains real preparation, result processing, and reset. Replace their dependencies, not these methods. Assert output, metadata, and cleanup; existing one-bank smoke scenarios remain useful and need not be rewritten.
+If a diagnostic can hang, isolate it with a short subprocess timeout and inject doubles inside the child. After a minimal fix, use an ordinary fast regression. Never leave hanging diagnostics in the suite.
 
-### 8. Narrow UI save-protection cases
+## Validation, reporting, and gate ratchet
 
-These are new special-save preparation cases, not a repeat of generic accepted/canceled operation tests.
-
-**8a — GUI.** Extend `tests/test_flashgbx_gui.py` using `gui_module`, `build_save_gui`, and existing inert dialogs. Real `_prepare_camera_save` and `_prepare_ereader_save`: legacy-firmware rejection, matching calibration (no decision dialog), keep/overwrite/cancel, erase mode, and absent calibration with warning accepted/declined. Camera additionally covers forced recalibration (`0xAA` bytes), its `test=True` bypass, and the PHOTO! option difference. Assert exact protected ranges: camera `0x4FF2:0x5000` and `0x11FF2:0x12000`, e-Reader `0xD000:0xF000`; unrelated bytes stay intact. Then retain these helpers in one real `WriteRAM` scenario for each format, asserting zero transfer on refusal. Keep input-size rejection at the existing validation layer rather than inventing validation inside these helpers.
-
-**8b — CLI.** Extend `tests/test_flashgbx_cli.py`: real `_PrepareEReaderCalibration` with legacy-firmware rejection, absent calibration, identical calibration, and differing calibration with `keep_calibration` enabled/disabled. Assert the `0xD000:0xF000` bytes, unchanged surrounding bytes, and conversion from `erase-save` to `restore-save` when preserving calibration. This helper uses command-line arguments rather than an interactive keep/refuse prompt. Connect preservation and legacy rejection to real `BackupRestoreRAM`, asserting final transfer data or no transfer respectively. Do not add unrelated firmware-update menu coverage to reach a target.
-
-## Coverage gate and validation
-
-Run the affected file first (substitute its actual name), then **one full-suite coverage run**. Ordinary pytest does not enforce coverage.
+Per task: affected tests, then one full-suite coverage measurement. Substitute all changed Python files in Ruff commands:
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_lk_device_save_config.py
-COVERAGE_FILE=/private/tmp/flashgbx-round2.coverage QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q --cov --cov-report=term-missing --cov-report=json:/private/tmp/flashgbx-round2.json
-.venv/bin/ruff check tests/test_lk_device_save_config.py
-.venv/bin/ruff format --check tests/test_lk_device_save_config.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_lk_device_protocol.py
+COVERAGE_FILE=/private/tmp/flashgbx-round3.coverage QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q --cov --cov-report=term:skip-covered --cov-report=json:/private/tmp/flashgbx-round3.json
+.venv/bin/ruff check tests/test_lk_device_protocol.py
+.venv/bin/ruff format --check tests/test_lk_device_protocol.py
 ```
 
-Use Ruff on all changed Python files. If application code changes, run the configured type checks (`.venv/bin/ty check` and `.venv/bin/pyright`) and report pre-existing failures separately. Do not run broad auto-fixes. For GUI fixture changes, run the affected file alone as well as the full suite to detect import-order leakage.
+If production changes, also run `.venv/bin/ty check`, `.venv/bin/pyrefly check`, `.venv/bin/pyright`, matching current project checks. Report unrelated existing failures separately; no broad auto-fixes. Existing dependencies suffice. Clean environments use `uv sync --locked --group dev` and `uv run --locked`, without regenerating the lockfile.
 
-When preparing a clean environment or CI run, use `uv sync --locked --group dev` and `uv run --locked`; do not regenerate the lockfile. Existing local dependencies were sufficient for this planning baseline.
+Compare full-suite JSON results; a targeted run with package-wide source naturally reports lower coverage. Read `totals`, file `summary`, and `files[path].functions[name].summary`. Report combined/statement/branch values and verify named function-body gains. Do not average per-file percentages or label combined coverage as line coverage.
 
-At checkpoints after tasks 3b, 6d, and 8b:
+After 2c, 4c, 5d, and 6b:
 
-1. Record total, statement, branch, and engine coverage from JSON, along with missing functions in the area just changed. Read `files[path].functions[name].summary` to distinguish real worker gains from import coverage.
-2. Once local **and Linux CI** exceed 65%, raise `fail_under` to **65** in a small configuration/documentation change; repeat for **70** when achieved. Keep at least 0.2 percentage points of measured headroom on the lower platform result. If Linux has not run, leave the floor unchanged and report the ratchet as pending. Never add a diagnostic `--cov-fail-under=0` to the enforcing CI command.
-3. Update the README coverage table and milestone prose with actual measurements and the unchanged omission scope. Retire old baseline claims only when replacing them with verified results.
-4. If below the checkpoint, do not lower the target or expand a task into arbitrary coverage work. Finish its behavioral acceptance criteria and report the deficit. For a subsequent plan, inspect `_configure_flashcart_for_write`, low-level `ReadRAM`/`WriteRAM`/`WriteROM`, and cartridge-detection helpers before considering more UI layout tests.
+1. Record package and all four files, including unchanged ones. List remaining uncovered functions in the area finished.
+2. Update README measurements/milestone prose with verified results and unchanged omissions. Task completion does not prove numerical targets achieved.
+3. The 65% ratchet remains pending Linux evidence. Raise `fail_under` only when local and Linux results for the same implementation exceed the proposed floor with at least 0.2 percentage points of headroom on the lower result. Use 65%, then 70%, as evidence permits. Local-only results leave the floor unchanged with Linux verification reported pending. Never add `--cov-fail-under=0` to CI or change coverage scope.
+4. If targets remain unmet, report the shortfall and next functions in these low-covered files. Do not fill it with high-coverage utilities, excluded backends, exhaustive signatures, stress loops, or widget-layout checks.
 
-Each implementation handoff must report: task ID completed; behaviors/assertions added; test count and result; total and relevant function/module coverage before/after; production fixes, if any; commands run; remaining gaps; and the next task ID. Update a short progress entry below so the next model does not repeat completed work. No automatic commits, pushes, or publishing are required by this plan.
+Real Qt/event-loop behavior, updater construction, physical serial/firmware compatibility, and additional operating systems remain separate work. These tests validate logic against doubles.
+
+Each handoff reports task ID; assertions added; affected/full-suite results; package and relevant module/function coverage before/after; production fixes; commands/checks; unresolved concerns; next ID. Append a short progress entry below. No automatic commits, pushes, or publishing are required.
 
 ## Progress log
 
-- Planning baseline: 699 passing tests; 60.27% combined package coverage; 24.05% engine coverage. No round-2 tasks implemented.
-- Task 1a: added 21 save-input preparation tests and rejected empty restore data before the repetition loop. 720 tests pass; package coverage is 60.49%, `LK_Device.py` is 24.87%, and `_PrepareSaveTransferAction` is 82.93% combined. Ruff, ty, and Pyright pass. PHOTO!/MAC-GBD special layout branches remain deferred; next task is 1b.
-- Task 1b: added 19 DMG profile/mapper configuration tests. 739 tests pass; package coverage is 60.82% and `LK_Device.py` is 26.04%. `_prepare_save_cart_type` and `_configure_dmg_save_transfer` are at 100% combined coverage; `_configure_dmg_save_mapper` is 47.62% with the deferred Xploder protocol as its main remaining branch. Ruff passes. No production change was needed; next task is 1c.
-- Task 1c: added 22 AGB save configuration tests. 761 tests pass; package coverage is 61.24% and `LK_Device.py` is 27.53%. `_configure_agb_save_transfer` has 100% statement and 97.06% branch coverage; its only uncovered branch is an integer-address case for the method's hardcoded symbolic DACS command list. Ruff passes. No production change was needed; next task is 2a.
-- Task 2a: added 22 save read-routing and bank-selection tests. 783 tests pass; package coverage is 61.58% and `LK_Device.py` is 28.76%. `_ReadSaveChunk` rose from 0% to 100% combined coverage; `_PrepareSaveBank` rose from 0% to 96.08%, with only its diagnostic fallback for an unknown multi-bank AGB save type uncovered. Ruff passes. No production change was needed; next task is 2b.
-- Task 2b: added 19 save-write routing, FLASH/DACS protocol, and failure-propagation tests. A confirmed AGB FLASH erase failure now returns `False` before programming and prevents the worker from emitting `FINISHED`. 802 tests pass; package coverage rose from 61.58% to 62.27% and `LK_Device.py` from 28.76% to 31.22%. `_WriteSaveChunk` rose from 0% to 100% combined coverage, `_WriteDACSSaveChunk` from 0% to 80%, and the worker failure regression raises `_BackupRestoreRAM_Worker` from 0% to 34.51%. Ruff, ty, and Pyright pass. Special DACS last-sector and read-only-region variants remain uncovered; next task is 2c.
-- Task 2c: added 17 save completion, RTC, verification-result, and hardware-reset tests. 819 tests pass; package coverage rose from 62.27% to 62.70% and `LK_Device.py` from 31.22% to 32.73%. `_finish_save_backup`, `_FinishSaveRestore`, and `_ResetSaveTransferHardware` rose from 0% to 78.95%, 76.47%, and 94.12% combined coverage respectively. Disk and memory results, independent hashes, MBC2 bytes, AGB byte-5 restoration, DMG/AGB RTC handling, `True`/`False`/`None` verification, erase bypass, and reset order are covered. Ruff passes; no production change was needed. PHOTO! completion, legacy AGB RTC transport, and erase-generated RTC payload variants remain deferred; next task is 3a.
-- Task 3a: added five successful real save-worker scenarios covering two-bank DMG backup/restore, paired-read AGB disk backup, verified AGB memory restore, and a normal AGB SRAM backup retaining real configuration. 824 tests pass; package coverage rose from 62.70% to 62.94% and `LK_Device.py` from 32.73% to 33.57%. `_BackupRestoreRAM_Worker` rose from 34.51% to 71.83% combined coverage. Exact bytes, chunk order, progress positions, final-event uniqueness, mapper/reset operations, `last_path`, and action cleanup are asserted. Ruff passes; no production change was needed. Failure and cancellation branches remain for task 3b.
-- Task 3b: added ten real save-worker failure and cleanup scenarios covering recoverable and minimum-limit short reads, ordinary/detection paired-read mismatches, cancellation before and during transfer, write failure, verification failure/cancellation, and raised I/O through the auto-poweroff wrapper. A minimum-limit short read now fails instead of reporting incomplete data as successful, and every unsuccessful prepared transfer resets mapper hardware and clears the active action while preserving `last_action`; the wrapper still restores its original auto-poweroff setting. 834 tests pass. Package coverage rose from 62.94% to 63.13% combined (66.88% statements, 52.71% branches), and `LK_Device.py` rose from 33.57% to 34.34% combined (37.85% statements, 26.16% branches). `_BackupRestoreRAM_Worker` rose from 71.83% to 93.66% combined (96.94% statements, 86.36% branches); `_HandleIncompleteSaveRead` has 100% statement/branch coverage and `_CleanupFailedSaveTransfer` has 100% statement/50% branch coverage. Unsupported-configuration exits, the nested verification-only worker return, and cleanup with no active action remain uncovered; no extra mapper permutations were added. Ruff, ty, and Pyright pass. The 65% ratchet remains pending because local coverage is below it and Linux has not run; next task is 4a.
-- Task 4a: added 19 real flash-input transformation tests covering bytes, bytearray, memoryview, file, invalid, and empty sources; flash offsets and start prefixes; padding immediately below, at, and above `0x4000`; both batteryless half-bank layouts with one and two source blocks; independently checked DMG/AGB logo and header repairs; and valid EEPROM, non-EEPROM, and malformed signatures in generated 32 MiB AGB images. 853 tests pass. Package coverage rose from 63.13% to 63.50%, and `LK_Device.py` rose from 34.34% to 35.65%. `_prepare_flash_data` rose from 0% to 96.74% combined coverage, with 100% statement and 92.11% branch coverage; only structurally unreachable exits for the fixed layout values, nonempty signature tuple, and concrete header fixers remain. Ruff passes, and no production change was needed; next task is 4b.
-- Task 4b: added 17 real flash-command configuration and encoding tests covering every supported command-set family, Intel/Sharp status flags, unsupported-profile abort metadata, WR/AUDIO/WR+RESET/unset pin values, exactly six big-endian command records, symbolic zero substitutions, unused record padding, AGB word-address conversion, and the firmware 11/12 acknowledgement boundary. 870 tests pass. Package coverage rose from 63.50% to 63.83%, and `LK_Device.py` rose from 35.65% to 36.82%. `_configure_flash_command_set`, `_configure_flash_write_pin`, and `_send_flash_commands` each rose from 0% to 100% statement and branch coverage. Ruff passes, and no production change was needed; next task is 4c.
-- Task 4c: added 14 real `_load_flash_commands` scenarios using small real `Flashcart` profiles. Buffered, page, and single methods; the page-write firmware boundary; unsupported capability aborts; legacy/modern GBMEMORY and DMG-MBC5-32M-FLASH paths; Flash2Advance, Datel Orbit V2, GBAMP, and BUNG method IDs; double-die, symbolic/constant bank-1 commands, default/custom status values, and IRQ setup now have ordered write and firmware-variable assertions. 884 tests pass. Package coverage rose from 63.83% to 64.33%, and `LK_Device.py` rose from 36.82% to 38.55%. `_load_flash_commands` rose from 0% to 93.39% combined coverage, with 95.06% statement and 90% branch coverage. Its remaining paths are the separately covered unsupported-command-set return, bank-switch fallback/error diagnostics, and the pre-firmware-6 bank-1 flag path. Ruff passes, and no production change was needed; next task is 5a.
-- Task 5a: added 20 flash preparation and worker orchestration tests covering the complete chip/sector erase decision matrix, copied DMG/AGB preparations and their progress/range fields, every named preparation rejection boundary, worker result forwarding, and an integrated AGB profile that retains the real input, command-loading, flash-ID unlock, sector-planning, and erase-selection helpers behind fake I/O. 904 tests pass. Package coverage rose from 64.33% to 65.11% combined (68.63% statements, 55.32% branches), and `LK_Device.py` rose from 38.55% to 41.11% combined (44.17% statements, 33.97% branches). `_EraseFlashForWrite` and `_FlashROM_Worker` rose from 0% to 100% statement/branch coverage; `_prepare_flash_write` rose from 0% to 75.47% combined coverage (79.41% statements, 68.42% branches). Power-cycle, bank-1/audio setup, photo mode, mapper-sized buffers, and the final empty-sector rejection remain uncovered. Ruff passes, and no production change was needed. The 65% gate ratchet remains pending a passing Linux result; next task is 5b.
-- Task 5b: added 14 real flash-chunk routing and sector-contract tests covering exact slices and addresses, initialization reuse after skipped writes, rumble forwarding, legacy/modern GBMEMORY, legacy MBC5-32M, EEPROM/Xploder, packed/legacy Datel routes, the AGB EEPROM-reserved tail, aligned/crossing bank ranges, missing delta sectors, and first/subsequent retry budgets. A confirmed reserved-tail arithmetic defect now reports and advances by bytes remaining before `0x1FFFF00` instead of bytes overflowing past it. 918 tests pass. Package coverage rose from 65.11% to 65.34% combined (68.84% statements, 55.63% branches), and `LK_Device.py` rose from 41.11% to 41.95% combined (44.95% statements, 34.96% branches). `_WriteFlashChunk` and `_PrepareFlashSector` both rose to 100% statement/branch coverage. Ruff, ty, and Pyright pass. The 65% gate ratchet remains pending a passing Linux result; next task is 6a.
-- Task 6a: added 19 real flash-sector decision tests covering DMG changed/unchanged bank resets, AGB selected/unchanged profile banks, all comparison bypasses, complete and mismatched multi-bank CRC checks, cancellation, real `Flashcart` skip-state advancement without physical I/O, boundary-only erase, next-sector sizing, verification-list deduplication, erase failure, and user cancellation. 937 tests pass. Package coverage rose from 65.34% to 65.87% combined (69.38% statements, 56.15% branches), and `LK_Device.py` rose from 41.95% to 43.84% combined (46.95% statements, 36.58% branches). `_EraseFlashSector` reached 100% statement/branch coverage, `_TrySkipMatchingFlashSector` reached 98% combined coverage (100% statements, 91.67% branches), and `_SelectFlashWriteBank` reached 76.32% combined coverage (80.77% statements, 66.67% branches). The remaining bank-selection paths are pulse-reset firmware variants and the profile-specific bank-zero `start_addr`; the remaining match branch is a false sector-state advancement response. Ruff passes, and no production change was needed. The 65% gate ratchet remains pending a passing Linux result; next task is 6b.
-- Task 6b: added five successful real `_WritePreparedFlashROM` scenarios covering two sectors with two chunks each across a bank boundary, exact erase/write/progress order, a matching first sector with a changed second sector, both sectors matching, the chip-erased path, and a nonzero starting sector that preserves earlier bytes. Mapper, cart, and device I/O plus finalization are finite recording boundaries; sector preparation, bank selection, CRC decisions, erase, chunk routing, cancellation checks, and the loop remain real. 942 tests pass. Package coverage rose from 65.87% to 66.15% combined (69.65% statements, 56.45% branches), and `LK_Device.py` rose from 43.84% to 44.81% combined (47.95% statements, 37.51% branches). `_WritePreparedFlashROM` rose from 0% to 42.14% combined coverage (42.86% statements, 40.48% branches); its retry, failure, disconnection, and cancellation branches remain for task 6c. Ruff passes, and no production change was needed. The 65% gate ratchet remains pending a passing Linux result; next task is 6c.
-- Task 6c: added nine real `_WritePreparedFlashROM` retry and abort scenarios covering a successful sector-boundary replay after one program failure, bounded first- and later-sector retry exhaustion, repeated erase failure with zero program calls, failed unlock, closed and disconnected ports, and user cancellation during erase and write. Finite response queues assert two first-sector attempts and ten later-sector attempts, exact replay bytes and addresses, serial resets, recovery commands, cancellation/error metadata, and no finalization after unsuccessful termination. 951 tests pass. Package coverage rose from 66.15% to 66.55% combined (70.04% statements, 56.89% branches), and `LK_Device.py` rose from 44.81% to 46.25% combined (49.40% statements, 38.89% branches). `_WritePreparedFlashROM` rose from 42.14% to 85.71% combined coverage (88.78% statements, 78.57% branches). Ruff passes, and no production change was needed. The 65% gate ratchet remains pending a passing Linux result; next task is 6d.
-- Task 6d: added 12 flash-finalization scenarios covering a successful real write loop through controlled verification, verification disabled, mismatch and cancellation results, photo-mode signaling, hidden-map program failure, reusable delta-state JSON conditions, and DMG/AGB bank-zero restoration. Transfer completion deliberately remains `True` with `FINISHED verified=False` for disabled or failed verification, while cancellation and map failure stop before later finalization steps. 963 tests pass. Package coverage rose from 66.55% to 66.78% combined (70.24% statements, 57.17% branches), and `LK_Device.py` rose from 46.25% to 47.06% combined (50.18% statements, 39.77% branches). `_FinishFlashWrite` and `_RestoreFirstROMBank` reached 100% statement/branch coverage; `_SaveFlashDeltaState` reached 77.78% combined coverage with all branches covered. Ruff passes, and no production change was needed. The 65% gate ratchet remains pending a passing Linux result; next task is 7a.
-- Task 7a: added 15 real ROM preparation and reset scenarios covering supported and rejected DMG mappers, verification mapper reuse versus factory lookup, current and wrong cartridge modes, ordinary/TAMA5/Sachen initialization, AGB default/requested/partial-bank sizes, verification-buffer bank counts, 3D Memory and GBAMP setup, dummy-read mode changes, and DMG/AGB bank-zero restoration. 978 tests pass. Package coverage rose from 66.78% to 67.20% combined (70.63% statements, 57.67% branches), and `LK_Device.py` rose from 47.06% to 48.53% combined (51.61% statements, 41.35% branches). `_PrepareROMRead` rose from 0% to 96.51% combined coverage, with only the separately scoped VastFame initializer branch uncovered; `_ResetROMReadState` rose from 0% to 94.44%, with all statements covered and only the non-DMG/AGB no-op branch uncovered. Ruff passes, and no production change was needed; next task is 7b.
-- Task 7b: added seven ROM result and integrated-worker scenarios covering batteryless early return, stale hidden-sector metadata cleanup, repeated versus distinct ROM halves, independently checked checksum metadata, hidden-sector failure cleanup, `.map` output, valid child-ROM extraction while rejecting invalid entries, and two-bank DMG plus banked AGB backups retaining real preparation, result processing, and reset. 985 tests pass. Package coverage rose from 67.20% to 67.54% combined (70.94% statements, 58.09% branches), and `LK_Device.py` rose from 48.53% to 49.71% combined (52.77% statements, 42.58% branches). `_process_rom_backup_result` rose from 0% to 92.86% combined coverage with 100% statement coverage, and `_BackupROM_Worker` rose from 65.31% to 72.79% combined coverage. Alternate hidden-map file/parser shapes and deeper repeated-ROM reductions remain branch-only gaps. Ruff passes, and no production change was needed; next task is 8a.
-- Task 8a: added 21 GUI calibration scenarios covering camera and e-Reader legacy rejection, identical-data bypass, keep/overwrite/cancel decisions, ordinary and PHOTO! erase layouts, forced camera recalibration, test-mode bypass, absent-calibration warnings, exact protected-byte preservation, and real `WriteRAM` refusal gates with zero transfers. 1,006 tests pass. Package coverage rose from 67.54% to 68.05% combined (71.41% statements, 58.74% branches), and `FlashGBX_GUI.py` rose from the 60.57% planning baseline to 62.86% combined (68.16% statements, 47.78% branches). `_prepare_save_calibration` reached 100% statement/branch coverage; `_prepare_ereader_save` and `_prepare_camera_save` reached 94.12% and 95.71% combined coverage respectively. Only their custom database-name branches and defensive unrecognized-button fallthroughs remain. Ruff passes, and no production change was needed; next task is 8b.
-- Task 8b: added eight CLI e-Reader calibration scenarios covering legacy rejection, absent and identical calibration, exact keep/overwrite range behavior, erase-to-buffered-restore conversion, a real preserved erase transfer, and a real legacy refusal with zero transfer. Erase preservation now builds the erased 128 KiB image in memory instead of reading an unused path, and buffered calibration restores skip a redundant writable-file check. 1,014 tests pass. Package coverage rose from 68.05% to 68.23% combined (71.55% statements, 59.02% branches), and `FlashGBX_CLI.py` rose from 62.45% to 64.16% combined (66.69% statements, 58.91% branches). `_PrepareEReaderCalibration` reached 100% statement/branch coverage and `BackupRestoreRAM` rose from 69.31% to 81.19% combined; nearby `_DebugTestSave` remains uncovered and outside this task. `LK_Device.py` remains at 49.71% combined (52.77% statements, 42.58% branches). Ruff, ty, and Pyright pass. The local result clears 65%, but the gate ratchet remains pending a Linux result; all round-2 tasks are complete.
+- Round-3 baseline: 1,014 passed; package 68.23%; engine 49.71%; GBxCart backend 60.05%; GUI 62.86%; CLI 64.18%. All tasks pending. Next: **1a**.
+- Task 1a: added 16 acknowledgement and bounded-recovery protocol tests covering default/custom successes, timeout/device/communication failures, user cancellation, the fourth-error write-delay boundary, real `_write` integration, first-attempt and retried payload success, exact retry exhaustion, zero-retry rejection, and the 20-probe recovery cap. 1,030 tests pass. Package coverage rose from 68.23% to 68.59% combined (71.89% statements, 59.44% branches), and `LK_Device.py` rose from 49.71% to 51.00%. `wait_for_ack` and `_try_write` both reached 100% statement/branch coverage. Ruff passes; no production change was needed. Next: **1b**.
 
 ## Copyable prompt for the implementing model
 
-> Read TEST_COVERAGE_PLAN.md and applicable AGENTS.md instructions. Implement only task **1a** (replace this ID with the next unfinished lettered task). Preserve existing user changes, especially uv.lock. Read the named production methods and nearby tests before editing. Reuse the existing doubles, keep the target methods real, and bound all loops and I/O. Add meaningful byte/state/progress assertions; do not alter coverage scope or pad the percentage. If a test proves a defect, make only the necessary small fix with its regression test and describe it separately. Run the affected tests, one full-suite package coverage run, and the required checks from the plan. Add your results and next task ID to the progress log, then stop before the next task.
+> Read TEST_COVERAGE_PLAN.md and applicable AGENTS.md instructions. Implement only task **1a**, or the next unfinished lettered task in its progress log. Rounds 1 and 2 are complete; do not resume the archived plan. Preserve user changes. Read named methods and fixtures, keep target methods real, and bound fake I/O/retries. Add the specified assertions; do not expand into neighboring tasks to chase a percentage. If a regression proves a defect, make only the necessary small fix and describe it separately. Run affected tests, one full-suite coverage measurement, and required checks. Append measured results and the next task ID, then stop.
