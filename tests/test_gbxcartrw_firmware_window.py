@@ -16,6 +16,7 @@ import FlashGBX.hw_GBxCartRW as gbxcartrw
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+    from pathlib import Path
 
 
 class FakeWidget:
@@ -23,6 +24,7 @@ class FakeWidget:
         self.text = ""
         self.text_history: list[str] = []
         self.enabled = True
+        self.checked = False
         self.value = 0
 
     def setText(self, value: str) -> None:
@@ -35,10 +37,16 @@ class FakeWidget:
     def setValue(self, value: int) -> None:
         self.value = value
 
+    def isChecked(self) -> bool:
+        return self.checked
+
+    def setChecked(self, value: bool) -> None:
+        self.checked = value
+
 
 class FakeMessageBox:
     Icon = SimpleNamespace(Critical=1, Information=2, Warning=3, Question=4)
-    StandardButton = SimpleNamespace(Yes=1, No=2, Ok=4)
+    StandardButton = SimpleNamespace(Yes=1, No=2, Ok=4, Cancel=8)
     next_answer = StandardButton.No
     shown: ClassVar[list[FakeMessageBox]] = []
 
@@ -107,6 +115,34 @@ class ScriptedSerial:
         assert not self.events
 
 
+class ScriptedFirmwareUpdater:
+    """Return finite modern updater results and record each controller call."""
+
+    def __init__(
+        self,
+        app_path: Path,
+        results: list[int],
+        events: list[str],
+        controls: tuple[FakeWidget, ...],
+    ) -> None:
+        self.APP_PATH = app_path
+        self.results = deque(results)
+        self.events = events
+        self.controls = controls
+        self.calls: list[tuple[Path, object]] = []
+        self.control_states: list[tuple[bool, ...]] = []
+
+    def WriteFirmware(self, path: Path, status_callback: object) -> int:
+        assert self.results, "Unexpected modern firmware writer retry"
+        self.events.append("write")
+        self.calls.append((path, status_callback))
+        self.control_states.append(tuple(control.enabled for control in self.controls))
+        return self.results.popleft()
+
+    def assert_finished(self) -> None:
+        assert not self.results
+
+
 @pytest.fixture(scope="module")
 def firmware_module() -> Generator[ModuleType]:
     """Load a separate updater module with inert Qt types and restore imports."""
@@ -130,6 +166,7 @@ def firmware_module() -> Generator[ModuleType]:
         else:
             sys.modules["PySide6"] = original_pyside
     try:
+        assert hasattr(module, "FirmwareUpdaterWindow")
         assert hasattr(module, "FirmwareUpdaterWindowV13")
         yield module
     finally:
@@ -159,6 +196,161 @@ def make_window(module: ModuleType) -> object:
     window.grpAvailableFwUpdates.enabled = False
     window.reject = Mock()
     return window
+
+
+def make_modern_window(
+    module: ModuleType,
+    tmp_path: Path,
+    *,
+    results: list[int],
+) -> tuple[object, ScriptedFirmwareUpdater, list[str]]:
+    """Build the modern controller without constructing a Qt dialog."""
+    events: list[str] = []
+    window = object.__new__(module.FirmwareUpdaterWindow)
+    window.APP = SimpleNamespace(
+        DisconnectDevice=Mock(side_effect=lambda: events.append("disconnect")),
+        QT_APP=SimpleNamespace(processEvents=Mock()),
+    )
+    window.DEVICE = object()
+    window.lblStatus = FakeWidget()
+    window.prgStatus = FakeWidget()
+    window.btnUpdate = FakeWidget()
+    window.btnClose = FakeWidget()
+    window.optDevicePCBVer14 = FakeWidget()
+    window.optDevicePCBVer14a = FakeWidget()
+    controls = (
+        window.btnUpdate,
+        window.btnClose,
+        window.optDevicePCBVer14,
+        window.optDevicePCBVer14a,
+    )
+    writer = ScriptedFirmwareUpdater(tmp_path, results, events, controls)
+    window.FWUPD = writer
+    window.reject = Mock(side_effect=lambda: events.append("reject"))
+    return window, writer, events
+
+
+def test_modern_update_rejects_missing_pcb_selection_before_disconnect(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    window, writer, events = make_modern_window(firmware_module, tmp_path, results=[])
+    original_device = window.DEVICE
+
+    result = window.UpdateFirmware()
+
+    assert result is False
+    assert events == []
+    assert writer.calls == []
+    writer.assert_finished()
+    window.APP.DisconnectDevice.assert_not_called()
+    assert window.DEVICE is original_device
+    window.reject.assert_not_called()
+    assert all(
+        control.enabled
+        for control in (
+            window.btnUpdate,
+            window.btnClose,
+            window.optDevicePCBVer14,
+            window.optDevicePCBVer14a,
+        )
+    )
+    assert len(FakeMessageBox.shown) == 1
+    assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Critical
+    assert "select the PCB version" in FakeMessageBox.shown[0].text
+
+
+@pytest.mark.parametrize("pcb_version", ["v1.4", "v1.4a/b/c"])
+def test_modern_update_cancellation_stops_before_firmware_write(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pcb_version: str,
+) -> None:
+    window, writer, events = make_modern_window(firmware_module, tmp_path, results=[])
+    window.optDevicePCBVer14.setChecked(pcb_version == "v1.4")
+    window.optDevicePCBVer14a.setChecked(pcb_version == "v1.4a/b/c")
+    original_device = window.DEVICE
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
+
+    result = window.UpdateFirmware()
+
+    assert result is None
+    assert events == ["disconnect"]
+    writer.assert_finished()
+    assert writer.calls == []
+    window.APP.DisconnectDevice.assert_called_once_with()
+    assert window.DEVICE is original_device
+    window.reject.assert_not_called()
+    assert all(
+        control.enabled
+        for control in (
+            window.btnUpdate,
+            window.btnClose,
+            window.optDevicePCBVer14,
+            window.optDevicePCBVer14a,
+        )
+    )
+    assert len(FakeMessageBox.shown) == 1
+    assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Information
+    assert pcb_version in FakeMessageBox.shown[0].text
+
+
+@pytest.mark.parametrize(
+    ("pcb_version", "writer_result", "archive_name", "expected_result", "terminal_icon", "terminal_text"),
+    [
+        ("v1.4", 1, "fw_GBxCart_RW_v1_4.zip", True, FakeMessageBox.Icon.Information, "update is complete"),
+        ("v1.4a/b/c", 2, "fw_GBxCart_RW_v1_4a.zip", False, FakeMessageBox.Icon.Critical, "update has failed"),
+        ("v1.4", 3, "fw_GBxCart_RW_v1_4.zip", False, FakeMessageBox.Icon.Critical, "file is corrupted"),
+    ],
+    ids=["success", "update-failure", "corrupted-firmware"],
+)
+def test_modern_update_handles_terminal_writer_results_once(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    pcb_version: str,
+    writer_result: int,
+    archive_name: str,
+    expected_result: bool,
+    terminal_icon: int,
+    terminal_text: str,
+) -> None:
+    window, writer, events = make_modern_window(firmware_module, tmp_path, results=[writer_result])
+    window.optDevicePCBVer14.setChecked(pcb_version == "v1.4")
+    window.optDevicePCBVer14a.setChecked(pcb_version == "v1.4a/b/c")
+    original_device = window.DEVICE
+
+    result = window.UpdateFirmware()
+
+    assert result is expected_result
+    assert writer.control_states == [(False, False, False, False)]
+    assert len(writer.calls) == 1
+    archive_path, status_callback = writer.calls[0]
+    assert archive_path == tmp_path / "res" / archive_name
+    assert status_callback.__self__ is window
+    assert status_callback.__func__ is firmware_module.FirmwareUpdaterWindow.SetStatus
+    writer.assert_finished()
+    window.APP.DisconnectDevice.assert_called_once_with()
+    assert events == (["disconnect", "write", "reject"] if writer_result == 1 else ["disconnect", "write"])
+    assert all(
+        control.enabled
+        for control in (
+            window.btnUpdate,
+            window.btnClose,
+            window.optDevicePCBVer14,
+            window.optDevicePCBVer14a,
+        )
+    )
+    assert len(FakeMessageBox.shown) == 2
+    assert FakeMessageBox.shown[1].icon == terminal_icon
+    assert terminal_text in FakeMessageBox.shown[1].text
+    if writer_result == 1:
+        assert window.DEVICE is None
+        window.reject.assert_called_once_with()
+    else:
+        assert window.DEVICE is original_device
+        window.reject.assert_not_called()
+        assert all("update is complete" not in message.text for message in FakeMessageBox.shown)
 
 
 def bootloader_reply(
