@@ -62,17 +62,21 @@ class SectorDecisionFlashcart:
         *,
         config: dict[str, object] | None = None,
         sector_results: list[int | bool] | None = None,
+        unlock_results: list[bool] | None = None,
         pulse_reset: bool = False,
         commands_on_bank_one: bool = False,
     ) -> None:
         self.CONFIG = dict(config or {"command_set": "AMD"})
         self.sector_results = list(sector_results or [])
+        self.unlock_results = list(unlock_results or [])
         self.pulse_reset = pulse_reset
         self.commands_on_bank_one = commands_on_bank_one
+        self.LAST_SR = 0x80
         self.reset_calls: list[bool] = []
         self.selected_rom_banks: list[int] = []
         self.sector_erase_calls: list[dict[str, object]] = []
         self.physical_erase_calls: list[dict[str, object]] = []
+        self.unlock_calls = 0
 
     def PulseResetAfterWrite(self) -> bool:
         return self.pulse_reset
@@ -97,6 +101,13 @@ class SectorDecisionFlashcart:
             raise AssertionError(msg)
         return self.sector_results.pop(0)
 
+    def Unlock(self) -> bool:
+        self.unlock_calls += 1
+        if not self.unlock_results:
+            msg = "Unexpected Unlock call without a finite response"
+            raise AssertionError(msg)
+        return self.unlock_results.pop(0)
+
 
 class SuccessfulWorkerRecords:
     """Device I/O and completion calls from a successful flash loop."""
@@ -108,6 +119,37 @@ class SuccessfulWorkerRecords:
         self.firmware_variables: list[tuple[str, int]] = []
         self.device_writes: list[tuple[object, bool]] = []
         self.progress: list[dict[str, object]] = []
+        self.finish = Mock(return_value=True)
+
+
+class FlashSerialRecorder:
+    """Open/closed serial state and reset counts used by retry recovery."""
+
+    def __init__(self, *, is_open: bool = True) -> None:
+        self.is_open = is_open
+        self.input_resets = 0
+        self.output_resets = 0
+
+    def reset_input_buffer(self) -> None:
+        self.input_resets += 1
+
+    def reset_output_buffer(self) -> None:
+        self.output_resets += 1
+
+
+class FailureWorkerRecords:
+    """Finite scripted device boundary for retry and abort scenarios."""
+
+    def __init__(self, write_results: list[bool | None]) -> None:
+        self.write_results = list(write_results)
+        self.rom_writes: list[dict[str, object]] = []
+        self.firmware_variables: list[tuple[str, int]] = []
+        self.device_writes: list[tuple[object, bool]] = []
+        self.cart_writes: list[tuple[int, int, dict[str, object]]] = []
+        self.progress: list[dict[str, object]] = []
+        self.status_reads: list[str] = []
+        self.sleep_calls: list[float] = []
+        self.serial = FlashSerialRecorder()
         self.finish = Mock(return_value=True)
 
 
@@ -157,6 +199,23 @@ def make_preparation(**overrides: object) -> _FlashWritePreparation:
     }
     values.update(overrides)
     return _FlashWritePreparation(**values)
+
+
+def make_single_sector_preparation(
+    flashcart: SectorDecisionFlashcart,
+    mapper: SectorMapper,
+) -> _FlashWritePreparation:
+    """Build the smallest preparation that can exercise retry recovery."""
+    return make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCD"),
+        end_bank=1,
+        rom_bank_size=4,
+        sector_offsets=[[0, 4]],
+        write_sectors=[[0, 4]],
+        buffer_len=2,
+    )
 
 
 def install_successful_worker_boundaries(
@@ -235,6 +294,81 @@ def install_successful_worker_boundaries(
     monkeypatch.setattr(device, "CanPowerCycleCart", lambda: False)
     monkeypatch.setattr(device, "_FinishFlashWrite", records.finish)
     monkeypatch.setattr(lk_device_module.time, "time", fake_time)
+    return records
+
+
+def install_failure_worker_boundaries(
+    device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    write_results: list[bool | None],
+) -> FailureWorkerRecords:
+    """Install finite failure/recovery I/O while retaining the real loop."""
+    records = FailureWorkerRecords(write_results)
+    clock = [20.0]
+    device.DEVICE = records.serial  # type: ignore[assignment]
+    device.FW = {"fw_ver": 12, "pcb_name": "Test device"}
+
+    def write_rom(
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        flash_buffer_size: int | bool = False,
+        skip_init: bool = False,
+        rumble_stop: bool = False,
+        max_length: int = 0x400,
+    ) -> bool | None:
+        records.rom_writes.append(
+            {
+                "address": address,
+                "buffer": bytearray(buffer),
+                "flash_buffer_size": flash_buffer_size,
+                "skip_init": skip_init,
+                "rumble_stop": rumble_stop,
+                "max_length": max_length,
+            },
+        )
+        if not records.write_results:
+            msg = "Unexpected WriteROM call without a finite response"
+            raise AssertionError(msg)
+        return records.write_results.pop(0)
+
+    def set_firmware_variable(name: str, value: int) -> None:
+        records.firmware_variables.append((name, value))
+
+    def device_write(value: object, wait: bool = False) -> None:
+        records.device_writes.append((value, wait))
+
+    def cart_write(address: int, value: int, *_args: object, **kwargs: object) -> None:
+        records.cart_writes.append((address, value, dict(kwargs)))
+
+    def get_firmware_variable(name: str) -> int:
+        records.status_reads.append(name)
+        return 0x80
+
+    def fake_time() -> float:
+        value = clock[0]
+        clock[0] += 0.25
+        return value
+
+    def fake_sleep(duration: float) -> None:
+        records.sleep_calls.append(duration)
+
+    monkeypatch.setattr(device, "WriteROM", write_rom)
+    monkeypatch.setattr(
+        device,
+        "CompareCRC32",
+        Mock(side_effect=AssertionError("Failure scenarios disable sector comparison")),
+    )
+    monkeypatch.setattr(device, "_set_fw_variable", set_firmware_variable)
+    monkeypatch.setattr(device, "_get_fw_variable", get_firmware_variable)
+    monkeypatch.setattr(device, "_write", device_write)
+    monkeypatch.setattr(device, "_cart_write", cart_write)
+    monkeypatch.setattr(device, "SetProgress", lambda event: records.progress.append(dict(event)))
+    monkeypatch.setattr(device, "CanPowerCycleCart", lambda: False)
+    monkeypatch.setattr(device, "GetFullNameLabel", lambda: "Test device")
+    monkeypatch.setattr(device, "_FinishFlashWrite", records.finish)
+    monkeypatch.setattr(lk_device_module.time, "time", fake_time)
+    monkeypatch.setattr(lk_device_module.time, "sleep", fake_sleep)
     return records
 
 
@@ -1286,3 +1420,284 @@ def test_write_prepared_flash_rom_nonzero_sector_preserves_earlier_bytes(
     assert all(item["address"] >= 4 for item in records.rom_writes)
     assert [event for event in records.progress if event.get("pos") in (2, 3)] == []
     records.finish.assert_called_once_with(args, "DMG", preparation, 2)
+
+
+def test_write_prepared_flash_rom_retries_failed_chunk_from_sector_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4, 4], unlock_results=[True])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(
+        device,
+        monkeypatch,
+        write_results=[False, None, None],
+    )
+    args = {"compare_sectors": False}
+
+    result = device._WritePreparedFlashROM(args, "DMG", preparation)
+
+    assert result is True
+    assert [(item["address"], item["buffer"], item["skip_init"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB"), False),
+        (0, bytearray(b"AB"), False),
+        (2, bytearray(b"CD"), True),
+    ]
+    assert flashcart.sector_erase_calls == [
+        {"pos": 0, "buffer_pos": 0, "skip": False},
+        {"pos": 0, "buffer_pos": 0, "skip": False},
+    ]
+    assert records.status_reads == ["STATUS_REGISTER"]
+    assert records.serial.input_resets == 2
+    assert records.serial.output_resets == 2
+    assert records.cart_writes == [(4, 0xF0, {}), (4, 0xFF, {})]
+    assert flashcart.unlock_calls == 1
+    assert records.sleep_calls == [0.5]
+    assert [event["pos"] for event in records.progress if event["action"] == "ERROR"] == [0]
+    records.finish.assert_called_once_with(args, "DMG", preparation, 2)
+    assert preparation.verify_sectors == [[0, 4]]
+    assert device.CANCEL is False
+    assert device.ERROR is False
+
+
+def test_write_prepared_flash_rom_stops_after_first_sector_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4, 4], unlock_results=[True])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(
+        device,
+        monkeypatch,
+        write_results=[False, False],
+    )
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB")),
+        (0, bytearray(b"AB")),
+    ]
+    assert len(flashcart.sector_erase_calls) == 2
+    assert flashcart.unlock_calls == 1
+    assert records.serial.input_resets == 3
+    assert records.serial.output_resets == 3
+    assert records.sleep_calls == [0.5]
+    assert len([event for event in records.progress if event["action"] == "ERROR"]) == 1
+    abort = records.progress[-1]
+    assert abort["action"] == "ABORT"
+    assert abort["abortable"] is False
+    assert abort["info_type"] == "msgbox_critical"
+    assert "Status Register:" in str(abort["info_msg"])
+    records.finish.assert_not_called()
+    assert device.CANCEL is True
+    assert device.ERROR is True
+    assert device.CANCEL_ARGS == {}
+    assert device.ERROR_ARGS == {}
+
+
+def test_write_prepared_flash_rom_bounds_later_sector_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(
+        sector_results=[4] * 11,
+        unlock_results=[True] * 9,
+    )
+    sectors = [[0, 4], [4, 4]]
+    preparation = make_preparation(
+        flashcart=flashcart,
+        mbc=mapper,
+        data_import=bytearray(b"ABCDEFGH"),
+        end_bank=2,
+        rom_bank_size=4,
+        sector_offsets=sectors,
+        write_sectors=sectors,
+        buffer_len=2,
+    )
+    records = install_failure_worker_boundaries(
+        device,
+        monkeypatch,
+        write_results=[None, None, *([False] * 10)],
+    )
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes[:2]] == [
+        (0, bytearray(b"AB")),
+        (2, bytearray(b"CD")),
+    ]
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes[2:]] == [
+        (4, bytearray(b"EF")),
+    ] * 10
+    assert len(flashcart.sector_erase_calls) == 11
+    assert flashcart.unlock_calls == 9
+    assert records.serial.input_resets == 19
+    assert records.serial.output_resets == 19
+    assert records.sleep_calls == [0.5] * 9
+    assert len([event for event in records.progress if event["action"] == "ERROR"]) == 9
+    assert records.progress[-1]["action"] == "ABORT"
+    assert records.progress[-1]["info_type"] == "msgbox_critical"
+    records.finish.assert_not_called()
+    assert device.CANCEL is True
+    assert device.ERROR is True
+
+
+def test_write_prepared_flash_rom_never_programs_after_sector_erase_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[False, False], unlock_results=[True])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(device, monkeypatch, write_results=[])
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert records.rom_writes == []
+    assert len(flashcart.sector_erase_calls) == 2
+    assert flashcart.unlock_calls == 1
+    assert records.status_reads == []
+    assert records.serial.input_resets == 1
+    assert records.serial.output_resets == 1
+    assert records.progress[-1]["action"] == "ABORT"
+    assert records.progress[-1]["info_type"] == "msgbox_critical"
+    records.finish.assert_not_called()
+
+
+def test_write_prepared_flash_rom_returns_false_when_retry_unlock_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4], unlock_results=[False])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(device, monkeypatch, write_results=[False])
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is False
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB")),
+    ]
+    assert len(flashcart.sector_erase_calls) == 1
+    assert flashcart.unlock_calls == 1
+    assert records.serial.input_resets == 2
+    assert records.serial.output_resets == 2
+    assert records.sleep_calls == [0.5]
+    assert records.progress[-1]["action"] == "ERROR"
+    records.finish.assert_not_called()
+    assert device.CANCEL is False
+    assert device.ERROR is False
+
+
+@pytest.mark.parametrize("connection", ["disconnected", "closed"])
+def test_write_prepared_flash_rom_aborts_without_retry_when_port_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    connection: str,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(device, monkeypatch, write_results=[False])
+    device.FW = {"fw_ver": 11, "pcb_name": "Test device"}
+    if connection == "disconnected":
+        device.DEVICE = None
+    else:
+        records.serial.is_open = False
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert len(records.rom_writes) == 1
+    assert len(flashcart.sector_erase_calls) == 1
+    assert flashcart.unlock_calls == 0
+    assert records.serial.input_resets == 0
+    assert records.serial.output_resets == 0
+    assert records.sleep_calls == []
+    abort = records.progress[-1]
+    assert abort["action"] == "ABORT"
+    assert abort["abortable"] is False
+    assert abort["info_type"] == "msgbox_critical"
+    assert "re-connect the device" in str(abort["info_msg"])
+    records.finish.assert_not_called()
+    assert device.CANCEL is True
+    assert device.ERROR is True
+
+
+def test_write_prepared_flash_rom_honors_user_cancellation_during_erase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(device, monkeypatch, write_results=[])
+    sector_erase = flashcart.SectorErase
+
+    def canceling_sector_erase(pos: int, buffer_pos: int, skip: bool = False) -> int | bool:
+        result = sector_erase(pos, buffer_pos, skip)
+        device.CANCEL = True
+        device.CANCEL_ARGS = {"from_user": True}
+        return result
+
+    monkeypatch.setattr(flashcart, "SectorErase", canceling_sector_erase)
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert len(flashcart.sector_erase_calls) == 1
+    assert records.rom_writes == []
+    assert flashcart.unlock_calls == 0
+    assert records.status_reads == []
+    assert records.progress[-1] == {"action": "ABORT", "abortable": False, "from_user": True}
+    records.finish.assert_not_called()
+    assert preparation.verify_sectors == []
+
+
+def test_write_prepared_flash_rom_honors_user_cancellation_during_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    mapper = SectorMapper()
+    flashcart = SectorDecisionFlashcart(sector_results=[4])
+    preparation = make_single_sector_preparation(flashcart, mapper)
+    records = install_failure_worker_boundaries(device, monkeypatch, write_results=[None])
+    write_rom = device.WriteROM
+
+    def canceling_write(**kwargs: object) -> bool | None:
+        result = write_rom(**kwargs)
+        device.CANCEL = True
+        device.CANCEL_ARGS = {"from_user": True}
+        return result
+
+    monkeypatch.setattr(device, "WriteROM", canceling_write)
+
+    result = device._WritePreparedFlashROM({"compare_sectors": False}, "DMG", preparation)
+
+    assert result is None
+    assert [(item["address"], item["buffer"]) for item in records.rom_writes] == [
+        (0, bytearray(b"AB")),
+    ]
+    assert len(flashcart.sector_erase_calls) == 1
+    assert flashcart.unlock_calls == 0
+    assert records.status_reads == []
+    assert records.progress[-1] == {"action": "ABORT", "abortable": False, "from_user": True}
+    records.finish.assert_not_called()
+    assert device.CANCEL is True
+    assert device.ERROR is False
