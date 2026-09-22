@@ -213,6 +213,53 @@ class FakeConnection:
         self.calls.append(("close", cartPowerOff))
 
 
+def configure_batteryless_profile(
+    conn: FakeConnection,
+    mode: str,
+    **profile_values: object,
+) -> str:
+    profile_name = "Batteryless Profile"
+    profile = {"type": mode, "names": [profile_name], **profile_values}
+    conn.INFO[f"{mode.lower()}_carts"] = (["Generic", profile_name], [{}, profile])
+    return profile_name
+
+
+def expected_batteryless_write_args(
+    *,
+    path: str,
+    mbc: int,
+    offset: int,
+    size: int,
+    layout: int | None,
+    verify_write: bool,
+    compare_sectors: bool,
+    erase: bool = False,
+) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "mode": 4,
+        "path": "" if erase else path,
+        "cart_type": 1,
+        "override_voltage": False,
+        "prefer_chip_erase": False,
+        "fast_read_mode": True,
+        "verify_write": verify_write,
+        "fix_header": False,
+        "fix_bootlogo": False,
+        "mbc": mbc,
+        "compare_sectors": compare_sectors,
+        "bl_save": True,
+        "flash_offset": offset,
+        "flash_size": size,
+        "bl_offset": offset,
+        "bl_size": size,
+    }
+    if layout is not None:
+        expected["bl_layout"] = layout
+    if erase:
+        expected["buffer"] = bytearray([0xFF] * size)
+    return expected
+
+
 def dmg_header(raw: bytearray | None = None) -> dict[str, Any]:
     return {
         "db": None,
@@ -1183,6 +1230,310 @@ def test_batteryless_backup_and_erase_use_mock_transfers(
     assert conn.transfer_calls[0]["bl_offset"] == 0x1000
     assert conn.transfer_calls[1]["mode"] == 4
     assert conn.transfer_calls[1]["buffer"] == bytearray([0xFF] * 16)
+
+
+@pytest.mark.parametrize(
+    ("mode", "mbc", "layout", "no_verify_write"),
+    [("DMG", 0x19, 2, False), ("AGB", 0, None, True)],
+)
+def test_batteryless_restore_uses_real_region_and_profile_resolution(
+    tmp_path: Path,
+    mode: str,
+    mbc: int,
+    layout: int | None,
+    no_verify_write: bool,
+) -> None:
+    original = b"batteryless save"
+    path = tmp_path / f"{mode.lower()}-restore.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection(mode)
+    profile = configure_batteryless_profile(conn, mode)
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        bl_offset="0x1200",
+        bl_size="16",
+        bl_layout="2",
+        no_verify_write=no_verify_write,
+        compare_sectors=True,
+    )
+
+    cli._BatterylessSRAM(args, {}, mbc, 0x205, args.path)
+
+    assert conn.transfer_calls == [
+        expected_batteryless_write_args(
+            path=str(path),
+            mbc=mbc,
+            offset=0x1200,
+            size=16,
+            layout=layout,
+            verify_write=not no_verify_write,
+            compare_sectors=True,
+        ),
+    ]
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(("answer", "transfers"), [("y", 1), ("n", 0)])
+def test_batteryless_restore_overwrite_prompt_controls_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+    transfers: int,
+) -> None:
+    original = b"prompted restore"
+    path = tmp_path / f"prompt-{answer}.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    profile = configure_batteryless_profile(conn, "DMG")
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        overwrite=False,
+        bl_offset="0x2000",
+        bl_size="32",
+        bl_layout="1",
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert len(conn.transfer_calls) == transfers
+    if transfers:
+        assert conn.transfer_calls == [
+            expected_batteryless_write_args(
+                path=str(path),
+                mbc=0x19,
+                offset=0x2000,
+                size=32,
+                layout=1,
+                verify_write=True,
+                compare_sectors=False,
+            ),
+        ]
+    assert path.read_bytes() == original
+
+
+def test_batteryless_restore_missing_input_stops_before_transfer(tmp_path: Path) -> None:
+    path = tmp_path / "missing.sav"
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    profile = configure_batteryless_profile(conn, "DMG")
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        bl_offset="0x3000",
+        bl_size="8",
+        bl_layout="0",
+    )
+
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert conn.transfer_calls == []
+    assert not path.exists()
+
+
+def test_batteryless_restore_permission_failure_preserves_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = b"permission protected"
+    path = tmp_path / "permission.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    profile = configure_batteryless_profile(conn, "DMG")
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        bl_offset="0x3000",
+        bl_size="8",
+        bl_layout="0",
+    )
+
+    def deny_open(_path: object, *_args: object, **_kwargs: object) -> None:
+        raise PermissionError
+
+    original_open = type(path).open
+    monkeypatch.setattr(type(path), "open", deny_open)
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert conn.transfer_calls == []
+    with original_open(path, "rb") as input_file:
+        assert input_file.read() == original
+
+
+@pytest.mark.parametrize("failure", ["region", "profile", "stress", "erase-refusal"])
+def test_batteryless_rejections_stop_before_transfer_and_preserve_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    original = b"preserve rejected input"
+    path = tmp_path / f"{failure}.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    profile = configure_batteryless_profile(conn, "DMG")
+    cli.CONN = conn
+    args = make_args(
+        action="erase-save" if failure == "erase-refusal" else "restore-save",
+        path=str(path),
+        flashcart_type="Missing Profile" if failure == "profile" else profile,
+        overwrite=failure != "erase-refusal",
+        bl_offset="auto" if failure == "region" else "0x4000",
+        bl_size="auto" if failure == "region" else "8",
+        bl_layout="0",
+    )
+    if failure == "stress":
+        args.action = "debug-test-save"
+
+        def fail_if_resolved(_args: Namespace, _header: object) -> None:
+            pytest.fail("stress-test rejection must precede region resolution")
+
+        monkeypatch.setattr(cli, "_ResolveBLArgs", fail_if_resolved)
+    elif failure == "erase-refusal":
+        monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert conn.transfer_calls == []
+    assert path.read_bytes() == original
+
+
+def test_batteryless_erase_uses_exact_region_and_erased_buffer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    profile = configure_batteryless_profile(conn, "DMG")
+    cli.CONN = conn
+    args = make_args(
+        action="erase-save",
+        path=str(tmp_path / "unused.sav"),
+        flashcart_type=profile,
+        bl_offset="0x5000",
+        bl_size="4",
+        bl_layout="2",
+        no_verify_write=True,
+        compare_sectors=True,
+        overwrite=False,
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert conn.transfer_calls == [
+        expected_batteryless_write_args(
+            path=args.path,
+            mbc=0x19,
+            offset=0x5000,
+            size=4,
+            layout=2,
+            verify_write=False,
+            compare_sectors=True,
+            erase=True,
+        ),
+    ]
+
+
+@pytest.mark.parametrize("profile_values", [{"voltage": 3.3}, {"voltage_variants": [3.3, 5]}])
+@pytest.mark.parametrize(("answer", "transfers"), [("n", 0), ("y", 1)])
+def test_batteryless_fixed_voltage_warning_controls_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    profile_values: dict[str, object],
+    answer: str,
+    transfers: int,
+) -> None:
+    original = b"fixed voltage restore"
+    path = tmp_path / f"fixed-{answer}-{len(profile_values)}.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    conn.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    profile = configure_batteryless_profile(conn, "DMG", **profile_values)
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        bl_offset="0x6000",
+        bl_size="8",
+        bl_layout="1",
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert len(conn.transfer_calls) == transfers
+    if transfers:
+        assert conn.transfer_calls == [
+            expected_batteryless_write_args(
+                path=str(path),
+                mbc=0x19,
+                offset=0x6000,
+                size=8,
+                layout=1,
+                verify_write=True,
+                compare_sectors=False,
+            ),
+        ]
+    assert path.read_bytes() == original
+
+
+def test_batteryless_voltage_capable_device_skips_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original = b"voltage capable restore"
+    path = tmp_path / "voltage-capable.sav"
+    path.write_bytes(original)
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    conn.INFO.update(voltage_autoswitch=True, voltage_code=True)
+    profile = configure_batteryless_profile(conn, "DMG", voltage=3.3)
+    cli.CONN = conn
+    args = make_args(
+        action="restore-save",
+        path=str(path),
+        flashcart_type=profile,
+        bl_offset="0x7000",
+        bl_size="8",
+        bl_layout="0",
+    )
+
+    def fail_if_prompted(_prompt: str) -> str:
+        pytest.fail("voltage-capable devices must not display a voltage confirmation")
+
+    monkeypatch.setattr("builtins.input", fail_if_prompted)
+    cli._BatterylessSRAM(args, {}, 0x19, 0x205, args.path)
+
+    assert conn.transfer_calls == [
+        expected_batteryless_write_args(
+            path=str(path),
+            mbc=0x19,
+            offset=0x7000,
+            size=8,
+            layout=0,
+            verify_write=True,
+            compare_sectors=False,
+        ),
+    ]
+    assert "Warning: A 3.3V flashcart profile" not in capsys.readouterr().out
+    assert path.read_bytes() == original
 
 
 def test_resolve_flashcart_type_manual_and_autodetect(
