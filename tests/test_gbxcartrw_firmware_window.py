@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import struct
 import sys
+import zipfile
 from collections import deque
 from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, ClassVar
@@ -64,6 +65,35 @@ class FakeMessageBox:
 
     def exec(self) -> int:
         return type(self).next_answer
+
+
+class FakeFileDialog:
+    next_path = ""
+    calls: ClassVar[list[tuple[object, str, str, str]]] = []
+
+    @classmethod
+    def getOpenFileName(
+        cls,
+        parent: object,
+        title: str,
+        directory: str,
+        file_filter: str,
+    ) -> tuple[str, str]:
+        cls.calls.append((parent, title, directory, file_filter))
+        return cls.next_path, ""
+
+
+class FakeSettings:
+    def __init__(self, values: dict[str, object] | None = None) -> None:
+        self.values = {} if values is None else dict(values)
+        self.writes: list[tuple[str, object]] = []
+
+    def value(self, key: str) -> object | None:
+        return self.values.get(key)
+
+    def setValue(self, key: str, value: object) -> None:
+        self.values[key] = value
+        self.writes.append((key, value))
 
 
 class ScriptedSerial:
@@ -143,13 +173,45 @@ class ScriptedFirmwareUpdater:
         assert not self.results
 
 
+class ScriptedV13Transport:
+    """Return a finite V13 writer script and preserve every retry payload."""
+
+    def __init__(
+        self,
+        results: list[int],
+        events: list[str],
+        controls: tuple[FakeWidget, ...],
+    ) -> None:
+        self.results = deque(results)
+        self.events = events
+        self.controls = controls
+        self.payloads: list[bytearray] = []
+        self.callbacks: list[object] = []
+        self.control_states: list[tuple[bool, ...]] = []
+
+    def __call__(self, payload: bytearray, status_callback: object) -> int:
+        assert self.results, "Unexpected V13 firmware writer retry"
+        self.events.append("write")
+        self.payloads.append(payload.copy())
+        self.callbacks.append(status_callback)
+        self.control_states.append(tuple(control.enabled for control in self.controls))
+        return self.results.popleft()
+
+    def assert_finished(self) -> None:
+        assert not self.results
+
+
 @pytest.fixture(scope="module")
 def firmware_module() -> Generator[ModuleType]:
     """Load a separate updater module with inert Qt types and restore imports."""
     fake_pyside = ModuleType("PySide6")
     fake_pyside.QtCore = SimpleNamespace()  # type: ignore[attr-defined]
     fake_pyside.QtGui = SimpleNamespace()  # type: ignore[attr-defined]
-    fake_pyside.QtWidgets = SimpleNamespace(QDialog=object, QMessageBox=FakeMessageBox)  # type: ignore[attr-defined]
+    fake_pyside.QtWidgets = SimpleNamespace(  # type: ignore[attr-defined]
+        QDialog=object,
+        QMessageBox=FakeMessageBox,
+        QFileDialog=FakeFileDialog,
+    )
     original_pyside = sys.modules.get("PySide6")
     alias = "FlashGBX._firmware_window_test_module"
     spec = importlib.util.spec_from_file_location(alias, gbxcartrw.__file__)
@@ -176,7 +238,9 @@ def firmware_module() -> Generator[ModuleType]:
 @pytest.fixture(autouse=True)
 def reset_message_boxes(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeMessageBox.shown = []
+    FakeFileDialog.calls = []
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.No)
+    monkeypatch.setattr(FakeFileDialog, "next_path", "")
 
 
 def make_window(module: ModuleType) -> object:
@@ -228,6 +292,61 @@ def make_modern_window(
     window.FWUPD = writer
     window.reject = Mock(side_effect=lambda: events.append("reject"))
     return window, writer, events
+
+
+def make_v13_update_window(
+    module: ModuleType,
+    tmp_path: Path,
+    *,
+    results: list[int],
+) -> tuple[object, ScriptedV13Transport, FakeSettings, list[str]]:
+    """Build an inert V13 controller with a finite transport script."""
+    events: list[str] = []
+    settings = FakeSettings({"LastDirFirmwareUpdate": str(tmp_path / "remembered")})
+    window = object.__new__(module.FirmwareUpdaterWindowV13)
+    window.APP = SimpleNamespace(
+        SETTINGS=settings,
+        DisconnectDevice=Mock(side_effect=lambda: events.append("disconnect")),
+        QT_APP=SimpleNamespace(processEvents=Mock()),
+    )
+    window.APP_PATH = tmp_path
+    window.PCB_VER = "v1.3"
+    window.CFW_VER = "CFW test"
+    window.OFW_VER = "OFW test"
+    window.DEVICE = object()
+    window.lblStatus = FakeWidget()
+    window.prgStatus = FakeWidget()
+    window.btnUpdate = FakeWidget()
+    window.btnClose = FakeWidget()
+    window.grpAvailableFwUpdates = FakeWidget()
+    window.optCFW = FakeWidget()
+    window.optOFW = FakeWidget()
+    window.optExternal = FakeWidget()
+    controls = (window.btnUpdate, window.btnClose, window.grpAvailableFwUpdates)
+    transport = ScriptedV13Transport(results, events, controls)
+    window.WriteFirmware = transport
+    return window, transport, settings, events
+
+
+def intel_hex_record(address: int, record_type: int, data: bytes = b"") -> str:
+    """Encode one valid Intel HEX record."""
+    record = bytearray([len(data), address >> 8, address & 0xFF, record_type])
+    record.extend(data)
+    record.append((-sum(record)) & 0xFF)
+    return ":" + record.hex().upper()
+
+
+def intel_hex_image(data: bytes, *, address: int = 0) -> str:
+    return "\n".join((intel_hex_record(address, 0, data), intel_hex_record(0, 1))) + "\n"
+
+
+def write_v13_archive(tmp_path: Path, members: dict[str, str | bytes]) -> Path:
+    archive_path = tmp_path / "res" / "fw_GBxCart_RW_v1_3.zip"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name, contents in members.items():
+            archive.writestr(name, contents)
+    return archive_path
 
 
 def test_modern_update_rejects_missing_pcb_selection_before_disconnect(
@@ -351,6 +470,158 @@ def test_modern_update_handles_terminal_writer_results_once(
         assert window.DEVICE is original_device
         window.reject.assert_not_called()
         assert all("update is complete" not in message.text for message in FakeMessageBox.shown)
+
+
+@pytest.mark.parametrize(
+    ("source", "writer_results", "expected_result", "expected_payload"),
+    [
+        ("custom", [1], True, bytearray(b"\x10\x11")),
+        ("official", [2], False, bytearray(b"\x20\x21\x22")),
+        ("external", [3, 1], True, bytearray(b"\xff\xff\x30\x31")),
+    ],
+    ids=["custom-success", "official-failure", "external-retry-success"],
+)
+def test_v13_update_loads_selected_hex_and_honors_writer_script(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    writer_results: list[int],
+    expected_result: bool,
+    expected_payload: bytearray,
+) -> None:
+    window, transport, settings, events = make_v13_update_window(
+        firmware_module,
+        tmp_path,
+        results=writer_results,
+    )
+    custom_hex = intel_hex_image(b"\x10\x11")
+    official_hex = intel_hex_image(b"\x20\x21\x22")
+    write_v13_archive(tmp_path, {"cfw.hex": custom_hex, "ofw.hex": official_hex})
+    window.optCFW.setChecked(source == "custom")
+    window.optOFW.setChecked(source == "official")
+    window.optExternal.setChecked(source == "external")
+    if source == "external":
+        external_path = tmp_path / "gbxcart_rw_test_pcb_r13.hex"
+        external_path.write_text(intel_hex_image(b"\x30\x31", address=2), encoding="ascii")
+        monkeypatch.setattr(FakeFileDialog, "next_path", str(external_path))
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Yes)
+
+    result = window.UpdateFirmware()
+
+    assert result is expected_result
+    assert transport.payloads == [expected_payload] * len(writer_results)
+    assert transport.control_states == [(False, False, False)] * len(writer_results)
+    assert all(callback.__self__ is window for callback in transport.callbacks)
+    assert all(
+        callback.__func__ is firmware_module.FirmwareUpdaterWindowV13.SetStatus for callback in transport.callbacks
+    )
+    transport.assert_finished()
+    window.APP.DisconnectDevice.assert_called_once_with()
+    assert events == ["disconnect", *(["write"] * len(writer_results))]
+    assert len(FakeMessageBox.shown) == 1
+    assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Question
+    if source == "external":
+        assert settings.writes == [("LastDirFirmwareUpdate", str(tmp_path))]
+        assert len(FakeFileDialog.calls) == 1
+        assert FakeFileDialog.calls[0][0] is window
+        assert FakeFileDialog.calls[0][2] == str(tmp_path / "remembered")
+    else:
+        assert settings.writes == []
+        assert FakeFileDialog.calls == []
+
+
+@pytest.mark.parametrize(
+    ("boundary", "expected_messages"),
+    [("file-picker-cancel", 0), ("unexpected-filename", 1), ("declined-confirmation", 1)],
+)
+def test_v13_update_stops_before_disconnect_at_selection_boundaries(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+    expected_messages: int,
+) -> None:
+    window, transport, settings, events = make_v13_update_window(firmware_module, tmp_path, results=[])
+    window.optCFW.setChecked(boundary == "declined-confirmation")
+    window.optExternal.setChecked(boundary != "declined-confirmation")
+    if boundary == "unexpected-filename":
+        monkeypatch.setattr(FakeFileDialog, "next_path", str(tmp_path / "firmware.hex"))
+    if boundary == "declined-confirmation":
+        monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.No)
+
+    result = window.UpdateFirmware()
+
+    assert result is None
+    assert events == []
+    assert transport.payloads == []
+    transport.assert_finished()
+    window.APP.DisconnectDevice.assert_not_called()
+    assert settings.writes == []
+    assert all(control.enabled for control in (window.btnUpdate, window.btnClose, window.grpAvailableFwUpdates))
+    assert len(FakeMessageBox.shown) == expected_messages
+    if boundary == "unexpected-filename":
+        assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Critical
+        assert "expected filename" in FakeMessageBox.shown[0].text
+    elif boundary == "declined-confirmation":
+        assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Question
+
+
+@pytest.mark.parametrize(
+    ("invalid_input", "expected_status"),
+    [
+        ("malformed-hex", "Firmware checksum error."),
+        ("oversized-image", "Firmware file is too large."),
+        ("non-ascii", "Firmware checksum error."),
+        ("missing-member", "Firmware checksum error."),
+        ("missing-custom-file", "Firmware checksum error."),
+        ("unreadable-custom-file", "Firmware checksum error."),
+    ],
+)
+def test_v13_update_rejects_invalid_input_and_restores_controls(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_input: str,
+    expected_status: str,
+) -> None:
+    window, transport, settings, events = make_v13_update_window(firmware_module, tmp_path, results=[])
+    window.prgStatus.setValue(73)
+    if invalid_input in ("missing-custom-file", "unreadable-custom-file"):
+        window.optExternal.setChecked(True)
+        external_path = tmp_path / "gbxcart_rw_invalid_pcb_r13.hex"
+        if invalid_input == "unreadable-custom-file":
+            external_path.mkdir()
+        monkeypatch.setattr(FakeFileDialog, "next_path", str(external_path))
+    else:
+        window.optCFW.setChecked(True)
+        if invalid_input == "malformed-hex":
+            members: dict[str, str | bytes] = {"cfw.hex": ":0100000001FF\n:00000001FF\n"}
+        elif invalid_input == "oversized-image":
+            members = {"cfw.hex": intel_hex_image(b"X", address=0x1BFF)}
+        elif invalid_input == "non-ascii":
+            members = {"cfw.hex": b"\xff"}
+        else:
+            members = {"ofw.hex": intel_hex_image(b"OFW")}
+        write_v13_archive(tmp_path, members)
+    monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Yes)
+
+    result = window.UpdateFirmware()
+
+    assert result is False
+    assert events == []
+    assert transport.payloads == []
+    transport.assert_finished()
+    window.APP.DisconnectDevice.assert_not_called()
+    assert window.lblStatus.text == f"Status: {expected_status}"
+    assert window.prgStatus.value == 0
+    assert all(control.enabled for control in (window.btnUpdate, window.btnClose, window.grpAvailableFwUpdates))
+    assert len(FakeMessageBox.shown) == 1
+    assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Question
+    if "custom" in invalid_input:
+        assert settings.writes == [("LastDirFirmwareUpdate", str(tmp_path))]
+    else:
+        assert settings.writes == []
 
 
 def bootloader_reply(
