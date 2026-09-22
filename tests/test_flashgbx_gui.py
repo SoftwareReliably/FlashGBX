@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import queue
 import sys
 from types import ModuleType, SimpleNamespace
@@ -714,6 +715,45 @@ def make_gui(gui_module: ModuleType, **attributes: object):
     return gui
 
 
+def install_batteryless_dialog(
+    monkeypatch: pytest.MonkeyPatch,
+    gui_module: ModuleType,
+    *,
+    accepted: bool = True,
+    selections: dict[str, int | str] | None = None,
+) -> list[dict[str, object]]:
+    """Install a recording dialog that returns the existing fake controls."""
+    recorded: list[dict[str, object]] = []
+    chosen = {} if selections is None else selections
+
+    class RecordingUserInputDialog:
+        def __init__(self, _parent: object, *, icon: object, args: dict[str, object]) -> None:
+            del icon
+            controls: dict[str, FakeQtObject] = {}
+            for param in cast("list[list[object]]", args["params"]):
+                control = FakeQtObject()
+                control.addItems(cast("list[str]", param[3]))
+                control.setCurrentIndex(cast("int", param[4]))
+                selection = chosen.get(cast("str", param[0]))
+                if isinstance(selection, str):
+                    control.setCurrentIndex(-1)
+                    control.setText(selection)
+                elif isinstance(selection, int):
+                    control.setCurrentIndex(selection)
+                controls[cast("str", param[0])] = control
+            recorded.append({"args": args, "controls": controls})
+            self.controls = controls
+
+        def exec(self) -> int:
+            return FakeQtObject.DialogCode.Accepted if accepted else FakeQtObject.DialogCode.Rejected
+
+        def GetResult(self) -> dict[str, FakeQtObject]:
+            return self.controls
+
+    monkeypatch.setattr(gui_module, "UserInputDialog", RecordingUserInputDialog)
+    return recorded
+
+
 def build_gui(gui_module: ModuleType, tmp_path: Path):
     args = {
         "app_path": str(tmp_path),
@@ -879,6 +919,229 @@ def test_gui_module_helpers(gui_module: ModuleType, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(gui_module.shutil, "which", lambda _name: None)
     with pytest.raises(FileNotFoundError, match="missing"):
         gui_module._system_executable("missing")
+
+
+@pytest.mark.parametrize(
+    ("rom_size", "expected"),
+    [
+        (0x13FFFF, 0),
+        (0x140000, 0),
+        (0x140001, 1),
+        (0x300000, 1),
+    ],
+)
+def test_batteryless_default_location_obeys_rom_boundary(
+    gui_module: ModuleType,
+    rom_size: int,
+    expected: int,
+) -> None:
+    assert (
+        gui_module.FlashGBX_GUI._get_default_bl_location_index(
+            rom_size,
+            [0x100000, 0x200000],
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "rom_size", "expected"),
+    [
+        ("DMG", 0x110000, {"bl_offset": 0xD0000, "bl_size": 0x8000, "bl_layout": 2}),
+        ("AGB", 0x400000, {"bl_offset": 0x3C0000, "bl_size": 0x10000}),
+    ],
+)
+def test_batteryless_defaults_follow_platform(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    rom_size: int,
+    expected: dict[str, int],
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module)
+    settings = FakeSettings()
+    gui = make_gui(gui_module, CONN=FakeDevice(mode), SETTINGS=settings)
+
+    assert gui.GetBLArgs(rom_size) == expected
+
+    params = cast("dict[str, object]", dialogs[0]["args"])["params"]
+    defaults = [param[4] for param in cast("list[list[object]]", params)]
+    assert defaults == ([0, 1, 2] if mode == "DMG" else [0, 2])
+
+
+def test_batteryless_detected_values_override_remembered_location(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module)
+    settings = FakeSettings({"BatterylessSramLastLocationAGB": str(0x3C0000)})
+    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+
+    result = gui.GetBLArgs(0x400000, detected={"bl_offset": 0x500000, "bl_size": 0x20000})
+
+    assert result == {"bl_offset": 0x500000, "bl_size": 0x20000}
+    params = cast("list[list[object]]", cast("dict[str, object]", dialogs[0]["args"])["params"])
+    assert [param[4] for param in params] == [1, 3]
+
+
+def test_batteryless_invalid_detected_size_uses_platform_fallback(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
+    settings = FakeSettings({"BatterylessSramLastLocationAGB": "unavailable"})
+    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+
+    assert (
+        gui.GetBLArgs(
+            0x400000,
+            detected={"bl_offset": 0x500000, "bl_size": 0x1234},
+        )
+        is False
+    )
+
+    params = cast("list[list[object]]", cast("dict[str, object]", dialogs[0]["args"])["params"])
+    assert [param[4] for param in params] == [0, 2]
+    assert settings.writes == []
+
+
+def test_batteryless_dmg_header_preselects_all_parameters(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module)
+    settings = FakeSettings({"BatterylessSramLastLocationDMG": str(0xD0000)})
+    device = FakeDevice("DMG")
+    device.INFO["dump_info"] = {
+        "header": {
+            "game_title_raw": "PATCHED GAME\x00",
+            "batteryless_sram": {"bl_offset": 0x110000, "bl_size": 0x20000, "bl_layout": 1},
+        },
+    }
+    gui = make_gui(gui_module, CONN=device, SETTINGS=settings)
+
+    assert gui.GetBLArgs(0x200000) == {
+        "bl_offset": 0x110000,
+        "bl_size": 0x20000,
+        "bl_layout": 1,
+    }
+    params = cast("list[list[object]]", cast("dict[str, object]", dialogs[0]["args"])["params"])
+    assert [param[4] for param in params] == [2, 3, 1]
+
+
+def test_batteryless_saved_locations_keep_sorted_unique_integers(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
+    settings = FakeSettings(
+        {
+            "BatterylessSramLocationsAGB": json.dumps(
+                [0x500000, "0x600000", 0x3C0000, 0x500000, None, 1.5],
+            ),
+            "BatterylessSramLastLocationAGB": str(0x500000),
+        },
+    )
+    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+
+    assert gui.GetBLArgs(0x400000) is False
+
+    params = cast("list[list[object]]", cast("dict[str, object]", dialogs[0]["args"])["params"])
+    assert params[0][3] == ["0x3C0000", "0x500000", "0x7C0000", "0xFC0000", "0x1FC0000"]
+    assert params[0][4] == 1
+    assert settings.writes == []
+
+
+def test_batteryless_malformed_locations_and_unavailable_last_use_default(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
+    settings = FakeSettings(
+        {
+            "BatterylessSramLocationsAGB": "{malformed",
+            "BatterylessSramLastLocationAGB": "1234",
+        },
+    )
+    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+
+    assert gui.GetBLArgs(0x800001) is False
+
+    params = cast("list[list[object]]", cast("dict[str, object]", dialogs[0]["args"])["params"])
+    assert params[0][3] == ["0x3C0000", "0x7C0000", "0xFC0000", "0x1FC0000"]
+    assert params[0][4] == 2
+    assert settings.writes == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "selections", "expected", "expected_locations"),
+    [
+        (
+            "DMG",
+            {"loc": 3, "len": 2, "layout": 1},
+            {"bl_offset": 0x1D0000, "bl_size": 0x10000, "bl_layout": 1},
+            [0xD0000, 0x100000, 0x110000, 0x1D0000, 0x1E0000, 0x210000, 0x3D0000, 0x1D0000],
+        ),
+        (
+            "AGB",
+            {"loc": "0x500123", "len": 3},
+            {"bl_offset": 0x500123, "bl_size": 0x20000},
+            [0x3C0000, 0x7C0000, 0xFC0000, 0x1FC0000, 0x500123],
+        ),
+    ],
+)
+def test_batteryless_accepts_preset_and_custom_hex_and_persists_exactly(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    selections: dict[str, int | str],
+    expected: dict[str, int],
+    expected_locations: list[int],
+) -> None:
+    install_batteryless_dialog(monkeypatch, gui_module, selections=selections)
+    settings = FakeSettings()
+    gui = make_gui(gui_module, CONN=FakeDevice(mode), SETTINGS=settings)
+
+    assert gui.GetBLArgs(0x400000) == expected
+    assert settings.writes == [
+        (f"BatterylessSramLocations{mode}", json.dumps(expected_locations)),
+        (f"BatterylessSramLastLocation{mode}", json.dumps(expected["bl_offset"])),
+    ]
+
+
+def test_batteryless_cancel_and_invalid_custom_text_do_not_write_settings(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = FakeSettings()
+    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
+    assert gui.GetBLArgs(0x400000) is False
+    assert settings.writes == []
+
+    install_batteryless_dialog(
+        monkeypatch,
+        gui_module,
+        selections={"loc": "not a hexadecimal address"},
+    )
+    assert gui.GetBLArgs(0x400000) is False
+    assert settings.writes == []
+
+
+def test_batteryless_parameters_require_a_platform_mode(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialogs = install_batteryless_dialog(monkeypatch, gui_module)
+    settings = FakeSettings()
+    device = FakeDevice()
+    device.mode = None  # type: ignore[assignment]
+    gui = make_gui(gui_module, CONN=device, SETTINGS=settings)
+
+    with pytest.raises(RuntimeError, match="require a platform mode"):
+        gui.GetBLArgs(0x400000)
+    assert dialogs == []
+    assert settings.writes == []
 
 
 def test_gui_constructor_builds_complete_inert_widget_tree(

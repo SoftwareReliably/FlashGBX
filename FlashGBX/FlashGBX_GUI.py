@@ -4926,6 +4926,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 len_index = lens.index(detected["bl_size"])
                 intro_msg = "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\nThe previously detected parameters have been pre-selected. Please adjust if necessary, then click “OK” to continue."
             except KeyError, TypeError, ValueError:
+                loc_index = None
+                len_index = None
                 detected = False
         if detected is False:
             intro_msg = (
@@ -5011,7 +5013,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 try:
                     bl_args["bl_offset"] = _parse_hex_address(result["loc"].currentText())
                 except ValueError:
-                    bl_args["bl_offset"] = 0
+                    return False
             else:
                 bl_args["bl_offset"] = locs[result["loc"].currentIndex()]
             bl_args["bl_size"] = lens[result["len"].currentIndex()]
