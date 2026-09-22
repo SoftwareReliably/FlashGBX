@@ -519,6 +519,7 @@ def install_write_boundaries(
     monkeypatch: pytest.MonkeyPatch,
     *,
     statuses: list[object] | None = None,
+    write_result: bool | None = None,
 ) -> SaveWriteRecords:
     """Replace physical writes and status reads with finite recorders."""
     records = SaveWriteRecords(statuses)
@@ -529,7 +530,7 @@ def install_write_boundaries(
         buffer: bytes | bytearray | memoryview,
         command: object,
         max_length: int | None = None,
-    ) -> None:
+    ) -> bool | None:
         records.events.append("WriteRAM")
         records.ram_writes.append(
             {
@@ -539,6 +540,7 @@ def install_write_boundaries(
                 "max_length": max_length,
             },
         )
+        return write_result
 
     def write_rom(*, address: int, buffer: bytes | bytearray | memoryview) -> None:
         records.events.append("WriteROM")
@@ -730,6 +732,56 @@ def test_write_save_chunk_routes_nonzero_buffer_slice(
         assert records.events == ["WriteROM", "cart_write"]
     else:
         assert records.cart_writes == []
+
+
+@pytest.mark.parametrize(
+    ("save_type", "flash_chip", "position", "ereader", "expected_address", "expected_length", "statuses"),
+    [
+        (1, 0, 0x40, False, 8, 4, None),
+        (4, 0x1F3D, 0x400, False, 8, 4, None),
+        (5, 0xC209, 0x240, False, 0x240, 4, [0xFFFF]),
+        (5, 0xC209, 0xF000, True, 0xF000, 0xF80, [0xFFFF]),
+    ],
+    ids=["eeprom", "atmel-flash", "ordinary-flash", "ereader-final-sector"],
+)
+def test_write_save_chunk_propagates_ram_write_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    save_type: int,
+    flash_chip: int,
+    position: int,
+    ereader: bool,
+    expected_address: int,
+    expected_length: int,
+    statuses: list[object] | None,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    if ereader:
+        device.INFO["ereader"] = True
+    records = install_write_boundaries(
+        device,
+        monkeypatch,
+        statuses=statuses,
+        write_result=False,
+    )
+    buffer_len = 0x1000 if ereader else 4
+    buffer = bytearray(index % 251 for index in range(buffer_len))
+    parameters = _SaveWriteParameters(
+        args={"save_type": save_type},
+        mbc=SaveIoMapper(),
+        bank=0,
+        pos=position,
+        buffer=buffer,
+        buffer_offset=0,
+        buffer_len=buffer_len,
+        command=0xC3,
+        agb_flash_chip=flash_chip,
+    )
+
+    assert device._WriteSaveChunk(parameters) is False
+    assert len(records.ram_writes) == 1
+    assert records.ram_writes[0]["address"] == expected_address
+    assert len(records.ram_writes[0]["buffer"]) == expected_length
 
 
 FLASH_ERASE_COMMANDS = [

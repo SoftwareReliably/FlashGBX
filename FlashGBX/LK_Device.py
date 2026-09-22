@@ -2810,11 +2810,12 @@ class LK_Device(ABC):
         max_length: int = 64,
     ) -> bytearray:
         max_length = min(max_length, self.MAX_BUFFER_READ)
-        num: int = math.ceil(length / max_length)
-        dprint(f"Reading 0x{length:X} bytes from cartridge RAM in {num:d} iteration(s)")
-        length = min(length, max_length)
+        total_length = length
+        num: int = math.ceil(total_length / max_length)
+        dprint(f"Reading 0x{total_length:X} bytes from cartridge RAM in {num:d} iteration(s)")
+        chunk_length = min(total_length, max_length)
         buffer = bytearray()
-        self._set_fw_variable("TRANSFER_SIZE", length)
+        self._set_fw_variable("TRANSFER_SIZE", chunk_length)
 
         if self.MODE == "DMG":
             self._set_fw_variable("ADDRESS", 0xA000 + address)
@@ -2830,19 +2831,25 @@ class LK_Device(ABC):
             msg = "Cartridge mode must be selected before reading RAM"
             raise RuntimeError(msg)
 
-        for _ in range(num):
-            self._write(command)
-            temp: int | bytearray | Literal[False] = self._read(length)
-            if isinstance(temp, int):
-                temp = bytearray([temp])
-            if temp is False or len(temp) != length:
-                return bytearray()
-            buffer += temp
-            if not self.NO_PROG_UPDATE:
-                self.SetProgress({"action": "READ", "bytes_added": len(temp)})
-
-        if self.MODE == "DMG":
-            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
+        try:
+            for offset in range(0, total_length, max_length):
+                current_length = min(max_length, total_length - offset)
+                if current_length != chunk_length:
+                    self._set_fw_variable("TRANSFER_SIZE", current_length)
+                self._write(command)
+                temp: int | bytearray | Literal[False] = self._read(current_length)
+                if temp is False:
+                    return bytearray()
+                if isinstance(temp, int):
+                    temp = bytearray([temp])
+                if len(temp) != current_length:
+                    return bytearray()
+                buffer += temp
+                if not self.NO_PROG_UPDATE:
+                    self.SetProgress({"action": "READ", "bytes_added": len(temp)})
+        finally:
+            if self.MODE == "DMG":
+                self._set_fw_variable("DMG_READ_CS_PULSE", 0)
 
         return buffer
 
@@ -2913,12 +2920,12 @@ class LK_Device(ABC):
         max_length: int = 256,
     ) -> bool:
         max_length = min(max_length, self.MAX_BUFFER_WRITE)
-        length: int = len(buffer)
-        num: int = math.ceil(length / max_length)
-        dprint(f"Writing 0x{length:X} bytes to cartridge RAM in {num:d} iteration(s)")
-        length = min(length, max_length)
+        total_length = len(buffer)
+        num: int = math.ceil(total_length / max_length)
+        dprint(f"Writing 0x{total_length:X} bytes to cartridge RAM in {num:d} iteration(s)")
+        chunk_length = min(total_length, max_length)
 
-        self._set_fw_variable("TRANSFER_SIZE", length)
+        self._set_fw_variable("TRANSFER_SIZE", chunk_length)
         if self.MODE == "DMG":
             self._set_fw_variable("ADDRESS", 0xA000 + address)
             self._set_fw_variable("DMG_ACCESS_MODE", 4)  # MODE_RAM_WRITE
@@ -2933,16 +2940,21 @@ class LK_Device(ABC):
             msg = "Cartridge mode must be selected before writing RAM"
             raise RuntimeError(msg)
 
-        for i in range(num):
-            self._write(command)
-            self._write(buffer[i * length : i * length + length], wait=True)
-            # self._read(1)
-            if self.INFO["action"] == self.ACTIONS["SAVE_WRITE"] and not self.NO_PROG_UPDATE:
-                self.SetProgress({"action": "WRITE", "bytes_added": length})
-
-        if self.MODE == "DMG":
-            self._set_fw_variable("ADDRESS", 0)
-            self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
+        try:
+            for offset in range(0, total_length, max_length):
+                current_length = min(max_length, total_length - offset)
+                if current_length != chunk_length:
+                    self._set_fw_variable("TRANSFER_SIZE", current_length)
+                self._write(command)
+                acknowledgement = self._write(buffer[offset : offset + current_length], wait=True)
+                if acknowledgement is False:
+                    return False
+                if self.INFO["action"] == self.ACTIONS["SAVE_WRITE"] and not self.NO_PROG_UPDATE:
+                    self.SetProgress({"action": "WRITE", "bytes_added": current_length})
+        finally:
+            if self.MODE == "DMG":
+                self._set_fw_variable("ADDRESS", 0)
+                self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
 
         return True
 
@@ -5672,11 +5684,13 @@ class LK_Device(ABC):
         elif self.MODE == "DMG" and mbc.GetName() == "Xploder GB":
             self.WriteROM_DMG_EEPROM(address=pos, buffer=chunk, bank=bank + 8)
         elif self.MODE == "AGB" and args["save_type"] in (1, 2):  # EEPROM
-            self.WriteRAM(address=int(pos / 8), buffer=chunk, command=command)
+            if self.WriteRAM(address=int(pos / 8), buffer=chunk, command=command) is False:
+                return False
         elif self.MODE == "AGB" and args["save_type"] in (4, 5):  # FLASH
             sector_address = pos % 0x10000
             if agb_flash_chip == 0x1F3D:  # Atmel AT29LV512
-                self.WriteRAM(address=int(pos / 128), buffer=chunk, command=command)
+                if self.WriteRAM(address=int(pos / 128), buffer=chunk, command=command) is False:
+                    return False
             else:
                 dprint(f"Erasing flash save sector; pos=0x{pos:X}, sector_address=0x{sector_address:X}")
                 commands = [
@@ -5713,20 +5727,24 @@ class LK_Device(ABC):
                         return False
                 if chunk != bytearray([0xFF] * buffer_len):
                     if "ereader" in self.INFO and self.INFO["ereader"] is True and sector_address == 0xF000:
-                        self.WriteRAM(
-                            address=pos,
-                            buffer=buffer[buffer_offset : buffer_offset + 0xF80],
-                            command=command,
-                            max_length=0x80,
-                        )
-                    else:
-                        self.WriteRAM(address=pos, buffer=chunk, command=command)
+                        if (
+                            self.WriteRAM(
+                                address=pos,
+                                buffer=buffer[buffer_offset : buffer_offset + 0xF80],
+                                command=command,
+                                max_length=0x80,
+                            )
+                            is False
+                        ):
+                            return False
+                    elif self.WriteRAM(address=pos, buffer=chunk, command=command) is False:
+                        return False
         elif self.MODE == "AGB" and args["save_type"] == 6:  # DACS
             sector_address = pos + 0x1F00000
             if not self._WriteDACSSaveChunk(sector_address, pos, chunk):
                 return False
-        else:
-            self.WriteRAM(address=pos, buffer=chunk, command=command)
+        elif self.WriteRAM(address=pos, buffer=chunk, command=command) is False:
+            return False
         return True
 
     def _HandleIncompleteSaveRead(
