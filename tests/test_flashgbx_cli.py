@@ -70,6 +70,26 @@ def make_cli(tmp_path: Path, args: Namespace | None = None) -> FlashGBX_CLI:
     return FlashGBX_CLI(config)
 
 
+def configure_interactive_run(
+    cli: FlashGBX_CLI,
+    conn: FakeConnection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SimpleNamespace:
+    original_stdout = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: original_stdout)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "_connect_for_action", lambda _args, _actions: True)
+    cli.CONN = conn
+    cli.DEVICE = ("Mock Reader", conn)
+    console = SimpleNamespace(call_count=0)
+
+    def run_console() -> None:
+        console.call_count += 1
+
+    monkeypatch.setattr(cli, "InteractiveConsole", run_console)
+    return console
+
+
 class FakeConnection:
     """Device protocol fake shared by CLI operation tests."""
 
@@ -262,6 +282,62 @@ def test_cli_platform_autodetection_and_required_header_values() -> None:
     assert FlashGBX_CLI._GetHeaderInt({"value": 3}, "value") == 3
     with pytest.raises(TypeError, match="value"):
         FlashGBX_CLI._GetHeaderInt({"value": True}, "value")
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ("", "info"),
+        ("1", "info"),
+        ("3", "interactive"),
+        ("not-a-number", None),
+        ("0", None),
+        ("4", None),
+    ],
+)
+def test_select_menu_action_maps_displayed_positions_and_rejects_invalid_answers(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    answer: str,
+    expected: str | None,
+) -> None:
+    menu_items = [
+        ("info", "Read Information"),
+        ("backup", "Back Up"),
+        ("interactive", "Interactive Console"),
+    ]
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    assert FlashGBX_CLI._SelectMenuAction(menu_items) == expected
+
+    output = capsys.readouterr().out
+    assert "1) Read Information" in output
+    assert "2) Back Up" in output
+    assert "3) Interactive Console" in output
+
+
+def test_print_config_messages_uses_status_colors_and_ignores_malformed_rows(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    FlashGBX_CLI._PrintConfigMessages(
+        [
+            [],
+            [0],
+            ["bad", "wrong status"],
+            [1, 42],
+            [0, "plain"],
+            [1, "warning"],
+            [2, "error"],
+            [3, "ignored status"],
+        ],
+    )
+
+    output = capsys.readouterr().out
+    assert "plain\n" in output
+    assert f"{cli_module.ANSI.YELLOW}warning{cli_module.ANSI.RESET}\n" in output
+    assert f"{cli_module.ANSI.RED}error{cli_module.ANSI.RESET}\n" in output
+    assert "wrong status" not in output
+    assert "ignored status" not in output
 
 
 @pytest.mark.parametrize(
@@ -1204,6 +1280,236 @@ def test_gbxcartrw_firmware_update_retries_serial_port(
 
     assert cli.UpdateFirmwareGBxCartRW(port="first-port") is True
     assert FirmwareUpdater.attempts == 2
+
+
+def test_run_standalone_firmware_action_selects_matching_fake_updater(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="update-matching", device_port="requested-port")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    updater_calls: list[dict[str, object]] = []
+
+    class UnmatchedDevice:
+        def SupportsFirmwareUpdates(self) -> bool:
+            return True
+
+        def FirmwareUpdateAction(self) -> str:
+            return "update-other"
+
+        def CLIUpdaterMethod(self) -> str:
+            return "RunFakeUpdater"
+
+    class MatchingDevice(UnmatchedDevice):
+        def FirmwareUpdateAction(self) -> str:
+            return "update-matching"
+
+    monkeypatch.setattr(
+        cli_module,
+        "HW_DEVICES",
+        [SimpleNamespace(GbxDevice=UnmatchedDevice), SimpleNamespace(GbxDevice=MatchingDevice)],
+    )
+    monkeypatch.setattr(
+        cli,
+        "RunFakeUpdater",
+        lambda **kwargs: updater_calls.append(kwargs),
+        raising=False,
+    )
+
+    assert cli._RunStandaloneAction(args, {"update-matching"}) == 0
+
+    assert updater_calls == [{"port": "requested-port"}]
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+def test_run_standalone_unmatched_firmware_action_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="update-missing")
+    cli = make_cli(tmp_path, args)
+    updater_calls: list[dict[str, object]] = []
+
+    class OtherDevice:
+        def SupportsFirmwareUpdates(self) -> bool:
+            return True
+
+        def FirmwareUpdateAction(self) -> str:
+            return "update-other"
+
+        def CLIUpdaterMethod(self) -> str:
+            return "RunFakeUpdater"
+
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [SimpleNamespace(GbxDevice=OtherDevice)])
+    monkeypatch.setattr(
+        cli,
+        "RunFakeUpdater",
+        lambda **kwargs: updater_calls.append(kwargs),
+        raising=False,
+    )
+
+    assert cli._RunStandaloneAction(args, {"update-missing"}) is None
+    assert updater_calls == []
+
+
+def test_run_canceled_interactive_menu_stops_before_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action=None, mode=None)
+    cli = make_cli(tmp_path, args)
+    original_stdout = sys.stdout
+    monkeypatch.setattr(cli_module, "Logger", lambda: original_stdout)
+    monkeypatch.setattr(cli_module, "HW_DEVICES", [])
+    monkeypatch.setattr(cli, "_SelectMenuAction", lambda _items: None)
+    connection_attempts: list[bool] = []
+    monkeypatch.setattr(
+        cli,
+        "_connect_for_action",
+        lambda _args, _actions: connection_attempts.append(True),
+    )
+
+    assert cli.run() == 0
+
+    assert cli.ARGS["called_with_args"] is False
+    assert connection_attempts == []
+
+
+def test_run_rejects_device_with_no_supported_platforms(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="interactive", mode=None)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.supported_modes = []
+    console = configure_interactive_run(cli, conn, monkeypatch)
+
+    assert cli.run() == 1
+
+    assert console.call_count == 0
+    assert ("close", True) in conn.calls
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+def test_run_uses_only_supported_platform_without_prompting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="interactive", mode=None)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection("DMG")
+    conn.supported_modes = ["DMG"]
+    console = configure_interactive_run(cli, conn, monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("Platform prompt opened")),
+    )
+
+    assert cli.run() == 0
+
+    assert args.mode == "dmg"
+    assert ("mode", "DMG") in conn.calls
+    assert console.call_count == 1
+    assert ("close", True) in conn.calls
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+@pytest.mark.parametrize(
+    ("use_switch", "detected_mode", "expected_arg", "expected_device_mode"),
+    [
+        (True, "unsupported", "agb", "AGB"),
+        (False, "DMG", "dmg", "DMG"),
+    ],
+)
+def test_run_uses_switch_or_device_platform_autodetection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    use_switch: bool,
+    detected_mode: str,
+    expected_arg: str,
+    expected_device_mode: str,
+) -> None:
+    args = make_args(action="interactive", mode=None)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.supported_modes = ["DMG", "AGB"]
+    conn.mode = detected_mode
+    if use_switch:
+        conn.FW["cart_mode_switch"] = True
+        conn.INFO["switch_state"] = 1
+    console = configure_interactive_run(cli, conn, monkeypatch)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("Platform prompt opened")),
+    )
+
+    assert cli.run() == 0
+
+    assert args.mode == expected_arg
+    assert ("mode", expected_device_mode) in conn.calls
+    assert console.call_count == 1
+    assert ("close", True) in conn.calls
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected_arg", "expected_device_mode"),
+    [
+        ("1", "dmg", "DMG"),
+        ("2", "agb", "AGB"),
+        ("", "agb", "AGB"),
+        ("invalid", None, None),
+    ],
+)
+def test_run_platform_prompt_handles_dmg_agb_default_and_invalid_answers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+    expected_arg: str | None,
+    expected_device_mode: str | None,
+) -> None:
+    args = make_args(action="interactive", mode=None)
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    conn.supported_modes = ["DMG", "AGB"]
+    conn.mode = "unsupported"
+    console = configure_interactive_run(cli, conn, monkeypatch)
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    assert cli.run() == 0
+
+    assert args.mode == expected_arg
+    assert console.call_count == (0 if expected_arg is None else 1)
+    if expected_device_mode is None:
+        assert not any(name == "mode" for name, _value in conn.calls)
+    else:
+        assert ("mode", expected_device_mode) in conn.calls
+    assert ("close", True) in conn.calls
+    assert not any(name == "read_header" for name, _value in conn.calls)
+
+
+def test_run_interactive_console_keyboard_interrupt_disconnects_cleanly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="interactive", mode="dmg")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    configure_interactive_run(cli, conn, monkeypatch)
+
+    def interrupt_console() -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "InteractiveConsole", interrupt_console)
+
+    assert cli.run() == 0
+
+    assert ("mode", "DMG") in conn.calls
+    assert ("close", True) in conn.calls
+    assert not any(name == "read_header" for name, _value in conn.calls)
 
 
 def test_run_info_flow_uses_only_mock_connection(
