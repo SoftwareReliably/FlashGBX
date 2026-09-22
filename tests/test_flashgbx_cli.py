@@ -922,6 +922,215 @@ def test_flash_rom_autodetection_failure_does_not_transfer(
     assert conn.transfer_calls == []
 
 
+@pytest.mark.parametrize(
+    ("mode", "logo_correct", "mbc"),
+    [
+        ("DMG", True, 0x19),
+        ("AGB", True, 0),
+        ("DMG", False, 0x203),
+        ("DMG", False, 0x205),
+    ],
+)
+def test_prompt_boot_logo_fix_bypasses_valid_and_exempt_headers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    logo_correct: bool,
+    mbc: int,
+) -> None:
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection(mode)
+
+    def fail_if_prompted(_prompt: str) -> str:
+        pytest.fail("valid and exempt headers must not prompt for a boot-logo fix")
+
+    monkeypatch.setattr("builtins.input", fail_if_prompted)
+
+    assert cli._PromptBootLogoFix({"logo_correct": logo_correct}, mbc) is False
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_prompt_boot_logo_fix_missing_file_returns_false_without_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection(mode)
+    monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
+
+    def fail_if_prompted(_prompt: str) -> str:
+        pytest.fail("a missing boot-logo file must not prompt")
+
+    monkeypatch.setattr("builtins.input", fail_if_prompted)
+
+    assert cli._PromptBootLogoFix({"logo_correct": False}, 0x19) is False
+
+
+@pytest.mark.parametrize(
+    ("mode", "file_name", "read_length", "answer", "accept"),
+    [
+        ("DMG", "bootlogo_dmg.bin", 0x30, "", True),
+        ("DMG", "bootlogo_dmg.bin", 0x30, "n", False),
+        ("AGB", "bootlogo_agb.bin", 0x9C, "y", True),
+        ("AGB", "bootlogo_agb.bin", 0x9C, "n", False),
+    ],
+)
+def test_prompt_boot_logo_fix_reads_exact_platform_length_and_honors_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    file_name: str,
+    read_length: int,
+    answer: str,
+    accept: bool,
+) -> None:
+    source = bytes(range(256)) * 2
+    (tmp_path / file_name).write_bytes(source)
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection(mode)
+    monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    monkeypatch.setattr("builtins.input", lambda _prompt: answer)
+
+    result = cli._PromptBootLogoFix({"logo_correct": False}, 0x19)
+
+    assert result == (bytearray(source[:read_length]) if accept else False)
+
+
+@pytest.mark.parametrize(
+    ("case", "mode", "arg_updates", "header_updates", "expected"),
+    [
+        ("zero-mapper", "DMG", {}, {"mapper_raw": 0}, (0x19, 3, 0)),
+        ("unusable-mapper", "DMG", {}, {"mapper_raw": None}, (0x19, 3, 0)),
+        ("explicit-mapper", "DMG", {"dmg_mbc": "3"}, {}, (0x13, 3, 0)),
+        ("mbc2", "DMG", {}, {"mapper_raw": 0x06}, (0x06, 0x100, 0)),
+        (
+            "mbc7-kirby",
+            "DMG",
+            {},
+            {"mapper_raw": 0x22, "game_title": "KORO2 KIRBYKKKJ"},
+            (0x22, 0x101, 0),
+        ),
+        (
+            "mbc7-command-master",
+            "DMG",
+            {},
+            {"mapper_raw": 0x22, "game_title": "CMASTER_KCEJ"},
+            (0x22, 0x102, 0),
+        ),
+        ("tama5", "DMG", {}, {"mapper_raw": 0xFD}, (0xFD, 0x103, 0)),
+        ("mbc6", "DMG", {}, {"mapper_raw": 0x20}, (0x20, 0x104, 0)),
+        ("dmg-batteryless", "DMG", {"dmg_savetype": "batteryless"}, {}, (0x13, 0x205, 0)),
+        ("agb-auto", "AGB", {}, {"save_type": 4}, (0, 4, 0)),
+        ("agb-explicit", "AGB", {"agb_savetype": "flash1m"}, {}, (0, 5, 0)),
+        ("agb-batteryless", "AGB", {"agb_savetype": "batteryless"}, {}, (0, 9, 0)),
+        ("agb-invalid", "AGB", {"agb_savetype": "unknown"}, {}, None),
+    ],
+    ids=lambda value: value if isinstance(value, str) else None,
+)
+def test_resolve_save_configuration_special_and_explicit_types(
+    tmp_path: Path,
+    case: str,
+    mode: str,
+    arg_updates: dict[str, object],
+    header_updates: dict[str, object],
+    expected: tuple[int, int, int | None] | None,
+) -> None:
+    del case
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection(mode)
+    header = dmg_header() if mode == "DMG" else agb_header()
+    header.update(header_updates)
+
+    assert cli._ResolveSaveConfiguration(make_args(**arg_updates), header) == expected
+
+
+def test_resolve_save_configuration_detects_photo_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection()
+    detected: list[bool] = []
+
+    def detect_cartridge() -> int:
+        detected.append(True)
+        return 7
+
+    monkeypatch.setattr(cli, "DetectCartridge", detect_cartridge)
+
+    assert cli._ResolveSaveConfiguration(make_args(dmg_savetype="photo"), dmg_header()) == (0x13, 0x204, 7)
+    assert detected == [True]
+
+
+@pytest.mark.parametrize("malformed_ram_size", ["missing", "wrong-type"])
+def test_resolve_save_configuration_rejects_malformed_auto_save_metadata(
+    tmp_path: Path,
+    malformed_ram_size: str,
+) -> None:
+    cli = make_cli(tmp_path)
+    cli.CONN = FakeConnection()
+    header = dmg_header()
+    if malformed_ram_size == "missing":
+        del header["ram_size_raw"]
+    else:
+        header["ram_size_raw"] = "invalid"
+
+    assert cli._ResolveSaveConfiguration(make_args(), header) is None
+
+
+def test_backup_restore_ram_forwards_resolved_explicit_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "forwarded.sav"
+    args = make_args(
+        action="backup-save",
+        path=str(path),
+        dmg_mbc="3",
+        dmg_savetype="64k",
+    )
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+
+    assert cli._ResolveSaveConfiguration(args, dmg_header()) == (0x13, 0x02, 0)
+    cli.BackupRestoreRAM(args, dmg_header())
+
+    assert conn.transfer_calls == [
+        {
+            "mode": 2,
+            "path": str(path),
+            "mbc": 0x13,
+            "save_type": 0x02,
+            "rtc": False,
+        },
+    ]
+
+
+@pytest.mark.parametrize("mode", ["UNKNOWN", ""])
+def test_unknown_save_mode_refuses_through_real_backup_restore_caller(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    original = b"unmodified save"
+    path = tmp_path / "refused.sav"
+    path.write_bytes(original)
+    args = make_args(action="restore-save", path=str(path))
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection(mode)
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+
+    assert cli._ResolveSaveConfiguration(args, dmg_header()) is None
+    cli.BackupRestoreRAM(args, dmg_header())
+
+    assert conn.transfer_calls == []
+    assert path.read_bytes() == original
+
+
 def test_backup_restore_ram_covers_backup_restore_and_erase(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
