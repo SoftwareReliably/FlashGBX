@@ -27,6 +27,7 @@ class MemoryIoRecords:
         self.acknowledgements = deque(acknowledgements)
         self.variables: list[tuple[str, int]] = []
         self.writes: list[tuple[int | bytes, bool]] = []
+        self.cart_writes: list[tuple[int, int, bool, bool]] = []
         self.read_counts: list[int] = []
         self.progress: list[dict[str, object]] = []
 
@@ -38,7 +39,7 @@ def install_memory_boundaries(
     read_results: Iterable[int | bytearray | bool] = (),
     acknowledgements: Iterable[int | bool] = (),
 ) -> MemoryIoRecords:
-    """Replace only the low-level boundaries used by ReadRAM and WriteRAM."""
+    """Replace the low-level boundaries used by ordinary RAM and ROM I/O."""
     records = MemoryIoRecords(read_results=read_results, acknowledgements=acknowledgements)
 
     def set_variable(name: str, value: int) -> None:
@@ -58,9 +59,18 @@ def install_memory_boundaries(
         result = records.read_results.popleft()
         return bytearray(result) if isinstance(result, bytearray) else result
 
+    def cart_write(
+        address: int,
+        value: int,
+        flashcart: bool = False,
+        sram: bool = False,
+    ) -> None:
+        records.cart_writes.append((address, value, flashcart, sram))
+
     monkeypatch.setattr(device, "_set_fw_variable", set_variable)
     monkeypatch.setattr(device, "_write", write)
     monkeypatch.setattr(device, "_read", read)
+    monkeypatch.setattr(device, "_cart_write", cart_write)
     monkeypatch.setattr(device, "SetProgress", lambda event: records.progress.append(dict(event)))
     return records
 
@@ -353,3 +363,239 @@ def test_real_save_worker_stops_after_low_level_ram_write_failure(monkeypatch: p
     assert device.INFO["last_action"] == device.ACTIONS["SAVE_WRITE"]
     assert device.INFO["action"] is None
     assert "last_path" not in device.INFO
+
+
+def test_write_rom_rejects_empty_buffer_without_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    records = install_memory_boundaries(device, monkeypatch)
+
+    assert device.WriteROM(address=0x4000, buffer=b"") is False
+    assert records.variables == []
+    assert records.writes == []
+    assert records.cart_writes == []
+    assert records.progress == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "address", "expected_address"),
+    [("DMG", 0x4567, 0x4567), ("AGB", 0x4568, 0x22B4)],
+)
+def test_write_rom_uses_platform_address_and_initializes_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    address: int,
+    expected_address: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = mode
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[1])
+
+    assert device.WriteROM(address=address, buffer=b"ROM!") is None
+    assert records.variables == [("TRANSFER_SIZE", 4), ("ADDRESS", expected_address)]
+    assert records.writes == [
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"ROM!", True),
+    ]
+    assert records.progress == [{"action": "WRITE", "bytes_added": 4, "skipping": False}]
+    assert device.SKIPPING is False
+
+
+def test_write_rom_skip_init_reuses_existing_transfer_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[3])
+
+    assert (
+        device.WriteROM(
+            address=0x4000,
+            buffer=b"ABCD",
+            flash_buffer_size=4,
+            skip_init=True,
+        )
+        is None
+    )
+    assert records.variables == []
+    assert records.writes == [
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"ABCD", True),
+    ]
+
+
+def test_write_rom_tracks_acknowledgements_and_short_final_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.MAX_BUFFER_WRITE = 2
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[1, 3, 1])
+
+    assert device.WriteROM(address=0x4000, buffer=b"ABCDE", max_length=4) is None
+    assert records.variables == [
+        ("TRANSFER_SIZE", 2),
+        ("ADDRESS", 0x4000),
+        ("TRANSFER_SIZE", 1),
+    ]
+    assert records.writes == [
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"AB", True),
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"CD", True),
+        (b"E", True),
+    ]
+    assert records.progress == [
+        {"action": "WRITE", "bytes_added": 2, "skipping": False},
+        {"action": "WRITE", "bytes_added": 2, "skipping": False},
+        {"action": "WRITE", "bytes_added": 1, "skipping": False},
+    ]
+    assert not records.acknowledgements
+
+
+@pytest.mark.parametrize(
+    ("acknowledgements", "failure_iteration"),
+    [([False], 0), ([1, 2], 1)],
+    ids=["timeout", "invalid-later-acknowledgement"],
+)
+def test_write_rom_stops_on_failed_payload_acknowledgement(
+    monkeypatch: pytest.MonkeyPatch,
+    acknowledgements: list[int | bool],
+    failure_iteration: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.MAX_BUFFER_WRITE = 2
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=acknowledgements)
+
+    assert device.WriteROM(address=0x4000, buffer=b"FAIL", max_length=4) is False
+    assert {"iteration": failure_iteration} == device.ERROR_ARGS
+    assert device.SKIPPING is False
+    assert records.writes == [
+        entry
+        for index in range(failure_iteration + 1)
+        for entry in (
+            (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+            (b"FAIL"[index * 2 : index * 2 + 2], True),
+        )
+    ]
+    assert records.progress == [{"action": "WRITE", "bytes_added": 2, "skipping": False}] * failure_iteration
+    assert not records.acknowledgements
+
+
+def test_write_rom_reinitializes_address_after_skipping_erased_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.MAX_BUFFER_WRITE = 2
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[1])
+
+    assert (
+        device.WriteROM(
+            address=0x200,
+            buffer=b"\xff\xffOK",
+            flash_buffer_size=0,
+            max_length=4,
+        )
+        is None
+    )
+    assert records.variables == [
+        ("TRANSFER_SIZE", 2),
+        ("BUFFER_SIZE", 0),
+        ("ADDRESS", 0x101),
+    ]
+    assert records.writes == [
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"OK", True),
+    ]
+    assert records.progress == [
+        {"action": "WRITE", "bytes_added": 2, "skipping": True},
+        {"action": "WRITE", "bytes_added": 2, "skipping": False},
+    ]
+    assert device.SKIPPING is False
+
+
+def test_write_rom_records_trailing_erased_data_as_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.INFO["action"] = device.ACTIONS["ROM_WRITE"]
+    records = install_memory_boundaries(device, monkeypatch)
+
+    assert device.WriteROM(address=0, buffer=b"\xff\xff", flash_buffer_size=0) is None
+    assert records.writes == []
+    assert records.progress == [{"action": "WRITE", "bytes_added": 2, "skipping": True}]
+    assert device.SKIPPING is True
+
+
+def test_write_rom_does_not_skip_erased_data_inside_multi_chunk_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.MAX_BUFFER_WRITE = 2
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[1])
+
+    assert (
+        device.WriteROM(
+            address=0x4000,
+            buffer=b"\xff\xff",
+            flash_buffer_size=4,
+            max_length=4,
+        )
+        is None
+    )
+    assert records.writes == [
+        (device.DEVICE_CMD["FLASH_PROGRAM"], False),
+        (b"\xff\xff", True),
+    ]
+    assert device.SKIPPING is False
+
+
+def test_write_rom_stops_rumble_once_at_completed_flash_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.MAX_BUFFER_WRITE = 2
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[3, 3, 3, 3])
+
+    assert (
+        device.WriteROM(
+            address=0x4000,
+            buffer=b"ABCDEFGH",
+            flash_buffer_size=4,
+            rumble_stop=True,
+            max_length=4,
+        )
+        is None
+    )
+    assert records.cart_writes == [
+        (0xC4, 0, True, False),
+        (0xC6, 0, True, False),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("action", "no_progress"),
+    [(None, False), (GbxDevice.ACTIONS["ROM_WRITE"], True)],
+    ids=["different-action", "updates-disabled"],
+)
+def test_write_rom_suppresses_progress_without_changing_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    action: int | None,
+    no_progress: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.INFO["action"] = action
+    device.NO_PROG_UPDATE = no_progress
+    records = install_memory_boundaries(device, monkeypatch, acknowledgements=[1])
+
+    assert device.WriteROM(address=0x200, buffer=b"OK") is None
+    assert records.writes[-1] == (b"OK", True)
+    assert records.progress == []

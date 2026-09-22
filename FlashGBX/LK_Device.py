@@ -3097,26 +3097,32 @@ class LK_Device(ABC):
         max_length: int = 0x400,
     ) -> bool | None:
         max_length = min(max_length, self.MAX_BUFFER_WRITE)
-        length: int = len(buffer)
-        num: int = math.ceil(length / max_length)
-        dprint(f"Writing 0x{length:X} bytes to Flash ROM in {num:d} iteration(s)")
-        if length == 0:
+        total_length: int = len(buffer)
+        num: int = math.ceil(total_length / max_length)
+        dprint(f"Writing 0x{total_length:X} bytes to Flash ROM in {num:d} iteration(s)")
+        if total_length == 0:
             dprint("Length is zero?")
             return False
-        length = min(length, max_length)
+        chunk_length = min(total_length, max_length)
 
         skip_write = False
         ret = 0
-        num_of_chunks: int = math.ceil(flash_buffer_size / length)
+        num_of_chunks: int = math.ceil(flash_buffer_size / chunk_length)
         pos = 0
+        configure_transfer = not skip_init
 
-        if not skip_init:
-            self._set_fw_variable("TRANSFER_SIZE", length)
+        if configure_transfer:
+            self._set_fw_variable("TRANSFER_SIZE", chunk_length)
             if flash_buffer_size is not False:
                 self._set_fw_variable("BUFFER_SIZE", flash_buffer_size)
 
         for i in range(num):
-            data = bytearray(buffer[i * length : i * length + length])
+            offset = i * chunk_length
+            data = bytearray(buffer[offset : offset + chunk_length])
+            current_length = len(data)
+            if configure_transfer and current_length != chunk_length:
+                self._set_fw_variable("TRANSFER_SIZE", current_length)
+
             if (num_of_chunks == 1 or flash_buffer_size == 0) and (data == bytearray([0xFF] * len(data))):
                 skip_init = False
                 skip_write = True
@@ -3138,7 +3144,7 @@ class LK_Device(ABC):
 
                 if ret not in (0x01, 0x03):
                     dprint(
-                        f"Flash error at 0x{address:X} in iteration {i:d} of {num:d} while trying to write a total of 0x{len(buffer):X} bytes (response = {ret!s:s})",
+                        f"Flash error at 0x{address:X} in iteration {i:d} of {num:d} while trying to write a total of 0x{total_length:X} bytes (response = {ret!s:s})",
                     )
                     self.ERROR_ARGS = {"iteration": i}
                     self.SKIPPING = False
@@ -3150,12 +3156,12 @@ class LK_Device(ABC):
                     self._cart_write(address=0xC6, value=0x00, flashcart=True)
                     rumble_stop = False
 
-            address += length
-            if ((pos % length) * 10 == 0) and (
+            address += current_length
+            if (
                 self.INFO["action"] in (self.ACTIONS["ROM_WRITE"], self.ACTIONS["SAVE_WRITE"])
                 and not self.NO_PROG_UPDATE
             ):
-                self.SetProgress({"action": "WRITE", "bytes_added": length, "skipping": skip_write})
+                self.SetProgress({"action": "WRITE", "bytes_added": current_length, "skipping": skip_write})
 
         self.SKIPPING = skip_write
         return None
