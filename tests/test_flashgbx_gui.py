@@ -802,6 +802,33 @@ def build_save_gui(
     return gui, device
 
 
+def select_detection_save(gui: object, mode: str, save_kind: str) -> None:
+    gui = cast("Any", gui)
+    if mode == "AGB":
+        assert save_kind == "batteryless"
+        gui.cmbAGBSaveTypeResult.setCurrentIndex(9)
+    else:
+        gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(14 if save_kind == "batteryless" else 13)
+
+
+def prepare_save_cartridge(
+    gui: object,
+    operation: str,
+    mode: str,
+    path: str,
+    *,
+    erase: bool = False,
+    test: bool = False,
+) -> bool:
+    gui = cast("Any", gui)
+    if operation == "backup":
+        return cast("bool", gui._prepare_save_backup_cartridge(mode, path))
+    return cast(
+        "bool",
+        gui._prepare_save_write_cartridge(mode, path, erase=erase, test=test),
+    )
+
+
 def configure_camera_calibration(device: FakeDevice) -> tuple[bytes, bytes]:
     calibration1 = bytes(range(0x10, 0x1E))
     calibration2 = bytes(range(0x80, 0x8E))
@@ -2317,6 +2344,267 @@ def test_flash_rom_rejected_voltage_warning_does_not_transfer(
 
     assert not any(name == "flash" for name, _args in device.calls)
     assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("operation", ["backup", "write"])
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_ordinary_save_preparation_bypasses_profile_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    detection = Mock()
+    gui.DetectCartridge = detection
+
+    assert prepare_save_cartridge(gui, operation, mode, str(tmp_path / "ordinary.sav")) is True
+
+    detection.assert_not_called()
+    assert "detected_cart_type" not in gui.STATUS
+    assert device.calls == []
+
+
+@pytest.mark.parametrize(
+    ("operation", "mode", "save_kind", "erase"),
+    [
+        ("backup", "DMG", "batteryless", False),
+        ("backup", "AGB", "batteryless", False),
+        ("backup", "DMG", "photo", False),
+        ("write", "DMG", "batteryless", False),
+        ("write", "AGB", "batteryless", True),
+        ("write", "DMG", "photo", True),
+    ],
+)
+def test_special_save_preparation_starts_profile_detection_with_resume_arguments(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    mode: str,
+    save_kind: str,
+    erase: bool,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    select_detection_save(gui, mode, save_kind)
+    profile_combo = gui.cmbAGBCartridgeTypeResult if mode == "AGB" else gui.cmbDMGCartridgeTypeResult
+    profile_combo.setCurrentIndex(0)
+    detection = Mock()
+    gui.DetectCartridge = detection
+    path = str(tmp_path / f"{operation}-{mode.lower()}.sav")
+
+    assert prepare_save_cartridge(gui, operation, mode, path, erase=erase) is False
+
+    assert gui.STATUS["detected_cart_type"] == ("WAITING_SAVE_READ" if operation == "backup" else "WAITING_SAVE_WRITE")
+    expected_args: dict[str, object] = {"dpath": path}
+    if operation == "write":
+        expected_args["erase"] = erase
+    assert gui.STATUS["detect_cartridge_args"] == expected_args
+    assert gui.STATUS["can_skip_message"] is True
+    detection.assert_called_once_with(checkSaveType=True)
+    assert device.calls == []
+
+
+def test_save_write_test_mode_bypasses_special_profile_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "AGB")
+    select_detection_save(gui, "AGB", "batteryless")
+    gui.cmbAGBCartridgeTypeResult.setCurrentIndex(0)
+    detection = Mock()
+    gui.DetectCartridge = detection
+
+    assert gui._prepare_save_write_cartridge("AGB", "", erase=False, test=True) is True
+
+    detection.assert_not_called()
+    assert "detected_cart_type" not in gui.STATUS
+    assert device.calls == []
+
+
+@pytest.mark.parametrize("operation", ["backup", "write"])
+def test_special_save_preparation_rejects_legacy_firmware_before_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    select_detection_save(gui, "DMG", "batteryless")
+    device.GetFWBuildDate = lambda: ""  # type: ignore[method-assign]
+    detection = Mock()
+    gui.DetectCartridge = detection
+    dialog = SimpleNamespace(exec=Mock(return_value=FakeMessageBox.StandardButton.Ok))
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    assert prepare_save_cartridge(gui, operation, "DMG", "legacy.sav") is False
+
+    dialog.exec.assert_called_once()
+    detection.assert_not_called()
+    assert "detected_cart_type" not in gui.STATUS
+    assert device.calls == []
+
+
+@pytest.mark.parametrize("operation", ["backup", "write"])
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_selected_profile_and_batteryless_metadata_skip_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    select_detection_save(gui, mode, "batteryless")
+    device.INFO["dump_info"] = {
+        "batteryless_sram": {"bl_offset": 0x100000, "bl_size": 0x8000},
+    }
+    detection = Mock()
+    gui.DetectCartridge = detection
+
+    assert prepare_save_cartridge(gui, operation, mode, "selected.sav") is True
+
+    detection.assert_not_called()
+    assert "detected_cart_type" not in gui.STATUS
+    assert device.calls == []
+
+
+@pytest.mark.parametrize("operation", ["backup", "write"])
+@pytest.mark.parametrize("detected", [False, None, 0, "wrong type"])
+def test_save_profile_resumption_rejects_invalid_detection_without_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    detected: object,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    select_detection_save(gui, "DMG", "photo")
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
+    detection = Mock()
+    gui.DetectCartridge = detection
+    critical = Mock(return_value=FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(FakeMessageBox, "critical", critical)
+    path = str(tmp_path / "resume.sav")
+
+    if operation == "backup":
+        gui.BackupRAM(dpath=path)
+        expected_args = {"dpath": path}
+    else:
+        gui.WriteRAM(erase=True)
+        expected_args = {"dpath": "", "erase": True}
+    assert gui.STATUS["detect_cartridge_args"] == expected_args
+
+    gui._ResumeDetectedCartridgeAction(cast("Any", detected))
+
+    detection.assert_called_once_with(checkSaveType=True)
+    assert critical.call_count == (0 if detected is False else 1)
+    assert "detected_cart_type" not in gui.STATUS
+    assert "detect_cartridge_args" not in gui.STATUS
+    assert gui.STATUS["can_skip_message"] is False
+    assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 0
+    assert device.calls == []
+
+
+@pytest.mark.parametrize("operation", ["backup", "write"])
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_save_profile_preparation_accepts_valid_detection_for_each_platform(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    mode: str,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    select_detection_save(gui, mode, "batteryless")
+    profile_combo = gui.cmbAGBCartridgeTypeResult if mode == "AGB" else gui.cmbDMGCartridgeTypeResult
+    profile_combo.setCurrentIndex(0)
+    gui.STATUS["detected_cart_type"] = 1
+
+    assert prepare_save_cartridge(gui, operation, mode, "detected.sav") is True
+
+    assert "detected_cart_type" not in gui.STATUS
+    assert profile_combo.currentIndex() == 1
+    assert device.calls == []
+
+
+def test_backup_save_resumes_once_with_original_destination(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    select_detection_save(gui, "DMG", "photo")
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
+    detection = Mock()
+    gui.DetectCartridge = detection
+    path = str(tmp_path / "detected-backup.sav")
+
+    gui.BackupRAM(dpath=path)
+    assert gui.STATUS["detect_cartridge_args"] == {"dpath": path}
+
+    gui._ResumeDetectedCartridgeAction(1)
+
+    detection.assert_called_once_with(checkSaveType=True)
+    assert device.calls == [
+        (
+            "backup_ram",
+            {
+                "path": path,
+                "mbc": 0x0F,
+                "save_type": 0x204,
+                "rtc": False,
+                "verify_read": True,
+                "cart_type": 1,
+            },
+        ),
+    ]
+    assert gui.STATUS["args"] is device.calls[0][1]
+    assert gui.STATUS["last_path"] == path
+    assert "detected_cart_type" not in gui.STATUS
+    assert "detect_cartridge_args" not in gui.STATUS
+    assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 1
+
+
+def test_erase_save_resumes_once_with_original_operation(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    select_detection_save(gui, "DMG", "photo")
+    gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
+    detection = Mock()
+    gui.DetectCartridge = detection
+
+    gui.WriteRAM(erase=True)
+    assert gui.STATUS["detect_cartridge_args"] == {"dpath": "", "erase": True}
+
+    gui._ResumeDetectedCartridgeAction(1)
+
+    detection.assert_called_once_with(checkSaveType=True)
+    assert device.calls == [
+        (
+            "restore_ram",
+            {
+                "path": "",
+                "mbc": 0x0F,
+                "save_type": 0x204,
+                "rtc": False,
+                "rtc_advance": False,
+                "erase": True,
+                "verify_write": True,
+                "cart_type": 1,
+            },
+        ),
+    ]
+    assert gui.STATUS["args"] is device.calls[0][1]
+    assert gui.STATUS["last_path"] == ""
+    assert "detected_cart_type" not in gui.STATUS
+    assert "detect_cartridge_args" not in gui.STATUS
+    assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 1
 
 
 @pytest.mark.parametrize("mode", ["DMG", "AGB"])

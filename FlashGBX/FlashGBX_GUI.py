@@ -3732,7 +3732,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rtc = False
         path = ""
 
-        if not self._prepare_save_backup_cartridge(mode, path):
+        if not self._prepare_save_backup_cartridge(mode, dpath):
             return
 
         cart_type = 0
