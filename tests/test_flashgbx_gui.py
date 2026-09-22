@@ -347,6 +347,30 @@ class FakeDecisionMessageBox(FakeMessageBox):
         return self._clicked_button
 
 
+class FakeChoiceMessageBox(FakeMessageBox):
+    """Choose a button by insertion order and retain its label."""
+
+    def __init__(self, choice: int = 0, *, exec_result: int | None = None) -> None:
+        super().__init__()
+        self.choice = choice
+        self.exec_result = exec_result
+        self.buttons: list[FakeQtObject] = []
+        self._clicked_button: FakeQtObject | None = None
+
+    def addButton(self, text: str, _role: object) -> FakeQtObject:
+        button = FakeQtObject(text)
+        self.buttons.append(button)
+        return button
+
+    def exec(self) -> int:
+        if 0 <= self.choice < len(self.buttons):
+            self._clicked_button = self.buttons[self.choice]
+        return super().exec() if self.exec_result is None else self.exec_result
+
+    def clickedButton(self) -> FakeQtObject | None:
+        return self._clicked_button
+
+
 class FakeApplication(FakeQtObject):
     _clipboard = FakeQtObject()
 
@@ -915,6 +939,27 @@ def agb_header() -> dict[str, Any]:
         "vast_fame": False,
         "dacs_8m": False,
     }
+
+
+def generated_dmg_rom(base: bytearray, *, mapper: int) -> bytearray:
+    rom = bytearray(0x1000)
+    rom[: len(base)] = base
+    rom[0x147] = mapper
+    checksum = 0
+    for value in rom[0x134:0x14D]:
+        checksum = (checksum - value - 1) & 0xFF
+    rom[0x14D] = checksum
+    return rom
+
+
+def generated_agb_rom(gui_module: ModuleType) -> bytearray:
+    rom = bytearray(0x1000)
+    rom[0xA0:0xAC] = b"TEST GAME".ljust(12, b"\x00")
+    rom[0xAC:0xB0] = b"ABCD"
+    rom[0xB0:0xB2] = b"01"
+    rom[0xB2] = 0x96
+    rom[0xBD] = gui_module.RomFileAGB(rom).CalcChecksumHeader()
+    return rom
 
 
 def test_gui_module_helpers(gui_module: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2065,6 +2110,299 @@ def test_backup_rom_rejected_header_check_never_opens_file_dialog(
     gui.BackupROM()
 
     assert not any(name == "backup_rom" for name, _args in device.calls)
+    assert gui.grpActions.isEnabled() is True
+
+
+@pytest.mark.parametrize("index", [-1, 0])
+def test_cartridge_type_change_clears_cached_profile_for_sentinel_indices(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    index: int,
+) -> None:
+    gui, _device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    mapper_update = Mock()
+    gui.SetDMGMapperResult = mapper_update
+    gui.STATUS["cart_type"] = {"stale": True}
+    original_size = gui.cmbDMGHeaderROMSizeResult.currentIndex()
+
+    gui.CartridgeTypeChanged(index)
+
+    assert gui.STATUS["cart_type"] == {}
+    assert gui.cmbDMGHeaderROMSizeResult.currentIndex() == original_size
+    mapper_update.assert_not_called()
+
+
+def test_cartridge_type_change_ignores_profile_during_detection(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, _device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    mapper_update = Mock()
+    gui.SetDMGMapperResult = mapper_update
+    gui.STATUS["detect_cartridge_args"] = {"dpath": "detected.gb"}
+    gui.cmbDMGHeaderROMSizeResult.setCurrentIndex(0)
+
+    gui.CartridgeTypeChanged(1)
+
+    assert gui.STATUS["cart_type"] == {}
+    assert gui.cmbDMGHeaderROMSizeResult.currentIndex() == 0
+    mapper_update.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("mode", "profile", "expected_size"),
+    [
+        ("DMG", {"flash_size": 0x200000, "mbc": 0x19}, 0x200000),
+        ("DMG", {"mbc": 0x19}, None),
+        ("DMG", {"dmg-mmsa-jpn": True, "flash_size": 0x200000, "mbc": 0x19}, None),
+        ("AGB", {"flash_size": 0x400000}, 0x400000),
+        ("AGB", {}, None),
+    ],
+)
+def test_cartridge_type_change_caches_profile_and_updates_available_fields(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    profile: dict[str, object],
+    expected_size: int | None,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    device.INFO[f"{mode.lower()}_carts"] = (["Generic", "Selected"], [{}, profile])
+    size_combo = gui.cmbDMGHeaderROMSizeResult if mode == "DMG" else gui.cmbAGBHeaderROMSizeResult
+    size_combo.setCurrentIndex(0)
+
+    gui.CartridgeTypeChanged(1)
+
+    assert gui.STATUS["cart_type"] is profile
+    expected_index = 0 if expected_size is None else gui_module.RomSizes().GetIndex(expected_size)
+    assert size_combo.currentIndex() == expected_index
+    if mode == "DMG":
+        assert gui.cmbDMGHeaderMapperResult.currentIndex() == gui_module.ConvertMapperToMapperType(0x19)[2]
+
+
+def test_confirm_flash_mapper_accepts_agb_and_matching_dmg_headers(
+    gui_module: ModuleType,
+    pokemon_red_header: bytearray,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module)
+    monkeypatch.setattr(
+        gui_module,
+        "_create_message_box",
+        Mock(side_effect=AssertionError("Mapper confirmation opened")),
+    )
+
+    agb_result = gui._ConfirmFlashMapper("AGB", generated_agb_rom(gui_module), 0, {})
+    dmg_result = gui._ConfirmFlashMapper(
+        "DMG",
+        generated_dmg_rom(pokemon_red_header, mapper=0x13),
+        0x0F,
+        {},
+    )
+
+    assert agb_result[0:2] == (True, 0)
+    assert agb_result[2]["game_title"] == "TEST GAME"
+    assert dmg_result[0:2] == (True, 0x0F)
+    assert dmg_result[2]["mapper_raw"] == 0x13
+
+
+def test_confirm_flash_mapper_accepts_mbc1_gmmc1_compatible_pair(
+    gui_module: ModuleType,
+    pokemon_red_header: bytearray,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module)
+    monkeypatch.setattr(
+        gui_module,
+        "_create_message_box",
+        Mock(side_effect=AssertionError("Mapper confirmation opened")),
+    )
+
+    result = gui._ConfirmFlashMapper(
+        "DMG",
+        generated_dmg_rom(pokemon_red_header, mapper=0x01),
+        0x105,
+        {},
+    )
+
+    assert result[0:2] == (True, 0x105)
+    assert result[2]["mapper_raw"] == 0x01
+
+
+@pytest.mark.parametrize(
+    ("choice", "expected_continue", "expected_mapper"),
+    [(0, True, 0x20), (1, True, 0x13), (2, False, 0x20)],
+)
+def test_confirm_flash_mapper_manual_choice_selects_mapper_or_cancels(
+    gui_module: ModuleType,
+    pokemon_red_header: bytearray,
+    monkeypatch: pytest.MonkeyPatch,
+    choice: int,
+    expected_continue: bool,
+    expected_mapper: int,
+) -> None:
+    gui = make_gui(gui_module)
+    dialog = FakeChoiceMessageBox(choice)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    result = gui._ConfirmFlashMapper(
+        "DMG",
+        generated_dmg_rom(pokemon_red_header, mapper=0x13),
+        0x20,
+        {"mbc": "manual"},
+    )
+
+    assert result[0:2] == (expected_continue, expected_mapper)
+    assert [button.text() for button in dialog.buttons] == ["MBC6", "MBC3", "&Cancel"]
+    assert result[2]["mapper_raw"] == 0x13
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [(FakeMessageBox.StandardButton.Ok, True), (FakeMessageBox.StandardButton.Cancel, False)],
+)
+def test_confirm_flash_mapper_forced_profile_can_continue_or_cancel(
+    gui_module: ModuleType,
+    pokemon_red_header: bytearray,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    expected: bool,
+) -> None:
+    gui = make_gui(gui_module)
+    warning = Mock(return_value=answer)
+    monkeypatch.setattr(FakeMessageBox, "warning", warning)
+
+    result = gui._ConfirmFlashMapper(
+        "DMG",
+        generated_dmg_rom(pokemon_red_header, mapper=0x13),
+        0x20,
+        {"mbc": 0x20},
+    )
+
+    assert result[0:2] == (expected, 0x20)
+    assert result[2]["mapper_raw"] == 0x13
+    warning.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("mode", "header", "mbc"),
+    [
+        ("AGB", {"logo_correct": True}, 0),
+        ("DMG", {"logo_correct": False}, 0x203),
+        ("DMG", {"logo_correct": False}, 0x205),
+    ],
+)
+def test_confirm_flash_boot_logo_bypasses_valid_and_exempt_headers(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    header: dict[str, bool],
+    mbc: int,
+) -> None:
+    gui = make_gui(gui_module)
+    monkeypatch.setattr(
+        gui_module,
+        "_create_message_box",
+        Mock(side_effect=AssertionError("Boot-logo confirmation opened")),
+    )
+
+    assert gui._ConfirmFlashBootLogo(mode, header, mbc) == (True, False)
+
+
+@pytest.mark.parametrize(("mode", "read_size"), [("DMG", 0x30), ("AGB", 0x9C)])
+def test_confirm_flash_boot_logo_returns_exact_replacement_bytes(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    read_size: int,
+) -> None:
+    gui = make_gui(gui_module)
+    source = bytes(index & 0xFF for index in range(read_size + 17))
+    (tmp_path / f"bootlogo_{mode.lower()}.bin").write_bytes(source)
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    dialog = FakeChoiceMessageBox(0)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    assert gui._ConfirmFlashBootLogo(mode, {"logo_correct": False}, 0) == (
+        True,
+        bytearray(source[:read_size]),
+    )
+
+
+@pytest.mark.parametrize(("choice", "expected"), [(1, (True, False)), (2, (False, False))])
+def test_confirm_flash_boot_logo_can_continue_without_fixing_or_cancel(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    choice: int,
+    expected: tuple[bool, bool],
+) -> None:
+    gui = make_gui(gui_module)
+    (tmp_path / "bootlogo_dmg.bin").write_bytes(bytes(0x30))
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    dialog = FakeChoiceMessageBox(choice)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    assert gui._ConfirmFlashBootLogo("DMG", {"logo_correct": False}, 0) == expected
+
+
+def test_confirm_flash_boot_logo_missing_file_can_continue_without_repair(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module)
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    dialog = FakeChoiceMessageBox(exec_result=FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    assert gui._ConfirmFlashBootLogo("AGB", {"logo_correct": False}, 0) == (True, False)
+
+
+def test_flash_rom_declined_mapper_choice_never_transfers(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pokemon_red_header: bytearray,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    path = tmp_path / "incompatible-mapper.gb"
+    path.write_bytes(generated_dmg_rom(pokemon_red_header, mapper=0x20))
+    monkeypatch.setattr(FakeMessageBox, "question", lambda *_args: FakeMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(FakeMessageBox, "warning", lambda *_args: FakeMessageBox.StandardButton.Cancel)
+
+    gui.FlashROM(dpath=str(path))
+
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert "args" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
+
+
+def test_flash_rom_declined_boot_logo_choice_never_transfers(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pokemon_red_header: bytearray,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    rom = generated_dmg_rom(pokemon_red_header, mapper=0x13)
+    rom[0x104] ^= 0xFF
+    path = tmp_path / "invalid-logo.gb"
+    path.write_bytes(rom)
+    (tmp_path / "bootlogo_dmg.bin").write_bytes(bytes(0x30))
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    monkeypatch.setattr(FakeMessageBox, "question", lambda *_args: FakeMessageBox.StandardButton.Ok)
+    dialog = FakeChoiceMessageBox(2)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    gui.FlashROM(dpath=str(path))
+
+    assert not any(name == "flash" for name, _args in device.calls)
+    assert "args" not in gui.STATUS
     assert gui.grpActions.isEnabled() is True
 
 
