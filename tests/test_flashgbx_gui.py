@@ -313,6 +313,39 @@ class FakeMessageBox(FakeQtObject):
         return cls.next_answer
 
 
+class FakeDecisionMessageBox(FakeMessageBox):
+    """Record custom buttons and return one named user decision."""
+
+    def __init__(self, decision: str | None = None) -> None:
+        super().__init__()
+        self.decision = decision
+        self.buttons: dict[str, FakeQtObject] = {}
+        self.exec_count = 0
+        self._clicked_button: FakeQtObject | None = None
+
+    def addButton(self, text: str, _role: object) -> FakeQtObject:
+        button = FakeQtObject(text)
+        if "Keep existing" in text:
+            name = "keep"
+        elif "Force recalibration" in text:
+            name = "reset"
+        elif "Cancel" in text:
+            name = "cancel"
+        else:
+            name = "overwrite"
+        self.buttons[name] = button
+        return button
+
+    def exec(self) -> int:
+        self.exec_count += 1
+        if self.decision is not None:
+            self._clicked_button = self.buttons[self.decision]
+        return super().exec()
+
+    def clickedButton(self) -> FakeQtObject | None:
+        return self._clicked_button
+
+
 class FakeApplication(FakeQtObject):
     _clipboard = FakeQtObject()
 
@@ -727,6 +760,35 @@ def build_save_gui(
     gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(4)  # 32 KiB SRAM
     gui.cmbAGBSaveTypeResult.setCurrentIndex(3)  # 32 KiB SRAM/FRAM
     return gui, device
+
+
+def configure_camera_calibration(device: FakeDevice) -> tuple[bytes, bytes]:
+    calibration1 = bytes(range(0x10, 0x1E))
+    calibration2 = bytes(range(0x80, 0x8E))
+    device.INFO.update(
+        db=None,
+        dump_info={
+            "header": {
+                "mapper_raw": 0xFC,
+                "logo_correct": True,
+                "header_checksum_correct": True,
+                "empty": False,
+            },
+        },
+        gbcamera_calibration1=calibration1,
+        gbcamera_calibration2=calibration2,
+    )
+    return calibration1, calibration2
+
+
+def configure_ereader_calibration(device: FakeDevice) -> bytes:
+    calibration = bytes([0xA5] * 0x2000)
+    device.INFO.update(db=None, ereader=True, ereader_calibration=calibration)
+    return calibration
+
+
+def patterned_save(size: int = 0x20000) -> bytearray:
+    return bytearray((index * 37 + 11) % 256 for index in range(size))
 
 
 def always_device_alive(setMode: object = False) -> bool:
@@ -2183,6 +2245,254 @@ def test_write_ram_confirmed_erase_dispatches_without_a_file(
             },
         )
     ]
+
+
+@pytest.mark.parametrize("save_kind", ["camera", "ereader"])
+def test_calibration_save_rejects_legacy_firmware(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    save_kind: str,
+) -> None:
+    mode = "DMG" if save_kind == "camera" else "AGB"
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    if save_kind == "camera":
+        configure_camera_calibration(device)
+    else:
+        configure_ereader_calibration(device)
+    monkeypatch.setattr(device, "GetFWBuildDate", lambda: "")
+    dialog = FakeDecisionMessageBox()
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    if save_kind == "camera":
+        result = gui._prepare_camera_save(path="unused.sav", erase=False, test=False)
+    else:
+        result = gui._prepare_ereader_save(path="unused.sav", erase=False)
+
+    assert result == (False, None)
+    assert dialog.exec_count == 1
+    assert dialog.buttons == {}
+
+
+@pytest.mark.parametrize("save_kind", ["camera", "ereader"])
+def test_matching_calibration_skips_decision_and_preserves_entire_save(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    save_kind: str,
+) -> None:
+    mode = "DMG" if save_kind == "camera" else "AGB"
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    original = patterned_save()
+    if save_kind == "camera":
+        calibration1, calibration2 = configure_camera_calibration(device)
+        original[0x4FF2:0x5000] = calibration1
+        original[0x11FF2:0x12000] = calibration2
+    else:
+        calibration = configure_ereader_calibration(device)
+        original[0xD000:0xF000] = calibration
+    path = tmp_path / f"matching-{save_kind}.sav"
+    path.write_bytes(original)
+    dialog = FakeDecisionMessageBox()
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    if save_kind == "camera":
+        result = gui._prepare_camera_save(path=str(path), erase=False, test=False)
+        assert set(dialog.buttons) == {"keep", "reset", "overwrite", "cancel"}
+    else:
+        result = gui._prepare_ereader_save(path=str(path), erase=False)
+        assert set(dialog.buttons) == {"keep", "overwrite", "cancel"}
+
+    assert result == (True, original)
+    assert dialog.exec_count == 0
+
+
+@pytest.mark.parametrize("save_kind", ["camera", "ereader"])
+@pytest.mark.parametrize("decision", ["keep", "overwrite", "cancel"])
+def test_calibration_save_honors_keep_overwrite_and_cancel(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    save_kind: str,
+    decision: str,
+) -> None:
+    mode = "DMG" if save_kind == "camera" else "AGB"
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    original = patterned_save()
+    expected = original.copy()
+    if save_kind == "camera":
+        calibration1, calibration2 = configure_camera_calibration(device)
+        if decision == "keep":
+            expected[0x4FF2:0x5000] = calibration1
+            expected[0x11FF2:0x12000] = calibration2
+    else:
+        calibration = configure_ereader_calibration(device)
+        if decision == "keep":
+            expected[0xD000:0xF000] = calibration
+    path = tmp_path / f"{save_kind}-{decision}.sav"
+    path.write_bytes(original)
+    dialog = FakeDecisionMessageBox(decision)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    if save_kind == "camera":
+        continue_write, buffer = gui._prepare_camera_save(path=str(path), erase=False, test=False)
+    else:
+        continue_write, buffer = gui._prepare_ereader_save(path=str(path), erase=False)
+
+    assert dialog.exec_count == 1
+    if decision == "cancel":
+        assert (continue_write, buffer) == (False, None)
+    else:
+        assert continue_write is True
+        assert buffer == expected
+
+
+def test_camera_calibration_can_be_forced_without_changing_other_bytes(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    configure_camera_calibration(device)
+    original = patterned_save()
+    expected = original.copy()
+    expected[0x4FF2:0x5000] = bytes([0xAA] * 0xE)
+    expected[0x11FF2:0x12000] = bytes([0xAA] * 0xE)
+    path = tmp_path / "camera-reset.sav"
+    path.write_bytes(original)
+    dialog = FakeDecisionMessageBox("reset")
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    continue_write, buffer = gui._prepare_camera_save(path=str(path), erase=False, test=False)
+
+    assert continue_write is True
+    assert buffer == expected
+    assert dialog.exec_count == 1
+
+
+@pytest.mark.parametrize("photo", [False, True])
+def test_camera_erase_uses_photo_layout_and_available_choices(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    photo: bool,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    configure_camera_calibration(device)
+    gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(13 if photo else 4)
+    dialog = FakeDecisionMessageBox("overwrite")
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    continue_write, buffer = gui._prepare_camera_save(path="", erase=True, test=False)
+
+    expected = bytearray(0x20000)
+    if photo:
+        expected.extend([0xFF] * 0xE0000)
+    assert continue_write is True
+    assert buffer == expected
+    assert ("reset" in dialog.buttons) is not photo
+    assert set(dialog.buttons) == (
+        {"keep", "overwrite", "cancel"} if photo else {"keep", "reset", "overwrite", "cancel"}
+    )
+
+
+def test_ereader_erase_can_keep_only_the_protected_calibration_range(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "AGB")
+    calibration = configure_ereader_calibration(device)
+    dialog = FakeDecisionMessageBox("keep")
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    continue_write, buffer = gui._prepare_ereader_save(path="", erase=True)
+
+    expected = bytearray([0xFF] * 0x20000)
+    expected[0xD000:0xF000] = calibration
+    assert continue_write is True
+    assert buffer == expected
+    assert dialog.exec_count == 1
+
+
+@pytest.mark.parametrize("save_kind", ["camera", "ereader"])
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (FakeMessageBox.StandardButton.Yes, True),
+        (FakeMessageBox.StandardButton.No, False),
+    ],
+)
+def test_absent_calibration_warning_can_be_accepted_or_declined(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    save_kind: str,
+    answer: int,
+    expected: bool,
+) -> None:
+    mode = "DMG" if save_kind == "camera" else "AGB"
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    device.INFO["db"] = None
+    warning = Mock(return_value=answer)
+    monkeypatch.setattr(FakeMessageBox, "warning", warning)
+    dialog = FakeDecisionMessageBox()
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    if save_kind == "camera":
+        result = gui._prepare_camera_save(path="unused.sav", erase=False, test=False)
+    else:
+        result = gui._prepare_ereader_save(path="unused.sav", erase=False)
+
+    assert result == (expected, None)
+    warning.assert_called_once()
+    assert dialog.exec_count == 0
+
+
+def test_camera_calibration_test_mode_bypasses_data_and_decision(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    device.INFO["db"] = None
+    read_header = Mock(return_value={})
+    monkeypatch.setattr(device, "ReadHeader", read_header)
+    dialog = FakeDecisionMessageBox()
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    result = gui._prepare_camera_save(path="missing.sav", erase=False, test=True)
+
+    assert result == (True, None)
+    assert set(dialog.buttons) == {"keep", "reset"}
+    assert dialog.exec_count == 0
+    read_header.assert_called_once_with()
+
+
+@pytest.mark.parametrize("save_kind", ["camera", "ereader"])
+def test_write_ram_calibration_refusal_stops_before_transfer(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    save_kind: str,
+) -> None:
+    mode = "DMG" if save_kind == "camera" else "AGB"
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
+    if save_kind == "camera":
+        configure_camera_calibration(device)
+    else:
+        configure_ereader_calibration(device)
+    path = tmp_path / f"refused-{save_kind}.sav"
+    path.write_bytes(patterned_save())
+    dialog = FakeDecisionMessageBox("cancel")
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    gui.WriteRAM(dpath=str(path), skip_warning=True)
+
+    assert dialog.exec_count == 1
+    assert device.calls == []
+    assert "args" not in gui.STATUS
+    assert gui.grpActions.isEnabled() is True
 
 
 @pytest.mark.parametrize("verified", [True, False])
