@@ -347,6 +347,11 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
     if section == "STR":
         _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
 
+    return _compile_translation_messages(messages)
+
+
+def _compile_translation_messages(messages: dict[bytes, bytes]) -> gettext.GNUTranslations:
+    """Build a GNU translation catalog from parsed PO messages."""
     keys: list[bytes] = sorted(messages.keys())
     offsets: list[tuple[int, int, int, int]] = []
     ids = bytearray()
