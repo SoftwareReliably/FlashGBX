@@ -23,10 +23,20 @@ if TYPE_CHECKING:
 class ChecksumMapper:
     """Small mapper double for header and checksum processing."""
 
-    def __init__(self, name: str = "MBC3", checksum: int = 0x1234) -> None:
+    def __init__(
+        self,
+        name: str = "MBC3",
+        checksum: int = 0x1234,
+        *,
+        has_hidden_sector: bool = False,
+        hidden_sector: bytearray | bool = False,
+    ) -> None:
         self.name = name
         self.checksum = checksum
+        self.has_hidden_sector = has_hidden_sector
+        self.hidden_sector = hidden_sector
         self.checksum_inputs: list[bytes] = []
+        self.hidden_sector_reads = 0
 
     def GetName(self) -> str:
         return self.name
@@ -34,6 +44,13 @@ class ChecksumMapper:
     def CalcChecksum(self, buffer: bytearray) -> int:
         self.checksum_inputs.append(bytes(buffer))
         return self.checksum
+
+    def HasHiddenSector(self) -> bool:
+        return self.has_hidden_sector
+
+    def ReadHiddenSector(self) -> bytearray | bool:
+        self.hidden_sector_reads += 1
+        return self.hidden_sector
 
 
 class ReadLoopMapper:
@@ -52,6 +69,50 @@ class ReadLoopMapper:
 
     def GetROMBankSize(self) -> int:
         return self.bank_size
+
+
+class IntegratedROMMapper(ChecksumMapper):
+    """DMG mapper boundary shared by real preparation, reading, and cleanup."""
+
+    def __init__(self, *, bank_size: int, rom_size: int) -> None:
+        super().__init__(checksum=0xBEEF)
+        self.bank_size = bank_size
+        self.rom_size = rom_size
+        self.enable_calls = 0
+        self.requested_sizes: list[int] = []
+        self.reset_requests: list[int] = []
+        self.selected_banks: list[int] = []
+
+    def EnableMapper(self) -> None:
+        self.enable_calls += 1
+
+    def GetROMBanks(self, rom_size: int) -> int:
+        self.requested_sizes.append(rom_size)
+        return (rom_size + self.bank_size - 1) // self.bank_size
+
+    def GetROMBankSize(self) -> int:
+        return self.bank_size
+
+    def GetROMSize(self) -> int:
+        return self.rom_size
+
+    def ResetBeforeBankChange(self, bank: int) -> bool:
+        self.reset_requests.append(bank)
+        return False
+
+    def SelectBankROM(self, bank: int) -> tuple[int, int]:
+        self.selected_banks.append(bank)
+        return bank * self.bank_size, self.bank_size
+
+
+class IntegratedFlashcart:
+    """Bank-selection boundary used by an integrated AGB backup."""
+
+    def __init__(self) -> None:
+        self.selected_banks: list[int] = []
+
+    def SelectBankROM(self, bank: int) -> None:
+        self.selected_banks.append(bank)
 
 
 class FailingClose:
@@ -493,3 +554,293 @@ def test_backup_rom_worker_short_read_then_cancel_closes_empty_output(
     serial_device.reset_output_buffer.assert_called_once_with()
     process_result.assert_not_called()
     reset_state.assert_not_called()
+
+
+def test_process_rom_backup_result_batteryless_read_returns_before_metadata_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.INFO["hidden_sector"] = bytearray(b"stale")
+    device.INFO["dump_info"] = {
+        "gbmem": bytearray(b"stale"),
+        "gbmem_parsed": ["stale"],
+    }
+    mapper = ChecksumMapper(has_hidden_sector=True, hidden_sector=bytearray(0x80))
+    calculate_checksums = Mock(side_effect=AssertionError("Batteryless reads skip result metadata"))
+    monkeypatch.setattr(device, "_CalculateROMChecksums", calculate_checksums)
+    output = io.BytesIO()
+
+    result = device._process_rom_backup_result(
+        {"bl_offset": 0x2000, "path": ""},
+        bytearray(b"batteryless"),
+        output,
+        mapper,
+    )
+
+    assert result is True
+    assert output.closed is False
+    assert mapper.hidden_sector_reads == 0
+    calculate_checksums.assert_not_called()
+    assert device.INFO["hidden_sector"] == bytearray(b"stale")
+    assert device.INFO["dump_info"]["gbmem"] == bytearray(b"stale")
+
+
+@pytest.mark.parametrize("repeated", [False, True], ids=["distinct-halves", "repeated-halves"])
+def test_process_rom_backup_result_clears_stale_map_and_detects_repeated_rom(
+    monkeypatch: pytest.MonkeyPatch,
+    repeated: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.INFO["hidden_sector"] = bytearray(b"stale")
+    device.INFO["dump_info"] = {
+        "gbmem": bytearray(b"stale"),
+        "gbmem_parsed": ["stale"],
+    }
+    mapper = ChecksumMapper(checksum=0xCAFE)
+    first_half = bytearray([0x11] * 0x4000)
+    second_half = first_half if repeated else bytearray([0x22] * 0x4000)
+    buffer = first_half + second_half
+    monkeypatch.setattr(RomFileDMG, "GetDatabaseEntry", lambda _self: None)
+
+    result = device._process_rom_backup_result({"path": ""}, buffer, None, mapper)
+
+    assert result is True
+    assert "hidden_sector" not in device.INFO
+    assert "gbmem" not in device.INFO["dump_info"]
+    assert "gbmem_parsed" not in device.INFO["dump_info"]
+    assert device.INFO["loop_detected"] == (0x4000 if repeated else False)
+    assert device.INFO["rom_checksum_calc"] == 0xCAFE
+    assert mapper.checksum_inputs == [bytes(buffer)]
+    assert_hash_metadata(device, buffer)
+
+
+def test_process_rom_backup_result_hidden_sector_failure_closes_output_and_aborts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.INFO["dump_info"] = {}
+    mapper = ChecksumMapper(has_hidden_sector=True, hidden_sector=False)
+    progress = Mock()
+    monkeypatch.setattr(device, "SetProgress", progress)
+    path = tmp_path / "gb-memory.gb"
+    output = path.open("wb")
+
+    result = device._process_rom_backup_result(
+        {"path": str(path)},
+        bytearray(0x8000),
+        output,
+        mapper,
+    )
+
+    assert result is False
+    assert output.closed is True
+    assert mapper.hidden_sector_reads == 1
+    assert device.CANCEL is True
+    assert device.ERROR is True
+    progress.assert_called_once()
+    assert progress.call_args.args[0]["action"] == "ABORT"
+    assert progress.call_args.args[0]["info_type"] == "msgbox_critical"
+    assert progress.call_args.args[0]["abortable"] is False
+    assert not path.with_suffix(".map").exists()
+    assert mapper.checksum_inputs == []
+
+
+def test_process_rom_backup_result_writes_map_and_only_valid_child_roms(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.INFO["dump_info"] = {}
+    hidden_sector = bytearray(range(0x80))
+    mapper = ChecksumMapper(has_hidden_sector=True, hidden_sector=hidden_sector)
+    buffer = bytearray(index % 251 for index in range(0x8000))
+    valid_header = {"logo_correct": True, "game_title": "VALID"}
+    parsed_map = [
+        {"menu": True},
+        {"header": valid_header, "rom_offset": 0x120, "rom_size": 0x30},
+        {"header": {}, "rom_offset": 0x200, "rom_size": 0x20},
+        {"header": {"logo_correct": False}, "rom_offset": 0x300, "rom_size": 0x20},
+    ]
+    parser = Mock()
+    parser.ParseMapData.return_value = parsed_map
+    parser_factory = Mock(return_value=parser)
+    generate_filename = Mock(return_value="child.gb")
+    monkeypatch.setattr(lk_device_module, "GBMemoryMap", parser_factory)
+    monkeypatch.setattr(lk_device_module, "generate_filename", generate_filename)
+    monkeypatch.setattr(RomFileDMG, "GetDatabaseEntry", lambda _self: None)
+    path = tmp_path / "gb-memory.gb"
+    output = path.open("wb")
+    output.write(buffer)
+    settings = {"naming": "test"}
+
+    result = device._process_rom_backup_result(
+        {"path": str(path), "settings": settings},
+        buffer,
+        output,
+        mapper,
+    )
+
+    assert result is True
+    assert output.closed is True
+    assert path.with_suffix(".map").read_bytes() == hidden_sector
+    assert (tmp_path / "gb-memory - child.gb").read_bytes() == buffer[0x120:0x150]
+    assert sorted(item.name for item in tmp_path.iterdir()) == [
+        "gb-memory - child.gb",
+        "gb-memory.gb",
+        "gb-memory.map",
+    ]
+    parser_factory.assert_called_once_with()
+    parser.ParseMapData.assert_called_once_with(buffer_map=hidden_sector, buffer_rom=buffer)
+    generate_filename.assert_called_once_with(mode="DMG", header=valid_header, settings=settings)
+    assert device.INFO["hidden_sector"] == hidden_sector
+    assert device.INFO["dump_info"]["gbmem"] == hidden_sector
+    assert device.INFO["dump_info"]["gbmem_parsed"] == parsed_map
+    assert mapper.checksum_inputs == [bytes(buffer)]
+    assert_hash_metadata(device, buffer)
+
+
+def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
+    tmp_path: Path,
+    pokemon_red_header: bytearray,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    device.FW = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
+    device.INFO["dump_info"] = {}
+    device.MAX_BUFFER_READ = 0x2000
+    mapper = IntegratedROMMapper(bank_size=0x4000, rom_size=0x8000)
+    first_bank = bytearray([0x11] * 0x4000)
+    first_bank[: len(pokemon_red_header)] = pokemon_red_header
+    second_bank = bytearray([0x22] * 0x4000)
+    expected = first_bank + second_bank
+    read_rom = Mock(side_effect=[first_bank, second_bank])
+    progress: list[dict[str, Any]] = []
+    set_read_method = Mock()
+    auto_poweroff_finish = Mock()
+    mapper_factory = Mock()
+    mapper_factory.return_value.GetInstance.return_value = mapper
+    prepare = Mock(wraps=device._PrepareROMRead)
+    process = Mock(wraps=device._process_rom_backup_result)
+    reset = Mock(wraps=device._ResetROMReadState)
+    monkeypatch.setattr(device, "_require_cartridge_mode", Mock(return_value="DMG"))
+    monkeypatch.setattr(device, "_PrepareBackupFlashcart", Mock(return_value=({}, False)))
+    monkeypatch.setattr(device, "_configure_rom_read_pullups", Mock())
+    monkeypatch.setattr(device, "IsSupportedMbc", Mock(return_value=True))
+    monkeypatch.setattr(device, "_get_fw_variable", Mock(return_value=1))
+    monkeypatch.setattr(device, "_set_fw_variable", Mock())
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+    monkeypatch.setattr(device, "SetDMGReadMethod", set_read_method)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    monkeypatch.setattr(device, "_thread_worker_auto_poweroff_finish", auto_poweroff_finish)
+    monkeypatch.setattr(device, "_PrepareROMRead", prepare)
+    monkeypatch.setattr(device, "_process_rom_backup_result", process)
+    monkeypatch.setattr(device, "_ResetROMReadState", reset)
+    monkeypatch.setattr(lk_device_module, "DMG_Mapper", mapper_factory)
+    monkeypatch.setattr(RomFileDMG, "GetDatabaseEntry", lambda _self: None)
+    path = tmp_path / "two-bank.gb"
+    args = {"path": str(path), "rom_size": 0x8000, "cart_type": 0, "mbc": 1}
+    original_read_method = device.DMG_READ_METHOD
+
+    result = device._BackupROM_Worker(args)
+
+    assert result is True
+    assert path.read_bytes() == expected
+    prepare.assert_called_once_with("DMG", args, {}, False)
+    process.assert_called_once()
+    assert process.call_args.args[1] == expected
+    reset.assert_called_once_with(mapper, {}, False, original_read_method, device.AGB_READ_METHOD)
+    assert mapper.enable_calls == 1
+    assert mapper.requested_sizes == [0x8000]
+    assert mapper.reset_requests == [0, 1, 0]
+    assert mapper.selected_banks == [0, 1, 0]
+    assert read_rom.call_args_list == [
+        call(address=0, length=0x4000, skip_init=False, max_length=0x2000),
+        call(address=0x4000, length=0x4000, skip_init=False, max_length=0x2000),
+    ]
+    set_read_method.assert_called_once_with(original_read_method)
+    auto_poweroff_finish.assert_called_once_with()
+    assert device.INFO["loop_detected"] is False
+    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
+    assert device.INFO["action"] is None
+    assert device.INFO["last_path"] == str(path)
+    assert progress[-1] == {"action": "FINISHED"}
+    assert_hash_metadata(device, expected)
+
+
+def test_backup_rom_worker_integrates_agb_preparation_result_and_reset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
+    device.INFO["dump_info"] = {}
+    device.MAX_BUFFER_READ = 0x2000
+    flashcart = IntegratedFlashcart()
+    cart_type = {
+        "command_set": "AMD",
+        "flash_bank_size": 0x10000,
+        "flash_bank_select_type": 1,
+    }
+    first_bank = bytearray([0x33] * 0x10000)
+    agb_header = make_agb_buffer()
+    first_bank[: len(agb_header)] = agb_header
+    second_bank = bytearray([0x44] * 0x10000)
+    expected = first_bank + second_bank
+    read_rom = Mock(side_effect=[first_bank, second_bank])
+    progress: list[dict[str, Any]] = []
+    set_read_method = Mock()
+    auto_poweroff_finish = Mock()
+    prepare = Mock(wraps=device._PrepareROMRead)
+    process = Mock(wraps=device._process_rom_backup_result)
+    reset = Mock(wraps=device._ResetROMReadState)
+    monkeypatch.setattr(device, "_require_cartridge_mode", Mock(return_value="AGB"))
+    monkeypatch.setattr(device, "_PrepareBackupFlashcart", Mock(return_value=(cart_type, flashcart)))
+    monkeypatch.setattr(device, "_configure_rom_read_pullups", Mock())
+    monkeypatch.setattr(device, "_get_fw_variable", Mock(return_value=2))
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+    monkeypatch.setattr(device, "SetAGBReadMethod", set_read_method)
+    monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
+    monkeypatch.setattr(device, "_thread_worker_auto_poweroff_finish", auto_poweroff_finish)
+    monkeypatch.setattr(device, "_PrepareROMRead", prepare)
+    monkeypatch.setattr(device, "_process_rom_backup_result", process)
+    monkeypatch.setattr(device, "_ResetROMReadState", reset)
+    monkeypatch.setattr(RomFileAGB, "GetDatabaseEntry", lambda _self: None)
+    path = tmp_path / "banked-agb.gba"
+    args = {
+        "path": str(path),
+        "rom_size": 0x20000,
+        "agb_rom_size": 0x20000,
+        "cart_type": 0,
+        "mbc": 0,
+    }
+    original_read_method = device.AGB_READ_METHOD
+
+    result = device._BackupROM_Worker(args)
+
+    assert result is True
+    assert path.read_bytes() == expected
+    prepare.assert_called_once_with("AGB", args, cart_type, flashcart)
+    process.assert_called_once()
+    assert process.call_args.args[1] == expected
+    assert process.call_args.args[3] is None
+    reset.assert_called_once_with(None, cart_type, flashcart, device.DMG_READ_METHOD, original_read_method)
+    assert flashcart.selected_banks == [0, 1, 0]
+    assert read_rom.call_args_list == [
+        call(address=0, length=0x10000, skip_init=False, max_length=0x2000),
+        call(address=0, length=0x10000, skip_init=False, max_length=0x2000),
+    ]
+    set_read_method.assert_called_once_with(original_read_method)
+    auto_poweroff_finish.assert_called_once_with()
+    assert device.INFO["loop_detected"] is False
+    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
+    assert device.INFO["action"] is None
+    assert device.INFO["last_path"] == str(path)
+    assert progress[-1] == {"action": "FINISHED"}
+    assert_hash_metadata(device, expected)
