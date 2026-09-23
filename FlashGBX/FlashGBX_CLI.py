@@ -848,6 +848,71 @@ class FlashGBX_CLI:
         except Exception as e:
             print(__("Error:") + " " + str(e))
 
+    def _FinishBackupROM(self, time_elapsed: float | None, speed: str | None) -> None:
+        self.CONN.INFO["last_action"] = 0
+        self._WriteDumpReport(time_elapsed, speed)
+
+        if self.CONN.GetMode() == "DMG":
+            print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
+            print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
+            if self.CONN.INFO["rom_checksum"] == self.CONN.INFO["rom_checksum_calc"]:
+                print(
+                    ANSI.GREEN
+                    + __("The ROM backup is complete and the checksum was verified successfully!")
+                    + ANSI.RESET,
+                )
+            elif ("DMG-MMSA-JPN" in self.ARGS["argparsed"].flashcart_type) or (
+                "mapper_raw" in self.CONN.INFO and self.CONN.INFO["mapper_raw"] in (0x105, 0x202)
+            ):
+                print(__("The ROM backup is complete!"))
+            else:
+                msg = __("The ROM was dumped, but the checksum is not correct.")
+                if self.CONN.INFO["loop_detected"] is not False:
+                    msg += "\n" + __(
+                        "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                        pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
+                        size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
+                    )
+                else:
+                    msg += "\n" + __(
+                        "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
+                    )
+                print(f"{ANSI.YELLOW:s}{msg:s}{ANSI.RESET:s}")
+        elif self.CONN.GetMode() == "AGB":
+            print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
+            print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
+            if "db" in self.CONN.INFO and self.CONN.INFO["db"] is not None:
+                if self.CONN.INFO["db"]["rc"] == self.CONN.INFO["file_crc32"]:
+                    print(
+                        ANSI.GREEN
+                        + __("The ROM backup is complete and the checksum was verified successfully!")
+                        + ANSI.RESET,
+                    )
+                else:
+                    msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
+                    if self.CONN.INFO["loop_detected"] is not False:
+                        msg += "\n" + __(
+                            "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                            pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
+                            size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
+                        )
+                    else:
+                        msg += "\n" + __(
+                            "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
+                        )
+                    print(ANSI.YELLOW + msg + ANSI.RESET)
+            else:
+                msg = __(
+                    "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
+                )
+                if self.CONN.INFO["loop_detected"] is not False:
+                    msg += "\n" + __(
+                        "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                        pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
+                        size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
+                    )
+                print(ANSI.YELLOW + msg + ANSI.RESET)
+
     def FinishOperation(self) -> None:
         time_elapsed = None
         speed = None
@@ -860,69 +925,7 @@ class FlashGBX_CLI:
             self._FinishFlashROM()
 
         elif self.CONN.INFO["last_action"] == 1:  # Backup ROM
-            self.CONN.INFO["last_action"] = 0
-            self._WriteDumpReport(time_elapsed, speed)
-
-            if self.CONN.GetMode() == "DMG":
-                print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
-                print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
-                if self.CONN.INFO["rom_checksum"] == self.CONN.INFO["rom_checksum_calc"]:
-                    print(
-                        ANSI.GREEN
-                        + __("The ROM backup is complete and the checksum was verified successfully!")
-                        + ANSI.RESET,
-                    )
-                elif ("DMG-MMSA-JPN" in self.ARGS["argparsed"].flashcart_type) or (
-                    "mapper_raw" in self.CONN.INFO and self.CONN.INFO["mapper_raw"] in (0x105, 0x202)
-                ):
-                    print(__("The ROM backup is complete!"))
-                else:
-                    msg = __("The ROM was dumped, but the checksum is not correct.")
-                    if self.CONN.INFO["loop_detected"] is not False:
-                        msg += "\n" + __(
-                            "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                            pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                            size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                        )
-                    else:
-                        msg += "\n" + __(
-                            "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                        )
-                    print(f"{ANSI.YELLOW:s}{msg:s}{ANSI.RESET:s}")
-            elif self.CONN.GetMode() == "AGB":
-                print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
-                print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
-                if "db" in self.CONN.INFO and self.CONN.INFO["db"] is not None:
-                    if self.CONN.INFO["db"]["rc"] == self.CONN.INFO["file_crc32"]:
-                        print(
-                            ANSI.GREEN
-                            + __("The ROM backup is complete and the checksum was verified successfully!")
-                            + ANSI.RESET,
-                        )
-                    else:
-                        msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
-                        if self.CONN.INFO["loop_detected"] is not False:
-                            msg += "\n" + __(
-                                "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                                pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                                size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                            )
-                        else:
-                            msg += "\n" + __(
-                                "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                            )
-                        print(ANSI.YELLOW + msg + ANSI.RESET)
-                else:
-                    msg = __(
-                        "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
-                    )
-                    if self.CONN.INFO["loop_detected"] is not False:
-                        msg += "\n" + __(
-                            "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                            pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                            size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                        )
-                    print(ANSI.YELLOW + msg + ANSI.RESET)
+            self._FinishBackupROM(time_elapsed, speed)
 
         elif self.CONN.INFO["last_action"] == 2:  # Backup RAM
             self._FinishBackupRAM()

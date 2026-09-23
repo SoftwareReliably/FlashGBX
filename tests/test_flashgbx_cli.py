@@ -493,18 +493,22 @@ def test_finish_operation_reports_rom_write_results(
 @pytest.mark.parametrize(
     "case",
     [
-        ("DMG", None, 1, 0x1234, 0x1234, False),
-        ("DMG", None, 1, 0x1234, 0x9999, 0x8000),
-        ("AGB", {"rc": 1}, 1, 0, 0, False),
-        ("AGB", {"rc": 2}, 1, 0, 0, 0x10000),
-        ("AGB", None, 1, 0, 0, False),
+        ("DMG", None, 1, 0x1234, 0x1234, False, None, "checksum was verified", False),
+        ("DMG", None, 1, 0x1234, 0x9999, 0x8000, None, "checksum is not correct", True),
+        ("DMG", None, 1, 0x1234, 0x9999, False, None, "checksum is not correct", False),
+        ("DMG", None, 1, 0x1234, 0x9999, False, 0x105, "ROM backup is complete!", False),
+        ("AGB", {"rc": 1}, 1, 0, 0, False, None, "checksum was verified", False),
+        ("AGB", {"rc": 2}, 1, 0, 0, 0x10000, None, "doesn't match the known database entry", True),
+        ("AGB", {"rc": 2}, 1, 0, 0, False, None, "doesn't match the known database entry", False),
+        ("AGB", None, 1, 0, 0, False, None, "verification was skipped", False),
     ],
 )
 def test_finish_operation_reports_rom_backup_results(
     tmp_path: Path,
-    case: tuple[str, dict[str, int] | None, int, int, int, int | bool],
+    capsys: pytest.CaptureFixture[str],
+    case: tuple[str, dict[str, int] | None, int, int, int, int | bool, int | None, str, bool],
 ) -> None:
-    mode, database, file_crc, rom_checksum, calculated, loop = case
+    mode, database, file_crc, rom_checksum, calculated, loop, mapper_raw, expected_message, expect_loop = case
     cli = make_cli(tmp_path)
     conn = FakeConnection(mode)
     conn.INFO = {
@@ -518,11 +522,18 @@ def test_finish_operation_reports_rom_backup_results(
         "loop_detected": loop,
         "db": database,
     }
+    if mapper_raw is not None:
+        conn.INFO["mapper_raw"] = mapper_raw
     cli.CONN = conn
 
     cli.FinishOperation()
 
     assert conn.INFO["last_action"] == 0
+    output = capsys.readouterr().out
+    assert "CRC32: 00000001" in output
+    assert "SHA-1: sha1" in output
+    assert expected_message in output
+    assert ("A data loop was detected" in output) is expect_loop
 
 
 def test_finish_operation_writes_dump_report_and_save_results(tmp_path: Path) -> None:
