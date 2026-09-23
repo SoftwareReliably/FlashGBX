@@ -553,46 +553,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuTools.addAction("", self.ShowFirmwareUpdateWindow)
         self.mnuTools.actions()[1].setEnabled(False)
 
-    def __init__(self, args: GuiArgs) -> None:
-        sys.excepthook = Logger.exception_hook
-        self._InitializeState(args)
-        self._ConfigureColorScheme()
-
-        QtWidgets.QMainWindow.__init__(self)
-        AppContext.CONFIG_PATH = args["config_path"]
-        AppContext.APP_PATH = args["app_path"]
-
-        self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
-        self.setWindowTitle(f"{AppInfo.NAME:s} {AppInfo.VERSION:s}")
-        # self.setContentsMargins(0, 0, 0, 0)
-        self.TEXT_COLOR = cast(
-            "tuple[int, int, int, int]",
-            QtGui.QPalette().color(QtGui.QPalette.ColorRole.Text).toTuple(),
-        )
-
-        # Create the QtWidgets.QVBoxLayout that lays out the whole form
-        self.main_layout = QtWidgets.QGridLayout()
-        self.layout_left = QtWidgets.QVBoxLayout()
-        self.layout_right = QtWidgets.QVBoxLayout()
-
-        # Cartridge Information GroupBox
-        self.grpDMGCartridgeInfo = self.GuiCreateGroupBoxDMGCartInfo()
-        self.grpAGBCartridgeInfo = self.GuiCreateGroupBoxAGBCartInfo()
-        self.grpAGBCartridgeInfo.setVisible(False)
-        self.layout_left.addWidget(self.grpDMGCartridgeInfo)
-        self.layout_left.addWidget(self.grpAGBCartridgeInfo)
-
-        # Actions
-        self._CreateActionsGroup()
-
-        # Transfer Status
-        self._CreateTransferStatusGroup()
-
-        self.main_layout.addLayout(self.layout_left, 0, 0)
-        self.main_layout.addLayout(self.layout_right, 0, 1)
-
-        self._CreateDeviceAndToolsMenus()
-
+    def _CreateConfigMenu(self) -> None:
         self.mnuConfig = QtWidgets.QMenu()
         self.mnuConfig.addAction("", lambda: [self.EnableUpdateCheck()])
         self.mnuConfig.addAction(
@@ -754,6 +715,48 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.addSeparator()
         self.mnuConfig.addAction("", self.ReEnableMessages)
         self._ApplyConfigMenuSettings()
+
+    def __init__(self, args: GuiArgs) -> None:
+        sys.excepthook = Logger.exception_hook
+        self._InitializeState(args)
+        self._ConfigureColorScheme()
+
+        QtWidgets.QMainWindow.__init__(self)
+        AppContext.CONFIG_PATH = args["config_path"]
+        AppContext.APP_PATH = args["app_path"]
+
+        self.setStyleSheet("QMessageBox { messagebox-text-interaction-flags: 5; }")
+        self.setWindowTitle(f"{AppInfo.NAME:s} {AppInfo.VERSION:s}")
+        # self.setContentsMargins(0, 0, 0, 0)
+        self.TEXT_COLOR = cast(
+            "tuple[int, int, int, int]",
+            QtGui.QPalette().color(QtGui.QPalette.ColorRole.Text).toTuple(),
+        )
+
+        # Create the QtWidgets.QVBoxLayout that lays out the whole form
+        self.main_layout = QtWidgets.QGridLayout()
+        self.layout_left = QtWidgets.QVBoxLayout()
+        self.layout_right = QtWidgets.QVBoxLayout()
+
+        # Cartridge Information GroupBox
+        self.grpDMGCartridgeInfo = self.GuiCreateGroupBoxDMGCartInfo()
+        self.grpAGBCartridgeInfo = self.GuiCreateGroupBoxAGBCartInfo()
+        self.grpAGBCartridgeInfo.setVisible(False)
+        self.layout_left.addWidget(self.grpDMGCartridgeInfo)
+        self.layout_left.addWidget(self.grpAGBCartridgeInfo)
+
+        # Actions
+        self._CreateActionsGroup()
+
+        # Transfer Status
+        self._CreateTransferStatusGroup()
+
+        self.main_layout.addLayout(self.layout_left, 0, 0)
+        self.main_layout.addLayout(self.layout_right, 0, 1)
+
+        self._CreateDeviceAndToolsMenus()
+
+        self._CreateConfigMenu()
 
         self._CreateLanguageMenu()
 
@@ -1040,9 +1043,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.SetStatus4aResult("")
         self.SetDMGPlatformBadge(None)
 
-    def InitWidgetTexts(self) -> None:
-        self._ResetWidgetTexts()
-
+    def _InitCartridgeInfoWidgetTexts(self) -> None:
         # DMG Cartridge Info
         self.grpDMGCartridgeInfo.setTitle(__("Game Boy Cartridge Information"))
         self.lblDMGGameName.setText(__("Game Name:"))
@@ -1068,6 +1069,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblAGBHeaderROMSize.setText(__("ROM Size:"))
         self.lblAGBHeaderSaveType.setText(__("Save Type:"))
         self.lblAGBCartridgeType.setText(__("Profile:"))
+
+    def InitWidgetTexts(self) -> None:
+        self._ResetWidgetTexts()
+
+        self._InitCartridgeInfoWidgetTexts()
 
         # Actions
         self.grpActions.setTitle(__("Functions"))
@@ -1377,16 +1383,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowAGBGameName.setStretch(1, 15)
         group_layout.addLayout(rowAGBGameName)
 
-    def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
-        self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
-        self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
-        group_layout = QtWidgets.QVBoxLayout()
-        group_layout.setContentsMargins(-1, 5, -1, -1)
-        if platform.system() == "Linux":
-            group_layout.setSpacing(4)
-
-        self._CreateAGBGameNameRow(group_layout)
-
+    def _CreateAGBRomTitleAndGameCodeRows(self, group_layout: QtWidgets.QVBoxLayout) -> None:
         rowAGBRomTitle = QtWidgets.QHBoxLayout()
         self.lblAGBRomTitle = QtWidgets.QLabel()
         self.lblAGBRomTitle.setContentsMargins(0, 1, 3, 1)
@@ -1406,6 +1403,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowAGBHeaderGameCodeRevision.setStretch(0, 9)
         rowAGBHeaderGameCodeRevision.setStretch(1, 15)
         group_layout.addLayout(rowAGBHeaderGameCodeRevision)
+
+    def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
+        self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
+        self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
+        group_layout = QtWidgets.QVBoxLayout()
+        group_layout.setContentsMargins(-1, 5, -1, -1)
+        if platform.system() == "Linux":
+            group_layout.setSpacing(4)
+
+        self._CreateAGBGameNameRow(group_layout)
+
+        self._CreateAGBRomTitleAndGameCodeRows(group_layout)
 
         rowAGBGpioRtc = QtWidgets.QHBoxLayout()
         self.lblAGBGpioRtc = QtWidgets.QLabel()
@@ -4585,6 +4594,20 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             msgbox.exec()
 
+    def _WaitForSaveStressTestPowerCycle(self, progress_max: int) -> None:
+        if self._device.CanPowerCycleCart():
+            self._device.CartPowerOff()
+            self.SetProgressBars(min=0, max=progress_max, value=1)
+            for i in range(5, 0, -1):
+                self.lblStatus4a.setText(__("Waiting for power cycle ({countdown})...", countdown=i))
+                qt_app.processEvents()
+                time.sleep(1)
+                if "stresstest_running" not in self.STATUS:
+                    break
+            self._device.CartPowerOn()
+        else:
+            time.sleep(1)
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4620,18 +4643,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             }
             self._RunSaveStressTestTransfer(args)
             save1 = self._device.INFO["data"]
-            if self._device.CanPowerCycleCart():
-                self._device.CartPowerOff()
-                self.SetProgressBars(min=0, max=len(test_patterns) + 3, value=1)
-                for i in range(5, 0, -1):
-                    self.lblStatus4a.setText(__("Waiting for power cycle ({countdown})...", countdown=i))
-                    qt_app.processEvents()
-                    time.sleep(1)
-                    if "stresstest_running" not in self.STATUS:
-                        break
-                self._device.CartPowerOn()
-            else:
-                time.sleep(1)
+            self._WaitForSaveStressTestPowerCycle(len(test_patterns) + 3)
             self.lblStatus4a.setText(__("Testing ({pattern} 2/2)...", pattern=test_patterns_names[0]))
             qt_app.processEvents()
             self._RunSaveStressTestTransfer(args)

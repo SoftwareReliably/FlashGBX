@@ -1671,6 +1671,53 @@ try:
                 "tsb_timeout": 0,
             }
 
+        def _WriteFirmwarePages(
+            self,
+            dev: serial.Serial,
+            fw_buffer: bytearray,
+            iterations: int,
+            fncSetStatus: StatusCallback,
+        ) -> FirmwareUpdateResult | None:
+            for i in range(iterations):
+                self.APP.QT_APP.processEvents()
+                dev.write(b"!")
+                dev.write(fw_buffer[i * 0x40 : i * 0x40 + 0x40])
+                fncSetStatus(
+                    text=__("Updating firmware... Do not unplug the device!"),
+                    setProgress=(i * 0x40 + 0x40) / len(fw_buffer) * 100,
+                )
+                ret = dev.read(1)
+                if ret != b"?":
+                    dev.write(b"?")
+                    dev.flush()
+                    time.sleep(0.00125)
+                    dev.close()
+                    fncSetStatus(
+                        text=__(
+                            "Write Error ({error_value}). Please try again.",
+                            error_value=str(ret),
+                        ),
+                        enableUI=True,
+                    )
+                    msgbox = _message_box(
+                        parent=self,
+                        icon=QtWidgets.QMessageBox.Icon.Critical,
+                        windowTitle=AppInfo.NAME,
+                        text=__(
+                            "The firmware update was not successful (Write Error, {error_value}). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                            error_value=str(ret),
+                        ),
+                        standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
+                        | QtWidgets.QMessageBox.StandardButton.No,
+                        defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+                    )
+                    answer = msgbox.exec()
+                    if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+                        time.sleep(1)
+                        return 3
+                    return 2
+            return None
+
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
             fw_buffer: bytearray = data
             bootloader = self._ConnectBootloader(fncSetStatus)
@@ -1761,44 +1808,9 @@ try:
                         time.sleep(1)
                     return 3 if answer == QtWidgets.QMessageBox.StandardButton.Yes else 2
 
-            for i in range(iterations):
-                self.APP.QT_APP.processEvents()
-                dev.write(b"!")
-                dev.write(fw_buffer[i * 0x40 : i * 0x40 + 0x40])
-                fncSetStatus(
-                    text=__("Updating firmware... Do not unplug the device!"),
-                    setProgress=(i * 0x40 + 0x40) / len(fw_buffer) * 100,
-                )
-                ret = dev.read(1)
-                if ret != b"?":
-                    dev.write(b"?")
-                    dev.flush()
-                    time.sleep(0.00125)
-                    dev.close()
-                    fncSetStatus(
-                        text=__(
-                            "Write Error ({error_value}). Please try again.",
-                            error_value=str(ret),
-                        ),
-                        enableUI=True,
-                    )
-                    msgbox = _message_box(
-                        parent=self,
-                        icon=QtWidgets.QMessageBox.Icon.Critical,
-                        windowTitle=AppInfo.NAME,
-                        text=__(
-                            "The firmware update was not successful (Write Error, {error_value}). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
-                            error_value=str(ret),
-                        ),
-                        standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
-                        | QtWidgets.QMessageBox.StandardButton.No,
-                        defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                    )
-                    answer = msgbox.exec()
-                    if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                        time.sleep(1)
-                        return 3
-                    return 2
+            page_result = self._WriteFirmwarePages(dev, fw_buffer, iterations, fncSetStatus)
+            if page_result is not None:
+                return page_result
             dev.write(b"?")
             dev.flush()
             time.sleep(0.00125)

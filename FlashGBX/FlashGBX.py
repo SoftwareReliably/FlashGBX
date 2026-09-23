@@ -508,42 +508,7 @@ def _add_device_cli_arguments(ap_cli: argparse._ArgumentGroup) -> None:
     )
 
 
-def main(portableMode: bool = False) -> int | None:
-    _configure_platform_environment()
-    AppContext.LAUNCH_TIMESTAMP = time.time()
-
-    app_path, cp, config_path, language_choice, cfgdir_default = _startup_paths(portableMode)
-    init_language(config_path, override=language_choice)
-
-    _print_banner()
-
-    examples = (
-        "\n"
-        + __("Examples")
-        + ":\n"
-        + "  "
-        + __("Backup the ROM of a Game Boy Advance cartridge")
-        + ":\n\tFlashGBX --mode agb --action backup-rom\n\n"
-        + "  "
-        + __("Backup Save Data from a Game Boy cartridge")
-        + ":\n\tFlashGBX --mode dmg --action backup-save\n\n"
-        + "  "
-        + __("Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge")
-        + ":\n\tFlashGBX --mode agb --action flash-rom ROM.gba\n\n"
-        + "  "
-        + __("Extract Game Boy Camera pictures as .png files from a save data file")
-        + ":\n\tFlashGBX --mode dmg --action gbcamera-extract --gbcamera-outfile-format png GAMEBOYCAMERA.sav\n\n"
-        + "  "
-        + __(
-            "Backup a {gb_memory_cartridge} ROM including its hidden sector .map file",
-            gb_memory_cartridge="NP GB-Memory Cartridge",
-        )
-        + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
-    )
-
-    parser = _create_argument_parser(examples)
-    _add_primary_cli_arguments(parser, cp, cfgdir_default)
-
+def _add_optional_cli_arguments(parser: argparse.ArgumentParser) -> None:
     ap_cli2 = parser.add_argument_group(
         c__(
             "Command Line Arguments Category",
@@ -704,6 +669,45 @@ def main(portableMode: bool = False) -> int | None:
         ),
     )
     _add_device_cli_arguments(ap_cli2)
+
+
+def main(portableMode: bool = False) -> int | None:
+    _configure_platform_environment()
+    AppContext.LAUNCH_TIMESTAMP = time.time()
+
+    app_path, cp, config_path, language_choice, cfgdir_default = _startup_paths(portableMode)
+    init_language(config_path, override=language_choice)
+
+    _print_banner()
+
+    examples = (
+        "\n"
+        + __("Examples")
+        + ":\n"
+        + "  "
+        + __("Backup the ROM of a Game Boy Advance cartridge")
+        + ":\n\tFlashGBX --mode agb --action backup-rom\n\n"
+        + "  "
+        + __("Backup Save Data from a Game Boy cartridge")
+        + ":\n\tFlashGBX --mode dmg --action backup-save\n\n"
+        + "  "
+        + __("Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge")
+        + ":\n\tFlashGBX --mode agb --action flash-rom ROM.gba\n\n"
+        + "  "
+        + __("Extract Game Boy Camera pictures as .png files from a save data file")
+        + ":\n\tFlashGBX --mode dmg --action gbcamera-extract --gbcamera-outfile-format png GAMEBOYCAMERA.sav\n\n"
+        + "  "
+        + __(
+            "Backup a {gb_memory_cartridge} ROM including its hidden sector .map file",
+            gb_memory_cartridge="NP GB-Memory Cartridge",
+        )
+        + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
+    )
+
+    parser = _create_argument_parser(examples)
+    _add_primary_cli_arguments(parser, cp, cfgdir_default)
+
+    _add_optional_cli_arguments(parser)
     try:
         parsed_args, _ = parser.parse_known_args()
     except SystemExit:

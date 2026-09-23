@@ -2146,6 +2146,61 @@ def test_abort_and_header_validation_use_mock_device(
     assert gui.CheckHeader() is True
 
 
+@pytest.mark.parametrize(("cancel_after", "expected_count"), [(None, 5), (2, 2)])
+def test_save_stress_test_power_cycle_keeps_countdown_cancellable(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_after: int | None,
+    expected_count: int,
+) -> None:
+    device = Mock()
+    device.CanPowerCycleCart.return_value = True
+    countdown_labels: list[str] = []
+    sleep_calls: list[float] = []
+    event_calls: list[None] = []
+    gui = make_gui(
+        gui_module,
+        CONN=device,
+        STATUS={"stresstest_running": True},
+        lblStatus4a=SimpleNamespace(setText=countdown_labels.append),
+    )
+    gui.SetProgressBars = Mock()
+
+    def process_events() -> None:
+        event_calls.append(None)
+        if cancel_after is not None and len(event_calls) == cancel_after:
+            gui.STATUS.pop("stresstest_running")
+
+    monkeypatch.setattr(gui_module.qt_app, "processEvents", process_events)
+    monkeypatch.setattr(gui_module.time, "sleep", sleep_calls.append)
+
+    gui._WaitForSaveStressTestPowerCycle(progress_max=8)
+
+    device.CartPowerOff.assert_called_once_with()
+    device.CartPowerOn.assert_called_once_with()
+    gui.SetProgressBars.assert_called_once_with(min=0, max=8, value=1)
+    assert countdown_labels == [f"Waiting for power cycle ({i})..." for i in range(5, 5 - expected_count, -1)]
+    assert len(event_calls) == expected_count
+    assert sleep_calls == [1] * expected_count
+
+
+def test_save_stress_test_waits_without_power_cycle_support(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Mock()
+    device.CanPowerCycleCart.return_value = False
+    gui = make_gui(gui_module, CONN=device)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(gui_module.time, "sleep", sleep_calls.append)
+
+    gui._WaitForSaveStressTestPowerCycle(progress_max=8)
+
+    assert sleep_calls == [1]
+    device.CartPowerOff.assert_not_called()
+    device.CartPowerOn.assert_not_called()
+
+
 def test_read_cartridge_populates_dmg_widgets_without_hardware(
     gui_module: ModuleType,
     tmp_path: Path,
