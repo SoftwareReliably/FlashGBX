@@ -3439,6 +3439,49 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         msgbox.setEscapeButton(button_cancel)
         return msgbox.exec() != QtWidgets.QMessageBox.StandardButton.Cancel, False
 
+    def _ConfirmFlashHeaderChecksum(
+        self,
+        mode: PlatformMode,
+        header: Mapping[str, Any],
+        mbc: int,
+    ) -> bool | None:
+        if header["header_checksum_correct"] or not (mode == "AGB" or (mode == "DMG" and mbc not in (0x203, 0x205))):
+            return False
+
+        msg_text = __(
+            "Warning: The ROM file you selected will not boot on actual hardware due to an invalid header checksum (expected {calc} instead of {actual}).",
+            calc=f"0x{header['header_checksum_calc']:02X}",
+            actual=f"0x{header['header_checksum']:02X}",
+        )
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Warning,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=msg_text,
+        )
+        button_fix = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_continue = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_cancel = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Cancel"),
+            QtWidgets.QMessageBox.ButtonRole.RejectRole,
+        )
+        msgbox.setDefaultButton(button_fix)
+        msgbox.setEscapeButton(button_cancel)
+        msgbox.exec()
+        if msgbox.clickedButton() == button_fix:
+            return True
+        if msgbox.clickedButton() == button_cancel:
+            return None
+        if msgbox.clickedButton() == button_continue:
+            return False
+        return False
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3526,39 +3569,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if not continue_write:
                 return
 
-            if not hdr["header_checksum_correct"] and (mode == "AGB" or (mode == "DMG" and mbc not in (0x203, 0x205))):
-                msg_text = __(
-                    "Warning: The ROM file you selected will not boot on actual hardware due to an invalid header checksum (expected {calc} instead of {actual}).",
-                    calc=f"0x{hdr['header_checksum_calc']:02X}",
-                    actual=f"0x{hdr['header_checksum']:02X}",
-                )
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Warning,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=msg_text,
-                )
-                button_1 = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&Fix and Continue"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-                button_2 = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "Continue &without fixing"),
-                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                )
-                button_cancel = msgbox.addButton(
-                    c__("Button (& = Keyboard Shortcut)", "&Cancel"),
-                    QtWidgets.QMessageBox.ButtonRole.RejectRole,
-                )
-                msgbox.setDefaultButton(button_1)
-                msgbox.setEscapeButton(button_cancel)
-                msgbox.exec()
-                if msgbox.clickedButton() == button_1:
-                    fix_header = True
-                elif msgbox.clickedButton() == button_cancel:
-                    return
-                elif msgbox.clickedButton() == button_2:
-                    pass
+            checksum_fix = self._ConfirmFlashHeaderChecksum(mode, hdr, mbc)
+            if checksum_fix is None:
+                return
+            fix_header = checksum_fix
 
         flash_offset = 0
         force_wr_pullup = str(self.SETTINGS.value("ForceWrPullup", default="disabled")).lower() == "enabled"
@@ -5042,6 +5056,64 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 rtc_dict[key] = value.isChecked()
         return rtc_dict
 
+    def _EditAgbRTC(self, rtc_data: Mapping[str, Any]) -> dict[str, Any] | None:
+        dlg_args = {
+            "title": __("GBA Real Time Clock Editor"),
+            "intro": __("Enter the date and time for the Real Time Clock.")
+            + "\n\n"
+            + __(
+                "Please note that all values are internal values. The game may use these only as a relative reference.",
+            ),
+            "params": [
+                ["rtc_y", "spb", c__("Real Time Clock Setting", "Year:"), (2000, 2099), rtc_data["rtc_y"] + 2000],
+                ["rtc_m", "spb", c__("Real Time Clock Setting", "Month:"), (1, 12), rtc_data["rtc_m"]],
+                ["rtc_d", "spb", c__("Real Time Clock Setting", "Day:"), (1, 31), rtc_data["rtc_d"]],
+                ["rtc_h", "spb", c__("Real Time Clock Setting", "Hours:"), (0, 23), rtc_data["rtc_h"]],
+                ["rtc_i", "spb", c__("Real Time Clock Setting", "Minutes:"), (0, 59), rtc_data["rtc_i"]],
+                ["rtc_s", "spb", c__("Real Time Clock Setting", "Seconds:"), (0, 59), rtc_data["rtc_s"]],
+                [
+                    "rtc_w",
+                    "cmb",
+                    c__("Real Time Clock Setting", "Weekday:"),
+                    [__(day) for day in list(calendar.day_name)],
+                    rtc_data["rtc_w"],
+                ],
+                [
+                    "current",
+                    "chk",
+                    c__("Real Time Clock Setting", "Ignore above values and use the system time instead"),
+                    None,
+                    False,
+                ],
+            ],
+        }
+        dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return None
+
+        result = dlg.GetResult()
+        rtc_dict = {}
+        for key, value in result.items():
+            if isinstance(value, QtWidgets.QSpinBox):
+                rtc_dict[key] = value.value()
+            elif isinstance(value, QtWidgets.QComboBox):
+                rtc_dict[key] = value.currentIndex()
+        if result["current"].isChecked():
+            dt = datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=1)
+            rtc_dict.update(
+                {
+                    "rtc_y": dt.year,
+                    "rtc_m": dt.month,
+                    "rtc_d": dt.day,
+                    "rtc_w": dt.weekday(),
+                    "rtc_h": dt.hour,
+                    "rtc_i": dt.minute,
+                    "rtc_s": dt.second,
+                },
+            )
+        rtc_dict["rtc_y"] -= 2000
+        return {"rtc_dict": rtc_dict}
+
     def EditRTC(self, _: QtGui.QMouseEvent) -> bool | None:
         if not self.CheckDeviceAlive() or not self.CheckHeader():
             return None
@@ -5283,102 +5355,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     return False
 
         elif self._device.GetMode() == "AGB":
-            dlg_args = {
-                "title": __("GBA Real Time Clock Editor"),
-                "intro": __("Enter the date and time for the Real Time Clock.")
-                + "\n\n"
-                + __(
-                    "Please note that all values are internal values. The game may use these only as a relative reference.",
-                ),
-                "params": [
-                    # ID, Type, Value(s), Default Index
-                    [
-                        "rtc_y",
-                        "spb",
-                        c__("Real Time Clock Setting", "Year:"),
-                        (2000, 2099),
-                        rtc_data["rtc_y"] + 2000,
-                    ],
-                    [
-                        "rtc_m",
-                        "spb",
-                        c__("Real Time Clock Setting", "Month:"),
-                        (1, 12),
-                        rtc_data["rtc_m"],
-                    ],
-                    [
-                        "rtc_d",
-                        "spb",
-                        c__("Real Time Clock Setting", "Day:"),
-                        (1, 31),
-                        rtc_data["rtc_d"],
-                    ],
-                    [
-                        "rtc_h",
-                        "spb",
-                        c__("Real Time Clock Setting", "Hours:"),
-                        (0, 23),
-                        rtc_data["rtc_h"],
-                    ],
-                    [
-                        "rtc_i",
-                        "spb",
-                        c__("Real Time Clock Setting", "Minutes:"),
-                        (0, 59),
-                        rtc_data["rtc_i"],
-                    ],
-                    [
-                        "rtc_s",
-                        "spb",
-                        c__("Real Time Clock Setting", "Seconds:"),
-                        (0, 59),
-                        rtc_data["rtc_s"],
-                    ],
-                    [
-                        "rtc_w",
-                        "cmb",
-                        c__("Real Time Clock Setting", "Weekday:"),
-                        [__(d) for d in list(calendar.day_name)],
-                        rtc_data["rtc_w"],
-                    ],
-                    [
-                        "current",
-                        "chk",
-                        c__(
-                            "Real Time Clock Setting",
-                            "Ignore above values and use the system time instead",
-                        ),
-                        None,
-                        False,
-                    ],
-                ],
-            }
-            dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
-            if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-                result = dlg.GetResult()
-                rtc_dict = {}
-                for key, value in result.items():
-                    if isinstance(value, QtWidgets.QSpinBox):
-                        rtc_dict[key] = value.value()
-                    elif isinstance(value, QtWidgets.QComboBox):
-                        rtc_dict[key] = value.currentIndex()
-                if result["current"].isChecked():
-                    dt = datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=1)
-                    rtc_dict.update(
-                        {
-                            "rtc_y": dt.year,
-                            "rtc_m": dt.month,
-                            "rtc_d": dt.day,
-                            "rtc_w": dt.weekday(),
-                            "rtc_h": dt.hour,
-                            "rtc_i": dt.minute,
-                            "rtc_s": dt.second,
-                        },
-                    )
-                rtc_dict["rtc_y"] -= 2000
-                mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
-                args = {"rtc_dict": rtc_dict}
-            else:
+            args = self._EditAgbRTC(rtc_data)
+            if args is None:
                 return False
 
         if args is None:
@@ -6780,6 +6758,33 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if "method" in args:
             self._UpdateProgressMethodTitle(args)
 
+    def _UpdateTransferProgress(
+        self,
+        args: Mapping[str, Any],
+    ) -> None:
+        pos = args.get("pos", 0)
+        size = args.get("size", 0)
+        speed = args.get("speed", 0)
+        left = args.get("time_left", 0)
+        elapsed = args.get("time_elapsed", 0)
+        self.SetProgressBars(min=0, max=size, value=pos)
+        self.btnCancel.setEnabled(args.get("abortable", True))
+        self.lblStatus1aResult.setText(f"{Formatter.file_size(pos):s}")
+        if speed > 0:
+            self.lblStatus2aResult.setText(format_decimal(speed, precision=2) + __(" KiB/s"))
+        else:
+            self.lblStatus2aResult.setText(__("Pending..."))
+        if left > 0:
+            self.SetStatus4aResult(Formatter.progress_time(left))
+        else:
+            self.SetStatus4aResult(__("Pending..."))
+        if elapsed > 0:
+            self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
+
+        if speed == 0 and "skipping" in args and args["skipping"] is True:
+            self.SetStatus4aResult(__("Pending..."))
+        self.lblStatus4a.setText(__("Time left:"))
+
     def UpdateProgress(self, args: Mapping[str, Any] | None) -> None:
         if args is None or self.CONN is None:
             return
@@ -6794,10 +6799,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         pos = args.get("pos", 0)
         size = args.get("size", 0)
-        speed = args.get("speed", 0)
         elapsed = args.get("time_elapsed", 0)
-        left = args.get("time_left", 0)
         estimated = args.get("time_estimated", 0)
+
+        if args.get("action") == "PROGRESS":
+            self._UpdateTransferProgress(args)
+            return
 
         if "action" in args:
             if args["action"] == "ERASE":
@@ -6882,25 +6889,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
-
-            elif args["action"] == "PROGRESS":
-                self.SetProgressBars(min=0, max=size, value=pos)
-                self.btnCancel.setEnabled(args.get("abortable", True))
-                self.lblStatus1aResult.setText(f"{Formatter.file_size(pos):s}")
-                if speed > 0:
-                    self.lblStatus2aResult.setText(format_decimal(speed, precision=2) + __(" KiB/s"))
-                else:
-                    self.lblStatus2aResult.setText(__("Pending..."))
-                if left > 0:
-                    self.SetStatus4aResult(Formatter.progress_time(left))
-                else:
-                    self.SetStatus4aResult(__("Pending..."))
-                if elapsed > 0:
-                    self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
-
-                if speed == 0 and "skipping" in args and args["skipping"] is True:
-                    self.SetStatus4aResult(__("Pending..."))
-                self.lblStatus4a.setText(__("Time left:"))
 
     def SetStatus4aResult(self, text: str) -> None:
         if text:

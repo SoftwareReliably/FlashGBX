@@ -1808,17 +1808,13 @@ class FlashGBX_CLI:
         print(__("Canceled."))
         return False
 
-    def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
-        del header
-        mbc = 0
-
-        mode = self.CONN.GetMode()
-        if mode not in ("DMG", "AGB"):
-            return
-        carts = self.CONN.GetSupportedCartridgesDMG()[1] if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()[1]
-
+    def _SelectFlashCartType(
+        self,
+        args: argparse.Namespace,
+        carts: Sequence[Mapping[str, Any]],
+        mode: PlatformMode,
+    ) -> int | None:
         cart_type = 0
-
         for i in range(len(carts)):
             if "names" not in carts[i] or carts[i]["type"] != mode:
                 continue
@@ -1831,7 +1827,6 @@ class FlashGBX_CLI:
                 )
                 cart_type = i
                 break
-
         if cart_type <= 0 and args.flashcart_type == "autodetect":
             cart_type = self.DetectCartridge()
             if cart_type is None:
@@ -1855,9 +1850,9 @@ class FlashGBX_CLI:
                     + msg_5v
                     + ANSI.RESET,
                 )
-                return
+                return None
             if cart_type < 0:
-                return
+                return None
         elif cart_type == 0 and args.flashcart_type != "autodetect":
             print(
                 ANSI.RED
@@ -1868,6 +1863,20 @@ class FlashGBX_CLI:
                 )
                 + ANSI.RESET,
             )
+            return None
+        return cart_type
+
+    def FlashROM(self, args: argparse.Namespace, header: HeaderData) -> None:
+        del header
+        mbc = 0
+
+        mode = self.CONN.GetMode()
+        if mode not in ("DMG", "AGB"):
+            return
+        carts = self.CONN.GetSupportedCartridgesDMG()[1] if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()[1]
+
+        cart_type = self._SelectFlashCartType(args, carts, mode)
+        if cart_type is None:
             return
 
         if args.path == "auto":
