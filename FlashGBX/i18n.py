@@ -274,6 +274,19 @@ def _parse_po_value(value_source: str, filename: Path) -> bytes:
     return value.encode()
 
 
+def _parse_msgstr_value(line: str, is_plural: bool) -> str:
+    if line.startswith("msgstr["):
+        if not is_plural:
+            msg = "Plural msgstr found without msgid_plural"
+            raise ValueError(msg)
+        return line.split("]", 1)[1].strip()
+
+    if is_plural:
+        msg = "Non-indexed msgstr found for plural"
+        raise ValueError(msg)
+    return line[6:].strip()
+
+
 def loadTranslation(language: str) -> gettext.GNUTranslations:
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
     messages: dict[bytes, bytes] = {}
@@ -323,18 +336,10 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
                 value_source = line[12:].strip()
             elif line.startswith("msgstr"):
                 section = "STR"
-                if line.startswith("msgstr["):
-                    if not is_plural:
-                        msg = "Plural msgstr found without msgid_plural"
-                        raise ValueError(msg)
-                    value_source = line.split("]", 1)[1].strip()
-                    if msgstr:
-                        msgstr += b"\0"
-                else:
-                    if is_plural:
-                        msg = "Non-indexed msgstr found for plural"
-                        raise ValueError(msg)
-                    value_source = line[6:].strip()
+                plural_entry = line.startswith("msgstr[")
+                value_source = _parse_msgstr_value(line, is_plural)
+                if plural_entry and msgstr:
+                    msgstr += b"\0"
 
             encoded_value = _parse_po_value(value_source, filename)
 

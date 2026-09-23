@@ -2142,6 +2142,110 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
 
+    def _complete_device_connection(self, dev: LK_Device, msg: str) -> bool:
+        self.CONN = dev
+        dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
+        self.SetAutoPowerOff()
+        self.SetDMGReadMethod()
+        self.SetAGBReadMethod()
+        self.mnuConfig.actions()[5].setVisible(self._IsGBxCartRWDevice(self._device))  # GBxCart RW baud rate
+        self.mnuConfig.actions()[8].setVisible(
+            self._device.CanPowerCycleCart() and self._device.CanPowerCycleCart() and self._device.FW["fw_ver"] >= 12,
+        )  # Auto Power Off
+        self.mnuConfig.actions()[9].setVisible(
+            self._device.FW["fw_ver"] >= 12,
+        )  # Skip writing matching ROM chunks
+        self.mnuConfig.actions()[10].setVisible(self._device.DEVICE_NAME == "Joey Jr")  # Force WR Pullup
+        self.mnuConfigReadModeAGB.setEnabled(self._device.FW["fw_ver"] >= 12)
+        self.mnuConfigReadModeDMG.setEnabled(self._device.FW["fw_ver"] >= 12)
+        self.UpdateThirdPartySupportAction()
+
+        cast("Any", self._device).SetTimeout(float(str(self.SETTINGS.value("SerialTimeout", default="1"))))
+        self.optDMG.setAutoExclusive(False)
+        self.optAGB.setAutoExclusive(False)
+        device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+        if "DMG" in self._device.GetSupprtedModes():
+            self.optDMG.setEnabled(not device_auto_switch_only)
+            self.optDMG.setChecked(False)
+        if "AGB" in self._device.GetSupprtedModes():
+            self.optAGB.setEnabled(not device_auto_switch_only)
+            self.optAGB.setChecked(False)
+        self.optAGB.setAutoExclusive(True)
+        self.optDMG.setAutoExclusive(True)
+        if len(self._device.GetSupprtedModes()) == 2:
+            self.lblStatus4a.setText(__("Ready. Please select Platform Mode."))
+        else:
+            self.lblStatus4a.setText(__("Ready."))
+        self.btnConnect.setText(c__("Button (& = Keyboard Shortcut)", "&Disconnect"))
+        self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
+        if dev.GetFWBuildDate() == "":
+            self.lblDevice.setText(dev.GetFullNameLabel() + " [" + __("Legacy Mode") + "]")
+        else:
+            self.lblDevice.setText(dev.GetFullNameLabel())
+        print(
+            "\n"
+            + __(
+                "Connected to {device_name}",
+                device_name=dev.GetFullNameExtended(more=True),
+            ),
+        )
+        self.grpActions.setEnabled(True)
+        self.mnuTools.setEnabled(True)
+        self.mnuConfig.setEnabled(True)
+        self.mnuLanguage.setEnabled(True)
+        self.btnCancel.setEnabled(False)
+
+        # Firmware Update Menu
+        self.mnuTools.actions()[3].setEnabled(True)
+        supports_firmware_updates = self._device.SupportsFirmwareUpdates()
+        if supports_firmware_updates is False:
+            self.mnuTools.actions()[3].setEnabled(False)
+
+        # Interactive Console Menu
+        self.mnuTools.actions()[1].setEnabled(self._device.GetMode() is not None)
+
+        self.SetProgressBars(min=0, max=1, value=0)
+
+        if self._device.GetMode() == "DMG":
+            self.cmbDMGCartridgeTypeResult.clear()
+            self.cmbDMGCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesDMG()[0])
+            self.grpAGBCartridgeInfo.setVisible(False)
+            self.grpDMGCartridgeInfo.setVisible(True)
+        elif self._device.GetMode() == "AGB":
+            self.cmbAGBCartridgeTypeResult.clear()
+            self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
+            self.grpDMGCartridgeInfo.setVisible(False)
+            self.grpAGBCartridgeInfo.setVisible(True)
+
+        print(msg, end="")
+
+        self._HandleFirmwareUpdate(dev, supported=supports_firmware_updates)
+
+        if dev.IsUnregistered():
+            try:
+                text = cast("Any", dev).GetRegisterInformation()
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    text,
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+            except Exception:
+                logger.exception("Failed to display device registration information")
+
+        if self.CONN is None:
+            return False
+
+        modes = cast("Sequence[PlatformMode]", self._device.GetSupprtedModes())
+        auto_mode = self._GetAutoPlatformMode(self.CONN, modes)
+        if auto_mode == "DMG":
+            self.optDMG.setChecked(True)
+            self.SetMode()
+        elif auto_mode == "AGB":
+            self.optAGB.setChecked(True)
+            self.SetMode()
+        return True
+
     def ConnectDevice(self) -> bool | None:
         if self.CONN is not None:
             self.DisconnectDevice()
@@ -2182,112 +2286,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 return False
 
         if dev.IsConnected():
-            self.CONN = dev
-            dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
-            self.SetAutoPowerOff()
-            self.SetDMGReadMethod()
-            self.SetAGBReadMethod()
-            self.mnuConfig.actions()[5].setVisible(self._IsGBxCartRWDevice(self._device))  # GBxCart RW baud rate
-            self.mnuConfig.actions()[8].setVisible(
-                self._device.CanPowerCycleCart()
-                and self._device.CanPowerCycleCart()
-                and self._device.FW["fw_ver"] >= 12,
-            )  # Auto Power Off
-            self.mnuConfig.actions()[9].setVisible(
-                self._device.FW["fw_ver"] >= 12,
-            )  # Skip writing matching ROM chunks
-            self.mnuConfig.actions()[10].setVisible(self._device.DEVICE_NAME == "Joey Jr")  # Force WR Pullup
-            self.mnuConfigReadModeAGB.setEnabled(self._device.FW["fw_ver"] >= 12)
-            self.mnuConfigReadModeDMG.setEnabled(self._device.FW["fw_ver"] >= 12)
-            self.UpdateThirdPartySupportAction()
-
-            cast("Any", self._device).SetTimeout(float(str(self.SETTINGS.value("SerialTimeout", default="1"))))
-            self.optDMG.setAutoExclusive(False)
-            self.optAGB.setAutoExclusive(False)
-            device_auto_switch_only = (
-                self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
-            )
-            if "DMG" in self._device.GetSupprtedModes():
-                self.optDMG.setEnabled(not device_auto_switch_only)
-                self.optDMG.setChecked(False)
-            if "AGB" in self._device.GetSupprtedModes():
-                self.optAGB.setEnabled(not device_auto_switch_only)
-                self.optAGB.setChecked(False)
-            self.optAGB.setAutoExclusive(True)
-            self.optDMG.setAutoExclusive(True)
-            if len(self._device.GetSupprtedModes()) == 2:
-                self.lblStatus4a.setText(__("Ready. Please select Platform Mode."))
-            else:
-                self.lblStatus4a.setText(__("Ready."))
-            self.btnConnect.setText(c__("Button (& = Keyboard Shortcut)", "&Disconnect"))
-            self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
-            if dev.GetFWBuildDate() == "":
-                self.lblDevice.setText(dev.GetFullNameLabel() + " [" + __("Legacy Mode") + "]")
-            else:
-                self.lblDevice.setText(dev.GetFullNameLabel())
-            print(
-                "\n"
-                + __(
-                    "Connected to {device_name}",
-                    device_name=dev.GetFullNameExtended(more=True),
-                ),
-            )
-            self.grpActions.setEnabled(True)
-            self.mnuTools.setEnabled(True)
-            self.mnuConfig.setEnabled(True)
-            self.mnuLanguage.setEnabled(True)
-            self.btnCancel.setEnabled(False)
-
-            # Firmware Update Menu
-            self.mnuTools.actions()[3].setEnabled(True)
-            supports_firmware_updates = self._device.SupportsFirmwareUpdates()
-            if supports_firmware_updates is False:
-                self.mnuTools.actions()[3].setEnabled(False)
-
-            # Interactive Console Menu
-            self.mnuTools.actions()[1].setEnabled(self._device.GetMode() is not None)
-
-            self.SetProgressBars(min=0, max=1, value=0)
-
-            if self._device.GetMode() == "DMG":
-                self.cmbDMGCartridgeTypeResult.clear()
-                self.cmbDMGCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesDMG()[0])
-                self.grpAGBCartridgeInfo.setVisible(False)
-                self.grpDMGCartridgeInfo.setVisible(True)
-            elif self._device.GetMode() == "AGB":
-                self.cmbAGBCartridgeTypeResult.clear()
-                self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
-                self.grpDMGCartridgeInfo.setVisible(False)
-                self.grpAGBCartridgeInfo.setVisible(True)
-
-            print(msg, end="")
-
-            self._HandleFirmwareUpdate(dev, supported=supports_firmware_updates)
-
-            if dev.IsUnregistered():
-                try:
-                    text = cast("Any", dev).GetRegisterInformation()
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        text,
-                        QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-                except Exception:
-                    logger.exception("Failed to display device registration information")
-
-            if self.CONN is None:
-                return False
-
-            modes = cast("Sequence[PlatformMode]", self._device.GetSupprtedModes())
-            auto_mode = self._GetAutoPlatformMode(self.CONN, modes)
-            if auto_mode == "DMG":
-                self.optDMG.setChecked(True)
-                self.SetMode()
-            elif auto_mode == "AGB":
-                self.optAGB.setChecked(True)
-                self.SetMode()
-            return True
+            return self._complete_device_connection(dev, msg)
 
         return False
 

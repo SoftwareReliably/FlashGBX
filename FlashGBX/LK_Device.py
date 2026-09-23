@@ -182,6 +182,10 @@ class _FlashBankMapper(Protocol):
     def SelectBankFlash(self, bank: int) -> object: ...
 
 
+class _FlashWriteMapper(_FlashBankMapper, Protocol):
+    def GetROMBankSize(self) -> int: ...
+
+
 ProgressCallback = Callable[[ProgressUpdate], object]
 
 
@@ -2412,6 +2416,18 @@ class LK_Device(ABC):
         if signal is not None:
             self.SetProgress({"action": "UPDATE_INFO", "text": text}, signal=signal)
 
+    @staticmethod
+    def _GetDmgSpecialSaveType(mbc: int | None) -> tuple[int, int] | None:
+        if mbc == 0x20:  # MBC6
+            return 1081344, 0x104
+        if mbc == 0x22:  # MBC7
+            return 512, 0x102
+        if mbc == 0xFD:  # TAMA5
+            return 32, 0x103
+        if mbc == 0x105:  # G-MMC1
+            return 0x20000, 0x04
+        return None
+
     def _DetectCartridge_Worker(
         self,
         mbc: int | None = None,
@@ -2485,44 +2501,10 @@ class LK_Device(ABC):
                 if self.MODE == "DMG":
                     save_size = 131072
                     save_type = 0x04
-                    if mbc == 0x20:  # MBC6
-                        save_size = 1081344
-                        save_type = 0x104
-                        return (
-                            info,
-                            save_size,
-                            save_type,
-                            save_chip,
-                            sram_unstable,
-                            cart_types,
-                            cart_type_id,
-                            cfi_s,
-                            cfi,
-                            flash_id,
-                            detected_size,
-                        )
-                    if mbc == 0x22:  # MBC7
-                        save_type = 0x102
-                        save_size = 512
-                    elif mbc == 0xFD:  # TAMA5
-                        save_size = 32
-                        save_type = 0x103
-                        return (
-                            info,
-                            save_size,
-                            save_type,
-                            save_chip,
-                            sram_unstable,
-                            cart_types,
-                            cart_type_id,
-                            cfi_s,
-                            cfi,
-                            flash_id,
-                            detected_size,
-                        )
-                    elif mbc == 0x105:  # G-MMC1
-                        save_size = 0x20000
-                        save_type = 0x04
+                    special_save = self._GetDmgSpecialSaveType(mbc)
+                    if special_save is not None:
+                        save_size, save_type = special_save
+                    if special_save is not None and mbc != 0x22:
                         return (
                             info,
                             save_size,
@@ -5852,6 +5834,30 @@ class LK_Device(ABC):
         device.reset_output_buffer()
         return max_length, exhausted
 
+    def _ReadSaveBackupChunk(
+        self,
+        parameters: _SaveReadParameters,
+        buffer_position: int,
+    ) -> tuple[bytearray | Literal[False] | None, int]:
+        args, _mbc, _bank, _pos, buffer_len, _command, max_length = parameters
+        reads = [bytearray(), bytearray()]
+        read_count = 2 if args.get("verify_read") else 1
+        for index in range(read_count):
+            self.NO_PROG_UPDATE = index == 1
+            reads[index] = self._ReadSaveChunk(parameters)
+            if len(reads[index]) != buffer_len:
+                max_length, exhausted = self._HandleIncompleteSaveRead(
+                    len(reads[index]),
+                    buffer_len,
+                    buffer_position,
+                    max_length,
+                )
+                return (False if exhausted else None), max_length
+
+        if read_count == 2 and not self._SaveBackupReadsMatch(reads, args):
+            return False, max_length
+        return reads[0], max_length
+
     def _CleanupFailedSaveTransfer(
         self,
         mbc: _SaveMapper,
@@ -5880,7 +5886,6 @@ class LK_Device(ABC):
         ram_banks = 0
         buffer_len = 0
         sram_5 = 0
-        temp: Any = None
         buffer = bytearray()
         save_size = 0
         agb_flash_chip = 0
@@ -5959,35 +5964,14 @@ class LK_Device(ABC):
                         return None
 
                     if args["mode"] == 2:  # Backup
-                        in_temp = [bytearray(), bytearray()]
-                        xe = 2 if args.get("verify_read") else 1  # Read twice for detecting instabilities
-                        _read_failed = False
-                        for x in range(xe):
-                            self.NO_PROG_UPDATE = x == 1
-
-                            in_temp[x] = self._ReadSaveChunk(
-                                _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
-                            )
-
-                            if len(in_temp[x]) != buffer_len:
-                                max_length, exhausted = self._HandleIncompleteSaveRead(
-                                    len(in_temp[x]),
-                                    buffer_len,
-                                    len(buffer),
-                                    max_length,
-                                )
-                                if exhausted:
-                                    return False
-                                _read_failed = True
-                                break
-
-                        if _read_failed:
-                            continue
-
-                        if xe == 2 and not self._SaveBackupReadsMatch(in_temp, args):
+                        temp, max_length = self._ReadSaveBackupChunk(
+                            _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
+                            len(buffer),
+                        )
+                        if temp is False:
                             return False
-
-                        temp = in_temp[0]
+                        if temp is None:
+                            continue
                         buffer += temp
                         self.SetProgress({"action": "UPDATE_POS", "pos": len(buffer)})
 
@@ -6244,6 +6228,22 @@ class LK_Device(ABC):
 
         return command_set_type, we
 
+    def _map_batteryless_flash_data(self, args: dict[str, Any], data_import: bytearray) -> bytearray:
+        args["bl_size"] <<= 1
+        args["flash_size"] <<= 1
+        bl_data_import = bytearray(b"\xff" * args["bl_size"])
+
+        if args["bl_layout"] == 1:
+            for index in range(args["bl_size"] // 0x4000):
+                start = index * 0x4000
+                bl_data_import[start : start + 0x2000] = data_import[index * 0x2000 : index * 0x2000 + 0x2000]
+        else:
+            for index in range(args["bl_size"] // 0x4000):
+                start = index * 0x4000 + 0x2000
+                bl_data_import[start : start + 0x2000] = data_import[index * 0x2000 : index * 0x2000 + 0x2000]
+
+        return bl_data_import
+
     def _prepare_flash_data(self, args: dict[str, Any], mode: DeviceMode) -> tuple[bytearray, int]:
         if "buffer" in args:
             source_buffer = args["buffer"]
@@ -6261,19 +6261,7 @@ class LK_Device(ABC):
 
         # Batteryless SRAM
         if "bl_layout" in args and args["bl_layout"] in (1, 2):
-            args["bl_size"] <<= 1
-            args["flash_size"] <<= 1
-            bl_data_import = bytearray(b"\xff" * args["bl_size"])
-
-            if args["bl_layout"] == 1:
-                for i in range(args["bl_size"] // 0x4000):
-                    bl_data_import[i * 0x4000 : i * 0x4000 + 0x2000] = data_import[i * 0x2000 : i * 0x2000 + 0x2000]
-            elif args["bl_layout"] == 2:
-                for i in range(args["bl_size"] // 0x4000):
-                    bl_data_import[i * 0x4000 + 0x2000 : i * 0x4000 + 0x2000 + 0x2000] = data_import[
-                        i * 0x2000 : i * 0x2000 + 0x2000
-                    ]
-            data_import = bl_data_import
+            data_import = self._map_batteryless_flash_data(args, data_import)
 
         # Pad data
         if data_import:
@@ -6930,6 +6918,22 @@ class LK_Device(ABC):
             buffer_size=flash_buffer_size,
         )
 
+    def _reconcile_delta_flash_sectors(
+        self,
+        write_sectors: list[list[int]],
+        old_sectors: Sequence[list[int]],
+    ) -> list[list[int]]:
+        for old_sector in old_sectors:
+            if old_sector in write_sectors:
+                write_sectors.remove(old_sector)
+                dprint("Skipping sector:", old_sector)
+            else:
+                write_sector_ranges = [sector[:-1] for sector in write_sectors]
+                if old_sector[:-1] not in write_sector_ranges:
+                    write_sectors.append(old_sector)
+                    dprint("Forcing sector:", old_sector)
+        return write_sectors
+
     def _plan_flash_sectors(
         self,
         args: dict[str, Any],
@@ -6988,15 +6992,7 @@ class LK_Device(ABC):
                                 delta_state_old = json.loads(state_file.read().decode("UTF-8-SIG"))
                             except json.JSONDecodeError, UnicodeDecodeError:
                                 delta_state_old = []
-                            for old_sector in delta_state_old:
-                                if old_sector in write_sectors:
-                                    write_sectors.remove(old_sector)
-                                    dprint("Skipping sector:", old_sector)
-                                else:
-                                    write_sector_ranges = [sector[:-1] for sector in write_sectors]
-                                    if old_sector[:-1] not in write_sector_ranges:
-                                        write_sectors.append(old_sector)
-                                        dprint("Forcing sector:", old_sector)
+                            write_sectors = self._reconcile_delta_flash_sectors(write_sectors, delta_state_old)
 
                     if not write_sectors:
                         self.SetProgress(
@@ -7205,6 +7201,21 @@ class LK_Device(ABC):
         if self.FW["fw_ver"] >= 14 and "set_audio_high" in cart_type:
             self._set_fw_variable("DMG_AUDIO_ENABLED", 0)
 
+    def _get_flash_write_buffer_length(
+        self,
+        smallest_sector_size: int | Literal[False],
+        mode: DeviceMode,
+        mbc: _FlashWriteMapper,
+    ) -> int:
+        if smallest_sector_size is not False:
+            return smallest_sector_size
+        if mode == "DMG":
+            buffer_length = mbc.GetROMBankSize()
+            if mbc.HasFlashBanks():
+                mbc.SelectBankFlash(0)
+            return buffer_length
+        return 0x2000
+
     def _prepare_flash_write(self, args: dict[str, Any], mode: DeviceMode) -> _FlashWritePreparation | None:
         data_import, flash_offset = self._prepare_flash_data(args, mode)
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
@@ -7306,14 +7317,7 @@ class LK_Device(ABC):
             self.INFO["action"] = self.ACTIONS["ROM_WRITE"]
         self.SetProgress({"action": "UPDATE_POS", "pos": flash_offset})
 
-        if smallest_sector_size is not False:
-            buffer_len = smallest_sector_size
-        elif mode == "DMG":
-            buffer_len = mbc.GetROMBankSize()
-            if mbc.HasFlashBanks():
-                mbc.SelectBankFlash(0)
-        else:
-            buffer_len = 0x2000
+        buffer_len = self._get_flash_write_buffer_length(smallest_sector_size, mode, mbc)
         dprint(f"Transfer buffer length is 0x{buffer_len:X}")
 
         if not write_sectors:
