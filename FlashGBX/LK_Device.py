@@ -109,6 +109,12 @@ class MBC6FlashMapper(Protocol):
 class _ROMBackupMapper(Protocol):
     def GetName(self) -> str: ...
 
+    def ResetBeforeBankChange(self, bank: int) -> bool: ...
+
+    def SelectBankROM(self, bank: int) -> tuple[int, int]: ...
+
+    def GetROMBankSize(self) -> int: ...
+
     def CalcChecksum(self, buffer: bytearray) -> int: ...
 
     def HasHiddenSector(self) -> bool: ...
@@ -224,6 +230,19 @@ class _ROMBackupChunkContext(NamedTuple):
     skip_init: bool
     agb_read_method: int
     dmg_read_method: int
+
+
+class _ROMBackupBankContext(NamedTuple):
+    bank: int
+    args: Mapping[str, Any]
+    mbc: _ROMBackupMapper
+    cart_type: Mapping[str, Any]
+    flashcart: Flashcart | Literal[False]
+    buffer_pos: int
+    rom_bank_size: int
+    start_address: int
+    end_address: int
+    buffer_len: int
 
 
 class _FlashVerificationBankContext(NamedTuple):
@@ -1570,74 +1589,7 @@ class LK_Device(ABC):
     def CartPowerOn(self) -> bool:
         if self.CanPowerCycleCart():
             if self.FW["fw_ver"] >= 12:
-                self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
-                if self._read(1) == 0:
-                    dprint("Turning on the cartridge power")
-                    if self.MODE == "DMG":
-                        self._write(
-                            self.DEVICE_CMD["SET_MODE_DMG"],
-                            wait=self.FW["fw_ver"] >= 12,
-                        )
-                    elif self.MODE == "AGB":
-                        self._write(
-                            self.DEVICE_CMD["SET_MODE_AGB"],
-                            wait=self.FW["fw_ver"] >= 12,
-                        )
-
-                    if (
-                        self.FW["pcb_name"] == "GBxCart RW"
-                    ):  # Workaround for GBxCart RW, it sometimes glitches after cart power on?
-                        self._write(self.DEVICE_CMD["CART_PWR_ON"])
-                        time.sleep(0.2)
-                        device = self._serial_device()
-                        hp = 10
-                        while hp > 0:
-                            if device.in_waiting == 0:
-                                dprint("Waiting for ACK...")
-                                hp -= 1
-                                time.sleep(0.1)
-                                continue
-                            temp = device.read(device.in_waiting)
-                            if len(temp) >= 1:
-                                temp = temp[len(temp) - 1]
-                            if temp == 1:
-                                break
-                            device.timeout = 0.1
-                            dprint("Unexpected ACK value:", temp)
-                            self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
-                            time.sleep(0.05)
-                            hp -= 1
-
-                        if hp == 0:
-                            device.close()
-                            self.DEVICE = None
-                            self.ERROR = True
-                            msg = "Couldn't power on the cartridge."
-                            raise BrokenPipeError(msg)
-                    else:
-                        self._write(self.DEVICE_CMD["CART_PWR_ON"], wait=True)
-
-                    self._serial_device().timeout = self.DEVICE_TIMEOUT
-
-                    self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
-                    if self._read(1) != 1:
-                        dprint("Warning: No response from firmware on QUERY_CART_PWR.")
-
-                    if self.MODE == "DMG":
-                        dprint("Resetting Memory Bank Controller")
-                        self._write(
-                            self.DEVICE_CMD["DMG_MBC_RESET"],
-                            wait=True,
-                        )  # Sachen (and Xploder GB?) may need this
-                    elif self.MODE == "AGB":
-                        dprint("Executing AGB Bootup Sequence")
-                        self._write(
-                            self.DEVICE_CMD["AGB_BOOTUP_SEQUENCE"],
-                            wait=self.FW["fw_ver"] >= 12,
-                        )
-
-                    if self.FW["pcb_name"] == "GBxCart RW":
-                        self._cart_write(0, 0xFF)  # workaround for strange bootlegs
+                self._PowerOnModernCart()
 
             elif "OFW_QUERY_CART_PWR" in self.DEVICE_CMD and "OFW_CART_PWR_ON" in self.DEVICE_CMD:
                 self._write(self.DEVICE_CMD["OFW_QUERY_CART_PWR"])
@@ -1657,6 +1609,65 @@ class LK_Device(ABC):
             self._write(self.DEVICE_CMD["AGB_BOOTUP_SEQUENCE"], wait=self.FW["fw_ver"] >= 12)
 
         return True
+
+    def _PowerOnModernCart(self) -> None:
+        self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
+        if self._read(1) != 0:
+            return
+        dprint("Turning on the cartridge power")
+        if self.MODE == "DMG":
+            self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
+        elif self.MODE == "AGB":
+            self._write(self.DEVICE_CMD["SET_MODE_AGB"], wait=self.FW["fw_ver"] >= 12)
+
+        if self.FW["pcb_name"] == "GBxCart RW":
+            self._PowerOnGBxCartRW()
+        else:
+            self._write(self.DEVICE_CMD["CART_PWR_ON"], wait=True)
+
+        self._serial_device().timeout = self.DEVICE_TIMEOUT
+        self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
+        if self._read(1) != 1:
+            dprint("Warning: No response from firmware on QUERY_CART_PWR.")
+
+        if self.MODE == "DMG":
+            dprint("Resetting Memory Bank Controller")
+            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+        elif self.MODE == "AGB":
+            dprint("Executing AGB Bootup Sequence")
+            self._write(self.DEVICE_CMD["AGB_BOOTUP_SEQUENCE"], wait=self.FW["fw_ver"] >= 12)
+
+        if self.FW["pcb_name"] == "GBxCart RW":
+            self._cart_write(0, 0xFF)
+
+    def _PowerOnGBxCartRW(self) -> None:
+        self._write(self.DEVICE_CMD["CART_PWR_ON"])
+        time.sleep(0.2)
+        device = self._serial_device()
+        attempts = 10
+        while attempts > 0:
+            if device.in_waiting == 0:
+                dprint("Waiting for ACK...")
+                attempts -= 1
+                time.sleep(0.1)
+                continue
+            response = device.read(device.in_waiting)
+            if len(response) >= 1:
+                response = response[len(response) - 1]
+            if response == 1:
+                break
+            device.timeout = 0.1
+            dprint("Unexpected ACK value:", response)
+            self._write(self.DEVICE_CMD["QUERY_CART_PWR"])
+            time.sleep(0.05)
+            attempts -= 1
+
+        if attempts == 0:
+            device.close()
+            self.DEVICE = None
+            self.ERROR = True
+            msg = "Couldn't power on the cartridge."
+            raise BrokenPipeError(msg)
 
     def GetVarState(self) -> bytearray:
         self._write(self.DEVICE_CMD["GET_VAR_STATE"])
@@ -4747,6 +4758,39 @@ class LK_Device(ABC):
             )
         return temp, True
 
+    def _PrepareROMBackupBank(self, context: _ROMBackupBankContext) -> tuple[int, int, int]:
+        bank = context.bank
+        args = context.args
+        mbc = context.mbc
+        cart_type = context.cart_type
+        flashcart = context.flashcart
+        buffer_pos = context.buffer_pos
+        rom_bank_size = context.rom_bank_size
+        start_address = context.start_address
+        end_address = context.end_address
+        buffer_len = context.buffer_len
+        if self.MODE == "DMG":
+            if mbc.ResetBeforeBankChange(bank) is True:
+                dprint("Resetting the MBC")
+                self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+            start_address, bank_size = mbc.SelectBankROM(bank)
+            end_address = start_address + bank_size
+            buffer_len = min(buffer_len, mbc.GetROMBankSize())
+            if "verify_write" in args:
+                buffer_len = min(buffer_len, bank_size, len(args["verify_write"]))
+                end_address = start_address + bank_size
+                start_address += buffer_pos % rom_bank_size
+                end_address = min(end_address, start_address + args["verify_len"])
+        elif self.MODE == "AGB":
+            if "verify_write" in args:
+                buffer_len = min(buffer_len, len(args["verify_write"]))
+            if flashcart and "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0:
+                flashcart.SelectBankROM(bank)
+                temp = end_address - start_address
+                start_address %= cart_type["flash_bank_size"]
+                end_address = min(cart_type["flash_bank_size"], start_address + temp)
+        return start_address, end_address, buffer_len
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = self._OpenROMBackupFile(args["path"])
@@ -4796,26 +4840,20 @@ class LK_Device(ABC):
         bank = start_bank
         while bank < rom_banks:
             # ↓↓↓ Switch ROM bank
-            if self.MODE == "DMG":
-                if _mbc.ResetBeforeBankChange(bank) is True:
-                    dprint("Resetting the MBC")
-                    self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-                (start_address, bank_size) = _mbc.SelectBankROM(bank)
-                end_address = start_address + bank_size
-                buffer_len = min(buffer_len, _mbc.GetROMBankSize())
-                if "verify_write" in args:
-                    buffer_len = min(buffer_len, bank_size, len(args["verify_write"]))
-                    end_address = start_address + bank_size
-                    start_address += buffer_pos % rom_bank_size
-                    end_address = min(end_address, start_address + args["verify_len"])
-            elif self.MODE == "AGB":
-                if "verify_write" in args:
-                    buffer_len = min(buffer_len, len(args["verify_write"]))
-                if flashcart and "flash_bank_select_type" in cart_type and cart_type["flash_bank_select_type"] > 0:
-                    flashcart.SelectBankROM(bank)
-                    temp = end_address - start_address
-                    start_address %= cart_type["flash_bank_size"]
-                    end_address = min(cart_type["flash_bank_size"], start_address + temp)
+            start_address, end_address, buffer_len = self._PrepareROMBackupBank(
+                _ROMBackupBankContext(
+                    bank,
+                    args,
+                    _mbc,
+                    cart_type,
+                    flashcart,
+                    buffer_pos,
+                    rom_bank_size,
+                    start_address,
+                    end_address,
+                    buffer_len,
+                ),
+            )
             # ↑↑↑ Switch ROM bank
 
             skip_init = False
@@ -8169,6 +8207,74 @@ class LK_Device(ABC):
 
     #################################################################
 
+    def _FlashWithVoltageFallback(self, args: dict[str, Any]) -> bool | None:
+        voltage_fallback = args.get("voltage_fallback", False)
+        ask_voltage_fallback = args.get("ask_voltage_fallback", False)
+        if voltage_fallback:
+            self.VOLTAGE_FALLBACK_PENDING = True
+            self.VOLTAGE_FALLBACK_TRIGGERED = False
+        try:
+            ret = self._FlashROM(args)
+        finally:
+            self.VOLTAGE_FALLBACK_PENDING = False
+        if voltage_fallback and self.VOLTAGE_FALLBACK_TRIGGERED:
+            self.VOLTAGE_FALLBACK_TRIGGERED = False
+            self.CANCEL = False
+            self.ERROR = False
+            self.CANCEL_ARGS = {}
+            self.ERROR_ARGS = {}
+            if ask_voltage_fallback:
+                self.USER_ANSWER = None
+                self.SetProgress(
+                    {
+                        "action": "USER_ACTION",
+                        "user_action": "RETRY_5V",
+                        "title": __("Retry at 5V?"),
+                        "msg": __(
+                            "Writing at 3.3V failed. Do you want to retry at 5V? Some cartridges of the same kind require 5V for successful writing, but please note that 5V can be unsafe for some flash chips.",
+                        ),
+                    },
+                )
+                while self.USER_ANSWER is None:
+                    dprint("Waiting for the user to confirm retrying the ROM write at 5V.")
+                    time.sleep(1)
+                if self.USER_ANSWER is not True:
+                    self.USER_ANSWER = None
+                    self.SetProgress({"action": "ABORT", "abortable": False})
+                    ret = False
+                else:
+                    self.USER_ANSWER = None
+                    args["override_voltage"] = voltage_fallback
+                    args["voltage_fallback"] = False
+                    print(ANSI.YELLOW + __("Note: Writing at 3.3V failed. Retrying at 5V...") + ANSI.RESET)
+                    self.SetProgress(
+                        {
+                            "action": "UPDATE_INFO",
+                            "abortable": False,
+                            "text": __("Switching voltage..."),
+                            "pos": 0,
+                            "size": 0,
+                        },
+                    )
+                    # if self.CanPowerCycleCart(): self.CartPowerCycle()
+                    ret = self._FlashROM(args)
+            else:
+                args["override_voltage"] = voltage_fallback
+                args["voltage_fallback"] = False
+                print(ANSI.YELLOW + __("Note: Writing at 3.3V failed. Retrying at 5V...") + ANSI.RESET)
+                self.SetProgress(
+                    {
+                        "action": "UPDATE_INFO",
+                        "abortable": False,
+                        "text": __("Switching voltage..."),
+                        "pos": 0,
+                        "size": 0,
+                    },
+                )
+                # if self.CanPowerCycleCart(): self.CartPowerCycle()
+                ret = self._FlashROM(args)
+        return ret
+
     def TransferData(
         self,
         args: dict[str, Any],
@@ -8198,71 +8304,7 @@ class LK_Device(ABC):
                 elif args["mode"] == 2 or args["mode"] == 3:
                     ret = self._BackupRestoreRAM(args)
                 elif args["mode"] == 4:
-                    voltage_fallback = args.get("voltage_fallback", False)
-                    ask_voltage_fallback = args.get("ask_voltage_fallback", False)
-                    if voltage_fallback:
-                        self.VOLTAGE_FALLBACK_PENDING = True
-                        self.VOLTAGE_FALLBACK_TRIGGERED = False
-                    try:
-                        ret = self._FlashROM(args)
-                    finally:
-                        self.VOLTAGE_FALLBACK_PENDING = False
-                    if voltage_fallback and self.VOLTAGE_FALLBACK_TRIGGERED:
-                        self.VOLTAGE_FALLBACK_TRIGGERED = False
-                        self.CANCEL = False
-                        self.ERROR = False
-                        self.CANCEL_ARGS = {}
-                        self.ERROR_ARGS = {}
-                        if ask_voltage_fallback:
-                            self.USER_ANSWER = None
-                            self.SetProgress(
-                                {
-                                    "action": "USER_ACTION",
-                                    "user_action": "RETRY_5V",
-                                    "title": __("Retry at 5V?"),
-                                    "msg": __(
-                                        "Writing at 3.3V failed. Do you want to retry at 5V? Some cartridges of the same kind require 5V for successful writing, but please note that 5V can be unsafe for some flash chips.",
-                                    ),
-                                },
-                            )
-                            while self.USER_ANSWER is None:
-                                dprint("Waiting for the user to confirm retrying the ROM write at 5V.")
-                                time.sleep(1)
-                            if self.USER_ANSWER is not True:
-                                self.USER_ANSWER = None
-                                self.SetProgress({"action": "ABORT", "abortable": False})
-                                ret = False
-                            else:
-                                self.USER_ANSWER = None
-                                args["override_voltage"] = voltage_fallback
-                                args["voltage_fallback"] = False
-                                print(ANSI.YELLOW + __("Note: Writing at 3.3V failed. Retrying at 5V...") + ANSI.RESET)
-                                self.SetProgress(
-                                    {
-                                        "action": "UPDATE_INFO",
-                                        "abortable": False,
-                                        "text": __("Switching voltage..."),
-                                        "pos": 0,
-                                        "size": 0,
-                                    },
-                                )
-                                # if self.CanPowerCycleCart(): self.CartPowerCycle()
-                                ret = self._FlashROM(args)
-                        else:
-                            args["override_voltage"] = voltage_fallback
-                            args["voltage_fallback"] = False
-                            print(ANSI.YELLOW + __("Note: Writing at 3.3V failed. Retrying at 5V...") + ANSI.RESET)
-                            self.SetProgress(
-                                {
-                                    "action": "UPDATE_INFO",
-                                    "abortable": False,
-                                    "text": __("Switching voltage..."),
-                                    "pos": 0,
-                                    "size": 0,
-                                },
-                            )
-                            # if self.CanPowerCycleCart(): self.CartPowerCycle()
-                            ret = self._FlashROM(args)
+                    ret = self._FlashWithVoltageFallback(args)
                 elif args["mode"] == 5:
                     ret = self._DetectCartridge(args)
                 elif args["mode"] == 0xFF:

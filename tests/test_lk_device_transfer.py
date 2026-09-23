@@ -94,6 +94,75 @@ def test_transfer_data_powers_cartridge_before_dispatch(
     backup.assert_called_once_with({"mode": 1})
 
 
+def test_cart_power_on_gbxcartrw_retries_unexpected_ack(
+    connected_device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connected_device.FW["fw_ver"] = 12
+    connected_device.FW["pcb_name"] = "GBxCart RW"
+    connected_device.MODE = "DMG"
+    connected_device.DEVICE_CMD = {
+        "QUERY_CART_PWR": "query",
+        "SET_MODE_DMG": "dmg_mode",
+        "CART_PWR_ON": "power_on",
+        "DMG_MBC_RESET": "reset_mbc",
+    }
+    serial_device = Mock(in_waiting=1)
+    serial_device.read.side_effect = [b"\x00", b"\x01"]
+    monkeypatch.setattr(connected_device, "CanPowerCycleCart", Mock(return_value=True))
+    write = Mock()
+    cart_write = Mock()
+    monkeypatch.setattr(connected_device, "_write", write)
+    monkeypatch.setattr(connected_device, "_read", Mock(side_effect=[0, 1]))
+    monkeypatch.setattr(connected_device, "_serial_device", Mock(return_value=serial_device))
+    monkeypatch.setattr(connected_device, "_cart_write", cart_write)
+    monkeypatch.setattr(lk_device_module.time, "sleep", Mock())
+
+    assert connected_device.CartPowerOn() is True
+
+    assert write.call_args_list == [
+        call("query"),
+        call("dmg_mode", wait=True),
+        call("power_on"),
+        call("query"),
+        call("query"),
+        call("reset_mbc", wait=True),
+    ]
+    cart_write.assert_called_once_with(0, 0xFF)
+    assert serial_device.timeout == connected_device.DEVICE_TIMEOUT
+
+
+def test_cart_power_on_gbxcartrw_closes_device_after_ack_timeouts(
+    connected_device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connected_device.FW["fw_ver"] = 12
+    connected_device.FW["pcb_name"] = "GBxCart RW"
+    connected_device.MODE = "DMG"
+    connected_device.DEVICE_CMD = {
+        "QUERY_CART_PWR": "query",
+        "SET_MODE_DMG": "dmg_mode",
+        "CART_PWR_ON": "power_on",
+        "DMG_MBC_RESET": "reset_mbc",
+    }
+    serial_device = Mock(in_waiting=1)
+    serial_device.read.return_value = b"\x00"
+    monkeypatch.setattr(connected_device, "CanPowerCycleCart", Mock(return_value=True))
+    write = Mock()
+    monkeypatch.setattr(connected_device, "_write", write)
+    monkeypatch.setattr(connected_device, "_read", Mock(return_value=0))
+    monkeypatch.setattr(connected_device, "_serial_device", Mock(return_value=serial_device))
+    monkeypatch.setattr(lk_device_module.time, "sleep", Mock())
+
+    with pytest.raises(BrokenPipeError, match="Couldn't power on the cartridge"):
+        connected_device.CartPowerOn()
+
+    serial_device.close.assert_called_once_with()
+    assert connected_device.DEVICE is None
+    assert connected_device.ERROR is True
+    assert write.call_args_list.count(call("query")) == 11
+
+
 def test_disconnected_transfer_resets_counters_without_dispatching(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

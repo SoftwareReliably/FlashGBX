@@ -629,17 +629,21 @@ class FlashGBX_CLI:
                 print("\n")
                 self.FinishOperation()
             elif args["action"] == "ABORT":
-                print("\n" + __("Operation stopped.") + "\n")
-                if "info_type" in args and "info_msg" in args:
-                    if args["info_type"] == "msgbox_critical":
-                        self.RETVAL = 1
-                        print(ANSI.RED + args["info_msg"] + ANSI.RESET)
-                    elif args["info_type"] == "msgbox_information" or args["info_type"] == "label":
-                        self.RETVAL = 0
-                        print(args["info_msg"])
+                self._HandleProgressAbort(args)
                 return
             elif args["action"] == "PROGRESS":
                 self._RenderProgressBar(pos, size, speed, elapsed, left)
+
+    def _HandleProgressAbort(self, args: ProgressPayload) -> None:
+        print("\n" + __("Operation stopped.") + "\n")
+        if "info_type" not in args or "info_msg" not in args:
+            return
+        if args["info_type"] == "msgbox_critical":
+            self.RETVAL = 1
+            print(ANSI.RED + args["info_msg"] + ANSI.RESET)
+        elif args["info_type"] in ("msgbox_information", "label"):
+            self.RETVAL = 0
+            print(args["info_msg"])
 
     def _FinishBackupRAM(self) -> None:
         self.CONN.INFO["last_action"] = 0
@@ -2085,31 +2089,7 @@ class FlashGBX_CLI:
             else:
                 mbc = self._ParseDmgMbc(args.dmg_mbc)
 
-            if args.dmg_savetype == "auto":
-                try:
-                    if header["mapper_raw"] == 0x06:  # MBC2
-                        save_type = 0x100
-                    elif header["mapper_raw"] == 0x22 and header["game_title"] in (
-                        "KORO2 KIRBYKKKJ",
-                        "KIRBY TNT_KTNE",
-                    ):  # MBC7 Kirby
-                        save_type = 0x101
-                    elif header["mapper_raw"] == 0x22 and header["game_title"] in (
-                        "CMASTER_KCEJ"
-                    ):  # MBC7 Command Master
-                        save_type = 0x102
-                    elif header["mapper_raw"] == 0xFD:  # TAMA5
-                        save_type = 0x103
-                    elif header["mapper_raw"] == 0x20:  # MBC6
-                        save_type = 0x104
-                    else:
-                        save_type = header["ram_size_raw"]
-                except KeyError, TypeError, ValueError, IndexError:
-                    save_type = 0
-            elif args.dmg_savetype == "batteryless":
-                save_type = 0x205
-            else:
-                save_type: int | None = DmgSaveTypes.GetMbcFromCLIName(args.dmg_savetype) or 0
+            save_type = self._ResolveDmgSaveType(args.dmg_savetype, header)
 
             if save_type == 0:
                 print(
@@ -2150,6 +2130,27 @@ class FlashGBX_CLI:
         if not isinstance(save_type, int):
             return None
         return mbc, save_type, cart_type
+
+    def _ResolveDmgSaveType(self, save_type_name: str, header: HeaderData) -> int:
+        if save_type_name == "auto":
+            try:
+                mapper = header["mapper_raw"]
+                if mapper == 0x06:  # MBC2
+                    return 0x100
+                if mapper == 0x22 and header["game_title"] in ("KORO2 KIRBYKKKJ", "KIRBY TNT_KTNE"):
+                    return 0x101  # MBC7 Kirby
+                if mapper == 0x22 and header["game_title"] in "CMASTER_KCEJ":
+                    return 0x102  # MBC7 Command Master
+                if mapper == 0xFD:  # TAMA5
+                    return 0x103
+                if mapper == 0x20:  # MBC6
+                    return 0x104
+                return header["ram_size_raw"]
+            except KeyError, TypeError, ValueError, IndexError:
+                return 0
+        if save_type_name == "batteryless":
+            return 0x205
+        return DmgSaveTypes.GetMbcFromCLIName(save_type_name) or 0
 
     def _PrepareEReaderCalibration(
         self,

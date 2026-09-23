@@ -114,6 +114,15 @@ class BatterylessSramInfo(TypedDict):
     bl_size: int
 
 
+class _BatterylessDialogSelection(NamedTuple):
+    locations: list[int]
+    lengths: list[int]
+    intro: str
+    location_index: int
+    length_index: int
+    layout_index: int
+
+
 class _SaveWritePreparation(NamedTuple):
     mode: PlatformMode
     path: str
@@ -3536,21 +3545,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 return
             buffer = loaded_buffer
 
-        override_voltage = False
-        voltage_fallback = False
-        ask_voltage_fallback = False
-        device_voltage_locked = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
-        if not device_voltage_locked:
-            if "voltage_variants" in cart_profile and cart_profile.get("voltage") == 3.3:
-                override_voltage = 3.3
-                voltage_fallback = 5
-                ask_voltage_fallback = True
-            elif cart_profile.get("voltage") == 5 and has_3v_compatible_profile(carts, cart_type):
-                # Some PCBs share the same flash chip but need 3.3V; try 3.3V silently first,
-                # ask before falling back to 5V if writing fails.
-                override_voltage = 3.3
-                voltage_fallback = 5
-                ask_voltage_fallback = True
+        override_voltage, voltage_fallback, ask_voltage_fallback, device_voltage_locked = self._ResolveFlashVoltage(
+            carts, cart_type, cart_profile
+        )
 
         prefer_chip_erase = self.SETTINGS.value("PreferChipErase", default="disabled")
         prefer_chip_erase = bool(prefer_chip_erase and prefer_chip_erase.lower() == "enabled")
@@ -3577,24 +3574,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         flash_offset = 0
         force_wr_pullup = str(self.SETTINGS.value("ForceWrPullup", default="disabled")).lower() == "enabled"
 
-        effective_voltage = override_voltage if override_voltage is not False else cart_profile.get("voltage")
-        if (effective_voltage == 3.3 or "voltage_variants" in cart_profile) and device_voltage_locked and mode == "DMG":
-            msg_text = (
-                __(
-                    "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
-                )
-                + "\n"
-                + __("Do you want to continue?")
-            )
-            answer = QtWidgets.QMessageBox.warning(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                msg_text,
-                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
-                QtWidgets.QMessageBox.StandardButton.Cancel,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                return
+        if self._CancelFlashForLockedVoltage(mode, cart_profile, override_voltage, device_voltage_locked):
+            return
 
         self.grpDMGCartridgeInfo.setEnabled(False)
         self.grpAGBCartridgeInfo.setEnabled(False)
@@ -3646,6 +3627,54 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["time_start"] = time.time()
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
+
+    def _ResolveFlashVoltage(
+        self,
+        carts: list[Any],
+        cart_type: int,
+        cart_profile: dict[str, Any],
+    ) -> tuple[float | Literal[False], int | Literal[False], bool, bool]:
+        device_voltage_locked = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+        override_voltage: float | Literal[False] = False
+        voltage_fallback: int | Literal[False] = False
+        ask_voltage_fallback = False
+        if not device_voltage_locked and (
+            ("voltage_variants" in cart_profile and cart_profile.get("voltage") == 3.3)
+            or (cart_profile.get("voltage") == 5 and has_3v_compatible_profile(carts, cart_type))
+        ):
+            # Some PCBs share the same flash chip but need 3.3V; ask before falling back to 5V.
+            override_voltage = 3.3
+            voltage_fallback = 5
+            ask_voltage_fallback = True
+        return override_voltage, voltage_fallback, ask_voltage_fallback, device_voltage_locked
+
+    def _CancelFlashForLockedVoltage(
+        self,
+        mode: PlatformMode,
+        cart_profile: dict[str, Any],
+        override_voltage: float | Literal[False],
+        device_voltage_locked: bool,
+    ) -> bool:
+        effective_voltage = override_voltage if override_voltage is not False else cart_profile.get("voltage")
+        if not (
+            (effective_voltage == 3.3 or "voltage_variants" in cart_profile) and device_voltage_locked and mode == "DMG"
+        ):
+            return False
+        msg_text = (
+            __(
+                "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
+            )
+            + "\n"
+            + __("Do you want to continue?")
+        )
+        answer = QtWidgets.QMessageBox.warning(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            msg_text,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
+            QtWidgets.QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QtWidgets.QMessageBox.StandardButton.Cancel
 
     def _prepare_save_backup_cartridge(self, mode: PlatformMode, path: str) -> bool:
         needs_detection = (
@@ -3789,29 +3818,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
         if not self.CheckHeader():
             return
-        if dpath == "":
-            path = generate_filename(
-                mode=self._device.GetMode(),
-                header=self._device.INFO,
-                settings=self.SETTINGS,
-            )
-            path = str(Path(path).with_suffix(""))
-
-            add_date_time: str | None = self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled")
-            if len(path) > 0 and add_date_time and add_date_time.lower() == "enabled":
-                path += "_{:s}".format(datetime.datetime.now(tz=datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S"))
-
-            path += ".sav"
-            path = QtWidgets.QFileDialog.getSaveFileName(
-                self,
-                "Backup Save Data",
-                str(Path(last_dir) / path),
-                "Save Data File (" + " ".join("*" + e for e in SAVE_EXTS) + ");;All Files (*.*)",
-            )[0]
-            if path == "":
-                return
-        else:
-            path = dpath
+        selected_path = self._SelectSaveBackupPath(dpath, last_dir)
+        if selected_path is None:
+            return
+        path = selected_path
 
         verify_read = self.SETTINGS.value("VerifyData", default="enabled")
         verify_read = bool(verify_read and verify_read.lower() == "enabled")
@@ -3885,6 +3895,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["time_start"] = time.time()
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
+
+    def _SelectSaveBackupPath(self, dpath: str, last_dir: str) -> str | None:
+        if dpath:
+            return dpath
+        path = generate_filename(
+            mode=self._device.GetMode(),
+            header=self._device.INFO,
+            settings=self.SETTINGS,
+        )
+        path = str(Path(path).with_suffix(""))
+        add_date_time: str | None = self.SETTINGS.value("SaveFileNameAddDateTime", default="disabled")
+        if path and add_date_time and add_date_time.lower() == "enabled":
+            path += "_{:s}".format(datetime.datetime.now(tz=datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S"))
+        path += ".sav"
+        selected_path = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Backup Save Data",
+            str(Path(last_dir) / path),
+            "Save Data File (" + " ".join("*" + extension for extension in SAVE_EXTS) + ");;All Files (*.*)",
+        )[0]
+        return selected_path or None
 
     def _prepare_save_write_cartridge(
         self,
@@ -4936,6 +4967,62 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if mode not in ("DMG", "AGB"):
             msg = "Batteryless SRAM parameters require a platform mode"
             raise RuntimeError(msg)
+        selection = self._PrepareBatterylessDialogSelection(mode, rom_size, detected)
+        locs = selection.locations
+        lens = selection.lengths
+        intro_msg = selection.intro
+        loc_index = selection.location_index
+        len_index = selection.length_index
+        lay_index = selection.layout_index
+
+        dlg_args = {
+            "title": __("{batteryless_sram} Parameters", batteryless_sram="Batteryless SRAM"),
+            "intro": intro_msg.replace("\n", "<br>"),
+            "params": [
+                ["loc", "cmb_e", __("Location:"), [f"0x{location:X}" for location in locs], loc_index],
+                ["len", "cmb", __("Size:"), [Formatter.file_size(size, as_int=True) for size in lens], len_index],
+            ],
+        }
+        if mode == "DMG":
+            dlg_args["params"].append(
+                [
+                    "layout",
+                    "cmb",
+                    __("Layout:"),
+                    [__("Continuous"), __("First half of ROM bank"), __("Second half of ROM bank")],
+                    lay_index,
+                ],
+            )
+
+        dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            result = dlg.GetResult()
+            if result["loc"].currentText() not in [f"0x{location:X}" for location in locs]:
+                try:
+                    bl_args = {"bl_offset": _parse_hex_address(result["loc"].currentText())}
+                except ValueError:
+                    return False
+            else:
+                bl_args = {"bl_offset": locs[result["loc"].currentIndex()]}
+            bl_args["bl_size"] = lens[result["len"].currentIndex()]
+            if mode == "DMG":
+                bl_args["bl_layout"] = result["layout"].currentIndex()
+
+            locs.append(bl_args["bl_offset"])
+            self.SETTINGS.setValue(f"BatterylessSramLocations{mode:s}", json.dumps(locs))
+            self.SETTINGS.setValue(f"BatterylessSramLastLocation{mode:s}", json.dumps(bl_args["bl_offset"]))
+            ret = bl_args
+        else:
+            ret = False
+        del dlg
+        return ret
+
+    def _PrepareBatterylessDialogSelection(
+        self,
+        mode: PlatformMode,
+        rom_size: int,
+        detected: BatterylessSramInfo | Literal[False],
+    ) -> _BatterylessDialogSelection:
         if mode == "AGB":
             locs = [0x3C0000, 0x7C0000, 0xFC0000, 0x1FC0000]
             lens = [0x2000, 0x8000, 0x10000, 0x20000]
@@ -4986,72 +5073,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         except Exception:
             logger.exception("Failed to restore the last batteryless SRAM location")
 
-        bl_args = {}
         if loc_index is None:
             loc_index = self._get_default_bl_location_index(rom_size, locs)
         if len_index is None:
             len_index = {"AGB": 2, "DMG": 1}[mode]
         if lay_index is None:
             lay_index = 2
-
-        dlg_args = {
-            "title": __("{batteryless_sram} Parameters", batteryless_sram="Batteryless SRAM"),
-            "intro": intro_msg.replace("\n", "<br>"),
-            "params": [
-                # ID, Type, Value(s), Default Index
-                [
-                    "loc",
-                    "cmb_e",
-                    __("Location:"),
-                    [f"0x{location:X}" for location in locs],
-                    loc_index,
-                ],
-                [
-                    "len",
-                    "cmb",
-                    __("Size:"),
-                    [Formatter.file_size(s, as_int=True) for s in lens],
-                    len_index,
-                ],
-            ],
-        }
-        if mode == "DMG":
-            dlg_args["params"].append(
-                [
-                    "layout",
-                    "cmb",
-                    __("Layout:"),
-                    [
-                        __("Continuous"),
-                        __("First half of ROM bank"),
-                        __("Second half of ROM bank"),
-                    ],
-                    lay_index,
-                ],
-            )
-
-        dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            result = dlg.GetResult()
-            if result["loc"].currentText() not in [f"0x{location:X}" for location in locs]:
-                try:
-                    bl_args["bl_offset"] = _parse_hex_address(result["loc"].currentText())
-                except ValueError:
-                    return False
-            else:
-                bl_args["bl_offset"] = locs[result["loc"].currentIndex()]
-            bl_args["bl_size"] = lens[result["len"].currentIndex()]
-            if mode == "DMG":
-                bl_args["bl_layout"] = result["layout"].currentIndex()
-
-            locs.append(bl_args["bl_offset"])
-            self.SETTINGS.setValue(f"BatterylessSramLocations{mode:s}", json.dumps(locs))
-            self.SETTINGS.setValue(f"BatterylessSramLastLocation{mode:s}", json.dumps(bl_args["bl_offset"]))
-            ret = bl_args
-        else:
-            ret = False
-        del dlg
-        return ret
+        return _BatterylessDialogSelection(locs, lens, intro_msg, loc_index, len_index, lay_index)
 
     def _EditRTCFromMouseEvent(self, event: QtGui.QMouseEvent) -> None:
         self.EditRTC(event)
@@ -6425,6 +6453,52 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         doc.setHtml(html)
         clipboard.setText(doc.toPlainText())
 
+    def _ShowSupportedDetectionSummary(self, summary: str) -> tuple[bool, bool]:
+        dont_show_again = str(self.SETTINGS.value("SkipAutodetectMessage", default="disabled")).lower() == "enabled"
+        if dont_show_again and self.STATUS["can_skip_message"]:
+            return False, False
+
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Information,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s} | {self._device.GetFullNameLabel():s}",
+            text=summary[:-4],
+        )
+        msgbox.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        button_ok = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&OK"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_details = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Details"),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_cancel = None
+        msgbox.setDefaultButton(button_ok)
+        checkbox = _create_check_box(
+            c__("Check Box (& = Keyboard Shortcut)", "&Always skip this message"),
+            checked=False,
+        )
+        if self.STATUS["can_skip_message"]:
+            button_cancel = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "&Cancel"),
+                QtWidgets.QMessageBox.ButtonRole.RejectRole,
+            )
+            msgbox.setEscapeButton(button_cancel)
+            msgbox.setCheckBox(checkbox)
+        else:
+            msgbox.setEscapeButton(button_ok)
+
+        msgbox.exec()
+        if checkbox.isChecked() and self.STATUS["can_skip_message"]:
+            self.SETTINGS.setValue("SkipAutodetectMessage", "enabled")
+        if msgbox.clickedButton() == button_cancel:
+            self._ResetDetectionControls()
+            self.STATUS["can_skip_message"] = False
+            self.STATUS.pop("detected_cart_type", None)
+            return False, True
+        return msgbox.clickedButton() == button_details, False
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self._ResetDetectionLabels()
 
@@ -6513,60 +6587,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
             msg = __("The following cartridge configuration was detected:") + "<br><br>"
             if found_supported:
-                dontShowAgain = (
-                    str(self.SETTINGS.value("SkipAutodetectMessage", default="disabled")).lower() == "enabled"
-                )
-                if not dontShowAgain or not self.STATUS["can_skip_message"]:
-                    temp = f"{msg:s}{msg_flash_size_s:s}{msg_save_type_s:s}{msg_flash_mapper_s:s}{msg_cart_type_s:s}{msg_gbmem:s}"
-                    temp = temp[:-4]
-                    msgbox = _create_message_box(
-                        parent=self,
-                        icon=QtWidgets.QMessageBox.Icon.Information,
-                        windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s} | {self._device.GetFullNameLabel():s}",
-                        text=temp,
-                    )
-                    msgbox.setTextFormat(QtCore.Qt.TextFormat.RichText)
-                    button_ok = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&OK"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                    button_details = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&Details"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                    button_cancel = None
-                    msgbox.setDefaultButton(button_ok)
-                    cb = _create_check_box(
-                        c__(
-                            "Check Box (& = Keyboard Shortcut)",
-                            "&Always skip this message",
-                        ),
-                        checked=False,
-                    )
-                    if self.STATUS["can_skip_message"]:
-                        button_cancel = msgbox.addButton(
-                            c__("Button (& = Keyboard Shortcut)", "&Cancel"),
-                            QtWidgets.QMessageBox.ButtonRole.RejectRole,
-                        )
-                        msgbox.setEscapeButton(button_cancel)
-                        msgbox.setCheckBox(cb)
-                    else:
-                        msgbox.setEscapeButton(button_ok)
-
-                    msgbox.exec()
-                    dontShowAgain = cb.isChecked()
-                    if dontShowAgain and self.STATUS["can_skip_message"]:
-                        self.SETTINGS.setValue("SkipAutodetectMessage", "enabled")
-
-                    if msgbox.clickedButton() == button_details:
-                        show_details = True
-                        msg = ""
-                    elif msgbox.clickedButton() == button_cancel:
-                        self._ResetDetectionControls()
-                        self.STATUS["can_skip_message"] = False
-                        if "detected_cart_type" in self.STATUS:
-                            del self.STATUS["detected_cart_type"]
-                        return
+                summary = f"{msg:s}{msg_flash_size_s:s}{msg_save_type_s:s}{msg_flash_mapper_s:s}{msg_cart_type_s:s}{msg_gbmem:s}"
+                show_details, cancelled = self._ShowSupportedDetectionSummary(summary)
+                if cancelled:
+                    return
+                if show_details:
+                    msg = ""
 
             if not found_supported or show_details is True:
                 msgbox = _create_message_box(

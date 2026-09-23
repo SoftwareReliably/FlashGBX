@@ -53,6 +53,25 @@ def _clean_header_text(raw: bytes | bytearray, *, remove_newlines: bool = False)
     return text.replace("\n", "") if remove_newlines else text
 
 
+def _RenderAGBLogoPixels(img: PillowImage, logo_data: bytearray) -> bool:
+    pixels = img.load()
+    if pixels is None:
+        return False
+
+    for tile_row in range(2):
+        for tile_w in range(13):
+            for tile_h in range(8):
+                for bit in range(8):
+                    pos: int = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
+                    if pos >= len(logo_data):
+                        break
+                    pixel: int = (logo_data[pos] >> bit) & 1
+                    x: int = tile_w * 8 + bit
+                    y: int = tile_row * 8 + tile_h
+                    pixels[x, y] = pixel
+    return True
+
+
 class RomFileAGB:
     def __init__(self, file: RomSource = None) -> None:
         self.ROMFILE_PATH: Path | None = None
@@ -204,21 +223,8 @@ class RomFileAGB:
         img = Image.new(mode="P", size=(104, 16))
         img.info["transparency"] = 0
         img.putpalette([255, 255, 255, 0 if valid else 255, 0, 0])
-        pixels = img.load()
-        if pixels is None:
+        if not _RenderAGBLogoPixels(img, logo_data):
             return False
-
-        for tile_row in range(2):
-            for tile_w in range(13):
-                for tile_h in range(8):
-                    for bit in range(8):
-                        pos: int = (tile_row * 13 * 8) + (tile_w * 8) + tile_h
-                        if pos >= len(logo_data):
-                            break
-                        pixel: int = (logo_data[pos] >> bit) & 1
-                        x: int = tile_w * 8 + bit
-                        y: int = tile_row * 8 + tile_h
-                        pixels[x, y] = pixel
         return img
 
     def GetHeader(self, unchanged: bool = False) -> AGBHeader:

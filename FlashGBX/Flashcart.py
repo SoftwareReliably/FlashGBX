@@ -528,6 +528,25 @@ class Flashcart:
             return sector_position + offsets[address]
         return address
 
+    def _AdvanceSectorMap(self) -> int | Literal[False]:
+        raw_sector_map = self._config.get("sector_size")
+        if raw_sector_map is None:
+            return False
+        if isinstance(raw_sector_map, list):
+            sector_map: list[list[int]] = cast("list[list[int]]", raw_sector_map)
+            try:
+                sector_map[self._sector_pos][1] -= 1
+                if sector_map[self._sector_pos][1] == 0 and len(sector_map) > self._sector_pos + 1:
+                    self._sector_pos += 1
+                return sector_map[self._sector_pos][0]
+            except (IndexError, TypeError) as error:
+                dprint(f"Warning: Sector map is smaller than expected: {error}")
+                self._sector_pos = max(0, self._sector_pos - 1)
+                return False
+        if isinstance(raw_sector_map, int):
+            return raw_sector_map
+        return False
+
     def SectorErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> int | Literal[False]:
         if not skip:
             self.Reset(full_reset=False)
@@ -605,23 +624,7 @@ class Flashcart:
 
             self.Reset(full_reset=False)
 
-        raw_sector_map = self._config.get("sector_size")
-        if raw_sector_map is None:
-            return False
-        if isinstance(raw_sector_map, list):
-            sector_map: list[list[int]] = cast("list[list[int]]", raw_sector_map)
-            try:
-                sector_map[self._sector_pos][1] -= 1
-                if (sector_map[self._sector_pos][1] == 0) and (len(sector_map) > self._sector_pos + 1):
-                    self._sector_pos += 1
-                return sector_map[self._sector_pos][0]
-            except (IndexError, TypeError) as e:
-                dprint(f"Warning: Sector map is smaller than expected: {e}")
-                self._sector_pos: int = max(0, self._sector_pos - 1)
-                return False
-        if isinstance(raw_sector_map, int):
-            return raw_sector_map
-        return False
+        return self._AdvanceSectorMap()
 
     def HasBanks(self) -> bool:
         return "flash_bank_select_type" in self._config
@@ -718,78 +721,7 @@ class CFI:
             except Exception:
                 info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
 
-    def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
-        if buffer is False or len(buffer) < 0x400:
-            return False
-        buffer = bytearray(buffer)
-        magic: str = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
-
-        d_swap = self._get_data_swaps(magic)
-        if d_swap is None:
-            return False
-
-        info = cast("CFIInfo", {"d_swap": d_swap})
-        for pair in d_swap:
-            for j in range(len(buffer)):
-                buffer[j] = CFI.swap_bits(buffer[j], pair)
-        try:
-            info["flash_id"] = buffer[0:8]
-            info["magic"] = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
-
-            if buffer[0x36] == 0xFF and buffer[0x48] == 0xFF:
-                print(__("Warning: No information about the voltage range found in CFI data."))
-                try:
-                    with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
-                        f.write(buffer)
-                except Exception:
-                    logger.exception("Failed to write CFI diagnostics")
-                return False
-
-            pri_address: int = (buffer[0x2A] | (buffer[0x2C] << 8)) * 2
-            if (pri_address + 0x3C) >= 0x400:
-                pri_address = 0x80
-
-            info["vdd_min"] = (buffer[0x36] >> 4) + ((buffer[0x36] & 0x0F) / 10)
-            info["vdd_max"] = (buffer[0x38] >> 4) + ((buffer[0x38] & 0x0F) / 10)
-
-            self._set_single_write_timing(info, buffer)
-            self._set_buffer_write_timing(info, buffer)
-            self._set_erase_timings(info, buffer)
-
-            self._set_boot_sector_info(info, buffer, pri_address)
-
-            info["device_size"] = int(math.pow(2, buffer[0x4E]))
-            info["buffer_size"] = buffer[0x56] << 8 | buffer[0x54]
-            if info["buffer_size"] > 1:
-                info["buffer_write"] = True
-                info["buffer_size"] = int(math.pow(2, info["buffer_size"]))
-            else:
-                del info["buffer_size"]
-                info["buffer_write"] = False
-            info["erase_sector_regions"] = buffer[0x58]
-            info["erase_sector_blocks"] = []
-            pos = 0
-            for i in range(min(4, info["erase_sector_regions"])):
-                b: int = (buffer[0x5C + (i * 8)] << 8 | buffer[0x5A + (i * 8)]) + 1
-                t: int = (buffer[0x60 + (i * 8)] << 8 | buffer[0x5E + (i * 8)]) * 256
-                size: int = b * t
-                pos += size
-                info["erase_sector_blocks"].append([t, b, size])
-
-        except Exception as err:
-            print(
-                __(
-                    "Error: Trying to parse CFI data resulted in an error: {err}",
-                    err=str(err),
-                ),
-            )
-            try:
-                with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
-                    f.write(buffer)
-            except Exception as e:
-                logger.exception(f"Failed to write CFI diagnostics: {e}")
-            return False
-
+    def _FormatInfo(self, info: CFIInfo) -> str:
         s = ""
         if info["d_swap"] != [(0, 0)]:
             s += __("Swapped pins: {pins}", pins=str(info["d_swap"])) + "\n"
@@ -887,7 +819,81 @@ class CFI:
             if pos >= info["device_size"]:
                 pos = 0
                 oversize = True
-        info["info"] = s
+        return s
+
+    def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
+        if buffer is False or len(buffer) < 0x400:
+            return False
+        buffer = bytearray(buffer)
+        magic: str = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
+
+        d_swap = self._get_data_swaps(magic)
+        if d_swap is None:
+            return False
+
+        info = cast("CFIInfo", {"d_swap": d_swap})
+        for pair in d_swap:
+            for j in range(len(buffer)):
+                buffer[j] = CFI.swap_bits(buffer[j], pair)
+        try:
+            info["flash_id"] = buffer[0:8]
+            info["magic"] = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
+
+            if buffer[0x36] == 0xFF and buffer[0x48] == 0xFF:
+                print(__("Warning: No information about the voltage range found in CFI data."))
+                try:
+                    with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
+                        f.write(buffer)
+                except Exception:
+                    logger.exception("Failed to write CFI diagnostics")
+                return False
+
+            pri_address: int = (buffer[0x2A] | (buffer[0x2C] << 8)) * 2
+            if (pri_address + 0x3C) >= 0x400:
+                pri_address = 0x80
+
+            info["vdd_min"] = (buffer[0x36] >> 4) + ((buffer[0x36] & 0x0F) / 10)
+            info["vdd_max"] = (buffer[0x38] >> 4) + ((buffer[0x38] & 0x0F) / 10)
+
+            self._set_single_write_timing(info, buffer)
+            self._set_buffer_write_timing(info, buffer)
+            self._set_erase_timings(info, buffer)
+
+            self._set_boot_sector_info(info, buffer, pri_address)
+
+            info["device_size"] = int(math.pow(2, buffer[0x4E]))
+            info["buffer_size"] = buffer[0x56] << 8 | buffer[0x54]
+            if info["buffer_size"] > 1:
+                info["buffer_write"] = True
+                info["buffer_size"] = int(math.pow(2, info["buffer_size"]))
+            else:
+                del info["buffer_size"]
+                info["buffer_write"] = False
+            info["erase_sector_regions"] = buffer[0x58]
+            info["erase_sector_blocks"] = []
+            pos = 0
+            for i in range(min(4, info["erase_sector_regions"])):
+                b: int = (buffer[0x5C + (i * 8)] << 8 | buffer[0x5A + (i * 8)]) + 1
+                t: int = (buffer[0x60 + (i * 8)] << 8 | buffer[0x5E + (i * 8)]) * 256
+                size: int = b * t
+                pos += size
+                info["erase_sector_blocks"].append([t, b, size])
+
+        except Exception as err:
+            print(
+                __(
+                    "Error: Trying to parse CFI data resulted in an error: {err}",
+                    err=str(err),
+                ),
+            )
+            try:
+                with (Path(AppContext.CONFIG_PATH) / "cfi_debug.bin").open("wb") as f:
+                    f.write(buffer)
+            except Exception as e:
+                logger.exception(f"Failed to write CFI diagnostics: {e}")
+            return False
+
+        info["info"] = self._FormatInfo(info)
 
         return info
 
