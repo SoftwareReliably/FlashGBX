@@ -2411,159 +2411,163 @@ class LK_Device(ABC):
             if mbc > 0x200:
                 checkSaveType = False
 
-        # Disable Auto Power Off
-        _apoe = False
-        if self.FW["fw_ver"] >= 12 and self.SKIP_POWERCYCLE is False and self.CanPowerCycleCart():
-            self.CartPowerCycle()
-            _apoe = self._get_fw_variable("AUTO_POWEROFF_ENABLED") == 1
-            if _apoe is True:
-                _apot = self._get_fw_variable("AUTO_POWEROFF_TIME")
-                self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
+        _auto_poweroff_time_changed = False
+        try:
+            # Disable Auto Power Off
+            _apoe = False
+            if self.FW["fw_ver"] >= 12 and self.SKIP_POWERCYCLE is False and self.CanPowerCycleCart():
+                self.CartPowerCycle()
+                _apoe = self._get_fw_variable("AUTO_POWEROFF_ENABLED") == 1
+                if _apoe is True:
+                    _apot = self._get_fw_variable("AUTO_POWEROFF_TIME")
+                    _auto_poweroff_time_changed = True
+                    self._set_fw_variable("AUTO_POWEROFF_TIME", 5000)
 
-        # Detect Flash Cart
-        self._SetDetectionProgress(__("Detecting Flash..."), signal)
-        ret = self.DetectFlash(limitVoltage=limitVoltage)
-        if ret is False:
-            return False
-        (cart_types, cart_type_id, flash_id, cfi_s, cfi, detected_size) = ret
-        mode: Literal["DMG", "AGB"] | None = self.MODE
-        if mode is None:
-            return False
-        supported_carts = list(self.SUPPORTED_CARTS[mode].values())
-        cart_type = supported_carts[cart_type_id]
+            # Detect Flash Cart
+            self._SetDetectionProgress(__("Detecting Flash..."), signal)
+            ret = self.DetectFlash(limitVoltage=limitVoltage)
+            if ret is False:
+                return False
+            (cart_types, cart_type_id, flash_id, cfi_s, cfi, detected_size) = ret
+            mode: Literal["DMG", "AGB"] | None = self.MODE
+            if mode is None:
+                return False
+            supported_carts = list(self.SUPPORTED_CARTS[mode].values())
+            cart_type = supported_carts[cart_type_id]
 
-        # Skip DMG save type detection
-        if self.MODE == "DMG" and cart_type_id == 0:
-            checkSaveType = False
+            # Skip DMG save type detection
+            if self.MODE == "DMG" and cart_type_id == 0:
+                checkSaveType = False
 
-        # Preparations
-        checkSaveType, save_size, save_type = self._PrepareCartridgeSaveDetection(
-            cart_type,
-            checkSaveType,
-            info,
-            signal,
-        )
-
-        # Save Type and Size
-        if checkSaveType:
-            if signal is not None:
-                self.SetProgress(
-                    {"action": "UPDATE_INFO", "text": __("Detecting save type...")},
-                    signal=signal,
-                )
-            if self.MODE == "DMG":
-                save_size = 131072
-                save_type = 0x04
-                if mbc == 0x20:  # MBC6
-                    save_size = 1081344
-                    save_type = 0x104
-                    return (
-                        info,
-                        save_size,
-                        save_type,
-                        save_chip,
-                        sram_unstable,
-                        cart_types,
-                        cart_type_id,
-                        cfi_s,
-                        cfi,
-                        flash_id,
-                        detected_size,
-                    )
-                if mbc == 0x22:  # MBC7
-                    save_type = 0x102
-                    save_size = 512
-                elif mbc == 0xFD:  # TAMA5
-                    save_size = 32
-                    save_type = 0x103
-                    return (
-                        info,
-                        save_size,
-                        save_type,
-                        save_chip,
-                        sram_unstable,
-                        cart_types,
-                        cart_type_id,
-                        cfi_s,
-                        cfi,
-                        flash_id,
-                        detected_size,
-                    )
-                elif mbc == 0x105:  # G-MMC1
-                    save_size = 0x20000
-                    save_type = 0x04
-                    return (
-                        info,
-                        save_size,
-                        save_type,
-                        save_chip,
-                        sram_unstable,
-                        cart_types,
-                        cart_type_id,
-                        cfi_s,
-                        cfi,
-                        flash_id,
-                        detected_size,
-                    )
-                args = {
-                    "mode": 2,
-                    "path": None,
-                    "mbc": mbc,
-                    "save_type": save_type,
-                    "rtc": False,
-                    "detect": True,
-                }
-            elif self.MODE == "AGB":
-                args = {
-                    "mode": 2,
-                    "path": None,
-                    "mbc": mbc,
-                    "save_type": 8,
-                    "rtc": False,
-                    "detect": True,
-                }
-            else:
-                return None
-
-            ret = self._BackupRestoreRAM(args=args)
-
-            if ret is not False and "data" in self.INFO:
-                save_size = self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
-            else:
+            # Preparations
+            checkSaveType, save_size, save_type = self._PrepareCartridgeSaveDetection(
+                cart_type,
+                checkSaveType,
+                info,
+                signal,
+            )
+            if self.MODE == "AGB" and info["3d_memory"] is True:
+                checkSaveType = False
                 save_size = 0
+                save_type = None
 
-            if self.MODE == "DMG":
-                save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
-
-            elif self.MODE == "AGB":
-                if info["3d_memory"] is True:
-                    save_type = None
-                    save_size = 0
+            # Save Type and Size
+            if checkSaveType:
+                if signal is not None:
+                    self.SetProgress(
+                        {"action": "UPDATE_INFO", "text": __("Detecting save type...")},
+                        signal=signal,
+                    )
+                if self.MODE == "DMG":
+                    save_size = 131072
+                    save_type = 0x04
+                    if mbc == 0x20:  # MBC6
+                        save_size = 1081344
+                        save_type = 0x104
+                        return (
+                            info,
+                            save_size,
+                            save_type,
+                            save_chip,
+                            sram_unstable,
+                            cart_types,
+                            cart_type_id,
+                            cfi_s,
+                            cfi,
+                            flash_id,
+                            detected_size,
+                        )
+                    if mbc == 0x22:  # MBC7
+                        save_type = 0x102
+                        save_size = 512
+                    elif mbc == 0xFD:  # TAMA5
+                        save_size = 32
+                        save_type = 0x103
+                        return (
+                            info,
+                            save_size,
+                            save_type,
+                            save_chip,
+                            sram_unstable,
+                            cart_types,
+                            cart_type_id,
+                            cfi_s,
+                            cfi,
+                            flash_id,
+                            detected_size,
+                        )
+                    elif mbc == 0x105:  # G-MMC1
+                        save_size = 0x20000
+                        save_type = 0x04
+                        return (
+                            info,
+                            save_size,
+                            save_type,
+                            save_chip,
+                            sram_unstable,
+                            cart_types,
+                            cart_type_id,
+                            cfi_s,
+                            cfi,
+                            flash_id,
+                            detected_size,
+                        )
+                    args = {
+                        "mode": 2,
+                        "path": None,
+                        "mbc": mbc,
+                        "save_type": save_type,
+                        "rtc": False,
+                        "detect": True,
+                    }
+                elif self.MODE == "AGB":
+                    args = {
+                        "mode": 2,
+                        "path": None,
+                        "mbc": mbc,
+                        "save_type": 8,
+                        "rtc": False,
+                        "detect": True,
+                    }
                 else:
+                    return None
+
+                ret = self._BackupRestoreRAM(args=args)
+
+                if ret is not False and "data" in self.INFO:
+                    save_size = self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
+                else:
+                    save_size = 0
+
+                if self.MODE == "DMG":
+                    save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
+
+                elif self.MODE == "AGB":
                     # Check for FLASH
                     save_type, save_size, save_chip = self._DetectAgbFlashSaveType(save_size)
                     save_type, save_size = self._DetectAgbNonFlashSaveType(save_type, save_size, mbc, info)
 
-        self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
-        self.INFO["last_action"] = 0
-        self.INFO["action"] = None
+            self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
+            self.INFO["last_action"] = 0
+            self.INFO["action"] = None
 
-        if self.CanPowerCycleCart() and _apoe is True and self.SKIP_POWERCYCLE is False:
-            self._set_fw_variable("AUTO_POWEROFF_TIME", _apot)
+            return (
+                info,
+                save_size,
+                save_type,
+                save_chip,
+                sram_unstable,
+                cart_types,
+                cart_type_id,
+                cfi_s,
+                cfi,
+                flash_id,
+                detected_size,
+            )
 
-        return (
-            info,
-            save_size,
-            save_type,
-            save_chip,
-            sram_unstable,
-            cart_types,
-            cart_type_id,
-            cfi_s,
-            cfi,
-            flash_id,
-            detected_size,
-        )
+        finally:
+            if _auto_poweroff_time_changed:
+                self._set_fw_variable("AUTO_POWEROFF_TIME", _apot)
 
     def CheckBatterylessSRAM(self) -> dict[str, int] | Literal[False]:
         bl_size: int | None = None

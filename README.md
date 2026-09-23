@@ -460,16 +460,16 @@ The scope change was measured locally on macOS with Python 3.14.5:
 | --- | ---: | ---: | ---: |
 | Previous explicit module allowlist | 697 | 73.86% | 68% |
 | Previous expanded package diagnostic | 697 | 59.79% | None |
-| Current package-wide gate | 1,262 | 72.84% | 60% |
+| Current package-wide gate | 1,330 | 74.27% | 60% |
 
 The allowlist and package measurements have different denominators; the lower package percentage does
-not indicate a loss of tested behavior. Engine I/O, firmware-updater, GUI, and CLI tests raised the local
-package result to 72.84% combined coverage, with 75.77% statement coverage and 64.74% branch coverage.
-The four round-3 focus files now measure 54.51% for `LK_Device.py`, 73.96% for `hw_GBxCartRW.py`, 69.31%
-for `FlashGBX_GUI.py`, and 73.37% for `FlashGBX_CLI.py`. The local result remains above the 70% milestone
-and is 0.16 percentage points below the directional 73% package goal. The 65% gate ratchet remains pending
-until the same implementation has matching Linux evidence with sufficient headroom; the omitted hardware
-backends remain unchanged.
+not indicate a loss of tested behavior. Engine I/O, firmware-updater, GUI, CLI, and cartridge-detection
+worker tests raised the local package result to 74.27% combined coverage, with 76.96% statement coverage
+and 66.81% branch coverage.
+The four round-3 focus files now measure 59.57% for `LK_Device.py`, 73.96% for `hw_GBxCartRW.py`, 69.31%
+for `FlashGBX_GUI.py`, and 73.37% for `FlashGBX_CLI.py`. The local result is 1.27 percentage points above
+the directional 73% package goal. The 65% gate ratchet remains pending until the same implementation has
+matching Linux evidence with sufficient headroom; the omitted hardware backends remain unchanged.
 
 The test configuration blocks real serial-port access by default. Tests that exercise GBxCart RW behavior inject an in-memory serial mock, and the Pokémon Red scenario uses a generated header fixture rather than cartridge or ROM data. No connected hardware is required.
 
