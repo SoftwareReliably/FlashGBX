@@ -1154,13 +1154,12 @@ class FlashGBX_CLI:
             self._WarnUnsupportedDmgMapper(data)
 
         elif self.CONN.GetMode() == "AGB":
-            game_name = None
             if data["db"]:
-                game_name = Path(
-                    generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None),
-                ).stem
-            if game_name is not None:
-                rows.append((__("Game Name:"), game_name))
+                self._AppendOptionalRow(
+                    rows,
+                    __("Game Name:"),
+                    Path(generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)).stem,
+                )
 
             rows.append((__("ROM Title:"), Formatter.title(data["game_title"])))
 

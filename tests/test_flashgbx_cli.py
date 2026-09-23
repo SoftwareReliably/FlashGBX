@@ -679,6 +679,11 @@ def test_read_cartridge_formats_agb_database_and_invalid_metadata(tmp_path: Path
     assert bad is False
     assert parsed["rom_size"] == 0x4000000
     assert "64 MiB" in text
+    assert "Game Name:" in text
+
+    no_database_header = agb_header()
+    _bad, text, _parsed = cli.ReadCartridge(no_database_header)
+    assert "Game Name:" not in text
 
     invalid = agb_header()
     invalid.update(

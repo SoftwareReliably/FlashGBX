@@ -6133,6 +6133,37 @@ class LK_Device(ABC):
         if self.FW["fw_ver"] >= 12:
             self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
 
+    def _configure_flash_command_bank(self, cart_type: dict[str, Any]) -> None:
+        """Configure bank selection for flash command execution."""
+        if self.FW["fw_ver"] >= 6:
+            if "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
+                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
+                self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
+                if "bank_switch" in cart_type["commands"]:
+                    self._write(len(cart_type["commands"]["bank_switch"]))  # number of commands
+                    for command in cart_type["commands"]["bank_switch"]:
+                        address = command[0]
+                        value = command[1]
+                        if value == "ID":
+                            self._write(bytearray(struct.pack(">I", address)))  # address
+                            self._write(0)  # type = address
+                        else:
+                            self._write(bytearray(struct.pack(">I", value)))  # value
+                            self._write(1)  # type = value
+                    ret = self._read(1)
+                    if ret != 0x01:
+                        print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
+                else:
+                    self._write(0, wait=True)
+            else:
+                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
+                self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
+                self._write(0, wait=True)
+        elif "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
+            self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
+        else:
+            self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
+
     def _load_flash_commands(
         self,
         cart_type: dict[str, Any],
@@ -6207,35 +6238,7 @@ class LK_Device(ABC):
 
             we = self._configure_flash_write_pin(flashcart)
             self._send_flash_commands(flash_cmds)
-
-            if self.FW["fw_ver"] >= 6:
-                if "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
-                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
-                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
-                    if "bank_switch" in cart_type["commands"]:
-                        self._write(len(cart_type["commands"]["bank_switch"]))  # number of commands
-                        for command in cart_type["commands"]["bank_switch"]:
-                            address = command[0]
-                            value = command[1]
-                            if value == "ID":
-                                self._write(bytearray(struct.pack(">I", address)))  # address
-                                self._write(0)  # type = address
-                            else:
-                                self._write(bytearray(struct.pack(">I", value)))  # value
-                                self._write(1)  # type = value
-                        ret = self._read(1)
-                        if ret != 0x01:
-                            print("Error in DMG_SET_BANK_CHANGE_CMD:", ret)
-                    else:
-                        self._write(0, wait=True)
-                else:
-                    self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
-                    self._write(self.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"])
-                    self._write(0, wait=True)
-            elif "flash_commands_on_bank_1" in cart_type and cart_type["flash_commands_on_bank_1"] is True:
-                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 1)
-            else:
-                self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
+            self._configure_flash_command_bank(cart_type)
 
             if self.FW["fw_ver"] >= 12:
                 has_status_register = "status_register_mask" in cart_type

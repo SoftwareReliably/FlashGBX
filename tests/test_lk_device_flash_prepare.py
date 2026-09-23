@@ -799,6 +799,75 @@ def test_load_flash_commands_configures_double_die_bank_switch_status_and_irq(
 
 
 @pytest.mark.parametrize(
+    ("firmware", "bank_one", "bank_switch", "bank_response", "expected_variables", "expected_writes", "expected_reads"),
+    [
+        (5, True, None, 1, [("FLASH_COMMANDS_BANK_1", 1)], [], []),
+        (5, False, None, 1, [("FLASH_COMMANDS_BANK_1", 0)], [], []),
+        (
+            6,
+            False,
+            None,
+            1,
+            [("FLASH_COMMANDS_BANK_1", 0)],
+            [(GbxDevice.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False), (0, True)],
+            [],
+        ),
+        (
+            6,
+            True,
+            None,
+            1,
+            [("FLASH_COMMANDS_BANK_1", 1)],
+            [(GbxDevice.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False), (0, True)],
+            [],
+        ),
+        (
+            6,
+            True,
+            [[0x2100, "ID"], [0x3000, 7]],
+            0,
+            [("FLASH_COMMANDS_BANK_1", 1)],
+            [
+                (GbxDevice.DEVICE_CMD["DMG_SET_BANK_CHANGE_CMD"], False),
+                (2, False),
+                (bytearray(struct.pack(">I", 0x2100)), False),
+                (0, False),
+                (bytearray(struct.pack(">I", 7)), False),
+                (1, False),
+            ],
+            [1],
+        ),
+    ],
+    ids=["legacy-bank-one", "legacy-bank-zero", "modern-bank-zero", "modern-empty-switch", "modern-switch-error"],
+)
+def test_configure_flash_command_bank_preserves_firmware_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    firmware: int,
+    bank_one: bool,
+    bank_switch: list[list[int | str]] | None,
+    bank_response: int,
+    expected_variables: list[tuple[str, int]],
+    expected_writes: list[tuple[int | bytearray, bool]],
+    expected_reads: list[int],
+) -> None:
+    device = GbxDevice()
+    records = install_flash_command_boundaries(device, monkeypatch, firmware=firmware, bank_response=bank_response)
+    cart_type: dict[str, Any] = {"flash_commands_on_bank_1": bank_one, "commands": {}}
+    if bank_switch is not None:
+        cart_type["commands"]["bank_switch"] = bank_switch
+
+    device._configure_flash_command_bank(cart_type)
+
+    assert records.firmware_variables == expected_variables
+    assert records.writes == expected_writes
+    assert records.reads == expected_reads
+    assert ("Error in DMG_SET_BANK_CHANGE_CMD" in capsys.readouterr().out) is (
+        bank_response != 1 and bool(expected_reads)
+    )
+
+
+@pytest.mark.parametrize(
     ("firmware", "pullups", "irq_setting", "expected_prefix", "expected_irq"),
     [
         (7, True, None, [], None),
