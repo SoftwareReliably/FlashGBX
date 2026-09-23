@@ -723,6 +723,26 @@ class FlashGBX_CLI:
             sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
         return sectors, sector_count
 
+    def _FinishFlashROM(self) -> None:
+        self.CONN.INFO["last_action"] = 0
+        if self.PROGRESS.PROGRESS.get("verified"):
+            print(ANSI.GREEN + __("The ROM was written and verified successfully!") + ANSI.RESET)
+        elif "broken_sectors" in self.CONN.INFO:
+            sectors, sector_count = self._FormatBrokenSectors()
+            print(
+                ANSI.RED
+                + ___(
+                    "The ROM was written completely, but verification of written data failed in the following sector: {sectors}.",
+                    "The ROM was written completely, but verification of written data failed in the following sectors: {sectors}.",
+                    n=sector_count,
+                    sectors=sectors[:-2],
+                )
+                + ANSI.RESET,
+            )
+            self.RETVAL = 1
+        else:
+            print(__("ROM writing complete!"))
+
     def _WriteDumpReport(self, time_elapsed: float | None, speed: str | None) -> None:
         if self.ARGS["argparsed"].generate_dump_report is not True:
             return
@@ -758,24 +778,7 @@ class FlashGBX_CLI:
             self.PROGRESS.PROGRESS["time_start"] = 0
 
         if self.CONN.INFO["last_action"] == 4:  # Flash ROM
-            self.CONN.INFO["last_action"] = 0
-            if self.PROGRESS.PROGRESS.get("verified"):
-                print(ANSI.GREEN + __("The ROM was written and verified successfully!") + ANSI.RESET)
-            elif "broken_sectors" in self.CONN.INFO:
-                s, sc = self._FormatBrokenSectors()
-                print(
-                    ANSI.RED
-                    + ___(
-                        "The ROM was written completely, but verification of written data failed in the following sector: {sectors}.",
-                        "The ROM was written completely, but verification of written data failed in the following sectors: {sectors}.",
-                        n=sc,
-                        sectors=s[:-2],
-                    )
-                    + ANSI.RESET,
-                )
-                self.RETVAL = 1
-            else:
-                print(__("ROM writing complete!"))
+            self._FinishFlashROM()
 
         elif self.CONN.INFO["last_action"] == 1:  # Backup ROM
             self.CONN.INFO["last_action"] = 0
@@ -1039,6 +1042,28 @@ class FlashGBX_CLI:
             rows.append((label, value))
 
     @staticmethod
+    def _AgbROMDetails(data: HeaderData) -> tuple[str | None, str | None, bool]:
+        database_entry = data["db"]
+        rom_checksum = None
+        rom_size = None
+        bad_read = False
+        if database_entry is not None:
+            if data["rom_size_calc"] < 0x400000:
+                rom_checksum = c__("Game Data", "In database") + " (0x{:06X})".format(database_entry["rc"])
+            rom_size = "{:d} MiB".format(int(database_entry["rs"] / 1024 / 1024))
+            data["rom_size"] = database_entry["rs"]
+        elif data["rom_size"] != 0:
+            rom_checksum = c__("Game Data", "No database entry")
+            if data["rom_size"] not in RomSizes():
+                data["rom_size"] = 0x2000000
+            rom_size = "{:d} MiB".format(int(data["rom_size"] / 1024 / 1024))
+        else:
+            rom_checksum = c__("Game Data", "No database entry")
+            rom_size = c__("Game Data", "Not detected")
+            bad_read = True
+        return rom_checksum, rom_size, bad_read
+
+    @staticmethod
     def _FormatCompatibleCartridges(
         cart_types: Sequence[int],
         selected_type: int,
@@ -1213,22 +1238,8 @@ class FlashGBX_CLI:
                 bad_read = True
 
             db_agb_entry = data["db"]
-            rom_checksum_str = None
-            rom_size_str = None
-            if db_agb_entry is not None:
-                if data["rom_size_calc"] < 0x400000:
-                    rom_checksum_str = c__("Game Data", "In database") + " (0x{:06X})".format(db_agb_entry["rc"])
-                rom_size_str = "{:d} MiB".format(int(db_agb_entry["rs"] / 1024 / 1024))
-                data["rom_size"] = db_agb_entry["rs"]
-            elif data["rom_size"] != 0:
-                rom_checksum_str = c__("Game Data", "No database entry")
-                if data["rom_size"] not in RomSizes():
-                    data["rom_size"] = 0x2000000
-                rom_size_str = "{:d} MiB".format(int(data["rom_size"] / 1024 / 1024))
-            else:
-                rom_checksum_str = c__("Game Data", "No database entry")
-                rom_size_str = c__("Game Data", "Not detected")
-                bad_read = True
+            rom_checksum_str, rom_size_str, agb_bad_read = self._AgbROMDetails(data)
+            bad_read |= agb_bad_read
             self._AppendOptionalRow(rows, __("ROM Checksum:"), rom_checksum_str)
             rows.append((__("ROM Size:"), rom_size_str))
 
@@ -1302,9 +1313,6 @@ class FlashGBX_CLI:
             detected_size,
         ) = ret
 
-        # Save Type
-        save_type = 0 if save_type is None else save_type
-
         # Cart Type
         cart_type = cart_type_id if cart_types else None
         msg_cart_type = ""
@@ -1321,35 +1329,7 @@ class FlashGBX_CLI:
         # Header
         msg_header_s: str = __("Game Title:") + " " + Formatter.title(header["game_title"]) + "\n"
 
-        # Save Type
-        msg_save_type_s = ""
-        temp = ""
-        if save_chip is not None:
-            temp: str = f"{AgbSaveTypes(save_type).GetString():s} ({save_chip:s})"
-        elif self.CONN.GetMode() == "DMG":
-            temp = f"{DmgSaveTypes(index=save_type).GetString():s}"
-        elif self.CONN.GetMode() == "AGB":
-            temp = f"{AgbSaveTypes(save_type).GetString():s}"
-        if save_type == 0:
-            if save_chip and "Unknown" in save_chip:
-                msg_save_type_s = __("Save Type:") + " " + save_chip + "\n"
-            else:
-                msg_save_type_s: str = (
-                    __("Save Type:") + " " + c__("Save Type", "None or unknown (no save data detected)") + "\n"
-                )
-        elif sram_unstable and "SRAM" in temp:
-            msg_save_type_s = (
-                __("Save Type:")
-                + " "
-                + temp
-                + " "
-                + ANSI.RED
-                + c__("Save Data Access", "not stable or not battery-backed")
-                + ANSI.RESET
-                + "\n"
-            )
-        else:
-            msg_save_type_s = __("Save Type:") + " " + temp + "\n"
+        msg_save_type_s = self._FormatDetectedSaveType(save_type, save_chip, sram_unstable, mode)
 
         # Cart Type
         msg_cart_type_s = ""
@@ -1450,6 +1430,41 @@ class FlashGBX_CLI:
         print(temp[:-1])
 
         return cart_type
+
+    @staticmethod
+    def _FormatDetectedSaveType(
+        save_type: int | None,
+        save_chip: str | None,
+        sram_unstable: bool | None,
+        mode: PlatformMode,
+    ) -> str:
+        save_type = 0 if save_type is None else save_type
+        if save_chip is not None:
+            description = f"{AgbSaveTypes(save_type).GetString():s} ({save_chip:s})"
+        elif mode == "DMG":
+            description = f"{DmgSaveTypes(index=save_type).GetString():s}"
+        else:
+            description = f"{AgbSaveTypes(save_type).GetString():s}"
+
+        if save_type == 0:
+            if save_chip and "Unknown" in save_chip:
+                message = __("Save Type:") + " " + save_chip + "\n"
+            else:
+                message = __("Save Type:") + " " + c__("Save Type", "None or unknown (no save data detected)") + "\n"
+        elif sram_unstable and "SRAM" in description:
+            message = (
+                __("Save Type:")
+                + " "
+                + description
+                + " "
+                + ANSI.RED
+                + c__("Save Data Access", "not stable or not battery-backed")
+                + ANSI.RESET
+                + "\n"
+            )
+        else:
+            message = __("Save Type:") + " " + description + "\n"
+        return message
 
     def _ResolveBackupCartType(
         self,

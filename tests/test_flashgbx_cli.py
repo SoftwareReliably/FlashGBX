@@ -6,7 +6,7 @@ import sys
 import zipfile
 from argparse import Namespace
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pytest
 from serial import SerialException
@@ -466,6 +466,7 @@ def test_finish_operation_reports_rom_write_results(
     verified: bool,
     broken: list[tuple[int, int]] | None,
     retval: int,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
@@ -479,6 +480,13 @@ def test_finish_operation_reports_rom_write_results(
 
     assert conn.INFO["last_action"] == 0
     assert retval == cli.RETVAL
+    output = capsys.readouterr().out
+    if verified:
+        assert "written and verified successfully" in output
+    elif broken is not None:
+        assert "verification of written data failed" in output
+    else:
+        assert "ROM writing complete" in output
 
 
 @pytest.mark.parametrize(
@@ -695,6 +703,65 @@ def test_read_cartridge_formats_agb_database_and_invalid_metadata(tmp_path: Path
     bad, text, _ = cli.ReadCartridge(invalid)
     assert bad is True
     assert "Not detected" in text
+
+
+@pytest.mark.parametrize(
+    ("database", "rom_size_calc", "rom_size", "checksum_text", "size_text", "expected_size", "bad_read"),
+    [
+        ({"rc": 0x123456, "rs": 0x200000}, 0x200000, 0, "0x123456", "2 MiB", 0x200000, False),
+        ({"rc": 0x123456, "rs": 0x4000000}, 0x4000000, 0, None, "64 MiB", 0x4000000, False),
+        (None, 0x200000, 0x200000, "No database entry", "2 MiB", 0x200000, False),
+        (None, 0x200000, 0x300000, "No database entry", "32 MiB", 0x2000000, False),
+        (None, 0x200000, 0, "No database entry", "Not detected", 0, True),
+    ],
+)
+def test_agb_rom_details_formats_database_and_fallback_sizes(
+    database: dict[str, int] | None,
+    rom_size_calc: int,
+    rom_size: int,
+    checksum_text: str | None,
+    size_text: str,
+    expected_size: int,
+    bad_read: bool,
+) -> None:
+    data: dict[str, Any] = {
+        "db": database,
+        "rom_size_calc": rom_size_calc,
+        "rom_size": rom_size,
+    }
+
+    checksum, size, result_bad_read = FlashGBX_CLI._AgbROMDetails(data)
+
+    assert size == size_text
+    assert result_bad_read is bad_read
+    assert data["rom_size"] == expected_size
+    if checksum_text is None:
+        assert checksum is None
+    else:
+        assert checksum_text in str(checksum)
+
+
+@pytest.mark.parametrize(
+    ("save_type", "save_chip", "sram_unstable", "mode", "expected_text"),
+    [
+        (None, None, False, "DMG", "None or unknown"),
+        (0, "Unknown flash chip", None, "AGB", "Unknown flash chip"),
+        (1, None, False, "AGB", "4K EEPROM"),
+        (3, None, True, "AGB", "not stable or not battery-backed"),
+        (4, None, False, "DMG", "256K SRAM"),
+    ],
+)
+def test_detected_save_type_message(
+    save_type: int | None,
+    save_chip: str | None,
+    sram_unstable: bool | None,
+    mode: Literal["DMG", "AGB"],
+    expected_text: str,
+) -> None:
+    message = FlashGBX_CLI._FormatDetectedSaveType(save_type, save_chip, sram_unstable, mode)
+
+    assert "Save Type:" in message
+    assert expected_text in message
 
 
 @pytest.mark.parametrize(("stable", "profiles", "expected"), [(False, [{}], -1), (True, [], -2)])

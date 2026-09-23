@@ -2773,6 +2773,58 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuLanguage.setEnabled(True)
         self.btnCancel.setEnabled(False)
 
+    def _FinishAGBROMBackup(self, msgbox: QtWidgets.QMessageBox, elapsed_message: str) -> None:
+        if "db" in self._device.INFO and self._device.INFO["db"] is not None:
+            if self._device.INFO["db"]["rc"] == self._device.INFO.get("file_crc32"):
+                self.lblAGBHeaderROMChecksumResult.setText(
+                    c__("Game Data", "Valid") + " (0x{:06X})".format(self._device.INFO["db"]["rc"]),
+                )
+                self.lblAGBHeaderROMChecksumResult.setStyleSheet("QLabel { color: green; }")
+                self.lblStatus4a.setText(__("Done!"))
+                msg = __("The ROM backup is complete and the checksum was verified successfully!")
+                msgbox.setText(msg + elapsed_message)
+                msgbox.exec()
+            else:
+                self.lblAGBHeaderROMChecksumResult.setText(
+                    c__("Game Data", "Invalid")
+                    + " (0x{:06X}≠0x{:06X})".format(
+                        self._device.INFO.get("file_crc32", 0),
+                        self._device.INFO["db"]["rc"],
+                    ),
+                )
+                self.lblAGBHeaderROMChecksumResult.setStyleSheet("QLabel { color: red; }")
+                self.lblStatus4a.setText(__("Done!"))
+                msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
+                if self._device.INFO["loop_detected"] is not False:
+                    msg += "\n\n" + __(
+                        "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                        pos="0x{:X}".format(self._device.INFO["loop_detected"]),
+                        size=Formatter.file_size(self._device.INFO["loop_detected"], as_int=True),
+                    )
+                else:
+                    msg += " " + __(
+                        "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
+                    )
+                msgbox.setText(msg + elapsed_message)
+                msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+                msgbox.exec()
+        else:
+            self.lblAGBHeaderROMChecksumResult.setText("0x{:06X}".format(self._device.INFO.get("file_crc32", 0)))
+            self.lblAGBHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
+            self.lblStatus4a.setText(__("Done!"))
+            msg = __(
+                "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
+            )
+            if self._device.INFO["loop_detected"] is not False:
+                msg += "\n\n" + __(
+                    "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                    pos="0x{:X}".format(self._device.INFO["loop_detected"]),
+                    size=Formatter.file_size(self._device.INFO["loop_detected"], as_int=True),
+                )
+                msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            msgbox.setText(msg + elapsed_message)
+            msgbox.exec()
+
     def _CompleteOperationFinish(self, *, skip_finish_message: bool) -> None:
         if skip_finish_message:
             self.SETTINGS.setValue("SkipFinishMessage", "enabled")
@@ -2888,58 +2940,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             self._RetryBackupWithGmmc1()
                             return
             elif self._device.GetMode() == "AGB":
-                if "db" in self._device.INFO and self._device.INFO["db"] is not None:
-                    if self._device.INFO["db"]["rc"] == self._device.INFO.get("file_crc32"):
-                        self.lblAGBHeaderROMChecksumResult.setText(
-                            c__("Game Data", "Valid") + " (0x{:06X})".format(self._device.INFO["db"]["rc"]),
-                        )
-                        self.lblAGBHeaderROMChecksumResult.setStyleSheet("QLabel { color: green; }")
-                        self.lblStatus4a.setText(__("Done!"))
-                        msg = __("The ROM backup is complete and the checksum was verified successfully!")
-                        msgbox.setText(msg + msg_te)
-                        msgbox.exec()
-                    else:
-                        self.lblAGBHeaderROMChecksumResult.setText(
-                            c__("Game Data", "Invalid")
-                            + " (0x{:06X}≠0x{:06X})".format(
-                                self._device.INFO.get("file_crc32", 0),
-                                self._device.INFO["db"]["rc"],
-                            ),
-                        )
-                        self.lblAGBHeaderROMChecksumResult.setStyleSheet("QLabel { color: red; }")
-                        self.lblStatus4a.setText(__("Done!"))
-                        msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
-                        if self._device.INFO["loop_detected"] is not False:
-                            msg += "\n\n" + __(
-                                "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                                pos="0x{:X}".format(self._device.INFO["loop_detected"]),
-                                size=Formatter.file_size(self._device.INFO["loop_detected"], as_int=True),
-                            )
-                        else:
-                            msg += " " + __(
-                                "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                            )
-                        msgbox.setText(msg + msg_te)
-                        msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-                        msgbox.exec()
-                else:
-                    self.lblAGBHeaderROMChecksumResult.setText(
-                        "0x{:06X}".format(self._device.INFO.get("file_crc32", 0))
-                    )
-                    self.lblAGBHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-                    self.lblStatus4a.setText(__("Done!"))
-                    msg = __(
-                        "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
-                    )
-                    if self._device.INFO["loop_detected"] is not False:
-                        msg += "\n\n" + __(
-                            "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                            pos="0x{:X}".format(self._device.INFO["loop_detected"]),
-                            size=Formatter.file_size(self._device.INFO["loop_detected"], as_int=True),
-                        )
-                        msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-                    msgbox.setText(msg + msg_te)
-                    msgbox.exec()
+                self._FinishAGBROMBackup(msgbox, msg_te)
 
             self._HandleROMBackupReportAction(msgbox, report)
 

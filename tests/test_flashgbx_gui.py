@@ -2313,6 +2313,42 @@ def test_finish_operation_handles_primary_results(
     assert device.INFO["last_action"] == 0
 
 
+@pytest.mark.parametrize(
+    ("database", "file_crc", "loop", "expected_checksum", "expected_message", "expected_style", "warning"),
+    [
+        ({"rc": 0x123456}, 0x123456, False, "Valid", "verified successfully", "QLabel { color: green; }", False),
+        ({"rc": 0x123456}, 0x654321, False, "Invalid", "checksum doesn't match", "QLabel { color: red; }", True),
+        (None, 0x123456, False, "0x123456", "verification was skipped", "original", False),
+        (None, 0x123456, 0x10000, "0x123456", "data loop was detected", "original", True),
+    ],
+)
+def test_finish_agb_rom_backup_formats_checksums_and_warnings(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    database: dict[str, int] | None,
+    file_crc: int,
+    loop: int | bool,
+    expected_checksum: str,
+    expected_message: str,
+    expected_style: str,
+    warning: bool,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    device = FakeDevice("AGB")
+    device.INFO = {"db": database, "file_crc32": file_crc, "loop_detected": loop}
+    gui.CONN = device
+    gui.DEFAULT_STYLESHEET = "original"
+    msgbox = FakeMessageBox()
+
+    gui._FinishAGBROMBackup(msgbox, "\nElapsed")
+
+    assert expected_checksum in gui.lblAGBHeaderROMChecksumResult.text()
+    assert gui.lblAGBHeaderROMChecksumResult.styleSheet() == expected_style
+    assert expected_message in msgbox.text()
+    assert msgbox.text().endswith("\nElapsed")
+    assert any(name == "setIcon" for name, _args in msgbox.calls) is warning
+
+
 def test_finish_detect_cartridge_handles_success_and_failure(
     gui_module: ModuleType,
     tmp_path: Path,
