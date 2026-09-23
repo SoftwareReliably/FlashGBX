@@ -1987,6 +1987,32 @@ def test_update_check_handles_errors_and_disabled_setting(
     gui.UpdateCheck()
 
 
+@pytest.mark.parametrize(
+    ("answer", "setting", "request_count"),
+    [
+        (FakeMessageBox.StandardButton.Yes, "enabled", 1),
+        (FakeMessageBox.StandardButton.No, "disabled", 0),
+    ],
+)
+def test_update_check_first_run_choice_controls_network_request(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    setting: str,
+    request_count: int,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    request = Mock(return_value=SimpleNamespace(status_code=500, headers={}))
+    monkeypatch.setattr(FakeMessageBox, "next_answer", answer)
+    monkeypatch.setattr(gui_module.requests, "get", request)
+
+    gui.UpdateCheck()
+
+    assert gui.SETTINGS.value("UpdateCheck") == setting
+    assert request.call_count == request_count
+
+
 def test_launcher_environment_and_open_url_are_platform_aware(
     gui_module: ModuleType,
     tmp_path: Path,

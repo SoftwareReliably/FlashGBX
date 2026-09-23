@@ -178,6 +178,15 @@ class DumpReport:
             return "Super Game Boy"
         return "Original Game Boy"
 
+    @staticmethod
+    def _dmg_save_size_string(save_size_raw: int) -> str:
+        if save_size_raw == 0x00:
+            return f"No SRAM (0x{save_size_raw:02X})"
+        if save_size_raw in DmgSaveTypes():
+            save_type = DmgSaveTypes(mbc=save_size_raw).GetString(localized=False)
+            return f"{save_type} (0x{save_size_raw:02X})"
+        return f"Unknown (0x{save_size_raw:02X})"
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
@@ -272,13 +281,7 @@ class DumpReport:
             else:
                 hdr_rom_size_str = f"Unknown (0x{hdr_rom_size_raw:02X})"
 
-            hdr_save_raw: int = header["ram_size_raw"]
-            if hdr_save_raw == 0x00:
-                hdr_save_str: str = f"No SRAM (0x{hdr_save_raw:02X})"
-            elif hdr_save_raw in DmgSaveTypes():
-                hdr_save_str = f"{DmgSaveTypes(mbc=hdr_save_raw).GetString(localized=False)} (0x{hdr_save_raw:02X})"
-            else:
-                hdr_save_str = f"Unknown (0x{hdr_save_raw:02X})"
+            hdr_save_str = cls._dmg_save_size_string(header["ram_size_raw"])
 
             mapper_raw = header["mapper_raw"]
             if mapper_raw in DMG_Mapper().GetAllMapperIds():

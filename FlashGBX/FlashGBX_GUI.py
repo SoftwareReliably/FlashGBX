@@ -1617,41 +1617,46 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.InitWidgetTexts()
         self.DisconnectDevice()
 
+    def _PromptFirstRunUpdateCheck(self) -> str | None:
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            __(
+                "Welcome to {app} by {author}!",
+                app=AppInfo.NAME + " " + AppInfo.VERSION,
+                author="Lesserkuma",
+            )
+            + "<br><br>"
+            + __(
+                "Would you like to automatically check for new versions at application startup? This will make use of the GitHub API ({url}).",
+                url='<a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">'
+                + c__("GitHub API Link", "privacy policy")
+                + "</a>",
+            ),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.SETTINGS.setValue("UpdateCheck", "enabled")
+            self.mnuConfig.actions()[0].setChecked(True)
+            update_check = "enabled"
+        else:
+            self.SETTINGS.setValue("UpdateCheck", "disabled")
+            update_check = None
+        QtWidgets.QMessageBox.warning(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            __(
+                "General precautions:\n- Due to voltage differences, do not insert a Game Boy Advance cartridge while the platform mode is set to “Game Boy”.\n- Always keep the cartridge contacts as clean as possible to ensure a stable connection.",
+            ).replace("\n", "<br>"),
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        return update_check
+
     def UpdateCheck(self) -> None:
         update_check: str | None = self.SETTINGS.value("UpdateCheck")
         if update_check is None:
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __(
-                    "Welcome to {app} by {author}!",
-                    app=AppInfo.NAME + " " + AppInfo.VERSION,
-                    author="Lesserkuma",
-                )
-                + "<br><br>"
-                + __(
-                    "Would you like to automatically check for new versions at application startup? This will make use of the GitHub API ({url}).",
-                    url='<a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">'
-                    + c__("GitHub API Link", "privacy policy")
-                    + "</a>",
-                ),
-                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                QtWidgets.QMessageBox.StandardButton.Yes,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                self.SETTINGS.setValue("UpdateCheck", "enabled")
-                self.mnuConfig.actions()[0].setChecked(True)
-                update_check = "enabled"
-            else:
-                self.SETTINGS.setValue("UpdateCheck", "disabled")
-            QtWidgets.QMessageBox.warning(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __(
-                    "General precautions:\n- Due to voltage differences, do not insert a Game Boy Advance cartridge while the platform mode is set to “Game Boy”.\n- Always keep the cartridge contacts as clean as possible to ensure a stable connection.",
-                ).replace("\n", "<br>"),
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
+            update_check = self._PromptFirstRunUpdateCheck()
 
         if update_check and update_check.lower() == "enabled":
             print()
@@ -1717,7 +1722,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             )
                             msgbox.setDefaultButton(button_open)
                             msgbox.setEscapeButton(button_cancel)
-                            answer = msgbox.exec()
+                            msgbox.exec()
                             if msgbox.clickedButton() == button_open:
                                 self.OpenWebURL(site)
                         else:
@@ -3829,33 +3834,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if rtc is None:
             return
 
-        bl_args = {}
-        if (
-            self._device.GetMode() == "AGB"
-            and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-            and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-        ) or (
-            self._device.GetMode() == "DMG"
-            and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-            and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-        ):
-            if "detected_cart_type" in self.STATUS:
-                del self.STATUS["detected_cart_type"]
-
-            if "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]:
-                detected = self._device.INFO["dump_info"]["batteryless_sram"]
-            else:
-                detected = False
-
-            if mode == "AGB":
-                rom_size = RomSizes().GetSize(self.cmbAGBHeaderROMSizeResult.currentIndex())
-            else:
-                rom_size = RomSizes().GetSize(self.cmbDMGHeaderROMSizeResult.currentIndex())
-            if rom_size is None:
-                return
-            bl_args = self.GetBLArgs(rom_size=rom_size, detected=detected)
-            if bl_args is False:
-                return
+        bl_args = self._GetBatterylessBackupArgs(mode)
+        if bl_args is None:
+            return
 
         self.SETTINGS.setValue(setting_name, str(Path(path).parent))
 
@@ -3915,6 +3896,34 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             "Save Data File (" + " ".join("*" + extension for extension in SAVE_EXTS) + ");;All Files (*.*)",
         )[0]
         return selected_path or None
+
+    def _GetBatterylessBackupArgs(self, mode: PlatformMode) -> dict[str, int] | None:
+        needs_batteryless_args = (
+            self._device.GetMode() == "AGB"
+            and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
+            and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
+        ) or (
+            self._device.GetMode() == "DMG"
+            and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
+            and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
+        )
+        if not needs_batteryless_args:
+            return {}
+
+        self.STATUS.pop("detected_cart_type", None)
+        if "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]:
+            detected = self._device.INFO["dump_info"]["batteryless_sram"]
+        else:
+            detected = False
+
+        if mode == "AGB":
+            rom_size = RomSizes().GetSize(self.cmbAGBHeaderROMSizeResult.currentIndex())
+        else:
+            rom_size = RomSizes().GetSize(self.cmbDMGHeaderROMSizeResult.currentIndex())
+        if rom_size is None:
+            return None
+        bl_args = self.GetBLArgs(rom_size=rom_size, detected=detected)
+        return None if bl_args is False else bl_args
 
     def _prepare_save_write_cartridge(
         self,
