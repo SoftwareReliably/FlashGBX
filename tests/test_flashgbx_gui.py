@@ -7,6 +7,8 @@ import importlib.util
 import json
 import queue
 import sys
+from datetime import UTC, timedelta
+from datetime import datetime as datetime_type
 from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock
@@ -274,6 +276,14 @@ class FakeQtObject:
 class FakeColor:
     def toTuple(self) -> tuple[int, int, int, int]:
         return (0, 0, 0, 255)
+
+
+class FakeSpinBox(FakeQtObject):
+    """Typed integer control used by RTC editor tests."""
+
+
+class FakeCheckBox(FakeQtObject):
+    """Typed checkbox used by RTC editor tests."""
 
 
 class FakePalette(FakeQtObject):
@@ -941,6 +951,89 @@ def agb_header() -> dict[str, Any]:
     }
 
 
+def rtc_info(**overrides: object) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "dump_info": {},
+        "has_rtc": True,
+        "rtc_dict": {
+            "rtc_d": 18,
+            "rtc_h": 9,
+            "rtc_m": 27,
+            "rtc_i": 41,
+            "rtc_s": 53,
+            "rtc_y": 43,
+            "rtc_leap_year_state": 1,
+            "rtc_buffer": bytearray(range(16)),
+        },
+    }
+    values.update(overrides)
+    return values
+
+
+def prepare_rtc_gui(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mapper: int = 0x13,
+    values: dict[str, int | bool] | None = None,
+    accepted: bool = True,
+) -> tuple[Any, FakeDevice, list[dict[str, Any]]]:
+    """Use a real EditRTC branch with typed, recording dialog controls."""
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    device.INFO.update(rtc_info())
+    gui.cmbDMGHeaderMapperResult.setCurrentIndex(gui_module.ConvertMapperToMapperType(mapper)[2])
+    gui.CheckDeviceAlive = Mock(return_value=True)
+    gui.CheckHeader = Mock(return_value=True)
+    gui.ReadCartridge = Mock()
+    monkeypatch.setattr(gui_module.QtWidgets, "QSpinBox", FakeSpinBox, raising=False)
+    monkeypatch.setattr(gui_module.QtWidgets, "QCheckBox", FakeCheckBox, raising=False)
+    dialog_calls: list[dict[str, Any]] = []
+    chosen_values = {} if values is None else values
+
+    class RecordingUserInputDialog:
+        def __init__(self, _parent: object, *, icon: object, args: dict[str, Any]) -> None:
+            del icon
+            controls: dict[str, FakeQtObject] = {}
+            for param in args["params"]:
+                key = param[0]
+                default = param[4]
+                value = chosen_values.get(key, default)
+                control = FakeSpinBox() if param[1] == "spb" else FakeCheckBox()
+                if isinstance(control, FakeSpinBox):
+                    control.setValue(int(value))
+                else:
+                    control.setChecked(bool(value))
+                controls[key] = control
+            dialog_calls.append({"args": args, "controls": controls})
+            self.controls = controls
+
+        def exec(self) -> int:
+            return FakeQtObject.DialogCode.Accepted if accepted else FakeQtObject.DialogCode.Rejected
+
+        def GetResult(self) -> dict[str, FakeQtObject]:
+            return self.controls
+
+    monkeypatch.setattr(gui_module, "UserInputDialog", RecordingUserInputDialog)
+    monkeypatch.setattr(device, "WriteRTC", Mock(return_value=True), raising=False)
+    return gui, device, dialog_calls
+
+
+def freeze_gui_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    gui_module: ModuleType,
+    instant: datetime_type,
+) -> None:
+    """Freeze the GUI's timezone-aware datetime.now call."""
+
+    class FrozenDateTime(datetime_type):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime_type:
+            return cls.fromtimestamp(instant.timestamp(), tz=tz)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gui_module.datetime, "datetime", FrozenDateTime)
+
+
 def generated_dmg_rom(base: bytearray, *, mapper: int) -> bytearray:
     rom = bytearray(0x1000)
     rom[: len(base)] = base
@@ -991,6 +1084,247 @@ def test_gui_module_helpers(gui_module: ModuleType, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(gui_module.shutil, "which", lambda _name: None)
     with pytest.raises(FileNotFoundError, match="missing"):
         gui_module._system_executable("missing")
+
+
+def test_dmg_rtc_dialog_values_extracts_spinboxes_and_checkboxes(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gui_module.QtWidgets, "QSpinBox", FakeSpinBox, raising=False)
+    monkeypatch.setattr(gui_module.QtWidgets, "QCheckBox", FakeCheckBox, raising=False)
+    days = FakeSpinBox()
+    days.setValue(207)
+    system_time = FakeCheckBox()
+    system_time.setChecked(True)
+
+    values = gui_module.FlashGBX_GUI._DmgRtcDialogValues(
+        {"rtc_d": days, "current": system_time, "ignored": FakeQtObject()},
+    )
+
+    assert values == {"rtc_d": 207, "current": True}
+
+
+@pytest.mark.parametrize("failed_check", ["device", "header"])
+def test_edit_rtc_stops_when_device_or_header_check_fails(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_check: str,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(gui_module, tmp_path, monkeypatch)
+    if failed_check == "device":
+        gui.CheckDeviceAlive.return_value = False
+    else:
+        gui.CheckHeader.return_value = False
+
+    assert gui.EditRTC(None) is None
+
+    device.WriteRTC.assert_not_called()
+    gui.ReadCartridge.assert_not_called()
+    assert dialog_calls == []
+    if failed_check == "device":
+        gui.CheckHeader.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "rtc_state",
+    ["missing-dump-info", "missing-has-rtc", "no-rtc", "missing-dict", "empty-dict"],
+)
+def test_edit_rtc_skips_absent_or_empty_rtc_data(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rtc_state: str,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(gui_module, tmp_path, monkeypatch)
+    if rtc_state == "missing-dump-info":
+        device.INFO.pop("dump_info")
+    elif rtc_state == "missing-has-rtc":
+        device.INFO.pop("has_rtc")
+    elif rtc_state == "no-rtc":
+        device.INFO["has_rtc"] = False
+    elif rtc_state == "missing-dict":
+        device.INFO.pop("rtc_dict")
+    else:
+        device.INFO["rtc_dict"] = {}
+
+    assert gui.EditRTC(None) is None
+
+    device.WriteRTC.assert_not_called()
+    gui.ReadCartridge.assert_not_called()
+    assert dialog_calls == []
+
+
+def test_edit_rtc_rejects_unsupported_dmg_mapper_without_opening_dialog(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(gui_module, tmp_path, monkeypatch, mapper=0x19)
+
+    assert gui.EditRTC(None) is False
+
+    device.WriteRTC.assert_not_called()
+    gui.ReadCartridge.assert_not_called()
+    assert dialog_calls == []
+
+
+@pytest.mark.parametrize("mapper", [0x13, 0xFE, 0xFD], ids=["MBC3", "HuC3", "TAMA5"])
+def test_edit_rtc_cancel_does_not_write_or_refresh(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mapper: int,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        mapper=mapper,
+        accepted=False,
+    )
+
+    assert gui.EditRTC(None) is False
+
+    assert len(dialog_calls) == 1
+    device.WriteRTC.assert_not_called()
+    gui.ReadCartridge.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("mapper", "use_system_time"),
+    [
+        (0x13, False),
+        (0x13, True),
+        (0x110, False),
+        (0x110, True),
+        (0x206, False),
+        (0x206, True),
+        (0xFE, False),
+        (0xFE, True),
+    ],
+    ids=[
+        "MBC3-manual",
+        "MBC3-system",
+        "MBC30-manual",
+        "MBC30-system",
+        "MBCX-manual",
+        "MBCX-system",
+        "HuC3-manual",
+        "HuC3-system",
+    ],
+)
+def test_edit_rtc_mbc3_family_and_huc3_manual_and_system_time(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mapper: int,
+    use_system_time: bool,
+) -> None:
+    chosen = {"rtc_d": 77, "rtc_h": 6, "rtc_m": 7, "rtc_s": 8, "current": use_system_time}
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        mapper=mapper,
+        values=chosen,
+    )
+    instant = datetime_type(2024, 3, 9, 18, 31, 24, tzinfo=UTC)
+    freeze_gui_clock(monkeypatch, gui_module, instant)
+
+    assert gui.EditRTC(None) is True
+
+    is_huc3 = mapper == 0xFE
+    manual = {"rtc_d": 77, "rtc_h": 6, "rtc_m": 7}
+    if not is_huc3:
+        manual["rtc_s"] = 8
+    expected = {**manual, "current": use_system_time}
+    if use_system_time:
+        local_time = instant.astimezone() + (timedelta(0) if is_huc3 else timedelta(seconds=1))
+        expected.update({"rtc_h": local_time.hour, "rtc_m": local_time.minute})
+        if not is_huc3:
+            expected["rtc_s"] = local_time.second
+
+    expected_mapper = gui_module.ConvertMapperTypeToMapper(gui.cmbDMGHeaderMapperResult.currentIndex())
+    device.WriteRTC.assert_called_once_with(args={"mbc": expected_mapper, "rtc_dict": expected})
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+    expected_keys = ["rtc_d", "rtc_h", "rtc_m", "current"]
+    if not is_huc3:
+        expected_keys.insert(3, "rtc_s")
+    assert [param[0] for param in dialog_calls[0]["args"]["params"]] == expected_keys
+
+
+def test_edit_rtc_tama5_manual_year_offset_and_buffer_preservation(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chosen = {
+        "rtc_y": 12,
+        "rtc_leap_year_state": 3,
+        "rtc_m": 9,
+        "rtc_d": 22,
+        "rtc_h": 14,
+        "rtc_i": 33,
+        "rtc_s": 44,
+        "current": False,
+    }
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        mapper=0xFD,
+        values=chosen,
+    )
+    device.INFO["rtc_dict"]["rtc_y"] = 40
+    rtc_buffer = device.INFO["rtc_dict"]["rtc_buffer"]
+
+    assert gui.EditRTC(None) is True
+
+    args = device.WriteRTC.call_args.kwargs["args"]
+    assert args["mbc"] == 0xFD
+    assert args["rtc_dict"] == {
+        "rtc_y": 31,
+        "rtc_leap_year_state": 3,
+        "rtc_m": 9,
+        "rtc_d": 22,
+        "rtc_h": 14,
+        "rtc_i": 33,
+        "rtc_s": 44,
+        "current": False,
+        "rtc_buffer": rtc_buffer,
+    }
+    assert args["rtc_dict"]["rtc_buffer"] is rtc_buffer
+    assert dialog_calls[0]["args"]["params"][0][4] == 21
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
+@pytest.mark.parametrize("write_result", [True, False], ids=["write-success", "write-failure"])
+def test_edit_rtc_refreshes_and_reports_write_result(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    write_result: bool,
+) -> None:
+    gui, device, _dialog_calls = prepare_rtc_gui(gui_module, tmp_path, monkeypatch)
+    device.WriteRTC.return_value = write_result
+    information = Mock()
+    critical = Mock()
+    monkeypatch.setattr(gui_module.QtWidgets.QMessageBox, "information", information)
+    monkeypatch.setattr(gui_module.QtWidgets.QMessageBox, "critical", critical)
+
+    result = gui.EditRTC(None)
+
+    assert result is write_result
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+    if write_result:
+        information.assert_called_once()
+        assert "updated" in information.call_args.args[2]
+        critical.assert_not_called()
+    else:
+        critical.assert_called_once()
+        assert "error" in critical.call_args.args[2]
+        information.assert_not_called()
 
 
 @pytest.mark.parametrize(
