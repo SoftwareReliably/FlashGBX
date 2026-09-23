@@ -312,6 +312,22 @@ class _SaveBankRange(NamedTuple):
     buffer_length: int
 
 
+class _SaveTransferLoopContext(NamedTuple):
+    args: dict[str, Any]
+    mbc: Any
+    ram_banks: int
+    save_size: int
+    buffer_len: int
+    buffer: bytearray
+    command: Any
+    agb_flash_chip: int
+
+
+class _SaveTransferLoopResult(NamedTuple):
+    status: bool | None
+    buffer_offset: int
+
+
 class _FlashSectorPlan(NamedTuple):
     data_import: bytearray
     smallest_sector_size: int | Literal[False]
@@ -5198,27 +5214,7 @@ class LK_Device(ABC):
                 return None
             buffer_len = 0x2000
 
-            flash_cmds = [["PA", 0x70], ["PA", 0x10], ["PA", "PD"]]
-            self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
-            self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
-            self._write(0x02)  # FLASH_COMMAND_SET_INTEL
-            self._write(0x01)  # FLASH_METHOD_UNBUFFERED
-            self._write(0x00)  # unset
-            for i in range(6):
-                if i > len(flash_cmds) - 1:  # skip
-                    self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
-                else:
-                    address = flash_cmds[i][0]
-                    value = flash_cmds[i][1]
-                    if not isinstance(address, int):
-                        address = 0
-                    if not isinstance(value, int):
-                        value = 0
-                    address >>= 1
-                    dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
-                    self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
-            if self.FW["fw_ver"] >= 12:
-                self.wait_for_ack()
+            self._configure_dacs_flash_commands()
 
         if cart_type is not None and cart_type.get("flash_bank_select_type") == 1:
             sram_value = self._cart_read(address=5, length=1, agb_save_flash=True)
@@ -5276,6 +5272,30 @@ class LK_Device(ABC):
             empty_data_byte=empty_data_byte,
             extra_size=extra_size,
         )
+
+    def _configure_dacs_flash_commands(self) -> None:
+        """Program the DACS Intel command set and wait for modern firmware."""
+        flash_cmds = [["PA", 0x70], ["PA", 0x10], ["PA", "PD"]]
+        self._set_fw_variable("FLASH_SHARP_VERIFY_SR", 1)
+        self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
+        self._write(0x02)  # FLASH_COMMAND_SET_INTEL
+        self._write(0x01)  # FLASH_METHOD_UNBUFFERED
+        self._write(0x00)  # unset
+        for i in range(6):
+            if i > len(flash_cmds) - 1:  # skip
+                self._write(bytearray(struct.pack(">I", 0)) + bytearray(struct.pack(">H", 0)))
+            else:
+                address = flash_cmds[i][0]
+                value = flash_cmds[i][1]
+                if not isinstance(address, int):
+                    address = 0
+                if not isinstance(value, int):
+                    value = 0
+                address >>= 1
+                dprint(f"Setting command #{i:d} to 0x{address:X}=0x{value:X}")
+                self._write(bytearray(struct.pack(">I", address)) + bytearray(struct.pack(">H", value)))
+        if self.FW["fw_ver"] >= 12:
+            self.wait_for_ack()
 
     def _WriteDACSSaveChunk(self, sector_address: int, pos: int, data: bytearray) -> bool:
         """Erase a DACS sector when needed and write one save-data chunk."""
@@ -5951,8 +5971,6 @@ class LK_Device(ABC):
         buffer = bytearray()
         save_size = 0
         agb_flash_chip = 0
-        start_address = 0
-        end_address = 0
         _mbc: Any = None
 
         cart_type = self._prepare_save_cart_type(args, mode)
@@ -6001,60 +6019,21 @@ class LK_Device(ABC):
         transfer_succeeded = False
         verification_only = False
         try:
-            # Main loop
-            buffer_offset = 0
-            max_length = 64 if self.FW["pcb_name"] in ("GBxCart RW", "") else self.MAX_BUFFER_READ
-            for bank in range(ram_banks):
-                start_address, end_address, buffer_len = self._PrepareSaveBank(
-                    _SaveBankContext(
-                        args,
-                        _mbc,
-                        bank,
-                        save_size,
-                        buffer_len,
-                        buffer_offset,
-                        agb_flash_chip,
-                    ),
-                )
-
-                dprint(
-                    f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, buffer_len=0x{buffer_len:X}, buffer_offset=0x{buffer_offset:X}",
-                )
-                pos = start_address
-                while pos < end_address:
-                    if self._AbortSaveTransferIfCanceled():
-                        return None
-
-                    if args["mode"] == 2:  # Backup
-                        temp, max_length = self._ReadSaveBackupChunk(
-                            _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
-                            len(buffer),
-                        )
-                        if temp is False:
-                            return False
-                        if temp is None:
-                            continue
-                        buffer += temp
-                        self.SetProgress({"action": "UPDATE_POS", "pos": len(buffer)})
-
-                    elif args["mode"] == 3:  # Restore
-                        write_parameters = _SaveWriteParameters(
-                            args,
-                            _mbc,
-                            bank,
-                            pos,
-                            buffer,
-                            buffer_offset,
-                            buffer_len,
-                            command,
-                            agb_flash_chip,
-                        )
-                        if not self._WriteSaveChunk(write_parameters):
-                            return False
-                        self.SetProgress({"action": "UPDATE_POS", "pos": buffer_offset + buffer_len})
-
-                    pos += buffer_len
-                    buffer_offset += buffer_len
+            loop_result = self._RunSaveTransferLoop(
+                _SaveTransferLoopContext(
+                    args=args,
+                    mbc=_mbc,
+                    ram_banks=ram_banks,
+                    save_size=save_size,
+                    buffer_len=buffer_len,
+                    buffer=buffer,
+                    command=command,
+                    agb_flash_chip=agb_flash_chip,
+                ),
+            )
+            if loop_result.status is not True:
+                return loop_result.status
+            buffer_offset = loop_result.buffer_offset
 
             verified = False
             if args["mode"] == 2:  # Backup
@@ -6081,6 +6060,72 @@ class LK_Device(ABC):
         self._thread_worker_auto_poweroff_finish()
         self.SetProgress({"action": "FINISHED", "verified": verified})
         return True
+
+    def _RunSaveTransferLoop(self, context: _SaveTransferLoopContext) -> _SaveTransferLoopResult:
+        """Read or write each configured save bank, preserving transfer offsets."""
+        buffer_offset = 0
+        max_length = 64 if self.FW["pcb_name"] in ("GBxCart RW", "") else self.MAX_BUFFER_READ
+        for bank in range(context.ram_banks):
+            bank_range = self._PrepareSaveBank(
+                _SaveBankContext(
+                    context.args,
+                    context.mbc,
+                    bank,
+                    context.save_size,
+                    context.buffer_len,
+                    buffer_offset,
+                    context.agb_flash_chip,
+                ),
+            )
+            start_address, end_address, buffer_len = bank_range
+            dprint(
+                f"start_address=0x{start_address:X}, end_address=0x{end_address:X}, buffer_len=0x{buffer_len:X}, buffer_offset=0x{buffer_offset:X}",
+            )
+            pos = start_address
+            while pos < end_address:
+                if self._AbortSaveTransferIfCanceled():
+                    return _SaveTransferLoopResult(None, buffer_offset)
+
+                if context.args["mode"] == 2:  # Backup
+                    temp, max_length = self._ReadSaveBackupChunk(
+                        _SaveReadParameters(
+                            context.args,
+                            context.mbc,
+                            bank,
+                            pos,
+                            buffer_len,
+                            context.command,
+                            max_length,
+                        ),
+                        len(context.buffer),
+                    )
+                    if temp is False:
+                        return _SaveTransferLoopResult(status=False, buffer_offset=buffer_offset)
+                    if temp is None:
+                        continue
+                    context.buffer.extend(temp)
+                    self.SetProgress({"action": "UPDATE_POS", "pos": len(context.buffer)})
+
+                elif context.args["mode"] == 3:  # Restore
+                    write_parameters = _SaveWriteParameters(
+                        context.args,
+                        context.mbc,
+                        bank,
+                        pos,
+                        context.buffer,
+                        buffer_offset,
+                        buffer_len,
+                        context.command,
+                        context.agb_flash_chip,
+                    )
+                    if not self._WriteSaveChunk(write_parameters):
+                        return _SaveTransferLoopResult(status=False, buffer_offset=buffer_offset)
+                    self.SetProgress({"action": "UPDATE_POS", "pos": buffer_offset + buffer_len})
+
+                pos += buffer_len
+                buffer_offset += buffer_len
+
+        return _SaveTransferLoopResult(status=True, buffer_offset=buffer_offset)
 
     def _FlashROM(self, args: dict[str, Any]) -> bool | None:
         self._thread_worker_auto_poweroff_start()
@@ -6996,6 +7041,15 @@ class LK_Device(ABC):
                     dprint("Forcing sector:", old_sector)
         return write_sectors
 
+    @staticmethod
+    def _load_delta_flash_state(state_path: Path) -> Sequence[list[int]]:
+        """Read saved delta sectors, treating malformed state as empty."""
+        try:
+            with state_path.open("rb") as state_file:
+                return json.loads(state_file.read().decode("UTF-8-SIG"))
+        except json.JSONDecodeError, UnicodeDecodeError:
+            return []
+
     def _plan_flash_sectors(
         self,
         args: dict[str, Any],
@@ -7049,12 +7103,8 @@ class LK_Device(ABC):
                     write_sectors = copy.copy(delta_state_new)
                     json_file = delta_path.with_name(f"{delta_path.stem}_{sector_offsets_hash}.json")
                     if json_file.exists():
-                        with json_file.open("rb") as state_file:
-                            try:
-                                delta_state_old = json.loads(state_file.read().decode("UTF-8-SIG"))
-                            except json.JSONDecodeError, UnicodeDecodeError:
-                                delta_state_old = []
-                            write_sectors = self._reconcile_delta_flash_sectors(write_sectors, delta_state_old)
+                        delta_state_old = self._load_delta_flash_state(json_file)
+                        write_sectors = self._reconcile_delta_flash_sectors(write_sectors, delta_state_old)
 
                     if not write_sectors:
                         self.SetProgress(
@@ -7278,6 +7328,29 @@ class LK_Device(ABC):
             return buffer_length
         return 0x2000
 
+    def _InitializeROMWriteProgress(
+        self,
+        args: Mapping[str, Any],
+        *,
+        data_size: int,
+        flash_offset: int,
+        sector_count: int,
+        active_voltage: float,
+    ) -> None:
+        """Emit the ROM-write initialization event unless photo mode owns it."""
+        if "photo_mode" not in args:
+            self.SetProgress(
+                {
+                    "action": "INITIALIZE",
+                    "method": "ROM_WRITE",
+                    "size": data_size,
+                    "flash_offset": flash_offset,
+                    "sector_count": sector_count,
+                    "voltage": active_voltage,
+                },
+            )
+            self.INFO["action"] = self.ACTIONS["ROM_WRITE"]
+
     def _prepare_flash_write(self, args: dict[str, Any], mode: DeviceMode) -> _FlashWritePreparation | None:
         data_import, flash_offset = self._prepare_flash_data(args, mode)
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
@@ -7342,18 +7415,13 @@ class LK_Device(ABC):
             has_sector_map,
         ) = sector_plan
 
-        if "photo_mode" not in args:
-            self.SetProgress(
-                {
-                    "action": "INITIALIZE",
-                    "method": "ROM_WRITE",
-                    "size": len(data_import),
-                    "flash_offset": flash_offset,
-                    "sector_count": max(1, len(write_sectors)),
-                    "voltage": active_voltage,
-                },
-            )
-            self.INFO["action"] = self.ACTIONS["ROM_WRITE"]
+        self._InitializeROMWriteProgress(
+            args,
+            data_size=len(data_import),
+            flash_offset=flash_offset,
+            sector_count=max(1, len(write_sectors)),
+            active_voltage=active_voltage,
+        )
 
         chip_erase = self._EraseFlashForWrite(args, flashcart, flash_offset, has_sector_map)
         if chip_erase is None:
@@ -7365,18 +7433,13 @@ class LK_Device(ABC):
         elif not write_sectors:
             write_sectors = sector_offsets
 
-        if "photo_mode" not in args:
-            self.SetProgress(
-                {
-                    "action": "INITIALIZE",
-                    "method": "ROM_WRITE",
-                    "size": len(data_import),
-                    "flash_offset": flash_offset,
-                    "sector_count": len(write_sectors),
-                    "voltage": active_voltage,
-                },
-            )
-            self.INFO["action"] = self.ACTIONS["ROM_WRITE"]
+        self._InitializeROMWriteProgress(
+            args,
+            data_size=len(data_import),
+            flash_offset=flash_offset,
+            sector_count=len(write_sectors),
+            active_voltage=active_voltage,
+        )
         self.SetProgress({"action": "UPDATE_POS", "pos": flash_offset})
 
         buffer_len = self._get_flash_write_buffer_length(smallest_sector_size, mode, mbc)
@@ -8160,9 +8223,12 @@ class LK_Device(ABC):
                         sr = self._GetFlashWriteStatusRegister(flashcart, se_ret)
                         dprint("Last status register value:", sr)
 
-                        if self.CANCEL_ARGS.get("from_user"):
-                            break
-                        if self._HandleDisconnectedFlashWrite(buffer_len, buffer_pos, errmsg_mbc_selection, sr):
+                        if self.CANCEL_ARGS.get("from_user") or self._HandleDisconnectedFlashWrite(
+                            buffer_len,
+                            buffer_pos,
+                            errmsg_mbc_selection,
+                            sr,
+                        ):
                             break
                         retry_hp, retry_exhausted = self._HandleFlashWriteRetry(
                             preparation,

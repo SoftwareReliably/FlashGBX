@@ -261,9 +261,7 @@ class Progress:
             if not isinstance(position, int) or isinstance(position, bool):
                 return
             relative_position: int = position - state["flash_offset"]
-            if state["pos"] == relative_position:
-                skip_speed = True
-            if event.get("skipping") is True:
+            if state["pos"] == relative_position or event.get("skipping") is True:
                 skip_speed = True
             state["pos"] = max(0, min(relative_position, state["size"]))
 

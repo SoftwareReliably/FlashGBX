@@ -79,6 +79,25 @@ FirmwareUpdateResult = Literal[1, 2, 3]
 MAX_V13_FIRMWARE_SIZE = 7_168
 
 
+def _decode_intel_hex_record(line: str, line_number: int) -> bytes:
+    """Decode one Intel HEX record and validate its framing and checksum."""
+    if not line.startswith(":"):
+        msg = f"Intel HEX line {line_number} has no start marker"
+        raise ValueError(msg)
+    try:
+        record = bytes.fromhex(line[1:])
+    except ValueError as exc:
+        msg = f"Intel HEX line {line_number} contains invalid hexadecimal data"
+        raise ValueError(msg) from exc
+    if len(record) < 5 or len(record) != record[0] + 5:
+        msg = f"Intel HEX line {line_number} has an invalid length"
+        raise ValueError(msg)
+    if sum(record) & 0xFF:
+        msg = f"Intel HEX line {line_number} has an invalid checksum"
+        raise ValueError(msg)
+    return record
+
+
 def _parse_intel_hex(contents: str) -> bytearray:
     """Parse and validate an Intel HEX image for the legacy AVR updater."""
     image = bytearray()
@@ -90,20 +109,7 @@ def _parse_intel_hex(contents: str) -> bytearray:
         line = raw_line.strip()
         if not line:
             continue
-        if not line.startswith(":"):
-            msg = f"Intel HEX line {line_number} has no start marker"
-            raise ValueError(msg)
-        try:
-            record = bytes.fromhex(line[1:])
-        except ValueError as exc:
-            msg = f"Intel HEX line {line_number} contains invalid hexadecimal data"
-            raise ValueError(msg) from exc
-        if len(record) < 5 or len(record) != record[0] + 5:
-            msg = f"Intel HEX line {line_number} has an invalid length"
-            raise ValueError(msg)
-        if sum(record) & 0xFF:
-            msg = f"Intel HEX line {line_number} has an invalid checksum"
-            raise ValueError(msg)
+        record = _decode_intel_hex_record(line, line_number)
 
         byte_count = record[0]
         address = int.from_bytes(record[1:3], byteorder="big")
@@ -144,6 +150,20 @@ def _parse_intel_hex(contents: str) -> bytearray:
         msg_4 = "The Intel HEX firmware image is incomplete"
         raise ValueError(msg_4)
     return image
+
+
+def _connection_failure_message(port: str, exc: OSError | SerialException) -> ConnectionMessage | None:
+    """Format a serial connection error; vanished ports are silently skipped."""
+    if isinstance(exc, PermissionError) or "Permission" in str(exc):
+        detail = __(
+            "The device on port {port} couldn't be accessed. Make sure your user account has permission to use it and it's not already in use by another application.",
+            port=port,
+        )
+        return [3, detail]
+    if isinstance(exc, FileNotFoundError) or "FileNotFoundError" in str(exc):
+        return None
+    detail = __("A critical error occurred while trying to access the device on port {port}.", port=port)
+    return [3, detail + "\n\n" + str(exc)]
 
 
 class GbxDevice(LK_Device):
@@ -289,30 +309,10 @@ class GbxDevice(LK_Device):
                         self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
                         break
                 except (OSError, SerialException) as exc:
-                    if isinstance(exc, PermissionError) or "Permission" in str(exc):
-                        conn_msg.append(
-                            [
-                                3,
-                                __(
-                                    "The device on port {port} couldn't be accessed. Make sure your user account has permission to use it and it's not already in use by another application.",
-                                    port=current_port,
-                                ),
-                            ],
-                        )
-                    elif isinstance(exc, FileNotFoundError) or "FileNotFoundError" in str(exc):
+                    failure_message = _connection_failure_message(current_port, exc)
+                    if failure_message is None:
                         continue
-                    else:
-                        conn_msg.append(
-                            [
-                                3,
-                                __(
-                                    "A critical error occurred while trying to access the device on port {port}.",
-                                    port=current_port,
-                                )
-                                + "\n\n"
-                                + str(exc),
-                            ],
-                        )
+                    conn_msg.append(failure_message)
 
             # Firmware reads populate FW through method side effects.
             if not self.FW or self.DEVICE is None:  # ty: ignore[redundant-condition]

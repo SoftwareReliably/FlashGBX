@@ -172,6 +172,40 @@ def ReadConfigFiles(args: BaseArgs) -> tuple[ConfigVersion, list[Path]]:
     return config_version, fc_files
 
 
+def _backup_deprecated_config_files(config_path: Path) -> None:
+    """Move replaced configuration files aside before profiles are refreshed."""
+    deprecated_files = (
+        "fc_AGB_TEST.txt",
+        "fc_DMG_TEST.txt",
+        "fc_AGB_Nintendo_E201850.txt",
+        "fc_AGB_Nintendo_E201868.txt",
+        "config.ini",
+        "fc_DMG_MX29LV320ABTC.txt",
+        "fc_DMG_iG_4MB_MBC3_RTC.txt",
+        "fc_AGB_Flash2Advance.txt",
+        "fc_AGB_MX29LV640_AUDIO.txt",
+        "fc_AGB_M36L0R7050T.txt",
+        "fc_AGB_M36L0R8060B.txt",
+        "fc_AGB_M36L0R8060T.txt",
+        "fc_AGB_iG_32MB_S29GL512N.txt",
+        "fc_DMG_SST39SF010_MBC1_AUDIO.txt",
+        "fc_DMG_SST39SF040_MBC5_AUDIO.txt",
+        "fc_DMG_AM29F010_MBC1_AUDIO.txt",
+        "fc_DMG_AM29F040_MBC1_AUDIO.txt",
+        "fc_DMG_AM29F040_MBC1_WR.txt",
+        "fc_DMG_AM29F080_MBC1_AUDIO.txt",
+        "fc_DMG_AM29F080_MBC1_WR.txt",
+        "fc_DMG_SST39SF040_MBC1_AUDIO.txt",
+        "fc_DMG_SST39SF020_MBC1_AUDIO.txt",
+        "fc_DMG_29LV016T.txt",
+        "fc_DMG_Retrostage.txt",
+    )
+    for filename in deprecated_files:
+        deprecated_path = config_path / filename
+        if deprecated_path.exists():
+            deprecated_path.rename(_backup_path(deprecated_path))
+
+
 def LoadConfig(args: BaseArgs) -> ConfigLoadResult:
     app_path = Path(args["app_path"])
     config_path = Path(args["config_path"])
@@ -181,37 +215,7 @@ def LoadConfig(args: BaseArgs) -> ConfigLoadResult:
     # Settings and Config
     config_version, fc_files = ReadConfigFiles(args=args)
     if config_version != AppInfo.VERSION:
-        # Rename old files that have since been replaced/renamed/merged
-        deprecated_files = [
-            "fc_AGB_TEST.txt",
-            "fc_DMG_TEST.txt",
-            "fc_AGB_Nintendo_E201850.txt",
-            "fc_AGB_Nintendo_E201868.txt",
-            "config.ini",
-            "fc_DMG_MX29LV320ABTC.txt",
-            "fc_DMG_iG_4MB_MBC3_RTC.txt",
-            "fc_AGB_Flash2Advance.txt",
-            "fc_AGB_MX29LV640_AUDIO.txt",
-            "fc_AGB_M36L0R7050T.txt",
-            "fc_AGB_M36L0R8060B.txt",
-            "fc_AGB_M36L0R8060T.txt",
-            "fc_AGB_iG_32MB_S29GL512N.txt",
-            "fc_DMG_SST39SF010_MBC1_AUDIO.txt",
-            "fc_DMG_SST39SF040_MBC5_AUDIO.txt",
-            "fc_DMG_AM29F010_MBC1_AUDIO.txt",
-            "fc_DMG_AM29F040_MBC1_AUDIO.txt",
-            "fc_DMG_AM29F040_MBC1_WR.txt",
-            "fc_DMG_AM29F080_MBC1_AUDIO.txt",
-            "fc_DMG_AM29F080_MBC1_WR.txt",
-            "fc_DMG_SST39SF040_MBC1_AUDIO.txt",
-            "fc_DMG_SST39SF020_MBC1_AUDIO.txt",
-            "fc_DMG_29LV016T.txt",
-            "fc_DMG_Retrostage.txt",
-        ]
-        for file in deprecated_files:
-            deprecated_path = config_path / file
-            if deprecated_path.exists():
-                deprecated_path.rename(_backup_path(deprecated_path))
+        _backup_deprecated_config_files(config_path)
 
         replaced_files: list[str] = []
         config_zip_path = app_path / "res" / "config.zip"

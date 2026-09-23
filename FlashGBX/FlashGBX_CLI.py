@@ -166,6 +166,54 @@ class FlashGBX_CLI:
             raise TypeError(msg)
         return value
 
+    def _ResolveDmgBackupMapper(self, args: argparse.Namespace, header: HeaderData) -> int:
+        """Resolve a backup's DMG mapper, warning when header data is unusable."""
+        if args.dmg_mbc != "auto":
+            return self._ParseDmgMbc(args.dmg_mbc)
+        try:
+            mapper = self._GetHeaderInt(header, "mapper_raw")
+        except TypeError:
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
+                    switch="--dmg-mbc",
+                )
+                + ANSI.RESET,
+            )
+            return 0x19
+        else:
+            return 0x19 if mapper == 0 else mapper
+
+    def _GenerateSaveFilename(self, add_date_time: bool) -> str:
+        """Build the save filename, optionally appending the current local time."""
+        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
+        path = str(Path(path).with_suffix(""))
+        if add_date_time:
+            timestamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
+            path += f"_{timestamp}"
+        return f"{path}.sav"
+
+    def _ApplyBatterylessHeaderFallback(
+        self,
+        mode: str,
+        header: HeaderData,
+        bl_offset: int | None,
+        bl_size: int | None,
+        bl_layout: int | None,
+    ) -> tuple[int | None, int | None, int | None]:
+        """Fill unresolved batteryless fields from the DMG header database."""
+        if mode == "DMG" and (bl_offset is None or bl_size is None):
+            preselect = header.get("batteryless_sram") or RomFileDMG.GetBatterylessSramConfig(header)
+            if preselect is not None:
+                if bl_offset is None:
+                    bl_offset = preselect["bl_offset"]
+                if bl_size is None:
+                    bl_size = preselect["bl_size"]
+                if bl_layout is None and "bl_layout" in preselect:
+                    bl_layout = preselect["bl_layout"]
+        return bl_offset, bl_size, bl_layout
+
     @staticmethod
     def _SelectMenuAction(menu_items: Sequence[tuple[str, str]]) -> str | None:
         """Prompt for a menu item and return its action name."""
@@ -1561,23 +1609,7 @@ class FlashGBX_CLI:
 
         path: str = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
         if self.CONN.GetMode() == "DMG":
-            if args.dmg_mbc == "auto":
-                try:
-                    mbc: int = self._GetHeaderInt(header, "mapper_raw")
-                    if mbc == 0:
-                        mbc = 0x19  # MBC5 default
-                except TypeError:
-                    print(
-                        ANSI.YELLOW
-                        + __(
-                            "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
-                            switch="--dmg-mbc",
-                        )
-                        + ANSI.RESET,
-                    )
-                    mbc = 0x19
-            else:
-                mbc = self._ParseDmgMbc(args.dmg_mbc)
+            mbc = self._ResolveDmgBackupMapper(args, header)
 
             if args.dmg_romsize == "auto":
                 try:
@@ -2382,13 +2414,7 @@ class FlashGBX_CLI:
         add_date_time: bool = args.save_filename_add_datetime is True
         rtc: bool = args.store_rtc is True
 
-        path_datetime = ""
-        if add_date_time:
-            path_datetime: str = "_{:s}".format(datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
-
-        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
-        path = str(Path(path).with_suffix(""))
-        path += f"{path_datetime:s}.sav"
+        path = self._GenerateSaveFilename(add_date_time)
 
         configuration: tuple[int, int, int | None] | None = self._ResolveSaveConfiguration(args, header)
         if configuration is None:
@@ -2546,15 +2572,13 @@ class FlashGBX_CLI:
                 bl_layout = detected["bl_layout"]
 
         # 3) DMG title-based fallback database
-        if mode == "DMG" and (bl_offset is None or bl_size is None):
-            preselect = header.get("batteryless_sram") or RomFileDMG.GetBatterylessSramConfig(header)
-            if preselect is not None:
-                if bl_offset is None:
-                    bl_offset = preselect["bl_offset"]
-                if bl_size is None:
-                    bl_size = preselect["bl_size"]
-                if bl_layout is None and "bl_layout" in preselect:
-                    bl_layout = preselect["bl_layout"]
+        bl_offset, bl_size, bl_layout = self._ApplyBatterylessHeaderFallback(
+            mode,
+            header,
+            bl_offset,
+            bl_size,
+            bl_layout,
+        )
 
         if bl_offset is None or bl_size is None:
             print(
@@ -3030,16 +3054,12 @@ class FlashGBX_CLI:
         )
         answer = input(__("Enter number ({range}):", range="1-3") + " ").lower().strip()
         print()
-        if answer == "1":
-            fw_choice = 1
-        elif answer == "2":
-            fw_choice = 2
-        elif answer == "3":
-            fw_choice = 3
-        else:
-            fw_choice = 0
-
-        if fw_choice == 0:
+        firmware_member = {
+            "1": "FIRMWARE_LK.JR",
+            "2": "FIRMWARE_MSC.JR",
+            "3": "FIRMWARE_JOEYGUI.JR",
+        }.get(answer)
+        if firmware_member is None:
             print(__("Canceled."))
             return False
 
@@ -3072,17 +3092,8 @@ class FlashGBX_CLI:
                     FirmwareUpdater = hw_JoeyJr.FirmwareUpdater
                     FWUPD: FirmwareUpdater = FirmwareUpdater(port=port)
                     file_name: Path = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
-                    with zipfile.ZipFile(file_name) as archive:
-                        fw_data = None
-                        if fw_choice == 1:
-                            with archive.open("FIRMWARE_LK.JR") as f:
-                                fw_data = bytearray(f.read())
-                        elif fw_choice == 2:
-                            with archive.open("FIRMWARE_MSC.JR") as f:
-                                fw_data = bytearray(f.read())
-                        elif fw_choice == 3:
-                            with archive.open("FIRMWARE_JOEYGUI.JR") as f:
-                                fw_data = bytearray(f.read())
+                    with zipfile.ZipFile(file_name) as archive, archive.open(firmware_member) as firmware_file:
+                        fw_data = bytearray(firmware_file.read())
 
                     ret = FWUPD.WriteFirmware(fw_data, self.UpdateFirmware_PrintText)
                     break

@@ -15,9 +15,12 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 OS_LANGUAGE: str = "en"
 CONFIGURED_LANGUAGE: str | None = None
@@ -288,6 +291,19 @@ def _parse_msgstr_value(line: str, is_plural: bool) -> str:
 
 
 def loadTranslation(language: str) -> gettext.GNUTranslations:
+    """Load and compile a PO translation catalog."""
+    filename: Path = _application_path() / "locale" / f"{language}.po"
+    if not filename.exists():
+        msg: str = f"{filename} not found"
+        raise FileNotFoundError(msg)
+
+    with filename.open(encoding="utf-8") as translation_file:
+        messages = _parse_translation_lines(translation_file, filename)
+    return _compile_translation_messages(messages)
+
+
+def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes, bytes]:
+    """Parse PO entries from text lines into GNU catalog messages."""
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
     messages: dict[bytes, bytes] = {}
     section: Literal["CTXT", "ID", "STR"] | None = None
@@ -297,66 +313,60 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
     fuzzy = False
     is_plural = False
 
-    filename: Path = _application_path() / "locale" / f"{language}.po"
-    if not filename.exists():
-        msg: str = f"{filename} not found"
-        raise FileNotFoundError(msg)
+    for raw_line in lines:
+        line: str = raw_line.strip()
+        if not line:
+            continue
 
-    with filename.open(encoding="utf-8") as translation_file:
-        for raw_line in translation_file:
-            line: str = raw_line.strip()
-            if not line:
-                continue
+        if line.startswith("#,") and "fuzzy" in line:
+            fuzzy = True
 
-            if line.startswith("#,") and "fuzzy" in line:
-                fuzzy = True
+        if line.startswith("#"):
+            if section == "STR":
+                _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
+            section = msgctxt = None
+            fuzzy = False
+            continue
 
-            if line.startswith("#"):
-                if section == "STR":
-                    _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
-                section = msgctxt = None
-                fuzzy = False
-                continue
+        value_source: str = line
+        if line.startswith("msgctxt"):
+            section = "CTXT"
+            msgctxt = b""
+            value_source = line[7:].strip()
+        elif line.startswith("msgid") and not line.startswith("msgid_plural"):
+            if section == "STR":
+                _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
+            section = "ID"
+            msgid = msgstr = b""
+            is_plural = False
+            value_source = line[5:].strip()
+        elif line.startswith("msgid_plural"):
+            msgid += b"\0"
+            is_plural = True
+            value_source = line[12:].strip()
+        elif line.startswith("msgstr"):
+            section = "STR"
+            plural_entry = line.startswith("msgstr[")
+            value_source = _parse_msgstr_value(line, is_plural)
+            if plural_entry and msgstr:
+                msgstr += b"\0"
 
-            value_source: str = line
-            if line.startswith("msgctxt"):
-                section = "CTXT"
-                msgctxt = b""
-                value_source = line[7:].strip()
-            elif line.startswith("msgid") and not line.startswith("msgid_plural"):
-                if section == "STR":
-                    _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
-                section = "ID"
-                msgid = msgstr = b""
-                is_plural = False
-                value_source = line[5:].strip()
-            elif line.startswith("msgid_plural"):
-                msgid += b"\0"
-                is_plural = True
-                value_source = line[12:].strip()
-            elif line.startswith("msgstr"):
-                section = "STR"
-                plural_entry = line.startswith("msgstr[")
-                value_source = _parse_msgstr_value(line, is_plural)
-                if plural_entry and msgstr:
-                    msgstr += b"\0"
+        encoded_value = _parse_po_value(value_source, filename)
 
-            encoded_value = _parse_po_value(value_source, filename)
-
-            if section == "CTXT":
-                if msgctxt is None:
-                    msg_0: str = f"Context found without a matching msgctxt in {filename}"
-                    raise ValueError(msg_0)
-                msgctxt += encoded_value
-            elif section == "ID":
-                msgid += encoded_value
-            elif section == "STR":
-                msgstr += encoded_value
+        if section == "CTXT":
+            if msgctxt is None:
+                msg_0: str = f"Context found without a matching msgctxt in {filename}"
+                raise ValueError(msg_0)
+            msgctxt += encoded_value
+        elif section == "ID":
+            msgid += encoded_value
+        elif section == "STR":
+            msgstr += encoded_value
 
     if section == "STR":
         _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
 
-    return _compile_translation_messages(messages)
+    return messages
 
 
 def _compile_translation_messages(messages: dict[bytes, bytes]) -> gettext.GNUTranslations:

@@ -2416,14 +2416,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self.CONN = None
                     break
                 if isinstance(ret, list):
-                    for i in range(len(ret)):
-                        status = ret[i][0]
-                        msg = ret[i][1]
-                        if msg in messages:  # don't show the same message twice
-                            continue
-                        if status == 3:
-                            messages.append(msg)
-                            self.CONN = None
+                    self._RecordDeviceInitializationMessages(ret, messages)
 
                 if dev.GetPort() in ports:
                     break
@@ -2469,6 +2462,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._SetRequestedMode(mode)
 
         return True
+
+    def _RecordDeviceInitializationMessages(
+        self,
+        connection_messages: list[ConfigMessage],
+        messages: list[str],
+    ) -> None:
+        """Keep unique critical connection errors and mark the connection unavailable."""
+        for connection_message in connection_messages:
+            status, message = connection_message
+            if status == 3 and isinstance(message, str) and message not in messages:
+                messages.append(message)
+                self.CONN = None
+
+    def _GetLastDirectory(self, setting_name: str) -> str:
+        """Return a saved directory, falling back to the user's Documents folder."""
+        last_dir: str | None = self.SETTINGS.value(setting_name)
+        if last_dir is None:
+            last_dir = QtCore.QStandardPaths.writableLocation(
+                QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
+            )
+        return last_dir
 
     def AbortOperation(self) -> None:
         if "stresstest_running" in self.STATUS:
@@ -3178,22 +3192,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if mode == "DMG":
             setting_name = "LastDirRomDMG"
-            last_dir = self.SETTINGS.value(setting_name)
-            if last_dir is None:
-                last_dir = QtCore.QStandardPaths.writableLocation(
-                    QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
-                )
             carts = self._device.GetSupportedCartridgesDMG()[1]
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
         else:
             setting_name = "LastDirRomAGB"
-            last_dir = self.SETTINGS.value(setting_name)
-            if last_dir is None:
-                last_dir = QtCore.QStandardPaths.writableLocation(
-                    QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
-                )
             carts = self._device.GetSupportedCartridgesAGB()[1]
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
+        last_dir = self._GetLastDirectory(setting_name)
         if cart_type == 0:
             if "detected_cart_type" not in self.STATUS:
                 self.STATUS["detected_cart_type"] = ""
@@ -3784,11 +3789,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         cart_type = 0
         if mode == "DMG":
             setting_name = "LastDirSaveDataDMG"
-            last_dir: str | None = self.SETTINGS.value(setting_name)
-            if last_dir is None:
-                last_dir = QtCore.QStandardPaths.writableLocation(
-                    QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
-                )
             mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
             save_type = DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetMbc()
             if save_type == 0:
@@ -3803,11 +3803,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         else:
             setting_name = "LastDirSaveDataAGB"
-            last_dir = self.SETTINGS.value(setting_name)
-            if last_dir is None:
-                last_dir = QtCore.QStandardPaths.writableLocation(
-                    QtCore.QStandardPaths.StandardLocation.DocumentsLocation,
-                )
             mbc = 0
             save_type = self.cmbAGBSaveTypeResult.currentIndex()
             if save_type == 0:
@@ -3819,6 +3814,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
+        last_dir = self._GetLastDirectory(setting_name)
         if not self.CheckHeader():
             return
         selected_path = self._SelectSaveBackupPath(dpath, last_dir)
@@ -5189,8 +5185,39 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         ):
             return None
         rtc_data = data["rtc_dict"]
-        args: dict[str, Any] | None = None
+        args: dict[str, Any] | Literal[False] | None = None
 
+        if self._device.GetMode() == "DMG":
+            args = self._EditDmgRTC(rtc_data)
+        elif self._device.GetMode() == "AGB":
+            args = self._EditAgbRTC(rtc_data)
+            if args is None:
+                return False
+
+        if args is None or args is False:
+            return False
+        self.STATUS["args"] = args
+        ret = self._device.WriteRTC(args=args)
+        self.ReadCartridge(resetStatus=False)
+        if ret:
+            QtWidgets.QMessageBox.information(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("The Real Time Clock register values have been updated."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return True
+        QtWidgets.QMessageBox.critical(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            __("An error occured while updating the Real Time Clock register values."),
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        return False
+
+    def _EditDmgRTC(self, rtc_data: dict[str, Any]) -> dict[str, Any] | Literal[False] | None:
+        """Build a DMG RTC write request from the mapper-specific dialog."""
+        args: dict[str, Any] | Literal[False] | None = None
         if self._device.GetMode() == "DMG":
             mbc = get_mbc_name(ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex()))
             if mbc in ("MBC3", "MBC30", "Unlicensed MBCX Mapper"):
@@ -5403,31 +5430,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 else:
                     return False
 
-        elif self._device.GetMode() == "AGB":
-            args = self._EditAgbRTC(rtc_data)
-            if args is None:
-                return False
-
-        if args is None:
-            return False
-        self.STATUS["args"] = args
-        ret = self._device.WriteRTC(args=args)
-        self.ReadCartridge(resetStatus=False)
-        if ret:
-            QtWidgets.QMessageBox.information(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __("The Real Time Clock register values have been updated."),
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            return True
-        QtWidgets.QMessageBox.critical(
-            self,
-            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-            __("An error occured while updating the Real Time Clock register values."),
-            QtWidgets.QMessageBox.StandardButton.Ok,
-        )
-        return False
+        return args
 
     def CheckDeviceAlive(self, setMode: PlatformMode | Literal[False] = False) -> bool:
         _ = setMode
@@ -5848,11 +5851,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         else:
             self.cmbAGBHeaderROMSizeResult.setCurrentIndex(0)
 
-    def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
-        self._PrepareAgbHeaderControls(data, reset_status=reset_status)
-
-        self.lblAGBRomTitleResult.setText(Formatter.title(data["game_title"]))
-        self.lblAGBGameNameResult.setToolTip("")
+    def _DisplayAgbGameName(self, data: dict[str, Any]) -> None:
+        """Show the database name or fallback code for an AGB cartridge."""
         if data["db"] is not None:
             self.lblAGBHeaderGameCodeRevisionResult.setText(
                 "{:s}-{:s}".format(data["db"]["gc"], str(data["version"])),
@@ -5872,6 +5872,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             else:
                 self.lblAGBHeaderGameCodeRevisionResult.setText("")
             self.lblAGBGameNameResult.setText(c__("Game Data", "(No database entry)"))
+
+    def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
+        self._PrepareAgbHeaderControls(data, reset_status=reset_status)
+
+        self.lblAGBRomTitleResult.setText(Formatter.title(data["game_title"]))
+        self.lblAGBGameNameResult.setToolTip("")
+        self._DisplayAgbGameName(data)
 
         if data["logo_correct"]:
             self.lblAGBHeaderBootlogoResult.setText("OK")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 import zipfile
 from argparse import Namespace
@@ -1912,6 +1913,118 @@ def test_gbxcartrw_firmware_update_retries_serial_port(
 
     assert cli.UpdateFirmwareGBxCartRW(port="first-port") is True
     assert FirmwareUpdater.attempts == 2
+
+
+@pytest.mark.parametrize(
+    ("answer", "member", "result", "expected"),
+    [
+        ("1", "FIRMWARE_LK.JR", 1, True),
+        ("2", "FIRMWARE_MSC.JR", 3, False),
+        ("3", "FIRMWARE_JOEYGUI.JR", 0, False),
+    ],
+)
+def test_joeyjr_firmware_update_reads_the_selected_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+    member: str,
+    result: int,
+    expected: bool,
+) -> None:
+    resource_path = tmp_path / "res"
+    resource_path.mkdir()
+    archive_path = resource_path / "fw_JoeyJr.zip"
+    payloads = {
+        "FIRMWARE_LK.JR": b"lk firmware",
+        "FIRMWARE_MSC.JR": b"msc firmware",
+        "FIRMWARE_JOEYGUI.JR": b"joeygui firmware",
+    }
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("fw.ini", "[Firmware]\n")
+        for name, payload in payloads.items():
+            archive.writestr(name, payload)
+
+    cli = make_cli(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": answer)
+    updates: list[tuple[str, bytes]] = []
+
+    class FirmwareUpdater:
+        def __init__(self, *, port: str) -> None:
+            self.port = port
+
+        def WriteFirmware(self, firmware: bytearray, _callback: object) -> int:
+            updates.append((self.port, bytes(firmware)))
+            return result
+
+    package = importlib.import_module("FlashGBX")
+    monkeypatch.setattr(package, "hw_JoeyJr", SimpleNamespace(FirmwareUpdater=FirmwareUpdater), raising=False)
+
+    assert cli.UpdateFirmwareJoeyJr(port="mock-port") is expected
+    assert updates == [("mock-port", payloads[member])]
+
+
+def test_joeyjr_firmware_update_retries_serial_port(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resource_path = tmp_path / "res"
+    resource_path.mkdir()
+    archive_path = resource_path / "fw_JoeyJr.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("fw.ini", "[Firmware]\n")
+        archive.writestr("FIRMWARE_LK.JR", b"selected firmware")
+
+    cli = make_cli(tmp_path)
+    answers: Iterator[str] = iter(["1", "second-port"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+    attempts: list[str] = []
+
+    class FirmwareUpdater:
+        def __init__(self, *, port: str) -> None:
+            self.port = port
+
+        def WriteFirmware(self, firmware: bytearray, _callback: object) -> int:
+            assert firmware == b"selected firmware"
+            attempts.append(self.port)
+            if len(attempts) == 1:
+                raise SerialException
+            return 1
+
+    package = importlib.import_module("FlashGBX")
+    monkeypatch.setattr(package, "hw_JoeyJr", SimpleNamespace(FirmwareUpdater=FirmwareUpdater), raising=False)
+
+    assert cli.UpdateFirmwareJoeyJr(port="first-port") is True
+    assert attempts == ["first-port", "second-port"]
+
+
+@pytest.mark.parametrize("answer", ["0", "4", "cancel"])
+def test_joeyjr_firmware_update_rejects_invalid_choice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str,
+) -> None:
+    resource_path = tmp_path / "res"
+    resource_path.mkdir()
+    with zipfile.ZipFile(resource_path / "fw_JoeyJr.zip", "w") as archive:
+        archive.writestr("fw.ini", "[Firmware]\n")
+    cli = make_cli(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": answer)
+
+    assert cli.UpdateFirmwareJoeyJr(port="mock-port") is False
+
+
+def test_joeyjr_firmware_update_reports_no_device(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resource_path = tmp_path / "res"
+    resource_path.mkdir()
+    with zipfile.ZipFile(resource_path / "fw_JoeyJr.zip", "w") as archive:
+        archive.writestr("fw.ini", "[Firmware]\n")
+    cli = make_cli(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+    assert cli.UpdateFirmwareJoeyJr() is False
 
 
 def test_run_standalone_firmware_action_selects_matching_fake_updater(
