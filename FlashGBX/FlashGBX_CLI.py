@@ -117,6 +117,27 @@ class FlashGBX_CLI:
         }.get(mode, mode)
 
     @staticmethod
+    def _GameCodeRevisionRows(data: HeaderData, *, include_revision_without_code: bool) -> list[tuple[str, str]]:
+        """Format database or cartridge game-code rows for the information display."""
+        if data["db"] is not None:
+            return [
+                (
+                    __("Game Code and Revision:"),
+                    "{:s}-{:s}".format(data["db"]["gc"], str(data["version"])),
+                ),
+            ]
+        if len(data["game_code"]) > 0:
+            return [
+                (
+                    __("Game Code and Revision:"),
+                    "{:s}-{:s}".format(data["game_code"], str(data["version"])),
+                ),
+            ]
+        if include_revision_without_code:
+            return [(__("Revision:"), str(data["version"]))]
+        return []
+
+    @staticmethod
     def _GetAutoPlatformMode(
         conn: Device,
         supported_modes: Sequence[PlatformMode] | None = None,
@@ -463,72 +484,23 @@ class FlashGBX_CLI:
         if action_result is not None:
             return action_result
 
+        platform_mode: str
         if args.mode is None:
-            supported_modes = self.CONN.GetSupprtedModes()
-            auto_mode = self._GetAutoPlatformMode(self.CONN, supported_modes)
-            match len(supported_modes):
-                case 0:
-                    print(__("The connected device does not support any platform modes.") + "\n")
-                    self.DisconnectDevice()
-                    return 1
-                case 1:
-                    mode = auto_mode or supported_modes[0]
-                    print(__("Using only supported platform: {platform}", platform=mode) + "\n")
-                    args.mode = mode.lower()
-                case _:
-                    if auto_mode is not None:
-                        if self.CONN.FW.get("cart_mode_switch"):
-                            print(
-                                __(
-                                    "Using platform mode set by cartridge mode switch: {platform}",
-                                    platform=self._GetPlatformName(auto_mode),
-                                )
-                                + "\n",
-                            )
-                        else:
-                            print(
-                                __(
-                                    "Using platform mode: {platform}",
-                                    platform=self._GetPlatformName(auto_mode),
-                                )
-                                + "\n",
-                            )
-                        args.mode = auto_mode.lower()
-                    else:
-                        print(
-                            __("Select Platform:") + "\n"
-                            "  1) " + __("Game Boy or Game Boy Color") + "\n"
-                            "  2) " + __("Game Boy Advance") + "\n",
-                        )
-                        answer = (
-                            input(
-                                __(
-                                    "Enter number ({range}) [{default}]:",
-                                    range="1-2",
-                                    default="2",
-                                )
-                                + " ",
-                            )
-                            .lower()
-                            .strip()
-                        )
-                        print()
-                        if answer == "1":
-                            args.mode = "dmg"
-                        elif answer in {"2", ""}:
-                            args.mode = "agb"
-                        else:
-                            print(__("Canceled."))
-                            self.DisconnectDevice()
-                            return 0
-                        print()
+            selection_result = self._SelectPlatformMode()
+            if isinstance(selection_result, int):
+                self.DisconnectDevice()
+                return selection_result
+            platform_mode = selection_result.lower()
+            args.mode = platform_mode
+        else:
+            platform_mode = args.mode
 
         platform_name = {
             "dmg": __("Game Boy or Game Boy Color"),
             "agb": __("Game Boy Advance"),
-        }.get(args.mode, __("Game Boy Advance"))
+        }.get(platform_mode, __("Game Boy Advance"))
         print(__("Platform: {platform}", platform=platform_name))
-        self.CONN.SetMode("DMG" if args.mode == "dmg" else "AGB")
+        self.CONN.SetMode("DMG" if platform_mode == "dmg" else "AGB")
         # time.sleep(0.2)
 
         if args.action == "interactive":
@@ -574,6 +546,53 @@ class FlashGBX_CLI:
         action_result = self._RunCartridgeAction(args, header)
         self.DisconnectDevice()
         return self.RETVAL if action_result is None else action_result
+
+    def _SelectPlatformMode(self) -> PlatformMode | int:
+        """Choose a platform mode or return a CLI result when selection stops."""
+        supported_modes: Sequence[PlatformMode] = self.CONN.GetSupprtedModes()
+        auto_mode = self._GetAutoPlatformMode(self.CONN, supported_modes)
+        if len(supported_modes) == 0:
+            print(__("The connected device does not support any platform modes.") + "\n")
+            return 1
+        if len(supported_modes) == 1:
+            mode = auto_mode or supported_modes[0]
+            print(__("Using only supported platform: {platform}", platform=mode) + "\n")
+            return mode
+        if auto_mode is not None:
+            if self.CONN.FW.get("cart_mode_switch"):
+                message = __(
+                    "Using platform mode set by cartridge mode switch: {platform}",
+                    platform=self._GetPlatformName(auto_mode),
+                )
+            else:
+                message = __("Using platform mode: {platform}", platform=self._GetPlatformName(auto_mode))
+            print(message + "\n")
+            return auto_mode
+
+        print(
+            __("Select Platform:") + "\n"
+            "  1) " + __("Game Boy or Game Boy Color") + "\n"
+            "  2) " + __("Game Boy Advance") + "\n",
+        )
+        answer = (
+            input(
+                __(
+                    "Enter number ({range}) [{default}]:",
+                    range="1-2",
+                    default="2",
+                )
+                + " ",
+            )
+            .lower()
+            .strip()
+        )
+        print()
+        if answer == "1":
+            return "DMG"
+        if answer in {"2", ""}:
+            return "AGB"
+        print(__("Canceled."))
+        return 0
 
     def _RunStandaloneAction(self, args: argparse.Namespace, fwupdate_actions: set[str]) -> int | None:
         if args.action == "gbcamera-extract":
@@ -1198,22 +1217,7 @@ class FlashGBX_CLI:
 
             rows.append((__("ROM Title:"), Formatter.title(data["game_title"])))
 
-            if data["db"] is not None:
-                rows.append(
-                    (
-                        __("Game Code and Revision:"),
-                        "{:s}-{:s}".format(data["db"]["gc"], str(data["version"])),
-                    ),
-                )
-            elif len(data["game_code"]) > 0:
-                rows.append(
-                    (
-                        __("Game Code and Revision:"),
-                        "{:s}-{:s}".format(data["game_code"], str(data["version"])),
-                    ),
-                )
-            else:
-                rows.append((__("Revision:"), str(data["version"])))
+            rows.extend(self._GameCodeRevisionRows(data, include_revision_without_code=True))
 
             rows.append((__("Platform:"), self._DmgPlatformString(data)))
 
@@ -1270,20 +1274,7 @@ class FlashGBX_CLI:
 
             rows.append((__("ROM Title:"), Formatter.title(data["game_title"])))
 
-            if data["db"] is not None:
-                rows.append(
-                    (
-                        __("Game Code and Revision:"),
-                        "{:s}-{:s}".format(data["db"]["gc"], str(data["version"])),
-                    ),
-                )
-            elif len(data["game_code"]) > 0:
-                rows.append(
-                    (
-                        __("Game Code and Revision:"),
-                        "{:s}-{:s}".format(data["game_code"], str(data["version"])),
-                    ),
-                )
+            rows.extend(self._GameCodeRevisionRows(data, include_revision_without_code=False))
 
             rows.append((__("Real Time Clock:"), data["rtc_string"]))
 

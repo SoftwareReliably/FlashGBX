@@ -304,11 +304,6 @@ class DumpReport:
             lines += cls._fields_to_lines(parsed_fields)
             lines += cls._gbmemory_lines(di)
 
-            if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
-                db = header["db"]
-                lines += ["", "== Database Match =="]
-                lines += cls._fields_to_lines(cls._database_fields(db, include_save_type=False))
-
         elif mode == "AGB":
             hdr_chk = header["header_checksum"]
             hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
@@ -348,10 +343,10 @@ class DumpReport:
                     col=21,
                 )
 
-            if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
-                db = header["db"]
-                lines += ["", "== Database Match =="]
-                lines += cls._fields_to_lines(cls._database_fields(db, include_save_type=True))
+        if header["db"] is not None and header["db"]["rc"] == di["hash_crc32"]:
+            db = header["db"]
+            lines += ["", "== Database Match =="]
+            lines += cls._fields_to_lines(cls._database_fields(db, include_save_type=mode == "AGB"))
 
         newline: Literal["\r\n", "\n"] = "\r\n" if platform.system() == "Windows" else "\n"
         return newline.join(lines)

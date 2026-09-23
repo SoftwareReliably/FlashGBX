@@ -670,6 +670,7 @@ def test_read_cartridge_formats_valid_and_invalid_dmg_headers(
     assert bad is False
     assert header["game_title"] == "POKEMON RED"
     assert "POKEMON RED" in text
+    assert "Revision:" in text
     assert "MBC3" in text
     assert (tmp_path / "bootlogo_dmg.bin").read_bytes() == header["raw"][0x104:0x134]
 
@@ -691,7 +692,7 @@ def test_read_cartridge_formats_agb_database_and_invalid_metadata(tmp_path: Path
     conn.INFO["supported_3d"] = False
     cli.CONN = conn
     header = agb_header(bytearray(range(256)) + bytearray(256))
-    header["db"] = {"gc": "AGB-ABCD", "rc": 0x123456, "rs": 0x4000000, "st": 2}
+    header["db"] = {"gc": "DB-CODE", "rc": 0x123456, "rs": 0x4000000, "st": 2}
     header["3d_memory"] = True
 
     bad, text, parsed = cli.ReadCartridge(header)
@@ -700,10 +701,15 @@ def test_read_cartridge_formats_agb_database_and_invalid_metadata(tmp_path: Path
     assert parsed["rom_size"] == 0x4000000
     assert "64 MiB" in text
     assert "Game Name:" in text
+    assert "DB-CODE-1" in text
+    assert "Game Code and Revision:  ABCD-1" not in text
 
     no_database_header = agb_header()
+    no_database_header["game_code"] = ""
     _bad, text, _parsed = cli.ReadCartridge(no_database_header)
     assert "Game Name:" not in text
+    assert "Game Code and Revision:" not in text
+    assert "Revision:" not in text
 
     invalid = agb_header()
     invalid.update(
