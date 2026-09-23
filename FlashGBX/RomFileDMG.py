@@ -309,6 +309,313 @@ class RomFileDMG:
         if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
             data["game_code"] = data["db"]["gc"][4:]
 
+    def _ApplySpecialMapperOverrides(self, data: dict[str, Any], buffer: bytearray) -> None:
+        # GB-Memory (DMG-MMSA-JPN)
+        if (
+            (data["mapper_raw"] == 0x19 and data["game_title"] == "NP M-MENU MENU" and data["header_checksum"] == 0xD3)
+            or (
+                data["mapper_raw"] == 0x01
+                and data["game_title"] == "DMG MULTI MENU "
+                and data["header_checksum"] == 0x36
+            )
+            or (data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01)
+        ):
+            data["rom_size_raw"] = 0x05
+            data["ram_size_raw"] = 0x04
+            data["mapper_raw"] = 0x105
+
+        # M161 (Mani 4 in 1)
+        elif data["mapper_raw"] == 0x10 and data["game_title"] == "TETRIS SET" and data["header_checksum"] == 0x3F:
+            data["mapper_raw"] = 0x104
+
+        # MMM01 (Mani 4 in 1)
+        elif (
+            (data["mapper_raw"] == 0x11 and data["game_title"] == "BOUKENJIMA2 SET" and data["header_checksum"] == 0)
+            or (
+                data["mapper_raw"] == 0x11
+                and data["game_title"] == "BUBBLEBOBBLE SET"
+                and data["header_checksum"] == 0xC6
+            )
+            or (
+                data["mapper_raw"] == 0x11 and data["game_title"] == "GANBARUGA SET" and data["header_checksum"] == 0x90
+            )
+            or (data["mapper_raw"] == 0x11 and data["game_title"] == "RTYPE 2 SET" and data["header_checksum"] == 0x32)
+        ):
+            data["mapper_raw"] = 0x0B
+
+        # Unlicensed 256M Mapper
+        elif (
+            (data["game_title"].upper() == "GB HICOL" and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9))
+            or (data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48)
+            or buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder"
+            or (
+                data["mapper_raw"] in (0x19, 0x1B)
+                and data["game_title"] == "GBMEM-MENU 256M"
+                and data["version"] == 0x01
+            )
+        ):
+            data["rom_size_raw"] = 0x0A
+            data["ram_size_raw"] = 0x201
+            data["mapper_raw"] = 0x201
+
+        # Unlicensed Wisdom Tree Mapper
+        elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
+            [
+                0xF5,
+                0xD2,
+                0x91,
+                0x7D,
+                0x5E,
+                0x5B,
+                0xAB,
+                0xD8,
+                0x5F,
+                0x0A,
+                0xC7,
+                0xBA,
+                0x56,
+                0xEB,
+                0x49,
+                0x8A,
+                0xBA,
+                0x12,
+                0x49,
+                0x13,
+            ],
+        ):  # Exodus / Joshua
+            data["rom_size_raw"] = 0x02
+            data["mapper_raw"] = 0x202
+        elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
+            [
+                0xE9,
+                0xF8,
+                0x32,
+                0x78,
+                0x39,
+                0x19,
+                0xE3,
+                0xB2,
+                0xFC,
+                0x6F,
+                0xC2,
+                0x60,
+                0x30,
+                0x33,
+                0x20,
+                0xD0,
+                0x3B,
+                0x1A,
+                0xA9,
+                0xA2,
+            ],
+        ):  # Spiritual Warfare
+            data["rom_size_raw"] = 0x03
+            data["mapper_raw"] = 0x202
+        elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
+            [
+                0xE6,
+                0xC0,
+                0x39,
+                0x7F,
+                0xA5,
+                0x99,
+                0xD6,
+                0x60,
+                0xD7,
+                0x90,
+                0x45,
+                0xB9,
+                0xF0,
+                0x64,
+                0x3B,
+                0x2A,
+                0x41,
+                0xA4,
+                0xD6,
+                0x35,
+            ],
+        ):  # King James Bible
+            data["rom_size_raw"] = 0x05
+            data["mapper_raw"] = 0x202
+        elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
+            [
+                0x36,
+                0x89,
+                0x60,
+                0xDD,
+                0x1B,
+                0xE1,
+                0x73,
+                0x86,
+                0x8B,
+                0x24,
+                0xA3,
+                0xDC,
+                0x57,
+                0xA5,
+                0xCB,
+                0x7C,
+                0xCA,
+                0x62,
+                0xDD,
+                0x34,
+            ],
+        ):  # NIV Bible
+            data["rom_size_raw"] = 0x06
+            data["mapper_raw"] = 0x202
+
+        # Unlicensed Xploder GB Mapper
+        elif hashlib.sha1(buffer[0x104:0x150]).digest() == bytearray(
+            [
+                0x06,
+                0xAC,
+                0xDC,
+                0xB6,
+                0xD1,
+                0x9B,
+                0xD9,
+                0xE3,
+                0x95,
+                0xA2,
+                0x38,
+                0xB8,
+                0x00,
+                0x97,
+                0x0D,
+                0x78,
+                0x3F,
+                0xC6,
+                0xB7,
+                0xBD,
+            ],
+        ):
+            data["rom_size_raw"] = 0x02
+            data["ram_size_raw"] = 0x203
+            data["mapper_raw"] = 0x203
+            data["cgb"] = 0x80
+            try:
+                game_title: str = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
+                game_title = re.sub(r"(\x00+)$", "", game_title)
+                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
+                data["game_title"] = game_title
+            except Exception:
+                logger.exception("Failed to parse the unlicensed mapper ROM title")
+            data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(
+                buffer[0xD8],
+                buffer[0xD9],
+                buffer[0xDA],
+                buffer[0xD7],
+                buffer[0xD0],
+                buffer[0xD1],
+                buffer[0xD2],
+                buffer[0xD3],
+                buffer[0xD4],
+                struct.unpack("<H", buffer[0xD5:0xD7])[0],
+            ).replace("\x00", "")
+
+        # Unlicensed Datel Orbit V2 Mapper
+        elif hashlib.sha1(buffer[0x101:0x134]).digest() == bytearray(
+            [
+                0xFA,
+                0x68,
+                0x5A,
+                0x37,
+                0x85,
+                0xEF,
+                0x65,
+                0x23,
+                0x2D,
+                0x6F,
+                0x23,
+                0xAC,
+                0x02,
+                0x05,
+                0x15,
+                0x20,
+                0x8B,
+                0xDE,
+                0xC5,
+                0x23,
+            ],
+        ):
+            data["rom_size_raw"] = 0x02
+            data["ram_size_raw"] = 0
+            data["mapper_raw"] = 0x205
+            data["cgb"] = 0x80
+            try:
+                game_title = bytearray(buffer[0x134:0x150]).decode("ascii", "replace").replace("\xff", "")
+                game_title = re.sub(r"(\x00+)$", "", game_title)
+                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
+                data["game_title"] = game_title
+            except Exception:
+                logger.exception("Failed to parse the Datel Orbit V2 ROM title")
+
+        # Unlicensed Datel Orbit V2 Mapper (older firmware)
+        elif hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
+            [
+                0xC1,
+                0xF4,
+                0x15,
+                0x4A,
+                0xEF,
+                0xCC,
+                0x5B,
+                0xE7,
+                0xEC,
+                0x83,
+                0xA8,
+                0xBB,
+                0x7B,
+                0xC0,
+                0x95,
+                0x83,
+                0x35,
+                0xEC,
+                0x9A,
+                0xF2,
+            ],
+        ) or hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
+            [
+                0xC9,
+                0x50,
+                0x65,
+                0xCB,
+                0x31,
+                0x96,
+                0x26,
+                0x6C,
+                0x32,
+                0x58,
+                0xAB,
+                0x07,
+                0xA1,
+                0x9E,
+                0x0C,
+                0x10,
+                0xA6,
+                0xED,
+                0xCC,
+                0x67,
+            ],
+        ):
+            data["rom_size_raw"] = 0x02
+            data["ram_size_raw"] = 0
+            data["mapper_raw"] = 0x205
+            try:
+                game_title = bytearray(buffer[0x134:0x140]).decode("ascii", "replace").replace("\xff", "")
+                game_title = re.sub(r"(\x00+)$", "", game_title)
+                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
+                data["game_title"] = game_title
+            except Exception:
+                logger.exception("Failed to parse the legacy Datel Orbit V2 ROM title")
+
+        # Unlicensed Sachen MMC1/MMC2
+        elif len(buffer) >= 0x280:
+            self._ApplySachenOverride(data, buffer)
+
     def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
         buffer: bytearray = self.ROMFILE
         if len(buffer) < 0x180:
@@ -320,325 +627,7 @@ class RomFileDMG:
         else:
             self._ApplyKnownMapperOverrides(data)
 
-            # GB-Memory (DMG-MMSA-JPN)
-            if (
-                (
-                    data["mapper_raw"] == 0x19
-                    and data["game_title"] == "NP M-MENU MENU"
-                    and data["header_checksum"] == 0xD3
-                )
-                or (
-                    data["mapper_raw"] == 0x01
-                    and data["game_title"] == "DMG MULTI MENU "
-                    and data["header_checksum"] == 0x36
-                )
-                or (data["mapper_raw"] == 0x1B and data["game_title"] == "GBMEM-MENU MMSA" and data["version"] == 0x01)
-            ):
-                data["rom_size_raw"] = 0x05
-                data["ram_size_raw"] = 0x04
-                data["mapper_raw"] = 0x105
-
-            # M161 (Mani 4 in 1)
-            elif data["mapper_raw"] == 0x10 and data["game_title"] == "TETRIS SET" and data["header_checksum"] == 0x3F:
-                data["mapper_raw"] = 0x104
-
-            # MMM01 (Mani 4 in 1)
-            elif (
-                (
-                    data["mapper_raw"] == 0x11
-                    and data["game_title"] == "BOUKENJIMA2 SET"
-                    and data["header_checksum"] == 0
-                )
-                or (
-                    data["mapper_raw"] == 0x11
-                    and data["game_title"] == "BUBBLEBOBBLE SET"
-                    and data["header_checksum"] == 0xC6
-                )
-                or (
-                    data["mapper_raw"] == 0x11
-                    and data["game_title"] == "GANBARUGA SET"
-                    and data["header_checksum"] == 0x90
-                )
-                or (
-                    data["mapper_raw"] == 0x11
-                    and data["game_title"] == "RTYPE 2 SET"
-                    and data["header_checksum"] == 0x32
-                )
-            ):
-                data["mapper_raw"] = 0x0B
-
-            # Unlicensed 256M Mapper
-            elif (
-                (data["game_title"].upper() == "GB HICOL" and data["header_checksum"] in (0x4A, 0x49, 0xE8, 0xE9))
-                or (data["game_title"] == "BennVenn" and data["header_checksum"] == 0x48)
-                or buffer[0x150:0x160].decode("ascii", "replace") == "256M ROM Builder"
-                or (
-                    data["mapper_raw"] in (0x19, 0x1B)
-                    and data["game_title"] == "GBMEM-MENU 256M"
-                    and data["version"] == 0x01
-                )
-            ):
-                data["rom_size_raw"] = 0x0A
-                data["ram_size_raw"] = 0x201
-                data["mapper_raw"] = 0x201
-
-            # Unlicensed Wisdom Tree Mapper
-            elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
-                [
-                    0xF5,
-                    0xD2,
-                    0x91,
-                    0x7D,
-                    0x5E,
-                    0x5B,
-                    0xAB,
-                    0xD8,
-                    0x5F,
-                    0x0A,
-                    0xC7,
-                    0xBA,
-                    0x56,
-                    0xEB,
-                    0x49,
-                    0x8A,
-                    0xBA,
-                    0x12,
-                    0x49,
-                    0x13,
-                ],
-            ):  # Exodus / Joshua
-                data["rom_size_raw"] = 0x02
-                data["mapper_raw"] = 0x202
-            elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
-                [
-                    0xE9,
-                    0xF8,
-                    0x32,
-                    0x78,
-                    0x39,
-                    0x19,
-                    0xE3,
-                    0xB2,
-                    0xFC,
-                    0x6F,
-                    0xC2,
-                    0x60,
-                    0x30,
-                    0x33,
-                    0x20,
-                    0xD0,
-                    0x3B,
-                    0x1A,
-                    0xA9,
-                    0xA2,
-                ],
-            ):  # Spiritual Warfare
-                data["rom_size_raw"] = 0x03
-                data["mapper_raw"] = 0x202
-            elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
-                [
-                    0xE6,
-                    0xC0,
-                    0x39,
-                    0x7F,
-                    0xA5,
-                    0x99,
-                    0xD6,
-                    0x60,
-                    0xD7,
-                    0x90,
-                    0x45,
-                    0xB9,
-                    0xF0,
-                    0x64,
-                    0x3B,
-                    0x2A,
-                    0x41,
-                    0xA4,
-                    0xD6,
-                    0x35,
-                ],
-            ):  # King James Bible
-                data["rom_size_raw"] = 0x05
-                data["mapper_raw"] = 0x202
-            elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
-                [
-                    0x36,
-                    0x89,
-                    0x60,
-                    0xDD,
-                    0x1B,
-                    0xE1,
-                    0x73,
-                    0x86,
-                    0x8B,
-                    0x24,
-                    0xA3,
-                    0xDC,
-                    0x57,
-                    0xA5,
-                    0xCB,
-                    0x7C,
-                    0xCA,
-                    0x62,
-                    0xDD,
-                    0x34,
-                ],
-            ):  # NIV Bible
-                data["rom_size_raw"] = 0x06
-                data["mapper_raw"] = 0x202
-
-            # Unlicensed Xploder GB Mapper
-            elif hashlib.sha1(buffer[0x104:0x150]).digest() == bytearray(
-                [
-                    0x06,
-                    0xAC,
-                    0xDC,
-                    0xB6,
-                    0xD1,
-                    0x9B,
-                    0xD9,
-                    0xE3,
-                    0x95,
-                    0xA2,
-                    0x38,
-                    0xB8,
-                    0x00,
-                    0x97,
-                    0x0D,
-                    0x78,
-                    0x3F,
-                    0xC6,
-                    0xB7,
-                    0xBD,
-                ],
-            ):
-                data["rom_size_raw"] = 0x02
-                data["ram_size_raw"] = 0x203
-                data["mapper_raw"] = 0x203
-                data["cgb"] = 0x80
-                try:
-                    game_title: str = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
-                    game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                    data["game_title"] = game_title
-                except Exception:
-                    logger.exception("Failed to parse the unlicensed mapper ROM title")
-                data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(
-                    buffer[0xD8],
-                    buffer[0xD9],
-                    buffer[0xDA],
-                    buffer[0xD7],
-                    buffer[0xD0],
-                    buffer[0xD1],
-                    buffer[0xD2],
-                    buffer[0xD3],
-                    buffer[0xD4],
-                    struct.unpack("<H", buffer[0xD5:0xD7])[0],
-                ).replace("\x00", "")
-
-            # Unlicensed Datel Orbit V2 Mapper
-            elif hashlib.sha1(buffer[0x101:0x134]).digest() == bytearray(
-                [
-                    0xFA,
-                    0x68,
-                    0x5A,
-                    0x37,
-                    0x85,
-                    0xEF,
-                    0x65,
-                    0x23,
-                    0x2D,
-                    0x6F,
-                    0x23,
-                    0xAC,
-                    0x02,
-                    0x05,
-                    0x15,
-                    0x20,
-                    0x8B,
-                    0xDE,
-                    0xC5,
-                    0x23,
-                ],
-            ):
-                data["rom_size_raw"] = 0x02
-                data["ram_size_raw"] = 0
-                data["mapper_raw"] = 0x205
-                data["cgb"] = 0x80
-                try:
-                    game_title = bytearray(buffer[0x134:0x150]).decode("ascii", "replace").replace("\xff", "")
-                    game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                    data["game_title"] = game_title
-                except Exception:
-                    logger.exception("Failed to parse the Datel Orbit V2 ROM title")
-
-            # Unlicensed Datel Orbit V2 Mapper (older firmware)
-            elif hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
-                [
-                    0xC1,
-                    0xF4,
-                    0x15,
-                    0x4A,
-                    0xEF,
-                    0xCC,
-                    0x5B,
-                    0xE7,
-                    0xEC,
-                    0x83,
-                    0xA8,
-                    0xBB,
-                    0x7B,
-                    0xC0,
-                    0x95,
-                    0x83,
-                    0x35,
-                    0xEC,
-                    0x9A,
-                    0xF2,
-                ],
-            ) or hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
-                [
-                    0xC9,
-                    0x50,
-                    0x65,
-                    0xCB,
-                    0x31,
-                    0x96,
-                    0x26,
-                    0x6C,
-                    0x32,
-                    0x58,
-                    0xAB,
-                    0x07,
-                    0xA1,
-                    0x9E,
-                    0x0C,
-                    0x10,
-                    0xA6,
-                    0xED,
-                    0xCC,
-                    0x67,
-                ],
-            ):
-                data["rom_size_raw"] = 0x02
-                data["ram_size_raw"] = 0
-                data["mapper_raw"] = 0x205
-                try:
-                    game_title = bytearray(buffer[0x134:0x140]).decode("ascii", "replace").replace("\xff", "")
-                    game_title = re.sub(r"(\x00+)$", "", game_title)
-                    game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                    game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                    data["game_title"] = game_title
-                except Exception:
-                    logger.exception("Failed to parse the legacy Datel Orbit V2 ROM title")
-
-            # Unlicensed Sachen MMC1/MMC2
-            elif len(buffer) >= 0x280:
-                self._ApplySachenOverride(data, buffer)
+            self._ApplySpecialMapperOverrides(data, buffer)
 
             # GBFlash MBCX
             if data["game_title"] == "MBCX_MENU":

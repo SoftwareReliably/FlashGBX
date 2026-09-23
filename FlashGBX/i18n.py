@@ -266,6 +266,14 @@ def _store_translation_message(
         messages[key] = msgstr
 
 
+def _parse_po_value(value_source: str, filename: Path) -> bytes:
+    value = ast.literal_eval(value_source)
+    if not isinstance(value, str):
+        msg = f"Expected a quoted string in {filename}: {value_source}"
+        raise TypeError(msg)
+    return value.encode()
+
+
 def loadTranslation(language: str) -> gettext.GNUTranslations:
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
     messages: dict[bytes, bytes] = {}
@@ -328,11 +336,7 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
                         raise ValueError(msg)
                     value_source = line[6:].strip()
 
-            value = ast.literal_eval(value_source)
-            if not isinstance(value, str):
-                msg = f"Expected a quoted string in {filename}: {value_source}"
-                raise TypeError(msg)
-            encoded_value: bytes = value.encode()
+            encoded_value = _parse_po_value(value_source, filename)
 
             if section == "CTXT":
                 if msgctxt is None:

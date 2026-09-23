@@ -2481,11 +2481,7 @@ class LK_Device(ABC):
 
             # Save Type and Size
             if checkSaveType:
-                if signal is not None:
-                    self.SetProgress(
-                        {"action": "UPDATE_INFO", "text": __("Detecting save type...")},
-                        signal=signal,
-                    )
+                self._SetDetectionProgress(__("Detecting save type..."), signal)
                 if self.MODE == "DMG":
                     save_size = 131072
                     save_type = 0x04
@@ -5967,10 +5963,7 @@ class LK_Device(ABC):
                         xe = 2 if args.get("verify_read") else 1  # Read twice for detecting instabilities
                         _read_failed = False
                         for x in range(xe):
-                            if x == 1:
-                                self.NO_PROG_UPDATE = True
-                            else:
-                                self.NO_PROG_UPDATE = False
+                            self.NO_PROG_UPDATE = x == 1
 
                             in_temp[x] = self._ReadSaveChunk(
                                 _SaveReadParameters(args, _mbc, bank, pos, buffer_len, command, max_length),
@@ -7813,6 +7806,120 @@ class LK_Device(ABC):
             canceled=False,
         )
 
+    def _HandleDisconnectedFlashWrite(
+        self,
+        buffer_len: int,
+        buffer_pos: int,
+        errmsg_mbc_selection: str,
+        status_register: str,
+    ) -> bool:
+        device = self.DEVICE
+        if device is not None and device.is_open:
+            return False
+        self.CANCEL_ARGS.update(
+            {
+                "info_type": "msgbox_critical",
+                "info_msg": __(
+                    "An error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
+                    buffer_len=f"0x{buffer_len:X}",
+                    buffer_pos=f"0x{buffer_pos:X}",
+                    file_size=Formatter.file_size(buffer_pos, as_int=False),
+                )
+                + "\n\n"
+                + __(
+                    "Troubleshooting advice:\n"
+                    "- Clean cartridge contacts\n"
+                    "- Check soldering if it's a DIY cartridge\n"
+                    "- Avoid passive USB hubs and try different USB ports/cables\n"
+                    "- Check flashcart profile selection",
+                )
+                + errmsg_mbc_selection
+                + "\n\n"
+                + __("Status Register:")
+                + " "
+                + status_register,
+            },
+        )
+        return True
+
+    def _IsUnstableFlashWriteIteration(self) -> bool:
+        return "iteration" in self.ERROR_ARGS and self.ERROR_ARGS["iteration"] > 0
+
+    def _HandleFlashWriteRetry(
+        self,
+        preparation: _FlashWritePreparation,
+        retry_hp: int,
+        buffer_len: int,
+        buffer_pos: int,
+        status_register: str,
+    ) -> tuple[int, bool]:
+        if preparation.chip_erase:
+            retry_hp = 0
+        if self._IsUnstableFlashWriteIteration():
+            retry_hp -= 5
+            if retry_hp <= 0:
+                self.CANCEL_ARGS.update(
+                    {
+                        "info_type": "msgbox_critical",
+                        "info_msg": __(
+                            "Unstable connection detected while writing {buffer_len} bytes in iteration {iteration} at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
+                            buffer_len=f"0x{buffer_len:X}",
+                            iteration=self.ERROR_ARGS["iteration"],
+                            buffer_pos=f"0x{buffer_pos:X}",
+                            file_size=Formatter.file_size(buffer_pos, as_int=False),
+                        )
+                        + "\n\n"
+                        + __(
+                            "Troubleshooting advice:\n"
+                            "- Clean cartridge contacts\n"
+                            "- Check soldering if it's a DIY cartridge\n"
+                            "- Avoid passive USB hubs and try different USB ports/cables",
+                        )
+                        + "\n\n"
+                        + __("Status Register:")
+                        + " "
+                        + status_register,
+                    },
+                )
+                return retry_hp, True
+        else:
+            retry_hp -= 10
+            if retry_hp <= 0:
+                enable_pullup_wr_str = " (+ WR pullup)" if preparation.enable_pullup_wr == 2 else ""
+                self.CANCEL_ARGS.update(
+                    {
+                        "info_type": "msgbox_critical",
+                        "info_msg": __(
+                            "An error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
+                            buffer_len=f"0x{buffer_len:X}",
+                            buffer_pos=f"0x{buffer_pos:X}",
+                            file_size=Formatter.file_size(buffer_pos, as_int=False),
+                        )
+                        + "\n\n"
+                        + __(
+                            "Troubleshooting advice:\n"
+                            "- Clean cartridge contacts\n"
+                            "- Check soldering if it's a DIY cartridge\n"
+                            "- Avoid passive USB hubs and try different USB ports/cables\n"
+                            "- Check cartridge ROM storage size (at least {rom_size} is required){errmsg}\n"
+                            "- Check flashcart profile used: {cart_name}{enable_pullup_wr_str}\n"
+                            "- The cartridge may also be incompatible with your {device_name} device",
+                            rom_size=Formatter.file_size(len(preparation.data_import), as_int=False),
+                            errmsg=preparation.error_message,
+                            cart_name=preparation.cart_name,
+                            enable_pullup_wr_str=enable_pullup_wr_str,
+                            device_name=self.GetFullNameLabel(),
+                        )
+                        + "\n\n"
+                        + __("Status Register:")
+                        + " "
+                        + status_register,
+                        "abortable": False,
+                    },
+                )
+                return retry_hp, True
+        return retry_hp, False
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -7820,7 +7927,7 @@ class LK_Device(ABC):
         preparation: _FlashWritePreparation,
     ) -> bool | None:
         (
-            cart_name,
+            _cart_name,
             cart_type,
             flashcart,
             data_import,
@@ -7830,7 +7937,7 @@ class LK_Device(ABC):
             _mbc,
             end_bank,
             rom_bank_size,
-            enable_pullup_wr,
+            _enable_pullup_wr,
             errmsg_mbc_selection,
             flash_buffer_size,
             command_set_type,
@@ -7838,7 +7945,7 @@ class LK_Device(ABC):
             write_sectors,
             _delta_state_new,
             _json_file,
-            chip_erase,
+            _chip_erase,
             buffer_len,
             _verify_sectors,
         ) = preparation
@@ -7976,98 +8083,17 @@ class LK_Device(ABC):
 
                         if self.CANCEL_ARGS.get("from_user"):
                             break
-                        device = self.DEVICE
-                        if device is None or not device.is_open:
-                            self.CANCEL_ARGS.update(
-                                {
-                                    "info_type": "msgbox_critical",
-                                    "info_msg": __(
-                                        "An error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-                                        buffer_len=f"0x{buffer_len:X}",
-                                        buffer_pos=f"0x{buffer_pos:X}",
-                                        file_size=Formatter.file_size(buffer_pos, as_int=False),
-                                    )
-                                    + "\n\n"
-                                    + __(
-                                        "Troubleshooting advice:\n"
-                                        "- Clean cartridge contacts\n"
-                                        "- Check soldering if it's a DIY cartridge\n"
-                                        "- Avoid passive USB hubs and try different USB ports/cables\n"
-                                        "- Check flashcart profile selection",
-                                    )
-                                    + errmsg_mbc_selection
-                                    + "\n\n"
-                                    + __("Status Register:")
-                                    + " "
-                                    + sr,
-                                },
-                            )
+                        if self._HandleDisconnectedFlashWrite(buffer_len, buffer_pos, errmsg_mbc_selection, sr):
                             break
-                        if chip_erase:
-                            retry_hp = 0
-                        if "iteration" in self.ERROR_ARGS and self.ERROR_ARGS["iteration"] > 0:
-                            retry_hp -= 5
-                            if retry_hp <= 0:
-                                self.CANCEL_ARGS.update(
-                                    {
-                                        "info_type": "msgbox_critical",
-                                        "info_msg": __(
-                                            "Unstable connection detected while writing {buffer_len} bytes in iteration {iteration} at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-                                            buffer_len=f"0x{buffer_len:X}",
-                                            iteration=self.ERROR_ARGS["iteration"],
-                                            buffer_pos=f"0x{buffer_pos:X}",
-                                            file_size=Formatter.file_size(buffer_pos, as_int=False),
-                                        )
-                                        + "\n\n"
-                                        + __(
-                                            "Troubleshooting advice:\n"
-                                            "- Clean cartridge contacts\n"
-                                            "- Check soldering if it's a DIY cartridge\n"
-                                            "- Avoid passive USB hubs and try different USB ports/cables",
-                                        )
-                                        + "\n\n"
-                                        + __("Status Register:")
-                                        + " "
-                                        + sr,
-                                    },
-                                )
-                                continue
-                        else:
-                            retry_hp -= 10
-                            if retry_hp <= 0:
-                                enable_pullup_wr_str = " (+ WR pullup)" if enable_pullup_wr == 2 else ""
-                                self.CANCEL_ARGS.update(
-                                    {
-                                        "info_type": "msgbox_critical",
-                                        "info_msg": __(
-                                            "An error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-                                            buffer_len=f"0x{buffer_len:X}",
-                                            buffer_pos=f"0x{buffer_pos:X}",
-                                            file_size=Formatter.file_size(buffer_pos, as_int=False),
-                                        )
-                                        + "\n\n"
-                                        + __(
-                                            "Troubleshooting advice:\n"
-                                            "- Clean cartridge contacts\n"
-                                            "- Check soldering if it's a DIY cartridge\n"
-                                            "- Avoid passive USB hubs and try different USB ports/cables\n"
-                                            "- Check cartridge ROM storage size (at least {rom_size} is required){errmsg}\n"
-                                            "- Check flashcart profile used: {cart_name}{enable_pullup_wr_str}\n"
-                                            "- The cartridge may also be incompatible with your {device_name} device",
-                                            rom_size=Formatter.file_size(len(data_import), as_int=False),
-                                            errmsg=errmsg_mbc_selection,
-                                            cart_name=cart_name,
-                                            enable_pullup_wr_str=enable_pullup_wr_str,
-                                            device_name=self.GetFullNameLabel(),
-                                        )
-                                        + "\n\n"
-                                        + __("Status Register:")
-                                        + " "
-                                        + sr,
-                                        "abortable": False,
-                                    },
-                                )
-                                continue
+                        retry_hp, retry_exhausted = self._HandleFlashWriteRetry(
+                            preparation,
+                            retry_hp,
+                            buffer_len,
+                            buffer_pos,
+                            sr,
+                        )
+                        if retry_exhausted:
+                            continue
 
                         rev_buffer_pos = sector_offsets[sector_pos - 1][0]
                         buffer_pos = rev_buffer_pos

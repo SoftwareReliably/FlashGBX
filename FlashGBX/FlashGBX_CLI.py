@@ -2335,6 +2335,23 @@ class FlashGBX_CLI:
                 + ANSI.RESET,
             )
 
+    @staticmethod
+    def _SaveFileIsAccessible(action: str, path: str, restore_needs_file: bool) -> bool:
+        try:
+            if action == "backup-save":
+                with Path(path).open("ab+"):
+                    pass
+            elif action == "restore-save" and restore_needs_file:
+                with Path(path).open("rb+"):
+                    pass
+        except PermissionError:
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
+            return False
+        except FileNotFoundError:
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
+            return False
+        return True
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2414,18 +2431,7 @@ class FlashGBX_CLI:
         ):  # RTC of MBC3, MBC30, HuC-3
             print(__("Real Time Clock register values will also be written if applicable/possible."))
 
-        try:
-            if args.action == "backup-save":
-                with Path(path).open("ab+"):
-                    pass
-            elif args.action == "restore-save" and buffer is None:
-                with Path(path).open("rb+"):
-                    pass
-        except PermissionError:
-            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
-            return
-        except FileNotFoundError:
-            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
+        if not self._SaveFileIsAccessible(args.action, path, buffer is None):
             return
 
         print()

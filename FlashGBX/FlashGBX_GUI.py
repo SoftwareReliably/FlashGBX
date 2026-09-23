@@ -4902,6 +4902,32 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return len(locations) - 1
         return location_index
 
+    def _PreselectBatterylessSramParameters(
+        self,
+        locs: list[int],
+        lens: list[int],
+    ) -> tuple[int | None, int | None, int | None, str]:
+        loc_index = None
+        len_index = None
+        lay_index = None
+        message = "⚠️ The required parameters could not be auto-detected. Please enter the ROM location and size manually below. Note that wrong values can corrupt your game upon writing, so having a full ROM backup is recommended."
+        try:
+            header = self._device.INFO["dump_info"]["header"]
+            preselect = header.get("batteryless_sram") or RomFileDMG.GetBatterylessSramConfig(header)
+            if preselect is not None:
+                game_title_raw = header.get("game_title_raw", header.get("game_title", "")).replace("\x00", "").rstrip()
+                loc_index = locs.index(preselect["bl_offset"])
+                len_index = lens.index(preselect["bl_size"])
+                lay_index = preselect.get("bl_layout")
+                message = (
+                    "The required parameters were pre-selected based on the ROM title “"
+                    + game_title_raw
+                    + "”. These may still be inaccurate, so you can adjust them below if necessary. Note that wrong values can corrupt your game when writing, so having a full ROM backup is recommended."
+                )
+        except Exception:
+            logger.exception("Failed to preselect batteryless SRAM parameters")
+        return loc_index, len_index, lay_index, message
+
     def GetBLArgs(
         self,
         rom_size: int,
@@ -4948,26 +4974,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             intro_msg = (
                 "In order to access Batteryless SRAM save data, its ROM location and size must be specified.\n\n"
             )
-            intro_msg2 = "⚠️ The required parameters could not be auto-detected. Please enter the ROM location and size manually below. Note that wrong values can corrupt your game upon writing, so having a full ROM backup is recommended."
-
             if mode == "DMG":
-                try:
-                    header = self._device.INFO["dump_info"]["header"]
-                    preselect = header.get("batteryless_sram") or RomFileDMG.GetBatterylessSramConfig(header)
-                    if preselect is not None:
-                        game_title_raw = (
-                            header.get("game_title_raw", header.get("game_title", "")).replace("\x00", "").rstrip()
-                        )
-                        loc_index = locs.index(preselect["bl_offset"])
-                        len_index = lens.index(preselect["bl_size"])
-                        lay_index = preselect.get("bl_layout")
-                        intro_msg2 = (
-                            "The required parameters were pre-selected based on the ROM title “"
-                            + game_title_raw
-                            + "”. These may still be inaccurate, so you can adjust them below if necessary. Note that wrong values can corrupt your game when writing, so having a full ROM backup is recommended."
-                        )
-                except Exception:
-                    logger.exception("Failed to preselect batteryless SRAM parameters")
+                loc_index, len_index, lay_index, intro_msg2 = self._PreselectBatterylessSramParameters(locs, lens)
+            else:
+                intro_msg2 = "⚠️ The required parameters could not be auto-detected. Please enter the ROM location and size manually below. Note that wrong values can corrupt your game upon writing, so having a full ROM backup is recommended."
 
             intro_msg += intro_msg2
 

@@ -703,6 +703,21 @@ class CFI:
         }
         return swaps_by_magic.get(magic)
 
+    @staticmethod
+    def _set_boot_sector_info(info: CFIInfo, buffer: bytearray, pri_address: int) -> None:
+        info["tb_boot_sector"] = False
+        info["tb_boot_sector_raw"] = 0
+        if (
+            f"{chr(buffer[pri_address]):s}{chr(buffer[pri_address + 2]):s}{chr(buffer[pri_address + 4]):s}" == "PRI"
+            and buffer[pri_address + 0x1E] not in (0, 0xFF)
+        ):
+            temp: dict[int, str] = {0x02: "As shown", 0x03: "Reversed"}
+            info["tb_boot_sector_raw"] = buffer[pri_address + 0x1E]
+            try:
+                info["tb_boot_sector"] = f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
+            except Exception:
+                info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
+
     def Parse(self, buffer: bytes | bytearray | memoryview | Literal[False]) -> CFIInfo | Literal[False]:
         if buffer is False or len(buffer) < 0x400:
             return False
@@ -741,20 +756,7 @@ class CFI:
             self._set_buffer_write_timing(info, buffer)
             self._set_erase_timings(info, buffer)
 
-            info["tb_boot_sector"] = False
-            info["tb_boot_sector_raw"] = 0
-            if (
-                f"{chr(buffer[pri_address]):s}{chr(buffer[pri_address + 2]):s}{chr(buffer[pri_address + 4]):s}" == "PRI"
-                and buffer[pri_address + 0x1E] not in (0, 0xFF)
-            ):
-                temp: dict[int, str] = {0x02: "As shown", 0x03: "Reversed"}
-                info["tb_boot_sector_raw"] = buffer[pri_address + 0x1E]
-                try:
-                    info["tb_boot_sector"] = (
-                        f"{temp[buffer[pri_address + 0x1E]]:s} (0x{buffer[pri_address + 0x1E]:02X})"
-                    )
-                except Exception:
-                    info["tb_boot_sector"] = f"0x{buffer[pri_address + 0x1E]:02X}"
+            self._set_boot_sector_info(info, buffer, pri_address)
 
             info["device_size"] = int(math.pow(2, buffer[0x4E]))
             info["buffer_size"] = buffer[0x56] << 8 | buffer[0x54]
