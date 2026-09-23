@@ -5206,7 +5206,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                             "rtc_leap_year_state",
                             "spb",
                             c__("Real Time Clock Setting", "Years since last leap year:"),
-                            (0, 3),
+                            (0, 4),
                             rtc_data["rtc_leap_year_state"],
                         ],
                         [

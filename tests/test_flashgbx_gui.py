@@ -286,6 +286,10 @@ class FakeCheckBox(FakeQtObject):
     """Typed checkbox used by RTC editor tests."""
 
 
+class FakeComboBox(FakeQtObject):
+    """Typed combo box used by RTC editor tests."""
+
+
 class FakePalette(FakeQtObject):
     ColorRole = SimpleNamespace(Text=0)
 
@@ -962,6 +966,7 @@ def rtc_info(**overrides: object) -> dict[str, Any]:
             "rtc_i": 41,
             "rtc_s": 53,
             "rtc_y": 43,
+            "rtc_w": 2,
             "rtc_leap_year_state": 1,
             "rtc_buffer": bytearray(range(16)),
         },
@@ -988,6 +993,7 @@ def prepare_rtc_gui(
     gui.ReadCartridge = Mock()
     monkeypatch.setattr(gui_module.QtWidgets, "QSpinBox", FakeSpinBox, raising=False)
     monkeypatch.setattr(gui_module.QtWidgets, "QCheckBox", FakeCheckBox, raising=False)
+    monkeypatch.setattr(gui_module.QtWidgets, "QComboBox", FakeComboBox, raising=False)
     dialog_calls: list[dict[str, Any]] = []
     chosen_values = {} if values is None else values
 
@@ -999,11 +1005,18 @@ def prepare_rtc_gui(
                 key = param[0]
                 default = param[4]
                 value = chosen_values.get(key, default)
-                control = FakeSpinBox() if param[1] == "spb" else FakeCheckBox()
+                if param[1] == "spb":
+                    control = FakeSpinBox()
+                elif param[1] == "chk":
+                    control = FakeCheckBox()
+                else:
+                    control = FakeComboBox()
                 if isinstance(control, FakeSpinBox):
                     control.setValue(int(value))
-                else:
+                elif isinstance(control, FakeCheckBox):
                     control.setChecked(bool(value))
+                else:
+                    control.setCurrentIndex(int(value))
                 controls[key] = control
             dialog_calls.append({"args": args, "controls": controls})
             self.controls = controls
@@ -1296,6 +1309,187 @@ def test_edit_rtc_tama5_manual_year_offset_and_buffer_preservation(
     }
     assert args["rtc_dict"]["rtc_buffer"] is rtc_buffer
     assert dialog_calls[0]["args"]["params"][0][4] == 21
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
+def test_edit_rtc_agb_manual_year_weekday_and_mapper_arguments(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chosen = {
+        "rtc_y": 2046,
+        "rtc_m": 11,
+        "rtc_d": 23,
+        "rtc_h": 17,
+        "rtc_i": 38,
+        "rtc_s": 49,
+        "rtc_w": 5,
+        "current": False,
+    }
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        values=chosen,
+    )
+    device.mode = "AGB"
+
+    assert gui.EditRTC(None) is True
+
+    device.WriteRTC.assert_called_once_with(
+        args={
+            "rtc_dict": {
+                "rtc_y": 46,
+                "rtc_m": 11,
+                "rtc_d": 23,
+                "rtc_h": 17,
+                "rtc_i": 38,
+                "rtc_s": 49,
+                "rtc_w": 5,
+            },
+        },
+    )
+    assert "mbc" not in device.WriteRTC.call_args.kwargs["args"]
+    params = dialog_calls[0]["args"]["params"]
+    assert [param[0] for param in params] == [
+        "rtc_y",
+        "rtc_m",
+        "rtc_d",
+        "rtc_h",
+        "rtc_i",
+        "rtc_s",
+        "rtc_w",
+        "current",
+    ]
+    assert params[6][3] == [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    assert params[6][4] == 2
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
+def test_edit_rtc_agb_system_time_rolls_over_day_and_year(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device, _dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        values={"current": True},
+    )
+    device.mode = "AGB"
+    freeze_gui_clock(monkeypatch, gui_module, datetime_type(2023, 12, 31, 23, 59, 59, tzinfo=UTC))
+
+    assert gui.EditRTC(None) is True
+
+    device.WriteRTC.assert_called_once_with(
+        args={
+            "rtc_dict": {
+                "rtc_y": 24,
+                "rtc_m": 1,
+                "rtc_d": 1,
+                "rtc_w": 0,
+                "rtc_h": 0,
+                "rtc_i": 0,
+                "rtc_s": 0,
+            },
+        },
+    )
+    assert "mbc" not in device.WriteRTC.call_args.kwargs["args"]
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
+def test_edit_rtc_agb_cancel_does_not_write_or_refresh(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        accepted=False,
+    )
+    device.mode = "AGB"
+
+    assert gui.EditRTC(None) is False
+
+    assert len(dialog_calls) == 1
+    device.WriteRTC.assert_not_called()
+    gui.ReadCartridge.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("instant", "expected_date", "expected_leap_year_state"),
+    [
+        pytest.param(
+            datetime_type(2024, 2, 28, 23, 59, 59, tzinfo=UTC),
+            (2, 29, 0, 0, 1),
+            0,
+            id="leap-day-boundary",
+        ),
+        pytest.param(
+            datetime_type(2000, 2, 28, 23, 59, 59, tzinfo=UTC),
+            (2, 29, 0, 0, 1),
+            0,
+            id="divisible-by-400-is-leap",
+        ),
+        pytest.param(
+            datetime_type(2100, 2, 28, 23, 59, 59, tzinfo=UTC),
+            (3, 1, 0, 0, 1),
+            4,
+            id="century-not-divisible-by-400-is-not-leap",
+        ),
+    ],
+)
+def test_edit_rtc_tama5_system_time_uses_two_second_adjustment_and_gregorian_leaps(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    instant: datetime_type,
+    expected_date: tuple[int, int, int, int, int],
+    expected_leap_year_state: int,
+) -> None:
+    gui, device, dialog_calls = prepare_rtc_gui(
+        gui_module,
+        tmp_path,
+        monkeypatch,
+        mapper=0xFD,
+        values={"current": True},
+    )
+    freeze_gui_clock(monkeypatch, gui_module, instant)
+    rtc_buffer = device.INFO["rtc_dict"]["rtc_buffer"]
+    month, day, hour, minute, second = expected_date
+
+    assert gui.EditRTC(None) is True
+
+    device.WriteRTC.assert_called_once_with(
+        args={
+            "mbc": 0xFD,
+            "rtc_dict": {
+                "rtc_y": 43,
+                "rtc_leap_year_state": expected_leap_year_state,
+                "rtc_m": month,
+                "rtc_d": day,
+                "rtc_h": hour,
+                "rtc_i": minute,
+                "rtc_s": second,
+                "current": True,
+                "rtc_buffer": rtc_buffer,
+            },
+        },
+    )
+    assert device.WriteRTC.call_args.kwargs["args"]["rtc_dict"]["rtc_buffer"] is rtc_buffer
+    assert dialog_calls[0]["args"]["params"][1][3] == (0, 4)
     gui.ReadCartridge.assert_called_once_with(resetStatus=False)
 
 

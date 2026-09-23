@@ -460,14 +460,17 @@ The scope change was measured locally on macOS with Python 3.14.5:
 | --- | ---: | ---: | ---: |
 | Previous explicit module allowlist | 697 | 73.86% | 68% |
 | Previous expanded package diagnostic | 697 | 59.79% | None |
-| Current package-wide gate | 1,330 | 74.27% | 60% |
+| Current package-wide gate | 1,359 | 74.83% | 60% |
 
 The allowlist and package measurements have different denominators; the lower package percentage does
-not indicate a loss of tested behavior. Engine I/O, firmware-updater, GUI, CLI, and cartridge-detection
-worker tests raised the local package result to 74.27% combined coverage, with 76.96% statement coverage
-and 66.81% branch coverage.
-The four round-3 focus files now measure 59.57% for `LK_Device.py`, 73.96% for `hw_GBxCartRW.py`, 69.31%
-for `FlashGBX_GUI.py`, and 73.37% for `FlashGBX_CLI.py`. The local result is 1.27 percentage points above
+not indicate a loss of tested behavior. Engine I/O, firmware-updater, GUI, CLI, cartridge-detection worker,
+and RTC editing tests raised the local package result to 74.83% combined coverage, with 77.45% statement
+coverage and 67.56% branch coverage. The RTC cases cover AGB year and weekday editing, a one-second
+midnight/year rollover, and TAMA5's two-second system-time adjustment across leap-day and Gregorian
+century boundaries. The TAMA5 manual editor now accepts leap-state 4, which its system-time path produces
+for 2100 because that century is not a leap year.
+The four round-3 focus files now measure 59.57% for `LK_Device.py`, 73.96% for `hw_GBxCartRW.py`, 71.80%
+for `FlashGBX_GUI.py`, and 73.37% for `FlashGBX_CLI.py`. The local result is 1.83 percentage points above
 the directional 73% package goal. The 65% gate ratchet remains pending until the same implementation has
 matching Linux evidence with sufficient headroom; the omitted hardware backends remain unchanged.
 
