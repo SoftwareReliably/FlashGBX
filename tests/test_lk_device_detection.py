@@ -12,6 +12,29 @@ from FlashGBX.hw_GBxCartRW import GbxDevice
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from tests.fakes import flashcart_profile
+
+
+def make_identifier_profile(
+    name: str,
+    flash_ids: list[list[int]],
+    read_identifier: list[list[int]],
+    *,
+    mode: str = "DMG",
+    write_pin: str = "WR",
+    reset: list[list[int]] | None = None,
+) -> dict[str, object]:
+    commands: dict[str, object] = {"read_identifier": read_identifier}
+    if reset is not None:
+        commands["reset"] = reset
+    return flashcart_profile(
+        type=mode,
+        names=[name],
+        flash_ids=flash_ids,
+        write_pin=write_pin,
+        commands=commands,
+    )
+
 
 @pytest.mark.parametrize(
     ("save_size", "mbc", "expected"),
@@ -326,3 +349,176 @@ def test_detect_agb_eeprom_uses_two_exact_reads_and_skips_batteryless_probe(
         {"mode": 2, "path": None, "mbc": 7, "save_type": 1, "rtc": False, "detect": True},
         {"mode": 2, "path": None, "mbc": 7, "save_type": 2, "rtc": False, "detect": True},
     ]
+
+
+def test_match_detected_flash_types_skips_empty_and_non_dictionary_profiles() -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"  # type: ignore[assignment]
+    read_identifier = [[0x5555, 0x00F0]]
+    matching = make_identifier_profile("Matched", [[0x12, 0x34]], read_identifier)
+    missing_flash_ids = make_identifier_profile("No IDs", [[0x12, 0x34]], read_identifier)
+    del missing_flash_ids["flash_ids"]
+    missing_commands = make_identifier_profile("No commands", [[0x12, 0x34]], read_identifier)
+    del missing_commands["commands"]
+    empty_commands = make_identifier_profile("Empty commands", [[0x12, 0x34]], read_identifier)
+    empty_commands["commands"] = {}
+    supported_carts = [
+        {},
+        None,
+        "not a profile",
+        {},
+        make_identifier_profile("Empty IDs", [], read_identifier),
+        empty_commands,
+        missing_flash_ids,
+        missing_commands,
+        matching,
+    ]
+    methods = [(0, 0, [0x12, 0x34, 0x56], None, read_identifier)]
+    commands = [{"read_identifier": read_identifier}]
+    resets: list[tuple[list[list[int]], bool]] = []
+    device._cart_write_flash = lambda reset, flashcart=False: resets.append((reset, flashcart))  # type: ignore[method-assign]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(supported_carts, methods, commands, ["WR"], found)
+
+    assert found == [8]
+    assert resets == []
+
+
+def test_match_detected_flash_types_without_probe_methods_does_not_match() -> None:
+    device = GbxDevice()
+    read_identifier = [[0x5555, 0x00F0]]
+    profile = make_identifier_profile("Unprobed", [[0x12]], read_identifier)
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes([{}, profile], [], [{"read_identifier": read_identifier}], ["WR"], found)
+
+    assert found == []
+
+
+def test_match_detected_flash_types_requires_matching_identifier_command() -> None:
+    device = GbxDevice()
+    expected_command = [[0x5555, 0x00F0]]
+    other_command = [[0x2AAA, 0x00F0]]
+    profile = make_identifier_profile("Different command", [[0x12, 0x34]], expected_command)
+    methods = [(0, 0, [0x12, 0x34], None, other_command)]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(
+        [{}, profile],
+        methods,
+        [{"read_identifier": expected_command}],
+        ["WR"],
+        found,
+    )
+
+    assert found == []
+
+
+def test_match_detected_flash_types_rejects_dmg_write_pin_mismatch() -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"  # type: ignore[assignment]
+    read_identifier = [[0x5555, 0x00F0]]
+    profile = make_identifier_profile(
+        "Audio pin only",
+        [[0x12, 0x34]],
+        read_identifier,
+        write_pin="AUDIO",
+    )
+    methods = [(0, 0, [0x12, 0x34, 0x56], None, read_identifier)]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(
+        [{}, profile],
+        methods,
+        [{"read_identifier": read_identifier}],
+        ["WR", "AUDIO"],
+        found,
+    )
+
+    assert found == []
+
+
+def test_match_detected_flash_types_agb_ignores_dmg_write_pin() -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"  # type: ignore[assignment]
+    read_identifier = [[0x5555, 0x00F0]]
+    profile = make_identifier_profile(
+        "AGB ignores DMG pin",
+        [[0x12, 0x34]],
+        read_identifier,
+        mode="AGB",
+        write_pin="AUDIO",
+    )
+    methods = [(0, 0, [0x12, 0x34, 0x56], None, read_identifier)]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(
+        [{}, profile],
+        methods,
+        [{"read_identifier": read_identifier}],
+        ["WR"],
+        found,
+    )
+
+    assert found == [1]
+
+
+@pytest.mark.parametrize(
+    ("observed_id", "expected"),
+    [([0x12, 0x34, 0x56], [1]), ([0x12, 0x35, 0x56], [])],
+    ids=["prefix-match", "prefix-mismatch"],
+)
+def test_match_detected_flash_types_matches_id_prefix(
+    observed_id: list[int],
+    expected: list[int],
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"  # type: ignore[assignment]
+    read_identifier = [[0x5555, 0x00F0]]
+    profile = make_identifier_profile("Prefix profile", [[0x12, 0x34]], read_identifier)
+    methods = [(0, 0, observed_id, None, read_identifier)]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(
+        [{}, profile],
+        methods,
+        [{"read_identifier": read_identifier}],
+        ["WR"],
+        found,
+    )
+
+    assert found == expected
+
+
+def test_match_detected_flash_types_keeps_unique_profile_order_and_resets_only_as_defined() -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"  # type: ignore[assignment]
+    read_identifier = [[0x5555, 0x00F0]]
+    reset_first = [[0x5555, 0x00F0], [0x2AAA, 0x00F0]]
+    reset_last = [[0x1234, 0x00F0]]
+    supported_carts = [
+        {},
+        make_identifier_profile("First", [[0x12], [0x12], [0x12, 0x34]], read_identifier, reset=reset_first),
+        make_identifier_profile("Second", [[0x12, 0x34]], read_identifier),
+        make_identifier_profile("Third", [[0xAB]], read_identifier, reset=reset_last),
+    ]
+    methods = [
+        (0, 0, [0x12, 0x34, 0x56], None, read_identifier),
+        (0, 0, [0x12, 0x34, 0x56], None, read_identifier),
+        (0, 0, [0xAB, 0xCD], None, read_identifier),
+    ]
+    resets: list[tuple[list[list[int]], bool]] = []
+    device._cart_write_flash = lambda reset, flashcart=False: resets.append((reset, flashcart))  # type: ignore[method-assign]
+    found: list[int] = []
+
+    device._MatchDetectedFlashTypes(
+        supported_carts,
+        methods,
+        [{"read_identifier": read_identifier}],
+        ["WR"],
+        found,
+    )
+
+    assert found == [1, 2, 3]
+    assert resets == [(reset_first, True), (reset_last, True)]
