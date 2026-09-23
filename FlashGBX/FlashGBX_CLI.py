@@ -330,6 +330,49 @@ class FlashGBX_CLI:
                 logger.exception("Failed to inspect a firmware-update action")
         return actions
 
+    @staticmethod
+    def _FirmwareUpdateMenuItems() -> list[tuple[str, str]]:
+        items: list[tuple[str, str]] = []
+        for hw_mod in HW_DEVICES:
+            try:
+                cls = hw_mod.GbxDevice
+                dev = cls()
+                action = dev.FirmwareUpdateAction()
+                if dev.SupportsFirmwareUpdates() and action is not None:
+                    items.append(
+                        (
+                            action,
+                            __(
+                                "Firmware Update for {device_name}",
+                                device_name=cls.DEVICE_LABEL_SHORT,
+                            ),
+                        ),
+                    )
+            except Exception:
+                logger.exception("Failed to add a firmware-update action to the CLI menu")
+        return items
+
+    @staticmethod
+    def _CountDifferences(left: bytearray, right: bytearray) -> int:
+        return sum(left[index] != right[index] for index in range(len(left)))
+
+    @staticmethod
+    def _PrintMapperType(mbc: int) -> None:
+        if mbc in DMG_Mapper().GetAllMapperIds():
+            print(
+                __(
+                    "Mapper Type “{mapper_type}” is used.",
+                    mapper_type=DMG_Mapper().GetMapperType(mbc),
+                ),
+            )
+        else:
+            print(
+                __(
+                    "Mapper Type {mapper_type_value} is used.",
+                    mapper_type_value=f"0x{mbc:02X}",
+                ),
+            )
+
     def run(self) -> int:
         sys.stdout = Logger()
         self._PrintConfigMessages(self.ARGS["config_ret"])
@@ -351,23 +394,7 @@ class FlashGBX_CLI:
             ),
             ("interactive", __("Interactive Console")),
         ]
-        for hw_mod in HW_DEVICES:
-            try:
-                cls = hw_mod.GbxDevice
-                dev = cls()
-                action = dev.FirmwareUpdateAction()
-                if dev.SupportsFirmwareUpdates() and action is not None:
-                    menu_items.append(
-                        (
-                            action,
-                            __(
-                                "Firmware Update for {device_name}",
-                                device_name=cls.DEVICE_LABEL_SHORT,
-                            ),
-                        ),
-                    )
-            except Exception:
-                logger.exception("Failed to add a firmware-update action to the CLI menu")
+        menu_items.extend(self._FirmwareUpdateMenuItems())
 
         fwupdate_actions = self._FirmwareUpdateActions()
 
@@ -2270,16 +2297,10 @@ class FlashGBX_CLI:
                 test4[i] &= 0x0F
 
         if test2 != test4:
-            diffcount = 0
-            for i in range(len(test2)):
-                if test2[i] != test4[i]:
-                    diffcount += 1
+            diffcount = self._CountDifferences(test2, test4)
             print("\n" + ANSI.RED + __("Differences found:") + str(diffcount) + ANSI.RESET)
         if test3 != test4:
-            diffcount = 0
-            for i in range(len(test3)):
-                if test3[i] != test4[i]:
-                    diffcount += 1
+            diffcount = self._CountDifferences(test3, test4)
             print(
                 "\n"
                 + ANSI.RED
@@ -2393,20 +2414,7 @@ class FlashGBX_CLI:
             return
 
         if self.CONN.GetMode() == "DMG":
-            if mbc in DMG_Mapper().GetAllMapperIds():
-                print(
-                    __(
-                        "Mapper Type “{mapper_type}” is used.",
-                        mapper_type=DMG_Mapper().GetMapperType(mbc),
-                    ),
-                )
-            else:
-                print(
-                    __(
-                        "Mapper Type {mapper_type_value} is used.",
-                        mapper_type_value=f"0x{mbc:02X}",
-                    ),
-                )
+            self._PrintMapperType(mbc)
 
         mode = self.CONN.GetMode()
         if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.CONN.INFO.get("ereader") is True:

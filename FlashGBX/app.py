@@ -135,22 +135,7 @@ class AppInfo:
 
         try:
             w = _get_windows_version()
-            if w.major == 10 and w.build >= 22000:
-                name = "Windows 11"
-            elif w.major == 10:
-                name = "Windows 10"
-            elif w.major == 6 and w.minor == 3:
-                name = "Windows 8.1"
-            elif w.major == 6 and w.minor == 2:
-                name = "Windows 8"
-            elif w.major == 6 and w.minor == 1:
-                name = "Windows 7"
-            elif w.major == 6 and w.minor == 0:
-                name = "Windows Vista"
-            elif w.major == 5 and w.minor == 1:
-                name = "Windows XP"
-            else:
-                name = f"Windows {w.major}.{w.minor}"
+            name = cls._windows_name(w)
 
             display_version = None
             ubr = None
@@ -195,6 +180,24 @@ class AppInfo:
             if release:
                 return f"Windows {release} ({version})"
             return platform.platform()
+
+    @staticmethod
+    def _windows_name(version_info: _WindowsVersion) -> str:
+        if version_info.major == 10 and version_info.build >= 22000:
+            return "Windows 11"
+        if version_info.major == 10:
+            return "Windows 10"
+        if version_info.major == 6 and version_info.minor == 3:
+            return "Windows 8.1"
+        if version_info.major == 6 and version_info.minor == 2:
+            return "Windows 8"
+        if version_info.major == 6 and version_info.minor == 1:
+            return "Windows 7"
+        if version_info.major == 6 and version_info.minor == 0:
+            return "Windows Vista"
+        if version_info.major == 5 and version_info.minor == 1:
+            return "Windows XP"
+        return f"Windows {version_info.major}.{version_info.minor}"
 
 
 class AppContext:

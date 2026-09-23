@@ -3136,6 +3136,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
 
+    def _ConfirmFlashROMPath(self, path: str) -> bool:
+        extension = Path(path).suffix
+        if extension.lower() == ".isx":
+            text = (
+                __(
+                    "The following ISX file will now be converted to a regular ROM file and then written to the flash cartridge:",
+                )
+                + "\n"
+                + path
+            )
+        else:
+            text = __("The following ROM file will now be written to the flash cartridge:") + "\n" + path
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text,
+            QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        return answer != QtWidgets.QMessageBox.StandardButton.Cancel
+
     def _PrepareFlashCartSelection(
         self,
         dpath: str,
@@ -3149,25 +3170,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return None
         path = ""
         if dpath != "":
-            ext = Path(dpath).suffix
-            if ext.lower() == ".isx":
-                text = (
-                    __(
-                        "The following ISX file will now be converted to a regular ROM file and then written to the flash cartridge:",
-                    )
-                    + "\n"
-                    + dpath
-                )
-            else:
-                text = __("The following ROM file will now be written to the flash cartridge:") + "\n" + dpath
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text,
-                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+            if not self._ConfirmFlashROMPath(dpath):
                 if "detected_cart_type" in self.STATUS:
                     del self.STATUS["detected_cart_type"]
                 return None
@@ -5152,6 +5155,26 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rtc_dict["rtc_y"] -= 2000
         return {"rtc_dict": rtc_dict}
 
+    @staticmethod
+    def _Tama5SystemTimeValues(rtc_dict: dict[str, Any], rtc_data: dict[str, Any]) -> dict[str, Any]:
+        dt = datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=2)
+        rtc_dict.update(
+            {
+                "rtc_m": dt.month,
+                "rtc_d": dt.day,
+                "rtc_h": dt.hour,
+                "rtc_i": dt.minute,
+                "rtc_s": dt.second,
+            },
+        )
+        for year in range(dt.year, 0, -1):
+            if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
+                rtc_dict["rtc_leap_year_state"] = dt.year - year
+                break
+        rtc_dict["rtc_y"] += 19
+        rtc_dict["rtc_buffer"] = rtc_data["rtc_buffer"]
+        return rtc_dict
+
     def EditRTC(self, _: QtGui.QMouseEvent) -> bool | None:
         if not self.CheckDeviceAlive() or not self.CheckHeader():
             return None
@@ -5371,23 +5394,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     result = dlg.GetResult()
                     rtc_dict = self._DmgRtcDialogValues(result)
                     if result["current"].isChecked():
-                        dt = datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=2)
-                        rtc_dict.update(
-                            {
-                                "rtc_m": dt.month,
-                                "rtc_d": dt.day,
-                                "rtc_h": dt.hour,
-                                "rtc_i": dt.minute,
-                                "rtc_s": dt.second,
-                            },
-                        )
-                        for y in range(dt.year, 0, -1):
-                            if (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0):
-                                rtc_dict["rtc_leap_year_state"] = dt.year - y
-                                break
+                        rtc_dict = self._Tama5SystemTimeValues(rtc_dict, rtc_data)
                     mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
-                    rtc_dict["rtc_y"] += 19
-                    rtc_dict["rtc_buffer"] = rtc_data["rtc_buffer"]
+                    if not result["current"].isChecked():
+                        rtc_dict["rtc_y"] += 19
+                        rtc_dict["rtc_buffer"] = rtc_data["rtc_buffer"]
                     args = {"mbc": mbc, "rtc_dict": rtc_dict}
                 else:
                     return False
@@ -5462,6 +5473,67 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return "AGB"
         return None
 
+    def _ConfirmModeChange(self, mode: PlatformMode | None, set_to: PlatformMode) -> bool:
+        voltage_warning = ""
+        device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+        if device_auto_switch_only:
+            dont_show_again = True
+        elif self._device.CanSetVoltageByCode() or self._device.CanSetVoltageByAutoswitch():
+            dont_show_again = str(self.SETTINGS.value("SkipModeChangeWarning", default="disabled")).lower() == "enabled"
+        elif self._device.CanSetVoltageBySwitch():
+            voltage_warning = "\n\n" + __("Important: Also make sure your device is set to the correct voltage!")
+            dont_show_again = False
+        else:
+            dont_show_again = False
+
+        if dont_show_again or mode is None:
+            return True
+
+        check_box = _create_check_box(
+            c__(
+                "Check Box (& = Keyboard Shortcut)",
+                "&Don't show this message again",
+            ),
+            checked=False,
+        )
+        mode_warning = (
+            "\n\n"
+            + __(
+                "Caution: Game Boy Advance cartridges must not be inserted in Game Boy mode. Doing so can break the cartridge, so please be careful.",
+            )
+            if set_to == "DMG"
+            else ""
+        )
+        message = (
+            __(
+                "The platform mode will now be changed to {mode} mode.",
+                mode={"DMG": __("Game Boy"), "AGB": __("Game Boy Advance")}[set_to],
+            )
+            + mode_warning
+            + voltage_warning
+        )
+        message_box = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Warning,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=message,
+            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+        )
+        message_box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Ok)
+        if self._device.CanSetVoltageByCode() or self._device.CanSetVoltageByAutoswitch():
+            message_box.setCheckBox(check_box)
+        answer = message_box.exec()
+        dont_show_again = check_box.isChecked()
+        if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+            if mode == "DMG":
+                self.optDMG.setChecked(True)
+            if mode == "AGB":
+                self.optAGB.setChecked(True)
+            return False
+        if not device_auto_switch_only and dont_show_again:
+            self.SETTINGS.setValue("SkipModeChangeWarning", "enabled")
+        return True
+
     def SetMode(self) -> bool | None:
         mode = self._device.GetMode()
         setTo = self._GetSelectedMode(mode)
@@ -5471,62 +5543,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if setTo is None:
             return False
 
-        voltageWarning = ""
-        device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
-        if device_auto_switch_only:
-            dontShowAgain = True
-        elif (
-            self._device.CanSetVoltageByCode() or self._device.CanSetVoltageByAutoswitch()
-        ):  # device can switch in software or automatically based on a switch near the cartridge slot
-            dontShowAgain = str(self.SETTINGS.value("SkipModeChangeWarning", default="disabled")).lower() == "enabled"
-        elif self._device.CanSetVoltageBySwitch():  # device has a physical switch
-            voltageWarning = "\n\n" + __("Important: Also make sure your device is set to the correct voltage!")
-            dontShowAgain = False
-        else:  # no voltage switching supported
-            dontShowAgain = False
-
-        if not dontShowAgain and mode is not None:
-            cb = _create_check_box(
-                c__(
-                    "Check Box (& = Keyboard Shortcut)",
-                    "&Don't show this message again",
-                ),
-                checked=False,
-            )
-            if setTo == "DMG":
-                modeWarning = "\n\n" + __(
-                    "Caution: Game Boy Advance cartridges must not be inserted in Game Boy mode. Doing so can break the cartridge, so please be careful.",
-                )
-            else:
-                modeWarning = ""
-            msg = (
-                __(
-                    "The platform mode will now be changed to {mode} mode.",
-                    mode={"DMG": __("Game Boy"), "AGB": __("Game Boy Advance")}[setTo],
-                )
-                + modeWarning
-                + voltageWarning
-            )
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Warning,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text=msg,
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-            )
-            msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Ok)
-            if self._device.CanSetVoltageByCode() or self._device.CanSetVoltageByAutoswitch():
-                msgbox.setCheckBox(cb)
-            answer = msgbox.exec()
-            dontShowAgain = cb.isChecked()
-            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                if mode == "DMG":
-                    self.optDMG.setChecked(True)
-                if mode == "AGB":
-                    self.optAGB.setChecked(True)
-                return False
-            if not device_auto_switch_only and dontShowAgain:
-                self.SETTINGS.setValue("SkipModeChangeWarning", "enabled")
+        if not self._ConfirmModeChange(mode, setTo):
+            return False
 
         if not self.CheckDeviceAlive(setMode=setTo):
             return None
@@ -6842,6 +6860,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self._UpdateTransferProgress(args)
             return
 
+        self._UpdateProgressAction(args, pos, size, elapsed, estimated)
+
+    def _UpdateProgressAction(
+        self,
+        args: Mapping[str, Any],
+        pos: int,
+        size: int,
+        elapsed: float,
+        estimated: float,
+    ) -> None:
         if "action" in args:
             if args["action"] == "ERASE":
                 self.lblStatus1aResult.setText(__("Pending..."))

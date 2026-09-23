@@ -167,6 +167,17 @@ class DumpReport:
             return RomSizes(rom_size).GetString(localized=False)
         return f"{rom_size:,} bytes"
 
+    @staticmethod
+    def _target_platform(header: dict[str, Any]) -> str:
+        cgb_raw = header["cgb"]
+        if cgb_raw == 0xC0:
+            return "Game Boy Color exclusive"
+        if cgb_raw == 0x80:
+            return "Game Boy Color"
+        if header["old_lic"] == 0x33 and header["sgb"] == 0x03:
+            return "Super Game Boy"
+        return "Original Game Boy"
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
@@ -232,14 +243,7 @@ class DumpReport:
 
         if mode == "DMG":
             cgb_raw = header["cgb"]
-            if cgb_raw == 0xC0:
-                target_platform = "Game Boy Color exclusive"
-            elif cgb_raw == 0x80:
-                target_platform = "Game Boy Color"
-            elif header["old_lic"] == 0x33 and header["sgb"] == 0x03:
-                target_platform = "Super Game Boy"
-            else:
-                target_platform = "Original Game Boy"
+            target_platform = cls._target_platform(header)
 
             sgb_str: Literal["Supported", "No support"] = (
                 "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"

@@ -2268,6 +2268,32 @@ class LK_Device(ABC):
                     info["gbmem_parsed"] = gbmem_parsed
         return check_save_type, save_size, save_type
 
+    @staticmethod
+    def _SaveDetectionTransferArgs(
+        mode: DeviceMode | None,
+        mbc: int | None,
+        save_type: int | None,
+    ) -> dict[str, Any] | None:
+        if mode == "DMG":
+            return {
+                "mode": 2,
+                "path": None,
+                "mbc": mbc,
+                "save_type": save_type,
+                "rtc": False,
+                "detect": True,
+            }
+        if mode == "AGB":
+            return {
+                "mode": 2,
+                "path": None,
+                "mbc": mbc,
+                "save_type": 8,
+                "rtc": False,
+                "detect": True,
+            }
+        return None
+
     def _DetectDmgSaveType(self, save_size: int, mbc: int | None) -> tuple[int, int | None]:
         try:
             save_type: int | None = DmgSaveTypes(size=save_size).GetMbc()
@@ -2439,6 +2465,13 @@ class LK_Device(ABC):
             return 0x20000, 0x04
         return None
 
+    def _DetectionMapper(self, info: dict[str, Any], mbc: int | None, check_save_type: bool) -> tuple[int | None, bool]:
+        if self.MODE == "DMG" and mbc is None:
+            mbc = int(info["mapper_raw"])
+            if mbc > 0x200:
+                check_save_type = False
+        return mbc, check_save_type
+
     def _DetectCartridge_Worker(
         self,
         mbc: int | None = None,
@@ -2461,10 +2494,7 @@ class LK_Device(ABC):
         info = self.ReadHeader(checkRtc=True)
         if info is False:
             return False
-        if self.MODE == "DMG" and mbc is None:
-            mbc = int(info["mapper_raw"])
-            if mbc > 0x200:
-                checkSaveType = False
+        mbc, checkSaveType = self._DetectionMapper(info, mbc, checkSaveType)
 
         _auto_poweroff_time_changed = False
         try:
@@ -2529,24 +2559,8 @@ class LK_Device(ABC):
                             flash_id,
                             detected_size,
                         )
-                    args = {
-                        "mode": 2,
-                        "path": None,
-                        "mbc": mbc,
-                        "save_type": save_type,
-                        "rtc": False,
-                        "detect": True,
-                    }
-                elif self.MODE == "AGB":
-                    args = {
-                        "mode": 2,
-                        "path": None,
-                        "mbc": mbc,
-                        "save_type": 8,
-                        "rtc": False,
-                        "detect": True,
-                    }
-                else:
+                args = self._SaveDetectionTransferArgs(self.MODE, mbc, save_type)
+                if args is None:
                     return None
 
                 ret = self._BackupRestoreRAM(args=args)
@@ -3599,6 +3613,32 @@ class LK_Device(ABC):
         cfi = CFI().Parse(cfi_buffer_raw)
         return cfi, cfi["info"] if isinstance(cfi, dict) else ""
 
+    def _DetectBankedFlashSize(
+        self,
+        flashcart: Flashcart,
+        flash_types: list[int],
+        profiles: list[Any],
+    ) -> tuple[int, int]:
+        flash_type_id = flash_types[0]
+        flashcart.SelectBankROM(0)
+        size_check = self.ReadROM(0, 0x1000) + self.ReadROM(0x1FFF000, 0x1000)
+        num_banks = 1
+        while num_banks < (flashcart.GetFlashSize() // 0x2000000) + 1:
+            dprint(f"Checking bank {num_banks:d}")
+            flashcart.SelectBankROM(num_banks)
+            buffer = self.ReadROM(0, 0x1000) + self.ReadROM(0x1FFF000, 0x1000)
+            if buffer == size_check:
+                break
+            num_banks <<= 1
+        detected_size = 0x2000000 * num_banks
+        for candidate in flash_types:
+            if detected_size == profiles[candidate]["flash_size"]:
+                dprint(f"Detected {num_banks:d} flash banks")
+                flash_type_id = candidate
+                break
+        flashcart.SelectBankROM(0)
+        return flash_type_id, detected_size
+
     def _detect_flash_size(
         self,
         supported_carts: list[Any],
@@ -3632,24 +3672,8 @@ class LK_Device(ABC):
             return flash_type_id, detected_size
 
         if first_type.get("flash_bank_select_type") == 1:
-            flashcart.SelectBankROM(0)
-            size_check = self.ReadROM(0, 0x1000) + self.ReadROM(0x1FFF000, 0x1000)
-            num_banks = 1
-            while num_banks < (flashcart.GetFlashSize() // 0x2000000) + 1:
-                dprint(f"Checking bank {num_banks:d}")
-                flashcart.SelectBankROM(num_banks)
-                buffer = self.ReadROM(0, 0x1000) + self.ReadROM(0x1FFF000, 0x1000)
-                if buffer == size_check:
-                    break
-                num_banks <<= 1
-            detected_size = 0x2000000 * num_banks
-            for candidate in flash_types:
-                if detected_size == supported_types[1][candidate]["flash_size"]:
-                    dprint(f"Detected {num_banks:d} flash banks")
-                    flash_type_id = candidate
-                    break
-            flashcart.SelectBankROM(0)
-        elif isinstance(cfi, dict) and "device_size" in cfi:
+            return self._DetectBankedFlashSize(flashcart, flash_types, supported_types[1])
+        if isinstance(cfi, dict) and "device_size" in cfi:
             for candidate in flash_types:
                 if (
                     "flash_size" in supported_types[1][candidate]
@@ -7962,6 +7986,19 @@ class LK_Device(ABC):
                 return retry_hp, True
         return retry_hp, False
 
+    def _EnsureFlashWriteConnected(self, buffer_len: int, buffer_pos: int) -> None:
+        if self.DEVICE is None:
+            raise ConnectionAbortedError(
+                __(
+                    "A critical connection error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
+                    buffer_len=f"0x{buffer_len:X}",
+                    buffer_pos=f"0x{buffer_pos:X}",
+                    size=f"0x{buffer_len:X}",
+                    pos=f"0x{buffer_pos:X}",
+                    file_size=Formatter.file_size(buffer_pos, as_int=False),
+                ),
+            )
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -8161,17 +8198,7 @@ class LK_Device(ABC):
                         delay = 0.5  # + (100-retry_hp)/100
                         self._PowerCycleFlashWriteCart(delay, _mbc, bank)
                         time.sleep(delay)
-                        if self.DEVICE is None:
-                            raise ConnectionAbortedError(
-                                __(
-                                    "A critical connection error occured while writing {buffer_len} bytes at position {buffer_pos} ({file_size}). Please re-connect the device and try again from the beginning.",
-                                    buffer_len=f"0x{buffer_len:X}",
-                                    buffer_pos=f"0x{buffer_pos:X}",
-                                    size=f"0x{buffer_len:X}",
-                                    pos=f"0x{buffer_pos:X}",
-                                    file_size=Formatter.file_size(buffer_pos, as_int=False),
-                                ),
-                            )
+                        self._EnsureFlashWriteConnected(buffer_len, buffer_pos)
 
                         self.ERROR = False
                         if self.CANCEL_ARGS.get("from_user"):
