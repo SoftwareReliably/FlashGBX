@@ -187,6 +187,35 @@ class DumpReport:
             return f"{save_type} (0x{save_size_raw:02X})"
         return f"Unknown (0x{save_size_raw:02X})"
 
+    @staticmethod
+    def _dumping_fields(
+        di: dict[str, Any],
+        mode: Literal["DMG", "AGB"],
+        cart_type_str: str,
+    ) -> list[tuple[str, str]]:
+        system_name: Literal["Game Boy", "Game Boy Advance"] = "Game Boy" if mode == "DMG" else "Game Boy Advance"
+        fields = [
+            ("Mode", system_name),
+            ("ROM Size", DumpReport._rom_size_string(di["rom_size"])),
+        ]
+        if mode == "DMG":
+            mapper_int: int = di["mapper_type"]
+            if mapper_int in DMG_Mapper().GetAllMapperIds():
+                mapper_str: str = ConvertMapperToMapperType(mapper_int)[0]
+            else:
+                mapper_str = f"0x{mapper_int:02X}"
+            fields += [
+                ("Mapper Type", mapper_str),
+                ("Cartridge Profile", cart_type_str),
+                ("Read Method", di["dmg_read_method"]),
+            ]
+        else:
+            fields += [
+                ("Cartridge Profile", cart_type_str),
+                ("Read Method", di["agb_read_method"]),
+            ]
+        return fields
+
     @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
@@ -194,10 +223,6 @@ class DumpReport:
         mode = di["system"]
         if mode not in ("DMG", "AGB"):
             raise NotImplementedError
-
-        system_name: Literal["Game Boy", "Game Boy Advance"] = "Game Boy" if mode == "DMG" else "Game Boy Advance"
-
-        rom_size_str = cls._rom_size_string(di["rom_size"])
 
         keys = list(device.SUPPORTED_CARTS[mode].keys())
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
@@ -226,27 +251,7 @@ class DumpReport:
         lines += cls._fields_to_lines(cls._general_fields(di, device))
 
         lines += ["", "== Dumping Settings =="]
-        dumping_fields: list[tuple[str, str]] = [
-            ("Mode", system_name),
-            ("ROM Size", rom_size_str),
-        ]
-        if mode == "DMG":
-            mapper_int: int = di["mapper_type"]
-            if mapper_int in DMG_Mapper().GetAllMapperIds():
-                mapper_str: str = ConvertMapperToMapperType(mapper_int)[0]
-            else:
-                mapper_str = f"0x{mapper_int:02X}"
-            dumping_fields += [
-                ("Mapper Type", mapper_str),
-                ("Cartridge Profile", cart_type_str),
-                ("Read Method", di["dmg_read_method"]),
-            ]
-        else:  # AGB
-            dumping_fields += [
-                ("Cartridge Profile", cart_type_str),
-                ("Read Method", di["agb_read_method"]),
-            ]
-        lines += cls._fields_to_lines(dumping_fields)
+        lines += cls._fields_to_lines(cls._dumping_fields(di, mode, cart_type_str))
 
         lines += ["", "== Parsed Data =="]
 

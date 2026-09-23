@@ -1991,3 +1991,62 @@ def test_restore_first_rom_bank_selects_agb_bank_zero_when_required(
 
     assert mapper.selected_rom_banks == []
     assert flashcart.selected_rom_banks == expected_banks
+
+
+@pytest.mark.parametrize(
+    ("identifier", "expected_match"),
+    [
+        (bytearray([0x12, 0x34, 0x56, 0x78]), True),
+        (bytearray([0x56, 0x78, 0x9A, 0xBC]), False),
+    ],
+)
+def test_probe_bung_16m_flash_cart_restores_write_pin(
+    monkeypatch: pytest.MonkeyPatch,
+    identifier: bytearray,
+    expected_match: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    monkeypatch.setattr(device, "SupportsAudioAsWe", lambda: True)
+    reads = Mock(side_effect=[bytearray(b"\x00\x00\x00\x00"), identifier])
+    writes = Mock()
+    flash_writes = Mock()
+    set_audio_pin = Mock()
+    set_write_pin = Mock()
+    monkeypatch.setattr(device, "_cart_read", reads)
+    monkeypatch.setattr(device, "_cart_write", writes)
+    monkeypatch.setattr(device, "_cart_write_flash", flash_writes)
+    monkeypatch.setattr(device, "_set_we_pin_audio", set_audio_pin)
+    monkeypatch.setattr(device, "_set_we_pin_wr", set_write_pin)
+    cart_type = {"command_set": "BUNG_16M", "flash_ids": [[0x12, 0x34]]}
+
+    assert device._ProbeSpecialFlashCart(cart_type) is expected_match
+
+    set_audio_pin.assert_called_once_with()
+    reads.assert_has_calls([call(0, 4), call(0, 4)])
+    expected_writes = [
+        call(0x2000, 0x02, flashcart=False),
+        call(0x6AAA, 0xAA, flashcart=True),
+        call(0x2000, 0x01, flashcart=False),
+        call(0x5554, 0x55, flashcart=True),
+        call(0x2000, 0x02, flashcart=False),
+        call(0x6AAA, 0x90, flashcart=True),
+    ]
+    if expected_match:
+        expected_writes += [
+            call(0x2000, 0x02, flashcart=False),
+            call(0x6AAA, 0xAA, flashcart=True),
+            call(0x2000, 0x01, flashcart=False),
+            call(0x5554, 0x55, flashcart=True),
+            call(0x2000, 0x02, flashcart=False),
+            call(0x6AAA, 0xF0, flashcart=True),
+            call(0x2000, 0x00, flashcart=False),
+        ]
+        set_write_pin.assert_not_called()
+        flash_writes.assert_not_called()
+    else:
+        flash_writes.assert_has_calls(
+            [call([[0, 0xFF]], flashcart=True), call([[0, 0xF0]], flashcart=True)],
+        )
+        set_write_pin.assert_called_once_with()
+    assert writes.call_args_list == expected_writes

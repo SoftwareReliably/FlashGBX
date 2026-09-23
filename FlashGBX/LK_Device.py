@@ -3926,32 +3926,35 @@ class LK_Device(ABC):
             return matched
 
         if self.MODE == "DMG" and cart_type["command_set"] == "BUNG_16M" and self.SupportsAudioAsWe():
-            self._set_we_pin_audio()
-            rom1 = self._cart_read(0, 4)
+            return self._ProbeBung16MFlashCart(cart_type)
+
+        return None
+
+    def _ProbeBung16MFlashCart(self, cart_type: dict[str, Any]) -> bool:
+        self._set_we_pin_audio()
+        rom1 = self._cart_read(0, 4)
+        self._cart_write(0x2000, 0x02, flashcart=False)
+        self._cart_write(0x6AAA, 0xAA, flashcart=True)
+        self._cart_write(0x2000, 0x01, flashcart=False)
+        self._cart_write(0x5554, 0x55, flashcart=True)
+        self._cart_write(0x2000, 0x02, flashcart=False)
+        self._cart_write(0x6AAA, 0x90, flashcart=True)
+        rom2 = self._cart_read(0, 4)
+        matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
+        if matched:
+            dprint("Found a BUNG Doctor GB Card 16M")
             self._cart_write(0x2000, 0x02, flashcart=False)
             self._cart_write(0x6AAA, 0xAA, flashcart=True)
             self._cart_write(0x2000, 0x01, flashcart=False)
             self._cart_write(0x5554, 0x55, flashcart=True)
             self._cart_write(0x2000, 0x02, flashcart=False)
-            self._cart_write(0x6AAA, 0x90, flashcart=True)
-            rom2 = self._cart_read(0, 4)
-            matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
-            if matched:
-                dprint("Found a BUNG Doctor GB Card 16M")
-                self._cart_write(0x2000, 0x02, flashcart=False)
-                self._cart_write(0x6AAA, 0xAA, flashcart=True)
-                self._cart_write(0x2000, 0x01, flashcart=False)
-                self._cart_write(0x5554, 0x55, flashcart=True)
-                self._cart_write(0x2000, 0x02, flashcart=False)
-                self._cart_write(0x6AAA, 0xF0, flashcart=True)
-                self._cart_write(0x2000, 0x00, flashcart=False)
-            else:
-                self._cart_write_flash([[0, 0xFF]], flashcart=True)
-                self._cart_write_flash([[0, 0xF0]], flashcart=True)
-                self._set_we_pin_wr()
-            return matched
-
-        return None
+            self._cart_write(0x6AAA, 0xF0, flashcart=True)
+            self._cart_write(0x2000, 0x00, flashcart=False)
+        else:
+            self._cart_write_flash([[0, 0xFF]], flashcart=True)
+            self._cart_write_flash([[0, 0xF0]], flashcart=True)
+            self._set_we_pin_wr()
+        return matched
 
     @staticmethod
     def _SkipAutomaticFlashDetection(cart_type: Mapping[str, Any]) -> bool:

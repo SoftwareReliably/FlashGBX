@@ -1718,6 +1718,33 @@ try:
                     return 2
             return None
 
+        def _PrepareUserData(
+            self,
+            dev: serial.Serial,
+            info: BootloaderInfo,
+            fncSetStatus: StatusCallback,
+        ) -> bytearray | None:
+            fncSetStatus(__("Reading user data..."))
+            dev.write(b"c")
+            user_data = bytearray(dev.read(0x41))
+            if len(user_data) != 0x41:
+                dev.close()
+                fncSetStatus(text=__("Bootloader error."), enableUI=True)
+                return None
+            info["tsb_timeout"] = user_data[2]
+
+            # Change timeout to 6s
+            fncSetStatus(__("Writing user data..."))
+            user_data[2] = 254
+            dev.write(b"C")
+            dev.read(1)
+            dev.write(b"!")
+            dev.write(user_data)
+            dev.flush()
+            time.sleep(0.00125)
+            dev.read(0x41)
+            return user_data
+
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
             fw_buffer: bytearray = data
             bootloader = self._ConnectBootloader(fncSetStatus)
@@ -1750,26 +1777,9 @@ try:
 
             #################
 
-            # Read user data
-            fncSetStatus(__("Reading user data..."))
-            dev.write(b"c")
-            user_data = bytearray(dev.read(0x41))
-            if len(user_data) != 0x41:
-                dev.close()
-                fncSetStatus(text=__("Bootloader error."), enableUI=True)
+            user_data = self._PrepareUserData(dev, info, fncSetStatus)
+            if user_data is None:
                 return 2
-            info["tsb_timeout"] = user_data[2]
-
-            # Change timeout to 6s
-            fncSetStatus(__("Writing user data..."))
-            user_data[2] = 254
-            dev.write(b"C")
-            dev.read(1)
-            dev.write(b"!")
-            dev.write(user_data)
-            dev.flush()
-            time.sleep(0.00125)
-            dev.read(0x41)
 
             # Write firmware
             fncSetStatus(__("Updating firmware... Do not unplug the device!"))

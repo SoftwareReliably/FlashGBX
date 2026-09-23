@@ -1271,6 +1271,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowDMGRomTitle.setStretch(1, 15)
         group_layout.addLayout(rowDMGRomTitle)
 
+    def _CreateDMGGameCodeRevisionRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowDMGGameCodeRevision = QtWidgets.QHBoxLayout()
+        self.lblDMGGameCodeRevision = QtWidgets.QLabel()
+        self.lblDMGGameCodeRevision.setContentsMargins(0, 1, 3, 1)
+        rowDMGGameCodeRevision.addWidget(self.lblDMGGameCodeRevision)
+        self.lblDMGGameCodeRevisionResult = QtWidgets.QLabel("")
+        rowDMGGameCodeRevision.addWidget(self.lblDMGGameCodeRevisionResult)
+        rowDMGGameCodeRevision.setStretch(0, 9)
+        rowDMGGameCodeRevision.setStretch(1, 15)
+        group_layout.addLayout(rowDMGGameCodeRevision)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1283,15 +1294,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateDMGRomTitleRow(group_layout)
 
-        rowDMGGameCodeRevision = QtWidgets.QHBoxLayout()
-        self.lblDMGGameCodeRevision = QtWidgets.QLabel()
-        self.lblDMGGameCodeRevision.setContentsMargins(0, 1, 3, 1)
-        rowDMGGameCodeRevision.addWidget(self.lblDMGGameCodeRevision)
-        self.lblDMGGameCodeRevisionResult = QtWidgets.QLabel("")
-        rowDMGGameCodeRevision.addWidget(self.lblDMGGameCodeRevisionResult)
-        rowDMGGameCodeRevision.setStretch(0, 9)
-        rowDMGGameCodeRevision.setStretch(1, 15)
-        group_layout.addLayout(rowDMGGameCodeRevision)
+        self._CreateDMGGameCodeRevisionRow(group_layout)
 
         rowDMGHeaderRtc = QtWidgets.QHBoxLayout()
         self.lblDMGHeaderRtc = QtWidgets.QLabel()
@@ -4608,6 +4611,28 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         else:
             time.sleep(1)
 
+    def _ConfirmSaveStressTestMismatch(self, test_number: int, pattern_name: str) -> bool:
+        msg = (
+            __(
+                "Test {num} ({pattern}) failed!",
+                num=test_number,
+                pattern=pattern_name,
+            )
+            + "\n"
+            + __("Note: SRAM requires a working battery to retain save data.")
+            + "\n\n"
+            + __("Continue anyway?")
+        )
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Warning,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=msg,
+            standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+        )
+        msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
+        return msgbox.exec() != QtWidgets.QMessageBox.StandardButton.No
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4665,27 +4690,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 f.write(save1)
             with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as f:
                 f.write(save2)
-            msg = (
-                __(
-                    "Test {num} ({pattern}) failed!",
-                    num=test_ok + 1,
-                    pattern=test_patterns_names[test_ok],
-                )
-                + "\n"
-                + __("Note: SRAM requires a working battery to retain save data.")
-                + "\n\n"
-                + __("Continue anyway?")
-            )
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Warning,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text=msg,
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-            )
-            msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
-            answer = msgbox.exec()
-            if answer == QtWidgets.QMessageBox.StandardButton.No:
+            if not self._ConfirmSaveStressTestMismatch(test_ok + 1, test_patterns_names[test_ok]):
                 stop = True
 
         if not stop and save1 is not None:

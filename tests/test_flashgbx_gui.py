@@ -2201,6 +2201,59 @@ def test_save_stress_test_waits_without_power_cycle_support(
     device.CartPowerOn.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("answer", "should_continue"),
+    [
+        (FakeMessageBox.StandardButton.Yes, True),
+        (FakeMessageBox.StandardButton.No, False),
+    ],
+)
+def test_save_stress_test_mismatch_confirmation(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    should_continue: bool,
+) -> None:
+    gui = make_gui(gui_module)
+    dialog = FakeMessageBox()
+    dialog.setResult(answer)
+    dialog_arguments: list[dict[str, object]] = []
+
+    def create_message_box(**kwargs: object) -> FakeMessageBox:
+        dialog_arguments.append(kwargs)
+        return dialog
+
+    monkeypatch.setattr(gui_module, "_create_message_box", create_message_box)
+
+    assert gui._ConfirmSaveStressTestMismatch(3, "pattern name") is should_continue
+
+    assert len(dialog_arguments) == 1
+    assert "Test 3 (pattern name) failed!" in str(dialog_arguments[0]["text"])
+    assert dialog.calls[-1] == (
+        "setDefaultButton",
+        (gui_module.QtWidgets.QMessageBox.StandardButton.Yes,),
+    )
+
+
+def test_create_dmg_game_code_revision_row_preserves_layout(gui_module: ModuleType) -> None:
+    gui = make_gui(gui_module)
+    group_layout = gui_module.QtWidgets.QVBoxLayout()
+
+    gui._CreateDMGGameCodeRevisionRow(group_layout)
+
+    assert gui.lblDMGGameCodeRevision.text() == ""
+    assert gui.lblDMGGameCodeRevisionResult.text() == ""
+    assert len(group_layout.calls) == 1
+    row_layout = group_layout.calls[0][1][0]
+    assert isinstance(row_layout, FakeQtObject)
+    assert row_layout.calls == [
+        ("addWidget", (gui.lblDMGGameCodeRevision,)),
+        ("addWidget", (gui.lblDMGGameCodeRevisionResult,)),
+        ("setStretch", (0, 9)),
+        ("setStretch", (1, 15)),
+    ]
+
+
 def test_read_cartridge_populates_dmg_widgets_without_hardware(
     gui_module: ModuleType,
     tmp_path: Path,
