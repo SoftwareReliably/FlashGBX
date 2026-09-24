@@ -1974,16 +1974,7 @@ class FlashGBX_CLI:
         fix_bootlogo: bool | bytearray = False
         if self.CONN.GetMode() == "DMG":
             hdr = RomFileDMG(buffer).GetHeader()
-
-            mbc = 0x19  # MBC5 default
-            if "mbc" in carts[cart_type]:
-                if carts[cart_type]["mbc"] == "manual":
-                    if args.dmg_mbc != "auto":
-                        mbc = self._ParseDmgMbc(args.dmg_mbc)
-                elif isinstance(carts[cart_type]["mbc"], int):
-                    mbc = carts[cart_type]["mbc"]
-                else:
-                    mbc = self._ParseDmgMbc(args.dmg_mbc)
+            mbc = self._ResolveFlashDmgMapper(args, carts[cart_type])
 
         elif self.CONN.GetMode() == "AGB":
             hdr = RomFileAGB(buffer).GetHeader()
@@ -2057,6 +2048,19 @@ class FlashGBX_CLI:
         self.CONN.TransferData(signal=self.PROGRESS.SetProgress, args=transfer_args)
 
         buffer = None
+
+    def _ResolveFlashDmgMapper(self, args: argparse.Namespace, cart_type: Mapping[str, Any]) -> int:
+        """Resolve the DMG mapper selected for a flash operation."""
+        mbc = 0x19  # MBC5 default
+        if "mbc" in cart_type:
+            if cart_type["mbc"] == "manual":
+                if args.dmg_mbc != "auto":
+                    mbc = self._ParseDmgMbc(args.dmg_mbc)
+            elif isinstance(cart_type["mbc"], int):
+                mbc = cart_type["mbc"]
+            else:
+                mbc = self._ParseDmgMbc(args.dmg_mbc)
+        return mbc
 
     def _ConfirmSaveAction(self, args: argparse.Namespace, target_path: Path) -> bool:
         if args.action == "backup-save":

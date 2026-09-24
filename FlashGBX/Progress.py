@@ -264,26 +264,7 @@ class Progress:
             if state["pos"] == relative_position or event.get("skipping") is True:
                 skip_speed = True
             state["pos"] = max(0, min(relative_position, state["size"]))
-
-            if "sector_erase_time" in event:
-                sector_erase_time: float = max(
-                    self._float_or_default(event.get("sector_erase_time"), 0.0),
-                    0.0,
-                )
-                previous_erase_time: float = state["sector_erase_time"]
-                if previous_erase_time > 0:
-                    sector_erase_time = (previous_erase_time + sector_erase_time) / 2
-                state["sector_erase_time"] = sector_erase_time
-            elif "sector_pos" in event:
-                state["sector_erase_time"] = 0.0
-
-            if "sector_pos" in event:
-                sector_position: int | None = event.get("sector_pos")
-                if isinstance(sector_position, int) and not isinstance(sector_position, bool):
-                    state["sector_pos"] = max(sector_position, 0)
-            abortable: bool | None = event.get("abortable")
-            if isinstance(abortable, bool):
-                state["abortable"] = abortable
+            self._update_sector_progress(event, state)
 
         force_update: bool = event.get("force_update") is True
         if now - state["time_last_emit"] <= self.EMIT_INTERVAL and not force_update:
@@ -318,6 +299,27 @@ class Progress:
 
         self._emit(state)
         state["time_last_emit"] = now
+
+    def _update_sector_progress(self, event: ProgressEvent, state: ProgressState) -> None:
+        """Update erase timing, sector position, and cancellation state."""
+        if "sector_erase_time" in event:
+            sector_erase_time = max(
+                self._float_or_default(event.get("sector_erase_time"), 0.0),
+                0.0,
+            )
+            previous_erase_time = state["sector_erase_time"]
+            if previous_erase_time > 0:
+                sector_erase_time = (previous_erase_time + sector_erase_time) / 2
+            state["sector_erase_time"] = sector_erase_time
+        elif "sector_pos" in event:
+            state["sector_erase_time"] = 0.0
+
+        sector_position = event.get("sector_pos")
+        if isinstance(sector_position, int) and not isinstance(sector_position, bool):
+            state["sector_pos"] = max(sector_position, 0)
+        abortable = event.get("abortable")
+        if isinstance(abortable, bool):
+            state["abortable"] = abortable
 
     def _finish(self, event: ProgressEvent, state: ProgressState, now: float) -> None:
         """Publish the final position and completed operation state."""

@@ -106,6 +106,16 @@ class MBC6FlashMapper(Protocol):
     def SelectBankFlash(self, index: int) -> object: ...
 
 
+class _ROMReadSetupMapper(Protocol):
+    """Mapper operations needed while preparing a DMG ROM read."""
+
+    def GetName(self) -> str: ...
+
+    def EnableMapper(self) -> object: ...
+
+    def SetStartBank(self, index: int) -> None: ...
+
+
 class _ROMBackupMapper(Protocol):
     def GetName(self) -> str: ...
 
@@ -2578,13 +2588,7 @@ class LK_Device(ABC):
                 args = self._SaveDetectionTransferArgs(self.MODE, mbc, save_type)
                 if args is None:
                     return None
-
-                ret = self._BackupRestoreRAM(args=args)
-
-                if ret is not False and "data" in self.INFO:
-                    save_size = self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
-                else:
-                    save_size = 0
+                save_size = self._ReadSaveDetectionSize(args)
 
                 if self.MODE == "DMG":
                     save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
@@ -2615,6 +2619,13 @@ class LK_Device(ABC):
         finally:
             if _auto_poweroff_time_changed:
                 self._set_fw_variable("AUTO_POWEROFF_TIME", _apot)
+
+    def _ReadSaveDetectionSize(self, args: dict[str, Any]) -> int:
+        """Probe save RAM and return its repeating data size, if readable."""
+        ret = self._BackupRestoreRAM(args=args)
+        if ret is not False and "data" in self.INFO:
+            return self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
+        return 0
 
     def CheckBatterylessSRAM(self) -> dict[str, int] | Literal[False]:
         bl_size: int | None = None
@@ -4535,16 +4546,7 @@ class LK_Device(ABC):
 
             self._set_fw_variable("DMG_WRITE_CS_PULSE", 0)
             self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-            if mbc.GetName() == "TAMA5":
-                self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
-                self._set_fw_variable("DMG_READ_CS_PULSE", 1)
-                mbc.EnableMapper()
-                self._set_fw_variable("DMG_READ_CS_PULSE", 0)
-            elif mbc.GetName() == "Sachen":
-                start_bank = int(args["rom_size"] / 0x4000)
-                mbc.SetStartBank(start_bank)
-            else:
-                mbc.EnableMapper()
+            self._EnableDMGMapperForROMRead(mbc, args)
 
             rom_size = args["rom_size"]
             rom_banks = mbc.GetROMBanks(rom_size)
@@ -4581,6 +4583,19 @@ class LK_Device(ABC):
                 rom_bank_size = cart_type["flash_bank_size"]
 
         return _ROMReadConfiguration(mbc, size, rom_banks, rom_bank_size, buffer_len, is_3d_memory)
+
+    def _EnableDMGMapperForROMRead(self, mbc: _ROMReadSetupMapper, args: dict[str, Any]) -> None:
+        """Enable a DMG mapper, applying the special TAMA5 and Sachen setup."""
+        if mbc.GetName() == "TAMA5":
+            self._set_fw_variable("DMG_WRITE_CS_PULSE", 1)
+            self._set_fw_variable("DMG_READ_CS_PULSE", 1)
+            mbc.EnableMapper()
+            self._set_fw_variable("DMG_READ_CS_PULSE", 0)
+        elif mbc.GetName() == "Sachen":
+            start_bank = int(args["rom_size"] / 0x4000)
+            mbc.SetStartBank(start_bank)
+        else:
+            mbc.EnableMapper()
 
     @staticmethod
     def _GetROMReadRange(
@@ -6380,35 +6395,7 @@ class LK_Device(ABC):
             if len(data_import) % 0x4000 > 0:
                 data_import += bytearray([0xFF] * (0x4000 - len(data_import) % 0x4000))
 
-            # Skip writing the last 256 bytes of 32 MiB ROMs with EEPROM save type
-            if mode == "AGB" and len(data_import) == 0x2000000:
-                temp_ver = "N/A"
-                try:
-                    ids = (
-                        b"SRAM_",
-                        b"EEPROM_V",
-                        b"FLASH_V",
-                        b"FLASH512_V",
-                        b"FLASH1M_V",
-                        b"AGB_8MDACS_DL_V",
-                    )
-                    for ident in ids:
-                        temp_pos = data_import.find(ident)
-                        if temp_pos > 0:
-                            version_bytes = data_import[temp_pos : temp_pos + 0x20]
-                            temp_ver = version_bytes[: version_bytes.index(0x00)].decode("ascii", "replace")
-                            break
-                except ValueError:
-                    temp_ver = "N/A"
-                if "EEPROM" in temp_ver:
-                    print(
-                        ANSI.YELLOW
-                        + __(
-                            "Note: The last 256 bytes of this 32 MiB ROM will not be written as this area is reserved by the EEPROM save type.",
-                        )
-                        + ANSI.RESET,
-                    )
-                    data_import = data_import[:0x1FFFF00]
+            data_import = self._trim_agb_eeprom_reserved_area(data_import, mode)
 
         # Fix bootlogo and header
         if "fix_bootlogo" in args and isinstance(args["fix_bootlogo"], bytearray):
@@ -6429,6 +6416,42 @@ class LK_Device(ABC):
                 data_import[0:0x200] = header
 
         return data_import, flash_offset
+
+    @staticmethod
+    def _trim_agb_eeprom_reserved_area(data_import: bytearray, mode: DeviceMode) -> bytearray:
+        """Remove the reserved EEPROM bytes from a matching 32 MiB AGB image."""
+        if mode != "AGB" or len(data_import) != 0x2000000:
+            return data_import
+
+        version = "N/A"
+        identifiers = (
+            b"SRAM_",
+            b"EEPROM_V",
+            b"FLASH_V",
+            b"FLASH512_V",
+            b"FLASH1M_V",
+            b"AGB_8MDACS_DL_V",
+        )
+        for identifier in identifiers:
+            position = data_import.find(identifier)
+            if position > 0:
+                version_bytes = data_import[position : position + 0x20]
+                try:
+                    version = version_bytes[: version_bytes.index(0x00)].decode("ascii", "replace")
+                except ValueError:
+                    version = "N/A"
+                break
+
+        if "EEPROM" not in version:
+            return data_import
+        print(
+            ANSI.YELLOW
+            + __(
+                "Note: The last 256 bytes of this 32 MiB ROM will not be written as this area is reserved by the EEPROM save type.",
+            )
+            + ANSI.RESET,
+        )
+        return data_import[:0x1FFFF00]
 
     def _check_flashcart_firmware(self, cart_type: dict[str, Any]) -> bool:
         if (
@@ -6910,34 +6933,12 @@ class LK_Device(ABC):
         data_import: bytearray,
         mode: DeviceMode,
     ) -> _FlashConfiguration | None:
-        enable_pullup_wr = 0
+        enable_pullup_wr = self._configure_flashcart_write_pins(args, cart_type, mode)
         mbc_instance: Any = None
         end_bank = 0
         rom_bank_size = 0
 
         # ↓↓↓ Flashcart configuration
-        if self.FW["fw_ver"] >= 8 and "enable_pullups" in cart_type:
-            if cart_type["enable_pullups"] is True:
-                self._write(self.DEVICE_CMD["ENABLE_PULLUPS"], wait=True)
-                dprint("Pullups enabled")
-            else:
-                self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
-                dprint("Pullups disabled")
-        if self.FW["fw_ver"] >= 12:
-            if mode == "DMG":
-                # Joey Jr bug workaround
-                enable_pullup_wr = (
-                    2
-                    if (
-                        ("enable_pullup_wr" in cart_type and cart_type["enable_pullup_wr"] is True)
-                        or ("force_wr_pullup" in args and args["force_wr_pullup"] is True)
-                    )
-                    else 0
-                )
-                self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
-            elif mode == "AGB":
-                self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
-
         errmsg_mbc_selection = ""
         if mode == "DMG":
             self._write(self.DEVICE_CMD["SET_MODE_DMG"], wait=self.FW["fw_ver"] >= 12)
@@ -7027,6 +7028,35 @@ class LK_Device(ABC):
             error_message=errmsg_mbc_selection,
             buffer_size=flash_buffer_size,
         )
+
+    def _configure_flashcart_write_pins(
+        self,
+        args: dict[str, Any],
+        cart_type: dict[str, Any],
+        mode: DeviceMode,
+    ) -> int:
+        """Configure firmware-controlled pullups and IRQ behavior before flashing."""
+        enable_pullup_wr = 0
+        if self.FW["fw_ver"] >= 8 and "enable_pullups" in cart_type:
+            if cart_type["enable_pullups"] is True:
+                self._write(self.DEVICE_CMD["ENABLE_PULLUPS"], wait=True)
+                dprint("Pullups enabled")
+            else:
+                self._write(self.DEVICE_CMD["DISABLE_PULLUPS"], wait=True)
+                dprint("Pullups disabled")
+        if self.FW["fw_ver"] >= 12:
+            if mode == "DMG":
+                enable_pullup_wr = (
+                    int(
+                        ("enable_pullup_wr" in cart_type and cart_type["enable_pullup_wr"] is True)
+                        or ("force_wr_pullup" in args and args["force_wr_pullup"] is True),
+                    )
+                    * 2
+                )
+                self._set_fw_variable("PULLUPS_ENABLED", enable_pullup_wr)
+            elif mode == "AGB":
+                self._set_fw_variable("AGB_IRQ_ENABLED", 1 if "set_irq_high" in cart_type else 0)
+        return enable_pullup_wr
 
     def _reconcile_delta_flash_sectors(
         self,

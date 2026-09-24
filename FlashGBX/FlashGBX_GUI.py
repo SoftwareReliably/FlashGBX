@@ -2921,69 +2921,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
 
             if self._device.GetMode() == "DMG":
-                if self._device.INFO.get("rom_checksum", -1) == self._device.INFO.get("rom_checksum_calc", -2):
-                    self.lblDMGHeaderROMChecksumResult.setText(
-                        c__("Game Data", "Valid") + " (0x{:04X})".format(self._device.INFO.get("rom_checksum", 0)),
-                    )
-                    self.lblDMGHeaderROMChecksumResult.setStyleSheet("QLabel { color: green; }")
-                    self.lblStatus4a.setText(__("Done!"))
-                    msg = __("The ROM backup is complete and the checksum was verified successfully!")
-                    msgbox.setText(msg + msg_te)
-                    msgbox.exec()
-                else:
-                    self.lblStatus4a.setText(__("Done!"))
-                    if "mapper_raw" in self._device.INFO and self._device.INFO["mapper_raw"] in (0x202, 0x203, 0x205):
-                        msg = __("The ROM backup is complete.")
-                        msgbox.setText(msg + msg_te)
-                        msgbox.exec()
-                    else:
-                        self.lblDMGHeaderROMChecksumResult.setText(
-                            c__("Game Data", "Invalid")
-                            + " (0x{:04X}≠0x{:04X})".format(
-                                self._device.INFO.get("rom_checksum_calc", 0),
-                                self._device.INFO.get("rom_checksum", 0),
-                            ),
-                        )
-                        self.lblDMGHeaderROMChecksumResult.setStyleSheet("QLabel { color: red; }")
-                        msg = __("The ROM was dumped, but the checksum is not correct.")
-                        button_gmmc1 = None
-                        if self._device.INFO["loop_detected"] is not False:
-                            msg += "\n\n" + __(
-                                "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                                pos="0x{:X}".format(self._device.INFO["loop_detected"]),
-                                size=Formatter.file_size(self._device.INFO["loop_detected"], as_int=True),
-                            )
-                        else:
-                            msg += (
-                                " "
-                                + __(
-                                    "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                                )
-                                + " "
-                                + c__(
-                                    "Advice when ROM backup was bad",
-                                    "You can also try to change the read mode in the options.",
-                                )
-                            )
-                            if (
-                                self._device.GetMode() == "DMG"
-                                and self.cmbDMGHeaderMapperResult.currentText() == "MBC1"
-                            ):
-                                msg += "\n\n" + __(
-                                    "If this is a “{gb_memory_cartridge}”, try the “{label}” option.",
-                                    gb_memory_cartridge="GB-Memory Cartridge",
-                                    label=__("Retry with {mapper}", mapper="G-MMC1"),
-                                )
-                                button_gmmc1 = msgbox.addButton(
-                                    __("Retry with {mapper}", mapper="G-MMC1"),
-                                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                                )
-                        msgbox.setText(msg + msg_te)
-                        msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-                        msgbox.exec()
-                        if msgbox.clickedButton() == button_gmmc1 and self.CheckDeviceAlive():
-                            self._RetryBackupWithGmmc1()
-                            return
+                if self._FinishDMGROMBackup(msgbox, msg_te):
+                    return
             elif self._device.GetMode() == "AGB":
                 self._FinishAGBROMBackup(msgbox, msg_te)
 
@@ -3011,6 +2950,76 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         # if self.CONN is not None and self._device.CanPowerCycleCart(): self._device.CartPowerOff()
         self._CompleteOperationFinish(skip_finish_message=dontShowAgain)
+
+    def _FinishDMGROMBackup(self, msgbox: QtWidgets.QMessageBox, msg_te: str) -> bool:
+        """Show the DMG checksum result and report whether a retry started."""
+        if self._device.INFO.get("rom_checksum", -1) == self._device.INFO.get("rom_checksum_calc", -2):
+            self.lblDMGHeaderROMChecksumResult.setText(
+                c__("Game Data", "Valid") + " (0x{:04X})".format(self._device.INFO.get("rom_checksum", 0)),
+            )
+            self.lblDMGHeaderROMChecksumResult.setStyleSheet("QLabel { color: green; }")
+            self.lblStatus4a.setText(__("Done!"))
+            msgbox.setText(__("The ROM backup is complete and the checksum was verified successfully!") + msg_te)
+            msgbox.exec()
+            return False
+
+        self.lblStatus4a.setText(__("Done!"))
+        if "mapper_raw" in self._device.INFO and self._device.INFO["mapper_raw"] in (0x202, 0x203, 0x205):
+            msgbox.setText(__("The ROM backup is complete.") + msg_te)
+            msgbox.exec()
+            return False
+
+        self.lblDMGHeaderROMChecksumResult.setText(
+            c__("Game Data", "Invalid")
+            + " (0x{:04X}≠0x{:04X})".format(
+                self._device.INFO.get("rom_checksum_calc", 0),
+                self._device.INFO.get("rom_checksum", 0),
+            ),
+        )
+        self.lblDMGHeaderROMChecksumResult.setStyleSheet("QLabel { color: red; }")
+        message, retry_button = self._DMGROMBackupFailureMessage(msgbox)
+        msgbox.setText(message + msg_te)
+        msgbox.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        msgbox.exec()
+        if msgbox.clickedButton() == retry_button and self.CheckDeviceAlive():
+            self._RetryBackupWithGmmc1()
+            return True
+        return False
+
+    def _DMGROMBackupFailureMessage(self, msgbox: QtWidgets.QMessageBox) -> tuple[str, object | None]:
+        """Build the warning shown when a DMG backup checksum is invalid."""
+        message = __("The ROM was dumped, but the checksum is not correct.")
+        retry_button = None
+        loop_detected = self._device.INFO["loop_detected"]
+        if loop_detected is not False:
+            message += "\n\n" + __(
+                "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                pos=f"0x{loop_detected:X}",
+                size=Formatter.file_size(loop_detected, as_int=True),
+            )
+        else:
+            message += (
+                " "
+                + __(
+                    "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
+                )
+                + " "
+                + c__(
+                    "Advice when ROM backup was bad",
+                    "You can also try to change the read mode in the options.",
+                )
+            )
+            if self._device.GetMode() == "DMG" and self.cmbDMGHeaderMapperResult.currentText() == "MBC1":
+                message += "\n\n" + __(
+                    "If this is a “{gb_memory_cartridge}”, try the “{label}” option.",
+                    gb_memory_cartridge="GB-Memory Cartridge",
+                    label=__("Retry with {mapper}", mapper="G-MMC1"),
+                )
+                retry_button = msgbox.addButton(
+                    __("Retry with {mapper}", mapper="G-MMC1"),
+                    QtWidgets.QMessageBox.ButtonRole.ActionRole,
+                )
+        return message, retry_button
 
     def DMGMapperTypeChanged(self, index: int) -> None:
         if index in (-1, 0):

@@ -353,23 +353,7 @@ class GbxDevice(LK_Device):
                     )
                 self.FW = None
                 continue
-            if self.FW["fw_ts"] > self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
-                conn_msg.append(
-                    [
-                        1,
-                        __(
-                            "Note: The {device_name} on port {port} is running a firmware version that is newer than what this version of FlashGBX was developed to work with, so errors may occur.",
-                            device_name=self.DEVICE_NAME,
-                            port=current_port,
-                        ),
-                    ],
-                )
-            elif self.FW["pcb_ver"] in (5, 6, 101) and self.BAUDRATE > 1000000:
-                self.MAX_BUFFER_READ = 0x1000
-                self.MAX_BUFFER_WRITE = 0x400
-            else:
-                self.MAX_BUFFER_READ = 0x1000
-                self.MAX_BUFFER_WRITE = 0x100
+            self._configure_firmware_compatibility(self.FW, current_port, conn_msg)
 
             self.PORT = current_port
             self._serial_device().timeout = self.DEVICE_TIMEOUT
@@ -382,6 +366,31 @@ class GbxDevice(LK_Device):
             break
 
         return conn_msg
+
+    def _configure_firmware_compatibility(
+        self,
+        firmware: FirmwareInfo,
+        port: str,
+        conn_msg: list[ConnectionMessage],
+    ) -> None:
+        """Report firmware-version differences and choose safe transfer buffers."""
+        if firmware["fw_ts"] > self.DEVICE_LATEST_FW_TS[firmware["pcb_ver"]]:
+            conn_msg.append(
+                [
+                    1,
+                    __(
+                        "Note: The {device_name} on port {port} is running a firmware version that is newer than what this version of FlashGBX was developed to work with, so errors may occur.",
+                        device_name=self.DEVICE_NAME,
+                        port=port,
+                    ),
+                ],
+            )
+        elif firmware["pcb_ver"] in (5, 6, 101) and self.BAUDRATE > 1000000:
+            self.MAX_BUFFER_READ = 0x1000
+            self.MAX_BUFFER_WRITE = 0x400
+        else:
+            self.MAX_BUFFER_READ = 0x1000
+            self.MAX_BUFFER_WRITE = 0x100
 
     def LoadFirmwareVersion(self) -> bool:
         dprint("Querying firmware version")
