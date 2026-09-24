@@ -2053,6 +2053,49 @@ def test_probe_bung_16m_flash_cart_restores_write_pin(
 
 
 @pytest.mark.parametrize(
+    ("identifier", "expected_match"),
+    [
+        (bytearray([0x12, 0x34, 0x56, 0x78]), True),
+        (bytearray([0x56, 0x78, 0x9A, 0xBC]), False),
+    ],
+)
+def test_probe_datel_orbit_v2_preserves_command_order(
+    monkeypatch: pytest.MonkeyPatch,
+    identifier: bytearray,
+    expected_match: bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    address = 0x1234
+    unlock_reads = [[0x111, 0x00], [0x222, 0x00]]
+    commands = {
+        "unlock_read": unlock_reads,
+        "unlock": [[0x5555, 0xAA]],
+        "read_identifier": [[0x5555, 0x90]],
+        "reset": [[0, 0xF0]],
+    }
+    cart_type = {
+        "command_set": "DATEL_ORBITV2",
+        "read_identifier_at": address,
+        "flash_ids": [[0x12, 0x34]],
+        "commands": commands,
+    }
+    rom1 = bytearray(b"\x00" * 10)
+    reads = Mock(side_effect=[rom1, bytearray(1), bytearray(1), identifier])
+    writes = Mock()
+    monkeypatch.setattr(device, "_cart_read", reads)
+    monkeypatch.setattr(device, "_cart_write_flash", writes)
+
+    assert device._ProbeSpecialFlashCart(cart_type) is expected_match
+
+    reads.assert_has_calls([call(address, 10), call(0x111, 1), call(0x222, 1), call(address, 10)])
+    expected_writes = [call(commands["unlock"]), call(commands["read_identifier"])]
+    if expected_match:
+        expected_writes.append(call(commands["reset"]))
+    assert writes.call_args_list == expected_writes
+
+
+@pytest.mark.parametrize(
     ("supports_audio", "identifier", "expected_match"),
     [
         (True, bytearray([0x12, 0x34, 0x56, 0x78]), True),

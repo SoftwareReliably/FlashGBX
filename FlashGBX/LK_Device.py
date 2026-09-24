@@ -229,6 +229,15 @@ class _FlashIdSearchContext(NamedTuple):
     write_enable_pins: list[str]
 
 
+class _FlashTypeMatchLogContext(NamedTuple):
+    cart_type: dict[str, Any]
+    flash_id: list[int]
+    write_enable: int
+    command_index: int
+    flash_id_commands: list[Any]
+    write_enable_pins: list[str]
+
+
 class _ROMBackupChunkContext(NamedTuple):
     args: Mapping[str, Any]
     cart_type: Mapping[str, Any]
@@ -2140,50 +2149,7 @@ class LK_Device(ABC):
         # Parse ROM header
         if self.MODE == "DMG":
             data = RomFileDMG(header).GetHeader()
-            if (
-                "game_title" in data
-                and data["game_title"] == "TETRIS"
-                and hashlib.sha1(header).digest()
-                != bytearray(
-                    [
-                        0x1D,
-                        0x69,
-                        0x2A,
-                        0x4B,
-                        0x31,
-                        0x7A,
-                        0xA5,
-                        0xE9,
-                        0x67,
-                        0xEE,
-                        0xC2,
-                        0x2F,
-                        0xCC,
-                        0x32,
-                        0x43,
-                        0x8C,
-                        0xCB,
-                        0xC5,
-                        0x78,
-                        0x0B,
-                    ],
-                )
-            ):  # Sachen
-                header = self.ReadROM(0, 0x280)
-                data = RomFileDMG(header).GetHeader()
-            if "logo_correct" in data and data["logo_correct"] is False and b"Future Console Design" not in header:
-                if self.FW["pcb_name"] == "GBxCart RW":
-                    self._cart_write(0, 0xFF)  # workaround for strange bootlegs
-                    time.sleep(0.1)
-                header = self.ReadROM(0, 0x280)
-                data = RomFileDMG(header).GetHeader()
-            if (
-                "mapper_raw" in data and data["mapper_raw"] == 0x203
-            ) or b"Future Console Design" in header:  # Xploder GB version number
-                self._cart_write(0x0006, 0)
-                header[0:0x10] = self.ReadROM(0x4000, 0x10)
-                header[0xD0:0xE0] = self.ReadROM(0x40D0, 0x10)
-                data = RomFileDMG(header).GetHeader()
+            header, data = self._RepairDmgHeader(header, data)
             if data == {}:
                 return False
 
@@ -2243,6 +2209,54 @@ class LK_Device(ABC):
 
         self._StoreHeaderData(data, header)
         return data
+
+    def _RepairDmgHeader(self, header: bytearray, data: dict[str, Any]) -> tuple[bytearray, dict[str, Any]]:
+        """Retry known DMG bootleg headers and return the final buffer and parse."""
+        if (
+            "game_title" in data
+            and data["game_title"] == "TETRIS"
+            and hashlib.sha1(header).digest()
+            != bytearray(
+                [
+                    0x1D,
+                    0x69,
+                    0x2A,
+                    0x4B,
+                    0x31,
+                    0x7A,
+                    0xA5,
+                    0xE9,
+                    0x67,
+                    0xEE,
+                    0xC2,
+                    0x2F,
+                    0xCC,
+                    0x32,
+                    0x43,
+                    0x8C,
+                    0xCB,
+                    0xC5,
+                    0x78,
+                    0x0B,
+                ],
+            )
+        ):  # Sachen
+            header = self.ReadROM(0, 0x280)
+            data = RomFileDMG(header).GetHeader()
+        if "logo_correct" in data and data["logo_correct"] is False and b"Future Console Design" not in header:
+            if self.FW["pcb_name"] == "GBxCart RW":
+                self._cart_write(0, 0xFF)  # workaround for strange bootlegs
+                time.sleep(0.1)
+            header = self.ReadROM(0, 0x280)
+            data = RomFileDMG(header).GetHeader()
+        if (
+            "mapper_raw" in data and data["mapper_raw"] == 0x203
+        ) or b"Future Console Design" in header:  # Xploder GB version number
+            self._cart_write(0x0006, 0)
+            header[0:0x10] = self.ReadROM(0x4000, 0x10)
+            header[0xD0:0xE0] = self.ReadROM(0x40D0, 0x10)
+            data = RomFileDMG(header).GetHeader()
+        return header, data
 
     def _DetectCartridge(self, args: dict[str, Any]) -> bool:  # Wrapper for thread call
         self.SetProgress({"action": "INITIALIZE", "abortable": False, "method": "DETECT_CART"})
@@ -2634,13 +2648,9 @@ class LK_Device(ABC):
                     return None
                 save_size = self._ReadSaveDetectionSize(args)
 
-                if self.MODE == "DMG":
-                    save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
-
-                elif self.MODE == "AGB":
-                    # Check for FLASH
-                    save_type, save_size, save_chip = self._DetectAgbFlashSaveType(save_size)
-                    save_type, save_size = self._DetectAgbNonFlashSaveType(save_type, save_size, mbc, info)
+                save_size, save_type, save_chip = self._DetectCartridgeSaveType(
+                    save_size, save_type, save_chip, mbc, info
+                )
 
             self._write(self.DEVICE_CMD["DMG_MBC_RESET"], wait=True)
             self.INFO["last_action"] = 0
@@ -2663,6 +2673,21 @@ class LK_Device(ABC):
         finally:
             if _auto_poweroff_time_changed:
                 self._set_fw_variable("AUTO_POWEROFF_TIME", _apot)
+
+    def _DetectCartridgeSaveType(
+        self,
+        save_size: int,
+        save_type: int | None,
+        save_chip: str | None,
+        mbc: int | None,
+        info: dict[str, Any],
+    ) -> tuple[int, int | None, str | None]:
+        if self.MODE == "DMG":
+            save_size, save_type = self._DetectDmgSaveType(save_size, mbc)
+        elif self.MODE == "AGB":
+            save_type, save_size, save_chip = self._DetectAgbFlashSaveType(save_size)
+            save_type, save_size = self._DetectAgbNonFlashSaveType(save_type, save_size, mbc, info)
+        return save_size, save_type, save_chip
 
     def _ReadSaveDetectionSize(self, args: dict[str, Any]) -> int:
         """Probe save RAM and return its repeating data size, if readable."""
@@ -3728,13 +3753,9 @@ class LK_Device(ABC):
         if first_type.get("flash_bank_select_type") == 1:
             return self._DetectBankedFlashSize(flashcart, flash_types, supported_types[1])
         if isinstance(cfi, dict) and "device_size" in cfi:
-            for candidate in flash_types:
-                if (
-                    "flash_size" in supported_types[1][candidate]
-                    and cfi["device_size"] == supported_types[1][candidate]["flash_size"]
-                ):
-                    flash_type_id = candidate
-                    break
+            matched_type = self._FindFlashTypeBySize(supported_types[1], flash_types, cfi["device_size"])
+            if matched_type is not None:
+                flash_type_id = matched_type
         elif self.MODE == "AGB":
             header = self.ReadROM(0, 0x180)
             size_check = header[0xA0 : 0xA0 + 16]
@@ -3744,14 +3765,17 @@ class LK_Device(ABC):
                 if buffer == size_check:
                     break
                 current_address *= 2
-            for candidate in flash_types:
-                if (
-                    "flash_size" in supported_types[1][candidate]
-                    and current_address == supported_types[1][candidate]["flash_size"]
-                ):
-                    flash_type_id = candidate
-                    break
+            matched_type = self._FindFlashTypeBySize(supported_types[1], flash_types, current_address)
+            if matched_type is not None:
+                flash_type_id = matched_type
         return flash_type_id, detected_size
+
+    @staticmethod
+    def _FindFlashTypeBySize(supported_types: list[Any], flash_types: list[int], size: int) -> int | None:
+        for candidate in flash_types:
+            if "flash_size" in supported_types[candidate] and size == supported_types[candidate]["flash_size"]:
+                return candidate
+        return None
 
     def _MatchDetectedFlashTypes(
         self,
@@ -3779,25 +3803,16 @@ class LK_Device(ABC):
                     fcm_flash_ids = list(map(list, {tuple(sublist) for sublist in cart_type["flash_ids"]}))
                     for fcm_flash_id in fcm_flash_ids:
                         if fcm_flash_id == flash_id[: len(fcm_flash_id)]:
-                            if self.MODE == "DMG":
-                                dprint(
-                                    "“{:s}” matches with Flash ID “{:s}” ({:s}/{:X}/{:X})".format(
-                                        cart_type["names"][0],
-                                        " ".join(format(x, "02X") for x in fcm_flash_id),
-                                        we_pins[we],
-                                        flash_id_cmds[command_index]["read_identifier"][0][0],
-                                        flash_id_cmds[command_index]["read_identifier"][0][1],
-                                    ),
-                                )
-                            elif self.MODE == "AGB":
-                                dprint(
-                                    "“{:s}” matches with Flash ID “{:s}” ({:X})/{:X}".format(
-                                        cart_type["names"][0],
-                                        " ".join(format(x, "02X") for x in fcm_flash_id),
-                                        flash_id_cmds[command_index]["read_identifier"][0][0],
-                                        flash_id_cmds[command_index]["read_identifier"][0][1],
-                                    ),
-                                )
+                            self._LogDetectedFlashTypeMatch(
+                                _FlashTypeMatchLogContext(
+                                    cart_type,
+                                    fcm_flash_id,
+                                    we,
+                                    command_index,
+                                    flash_id_cmds,
+                                    we_pins,
+                                ),
+                            )
                             found = True
                             flash_types.append(flash_type_index)
                             if "reset" in cart_type["commands"]:
@@ -3805,6 +3820,29 @@ class LK_Device(ABC):
                             break
                     if found:
                         break
+
+    def _LogDetectedFlashTypeMatch(self, context: _FlashTypeMatchLogContext) -> None:
+        flash_id_text = " ".join(format(value, "02X") for value in context.flash_id)
+        address, data = context.flash_id_commands[context.command_index]["read_identifier"][0]
+        if self.MODE == "DMG":
+            dprint(
+                "“{:s}” matches with Flash ID “{:s}” ({:s}/{:X}/{:X})".format(
+                    context.cart_type["names"][0],
+                    flash_id_text,
+                    context.write_enable_pins[context.write_enable],
+                    address,
+                    data,
+                ),
+            )
+        elif self.MODE == "AGB":
+            dprint(
+                "“{:s}” matches with Flash ID “{:s}” ({:X})/{:X}".format(
+                    context.cart_type["names"][0],
+                    flash_id_text,
+                    address,
+                    data,
+                ),
+            )
 
     def _RestoreFlashDetectionMode(self, read_method: int) -> None:
         if self.MODE == "DMG":
@@ -3911,17 +3949,7 @@ class LK_Device(ABC):
             return matched
 
         if self.MODE == "DMG" and cart_type["command_set"] == "DATEL_ORBITV2":
-            rom1 = self._cart_read(cart_type["read_identifier_at"], 10)
-            for command in cart_type["commands"]["unlock_read"]:
-                self._cart_read(command[0], 1)
-            self._cart_write_flash(cart_type["commands"]["unlock"])
-            self._cart_write_flash(cart_type["commands"]["read_identifier"])
-            rom2 = self._cart_read(cart_type["read_identifier_at"], 10)
-            matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
-            if matched:
-                dprint("Found a GameShark or Action Replay")
-                self._cart_write_flash(cart_type["commands"]["reset"])
-            return matched
+            return self._ProbeDatelOrbitV2FlashCart(cart_type)
 
         if self.MODE == "DMG" and cart_type["command_set"] == "GBMEMORY":
             rom1 = self._cart_read(0, 8)
@@ -3953,6 +3981,19 @@ class LK_Device(ABC):
             return self._ProbeBung16MFlashCart(cart_type)
 
         return None
+
+    def _ProbeDatelOrbitV2FlashCart(self, cart_type: dict[str, Any]) -> bool:
+        rom1 = self._cart_read(cart_type["read_identifier_at"], 10)
+        for command in cart_type["commands"]["unlock_read"]:
+            self._cart_read(command[0], 1)
+        self._cart_write_flash(cart_type["commands"]["unlock"])
+        self._cart_write_flash(cart_type["commands"]["read_identifier"])
+        rom2 = self._cart_read(cart_type["read_identifier_at"], 10)
+        matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
+        if matched:
+            dprint("Found a GameShark or Action Replay")
+            self._cart_write_flash(cart_type["commands"]["reset"])
+        return matched
 
     def _ProbeDmgMbc532MFlashCart(self, cart_type: dict[str, Any]) -> bool:
         self._set_we_pin_audio()
@@ -7491,6 +7532,12 @@ class LK_Device(ABC):
             return None
         return data_map_import, flash_commands
 
+    def _ConfigureFlashWritePins(self, cart_type: dict[str, Any], write_enable_pin: int) -> None:
+        if write_enable_pin != 0x00:
+            self._set_fw_variable("FLASH_WE_PIN", write_enable_pin)
+        if self.FW["fw_ver"] >= 14 and "set_audio_high" in cart_type:
+            self._set_fw_variable("DMG_AUDIO_ENABLED", 1)
+
     def _prepare_flash_write(self, args: dict[str, Any], mode: DeviceMode) -> _FlashWritePreparation | None:
         data_import, flash_offset = self._prepare_flash_data(args, mode)
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
@@ -7542,10 +7589,7 @@ class LK_Device(ABC):
         if mode == "DMG" and cart_type.get("flash_commands_on_bank_1") is True:
             dprint("Setting ROM bank 1")
             mbc.SelectBankROM(1)
-        if write_enable_pin != 0x00:
-            self._set_fw_variable("FLASH_WE_PIN", write_enable_pin)
-        if self.FW["fw_ver"] >= 14 and "set_audio_high" in cart_type:
-            self._set_fw_variable("DMG_AUDIO_ENABLED", 1)
+        self._ConfigureFlashWritePins(cart_type, write_enable_pin)
         if not self._CheckFlashID(cart_type, flashcart, command_set_type):
             return None
 
@@ -8451,29 +8495,27 @@ class LK_Device(ABC):
                     if self._AbortFlashWriteIfCanceled():
                         return None
 
-                    erase_result = self._EraseFlashSector(
+                    erase_result, status, buffer_len, skip_init = self._AttemptFlashChunkWrite(
                         _FlashSectorEraseContext(preparation, sector, bank, pos, buffer_pos, sector_pos, sector_size),
+                        _FlashChunkParameters(
+                            command_set_type,
+                            pos,
+                            data_import,
+                            buffer_pos,
+                            buffer_len,
+                            bank,
+                            flash_buffer_size,
+                            skip_init,
+                            rumble,
+                        ),
+                        status,
                     )
-                    se_ret, sector_pos, sector_size, sector_erased, erase_canceled = erase_result
+                    se_ret = erase_result.status
+                    sector_pos = erase_result.sector_position
+                    sector_size = erase_result.sector_size
+                    erase_canceled = erase_result.canceled
                     if erase_canceled:
                         continue
-                    if sector_erased:
-                        skip_init = False
-
-                    if se_ret is not False:
-                        status, buffer_len = self._WriteFlashChunk(
-                            _FlashChunkParameters(
-                                command_set_type,
-                                pos,
-                                data_import,
-                                buffer_pos,
-                                buffer_len,
-                                bank,
-                                flash_buffer_size,
-                                skip_init,
-                                rumble,
-                            ),
-                        )
 
                     if status is False or se_ret is False:
                         failure = self._RecoverFlashWriteFailure(
@@ -8517,6 +8559,35 @@ class LK_Device(ABC):
             first_sector_written = True
 
         return self._FinishFlashWrite(args, mode, preparation, buffer_len)
+
+    def _AttemptFlashChunkWrite(
+        self,
+        erase_context: _FlashSectorEraseContext,
+        chunk_parameters: _FlashChunkParameters,
+        previous_status: DeviceWriteResult,
+    ) -> tuple[_FlashSectorEraseResult, DeviceWriteResult, int, bool]:
+        erase_result = self._EraseFlashSector(erase_context)
+        if erase_result.canceled:
+            return erase_result, previous_status, chunk_parameters.buffer_len, chunk_parameters.skip_init
+
+        skip_init = False if erase_result.erased else chunk_parameters.skip_init
+        status = previous_status
+        buffer_len = chunk_parameters.buffer_len
+        if erase_result.status is not False:
+            status, buffer_len = self._WriteFlashChunk(
+                _FlashChunkParameters(
+                    chunk_parameters.command_set_type,
+                    chunk_parameters.pos,
+                    chunk_parameters.data_import,
+                    chunk_parameters.buffer_pos,
+                    chunk_parameters.buffer_len,
+                    chunk_parameters.bank,
+                    chunk_parameters.flash_buffer_size,
+                    skip_init,
+                    chunk_parameters.rumble,
+                ),
+            )
+        return erase_result, status, buffer_len, skip_init
 
     #################################################################
 
@@ -8625,11 +8696,7 @@ class LK_Device(ABC):
                 self.USER_ANSWER = None
                 if self.FW is None:
                     return False
-                if self.FW["fw_ver"] >= 2 and self.FW["pcb_name"] == "GBxCart RW":
-                    if ret is True and "OFW_DONE_LED_ON" in self.DEVICE_CMD:
-                        self._write(self.DEVICE_CMD["OFW_DONE_LED_ON"])
-                    elif self.ERROR is True and "OFW_ERROR_LED_ON" in self.DEVICE_CMD:
-                        self._write(self.DEVICE_CMD["OFW_ERROR_LED_ON"])
+                self._UpdateTransferCompletionLed(ret)
 
             except SerialTimeoutException:
                 self.VOLTAGE_FALLBACK_PENDING = False
@@ -8642,3 +8709,11 @@ class LK_Device(ABC):
 
             return True
         return None
+
+    def _UpdateTransferCompletionLed(self, result: bool | int | None) -> None:
+        if self.FW is None or self.FW["fw_ver"] < 2 or self.FW["pcb_name"] != "GBxCart RW":
+            return
+        if result is True and "OFW_DONE_LED_ON" in self.DEVICE_CMD:
+            self._write(self.DEVICE_CMD["OFW_DONE_LED_ON"])
+        elif self.ERROR is True and "OFW_ERROR_LED_ON" in self.DEVICE_CMD:
+            self._write(self.DEVICE_CMD["OFW_ERROR_LED_ON"])

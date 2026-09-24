@@ -287,16 +287,9 @@ class GbxDevice(LK_Device):
         self.PORT = ""
 
         conn_msg: list[ConnectionMessage] = []
-        if port is not None:
-            ports = [port]
-        else:
-            ports = [
-                candidate.device
-                for candidate in serial.tools.list_ports.comports()
-                if candidate.vid == 0x1A86 and candidate.pid == 0x7523
-            ]
-            if not ports:
-                return False
+        ports = self._GetCandidatePorts(port)
+        if not ports:
+            return False
 
         for current_port in ports:
             self.FW = None
@@ -366,6 +359,16 @@ class GbxDevice(LK_Device):
             break
 
         return conn_msg
+
+    @staticmethod
+    def _GetCandidatePorts(port: str | None) -> list[str]:
+        if port is not None:
+            return [port]
+        return [
+            candidate.device
+            for candidate in serial.tools.list_ports.comports()
+            if candidate.vid == 0x1A86 and candidate.pid == 0x7523
+        ]
 
     def _configure_firmware_compatibility(
         self,

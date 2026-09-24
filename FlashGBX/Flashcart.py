@@ -576,14 +576,7 @@ class Flashcart:
                     time.sleep(0.05)
                     timeout = 100
                     while True:
-                        if self._config.get("wait_read_status_register"):
-                            for j in range(len(self._config["commands"]["read_status_register"])):
-                                sr_addr = self._config["commands"]["read_status_register"][j][0]
-                                sr_data = self._config["commands"]["read_status_register"][j][1]
-
-                                self._SetWriteEnablePin(we)
-                                self.CartWrite([[sr_addr, sr_data]])
-                                self._RestoreWriteEnablePin(we)
+                        self._WriteSectorEraseStatusCommands(we)
 
                         self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
                         temp: bytearray = self.CartRead(addr, 2)
@@ -625,6 +618,14 @@ class Flashcart:
             self.Reset(full_reset=False)
 
         return self._AdvanceSectorMap()
+
+    def _WriteSectorEraseStatusCommands(self, write_enable: str | None) -> None:
+        if not self._config.get("wait_read_status_register"):
+            return
+        for command in self._config["commands"]["read_status_register"]:
+            self._SetWriteEnablePin(write_enable)
+            self.CartWrite([[command[0], command[1]]])
+            self._RestoreWriteEnablePin(write_enable)
 
     def HasBanks(self) -> bool:
         return "flash_bank_select_type" in self._config

@@ -94,6 +94,43 @@ def test_transfer_data_powers_cartridge_before_dispatch(
     backup.assert_called_once_with({"mode": 1})
 
 
+@pytest.mark.parametrize(
+    ("result", "error", "commands", "expected_command"),
+    [
+        (True, False, {"OFW_DONE_LED_ON": 10, "OFW_ERROR_LED_ON": 11}, 10),
+        (False, True, {"OFW_DONE_LED_ON": 10, "OFW_ERROR_LED_ON": 11}, 11),
+        (True, True, {"OFW_DONE_LED_ON": 10, "OFW_ERROR_LED_ON": 11}, 10),
+        (False, True, {"OFW_DONE_LED_ON": 10}, None),
+    ],
+)
+def test_transfer_data_updates_supported_completion_led(
+    connected_device: GbxDevice,
+    monkeypatch: pytest.MonkeyPatch,
+    result: bool,
+    error: bool,
+    commands: dict[str, int],
+    expected_command: int | None,
+) -> None:
+    connected_device.FW["fw_ver"] = 2
+    connected_device.FW["pcb_name"] = "GBxCart RW"
+    connected_device.DEVICE_CMD = commands
+    write = Mock()
+    monkeypatch.setattr(connected_device, "_write", write)
+
+    def backup_rom(_args: dict[str, Any]) -> bool:
+        connected_device.ERROR = error
+        return result
+
+    monkeypatch.setattr(connected_device, "_BackupROM", backup_rom)
+
+    assert connected_device.TransferData({"mode": 1}, lambda _event: None) is True
+
+    if expected_command is None:
+        write.assert_not_called()
+    else:
+        write.assert_called_once_with(expected_command)
+
+
 def test_cart_power_on_gbxcartrw_retries_unexpected_ack(
     connected_device: GbxDevice,
     monkeypatch: pytest.MonkeyPatch,

@@ -259,6 +259,25 @@ def test_sector_erase_resolves_symbolic_address_and_returns_fixed_size(
     harness.assert_responses_consumed()
 
 
+def test_sector_erase_polls_status_register_commands_and_restores_write_enable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_clock(monkeypatch)
+    harness = EraseHarness([(0x101, 2, ready())] * 3)
+    cart = sector_cart(harness, status_polling=True)
+
+    assert cart.SectorErase(pos=0x100) == 0x1000
+
+    assert harness.writes() == [
+        ("write", [[0xAAA, 0xF0]], True),
+        ("write", [[0x101, 0x30]], True),
+        ("write", [[0x777, 0x70]], True),
+        ("write", [[0xAAA, 0xF0]], True),
+    ]
+    assert harness.pins() == [("pin", "AUDIO"), ("pin", "WR"), ("pin", "AUDIO"), ("pin", "WR")]
+    harness.assert_responses_consumed()
+
+
 def test_sector_erase_reports_busy_progress_then_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     patch_clock(monkeypatch)
     harness = EraseHarness(

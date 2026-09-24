@@ -733,6 +733,37 @@ def test_read_header_identifies_synthetic_pokemon_red_without_hardware(
     device._write.assert_any_call(device.DEVICE_CMD["SET_ADDR_AS_INPUTS"], wait=True)
 
 
+def test_read_header_retries_invalid_dmg_logo_with_final_header(
+    monkeypatch: pytest.MonkeyPatch,
+    pokemon_red_header: bytearray,
+) -> None:
+    invalid_header = bytearray(pokemon_red_header)
+    invalid_header[0x104] ^= 1
+    device = GbxDevice()
+    monkeypatch.setattr(device, "DEVICE", MockSerial())
+    device.FW = modern_firmware()
+    device.MODE = "DMG"
+    device.INFO = {"action": None, "last_action": None, "dump_info": {}}
+    monkeypatch.setattr(device, "IsConnected", lambda: True)
+    monkeypatch.setattr(device, "_PrepareHeaderRead", lambda: invalid_header)
+    read_rom = Mock(return_value=pokemon_red_header)
+    cart_write = Mock()
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+    monkeypatch.setattr(device, "_cart_write", cart_write)
+    monkeypatch.setattr(device, "_ReadDmgRtc", lambda *_args: None)
+    monkeypatch.setattr(device, "_ReadDmgSpecialData", lambda *_args: None)
+    monkeypatch.setattr(device, "_write", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(lk_device_module.time, "sleep", lambda _seconds: None)
+
+    result = device.ReadHeader(checkRtc=False)
+
+    assert result["game_title"] == "POKEMON RED"
+    assert result["logo_correct"] is True
+    assert result["raw"] == pokemon_red_header
+    read_rom.assert_called_once_with(0, 0x280)
+    cart_write.assert_called_once_with(0, 0xFF)
+
+
 def test_read_header_collects_camera_calibration_without_hardware(
     game_boy_camera_header: bytearray,
 ) -> None:

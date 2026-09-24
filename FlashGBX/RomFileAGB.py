@@ -72,6 +72,95 @@ def _RenderAGBLogoPixels(img: PillowImage, logo_data: bytearray) -> bool:
     return True
 
 
+def _huff_uncomp_agb_logo(compressed_data: bytes | bytearray) -> bytes:
+    BITS = 4
+    OUT_SIZE = 0xD4
+    TREE = bytes(
+        [
+            0x40,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x81,
+            0x82,
+            0x82,
+            0x83,
+            0x0F,
+            0x83,
+            0x0C,
+            0xC3,
+            0x03,
+            0x83,
+            0x01,
+            0x83,
+            0x04,
+            0xC3,
+            0x08,
+            0x0E,
+            0x02,
+            0xC2,
+            0x0D,
+            0xC2,
+            0x07,
+            0x0B,
+            0x06,
+            0x0A,
+            0x05,
+            0x09,
+        ],
+    )
+    encoded_data: bytes = (
+        bytes([0x20 | BITS]) + OUT_SIZE.to_bytes(3, "little") + bytes([len(TREE) // 2]) + TREE + bytes(compressed_data)
+    )
+    bits: int = encoded_data[0] & 15
+    out_size: int = int.from_bytes(encoded_data[1:4], "little") & 0xFFFF
+    i: int = 6 + encoded_data[4] * 2
+    node_offs = 5
+    out_units = 0
+    out_ready = 0
+    out = b""
+    while len(out) < out_size:
+        in_unit: int = (
+            int.from_bytes(encoded_data[i : i + 2], "little")
+            | int.from_bytes(encoded_data[i ^ 2 : (i ^ 2) + 2], "little") << 16
+        )
+        i += 4
+        for b in range(31, -1, -1):
+            node: int = encoded_data[node_offs]
+            node_offs &= ~1
+            node_offs += (node & 0x3F) * 2 + 2 + (in_unit >> b & 1)
+            if node << (in_unit >> b & 1) & 0x80:
+                out_ready >>= bits
+                out_ready |= encoded_data[node_offs] << 32 - bits
+                out_ready &= 0xFFFFFFFF
+                out_units += 1
+                if out_units == bits % 8 + 4:
+                    out += out_ready.to_bytes(4, "little")
+                    if len(out) >= out_size:
+                        return out
+                    out_units = 0
+                    out_ready = 0
+                node_offs = 5
+    return out
+
+
+def _diff_16_bit_unfilter_agb_logo(filtered_data: bytes) -> bytearray:
+    header: int = struct.unpack_from("<I", filtered_data)[0]
+    out_size: int = (header >> 8) & 0xFFFF
+    pos = 4
+    prev = 0
+    dest = bytearray()
+    while pos < out_size:
+        if pos + 2 > len(filtered_data):
+            break
+        temp: int = (struct.unpack_from("<H", filtered_data, pos)[0] + prev) & 0xFFFF
+        dest.extend(struct.pack("<H", temp))
+        pos += 2
+        prev: int = temp
+    return dest
+
+
 class RomFileAGB:
     def __init__(self, file: RomSource = None) -> None:
         self.ROMFILE_PATH: Path | None = None
@@ -124,99 +213,8 @@ class RomFileAGB:
             return False
 
         # Based on a HuffUnComp function provided by Winter1760, thank you!
-        def huff_uncomp(compressed_data: bytes | bytearray) -> bytes:
-            BITS = 4
-            OUT_SIZE = 0xD4
-            TREE = bytes(
-                [
-                    0x40,
-                    0x00,
-                    0x00,
-                    0x00,
-                    0x01,
-                    0x81,
-                    0x82,
-                    0x82,
-                    0x83,
-                    0x0F,
-                    0x83,
-                    0x0C,
-                    0xC3,
-                    0x03,
-                    0x83,
-                    0x01,
-                    0x83,
-                    0x04,
-                    0xC3,
-                    0x08,
-                    0x0E,
-                    0x02,
-                    0xC2,
-                    0x0D,
-                    0xC2,
-                    0x07,
-                    0x0B,
-                    0x06,
-                    0x0A,
-                    0x05,
-                    0x09,
-                ],
-            )
-            encoded_data: bytes = (
-                bytes([0x20 | BITS])
-                + OUT_SIZE.to_bytes(3, "little")
-                + bytes([len(TREE) // 2])
-                + TREE
-                + bytes(compressed_data)
-            )
-            bits: int = encoded_data[0] & 15
-            out_size: int = int.from_bytes(encoded_data[1:4], "little") & 0xFFFF
-            i: int = 6 + encoded_data[4] * 2
-            node_offs = 5
-            out_units = 0
-            out_ready = 0
-            out = b""
-            while len(out) < out_size:
-                in_unit: int = (
-                    int.from_bytes(encoded_data[i : i + 2], "little")
-                    | int.from_bytes(encoded_data[i ^ 2 : (i ^ 2) + 2], "little") << 16
-                )
-                i += 4
-                for b in range(31, -1, -1):
-                    node: int = encoded_data[node_offs]
-                    node_offs &= ~1
-                    node_offs += (node & 0x3F) * 2 + 2 + (in_unit >> b & 1)
-                    if node << (in_unit >> b & 1) & 0x80:
-                        out_ready >>= bits
-                        out_ready |= encoded_data[node_offs] << 32 - bits
-                        out_ready &= 0xFFFFFFFF
-                        out_units += 1
-                        if out_units == bits % 8 + 4:
-                            out += out_ready.to_bytes(4, "little")
-                            if len(out) >= out_size:
-                                return out
-                            out_units = 0
-                            out_ready = 0
-                        node_offs = 5
-            return out
-
-        def diff_16_bit_unfilter(filtered_data: bytes) -> bytearray:
-            header: int = struct.unpack_from("<I", filtered_data)[0]
-            out_size: int = (header >> 8) & 0xFFFF
-            pos = 4
-            prev = 0
-            dest = bytearray()
-            while pos < out_size:
-                if pos + 2 > len(filtered_data):
-                    break
-                temp: int = (struct.unpack_from("<H", filtered_data, pos)[0] + prev) & 0xFFFF
-                dest.extend(struct.pack("<H", temp))
-                pos += 2
-                prev: int = temp
-            return dest
-
         try:
-            logo_data: bytearray = diff_16_bit_unfilter(huff_uncomp(data))
+            logo_data: bytearray = _diff_16_bit_unfilter_agb_logo(_huff_uncomp_agb_logo(data))
         except IndexError, struct.error:
             return False
 

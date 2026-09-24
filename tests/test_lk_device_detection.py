@@ -114,6 +114,18 @@ def make_identifier_profile(
     )
 
 
+def test_find_flash_type_by_size_preserves_candidate_order_and_missing_sizes() -> None:
+    profiles = [
+        {"flash_size": 0x10000},
+        {},
+        {"flash_size": 0x20000},
+        {"flash_size": 0x20000},
+    ]
+
+    assert GbxDevice._FindFlashTypeBySize(profiles, [1, 2, 3], 0x20000) == 2
+    assert GbxDevice._FindFlashTypeBySize(profiles, [0, 1], 0x20000) is None
+
+
 def test_collect_flash_detection_commands_keeps_order_filters_and_identifier_deduplication() -> None:
     device = GbxDevice()
     device.MODE = "DMG"

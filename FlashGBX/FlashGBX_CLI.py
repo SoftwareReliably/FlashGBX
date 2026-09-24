@@ -679,6 +679,9 @@ class FlashGBX_CLI:
             print("{:s}{:s}{:s}".format(ANSI.RED, args["error"], ANSI.RESET))
             return
 
+        self._HandleProgressAction(args)
+
+    def _HandleProgressAction(self, args: ProgressPayload) -> None:
         pos = args.get("pos", 0)
         size = args.get("size", 0)
         speed = args.get("speed", 0)
@@ -2429,6 +2432,12 @@ class FlashGBX_CLI:
         elif mode == "DMG" and rtc and header["mapper_raw"] in (0x10, 0x110, 0xFE):
             print(__("Real Time Clock register values will also be written if applicable/possible."))
 
+    @staticmethod
+    def _ResolveSavePath(path: str, generated_path: str) -> str:
+        if path == "auto":
+            return generated_path
+        return str(Path(path) / generated_path) if Path(path).is_dir() else path
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2444,8 +2453,7 @@ class FlashGBX_CLI:
             return
         mbc, save_type, cart_type = configuration
 
-        if args.path != "auto":
-            path = str(Path(args.path) / path) if Path(args.path).is_dir() else args.path
+        path = self._ResolveSavePath(args.path, path)
 
         if path == "":
             return
@@ -2489,7 +2497,7 @@ class FlashGBX_CLI:
             )
         elif args.action == "restore-save":
             verify_write: bool = args.no_verify_write is False
-            targs = {
+            targs: dict[str, Any] = {
                 "mode": 3,
                 "path": path,
                 "mbc": mbc,

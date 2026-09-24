@@ -2468,17 +2468,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         for dev in self.DEVICES.values():
             dev.Close()
 
+        self._PresentFoundDevices(messages, connectToFirst, firstRun)
+
+        if len(self.DEVICES) == 0:
+            return False
+
+        self._SetRequestedMode(mode)
+
+        return True
+
+    def _PresentFoundDevices(self, messages: list[str], connect_to_first: bool, first_run: bool) -> None:
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
 
         if len(self.DEVICES) == 0:
-            self._ShowNoDevicesFoundMessage(messages, firstRun)
+            self._ShowNoDevicesFoundMessage(messages, first_run)
 
             self.lblDevice.setText(__("No devices found."))
             self.lblDevice.setStyleSheet("")
             self.cmbDevice.clear()
 
             self.btnConnect.setEnabled(False)
-        elif len(self.DEVICES) == 1 or (connectToFirst and len(self.DEVICES) > 1):
+        elif len(self.DEVICES) == 1 or (connect_to_first and len(self.DEVICES) > 1):
             self.lblDevice.setText(next(iter(self.DEVICES.keys())))
             self.lblDevice.setStyleSheet("")
             self.ConnectDevice()
@@ -2493,13 +2503,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.btnConnect.setEnabled(True)
 
         self.btnConnect.setEnabled(True)
-
-        if len(self.DEVICES) == 0:
-            return False
-
-        self._SetRequestedMode(mode)
-
-        return True
 
     def _RecordDeviceInitializationMessages(
         self,
@@ -6573,6 +6576,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         button.setToolTip(profile_name)
         return button
 
+    def _SelectGenericCartProfile(
+        self,
+        profile_name: str | None,
+        supported_cart_types: tuple[list[str], list[Any]],
+        cart_type: int | None,
+    ) -> int | None:
+        if profile_name is not None and profile_name in supported_cart_types[0]:
+            cart_type = supported_cart_types[0].index(profile_name)
+        if not isinstance(cart_type, int):
+            return None
+        mode = self._device.GetMode()
+        if mode == "DMG":
+            self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
+        elif mode == "AGB":
+            self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
+        return cart_type
+
     @staticmethod
     def _CopyHtmlToClipboard(html: str) -> None:
         clipboard = QtWidgets.QApplication.clipboard()
@@ -6766,14 +6786,9 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 if msgbox.clickedButton() == button_clipboard:
                     self._CopyHtmlToClipboard(temp)
                 elif msgbox.clickedButton() == button_try:
-                    if try_this in supp_cart_types[0]:
-                        cart_type = supp_cart_types[0].index(try_this)
-                    if not isinstance(cart_type, int):
+                    cart_type = self._SelectGenericCartProfile(try_this, supp_cart_types, cart_type)
+                    if cart_type is None:
                         return
-                    if self._device.GetMode() == "DMG":
-                        self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
-                    elif self._device.GetMode() == "AGB":
-                        self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
 
         self._ResetDetectionControls()
 
@@ -6987,19 +7002,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
     ) -> None:
         if "action" in args:
             if args["action"] == "ERASE":
-                self.lblStatus1aResult.setText(__("Pending..."))
-                self.lblStatus2aResult.setText(__("Pending..."))
-                self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
-                if estimated != 0:
-                    self.lblStatus4a.setText(
-                        __(
-                            "Erasing... This may take up to {seconds} seconds.",
-                            seconds=estimated,
-                        ),
-                    )
-                else:
-                    self.lblStatus4a.setText(__("Erasing... This may take some time."))
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+                self._UpdateEraseProgressAction(args, pos, size, elapsed, estimated)
             elif args["action"] == "UNLOCK":
                 self.lblStatus1aResult.setText(__("Pending..."))
                 self.lblStatus2aResult.setText(__("Pending..."))
@@ -7045,6 +7048,28 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
+
+    def _UpdateEraseProgressAction(
+        self,
+        args: Mapping[str, Any],
+        pos: int,
+        size: int,
+        elapsed: float,
+        estimated: float,
+    ) -> None:
+        self.lblStatus1aResult.setText(__("Pending..."))
+        self.lblStatus2aResult.setText(__("Pending..."))
+        self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
+        if estimated != 0:
+            self.lblStatus4a.setText(
+                __(
+                    "Erasing... This may take up to {seconds} seconds.",
+                    seconds=estimated,
+                ),
+            )
+        else:
+            self.lblStatus4a.setText(__("Erasing... This may take some time."))
+        self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
 
     def _ShowChecksumProgress(self, args: Mapping[str, Any], pos: int, size: int) -> None:
         self.lblStatus1aResult.setText(__("Pending..."))
