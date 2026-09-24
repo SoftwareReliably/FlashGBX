@@ -4289,70 +4289,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     return None
         elif test:
             path = None
-            if self._device.GetFWBuildDate() == "":  # Legacy Mode
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Critical,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=__("This feature is not supported in Legacy Mode."),
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                msgbox.exec()
-                return None
-
-            unsupported = (
-                (
-                    mode == "AGB"
-                    and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-                    and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-                )
-                or (
-                    mode == "DMG"
-                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                    and "Batteryless SRAM"
-                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-                )
-                or (
-                    mode == "DMG"
-                    and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-                    and "Unlicensed Photo!"
-                    in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-                )
-                or ("8M DACS" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()])
-                or (mode == "AGB" and "ereader" in self._device.INFO and self._device.INFO["ereader"] is True)
-                or (
-                    mode == "DMG"
-                    and "256M Multi Cart" in self.cmbDMGHeaderMapperResult.currentText()
-                    and not self._device.CanPowerCycleCart()
-                )
-            )
-            if unsupported:
-                QtWidgets.QMessageBox.information(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("Stress test is not supported for this save type."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
-            msg = __(
-                "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
-            )
-            if not self._device.CanPowerCycleCart() and (
-                (mode == "AGB" and "SRAM" in self.cmbAGBSaveTypeResult.currentText())
-                or (mode == "DMG" and "SRAM" in self.cmbDMGHeaderSaveTypeResult.currentText())
-            ):
-                msg += "\n\n" + __(
-                    "Note: Your {device_name} does not support automatic power cycling, so some tests may be skipped.",
-                    device_name=self._device.GetName(),
-                )
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                msg,
-                QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+            if not self._confirm_save_write_test(mode):
                 return None
         else:
             generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
@@ -4383,6 +4320,73 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return None
         return path, filesize
+
+    def _confirm_save_write_test(self, mode: PlatformMode) -> bool:
+        if self._device.GetFWBuildDate() == "":  # Legacy Mode
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=__("This feature is not supported in Legacy Mode."),
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            msgbox.exec()
+            return False
+
+        dmg_save_type_index = self.cmbDMGHeaderSaveTypeResult.currentIndex()
+        agb_save_type_index = self.cmbAGBSaveTypeResult.currentIndex()
+        unsupported = (
+            (
+                mode == "AGB"
+                and agb_save_type_index < AgbSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[agb_save_type_index]
+            )
+            or (
+                mode == "DMG"
+                and dmg_save_type_index < DmgSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in DmgSaveTypes(index=dmg_save_type_index).GetString()
+            )
+            or (
+                mode == "DMG"
+                and dmg_save_type_index < DmgSaveTypes().GetNumberOfTypes()
+                and "Unlicensed Photo!" in DmgSaveTypes(index=dmg_save_type_index).GetString()
+            )
+            or ("8M DACS" in AgbSaveTypes().GetStringList()[agb_save_type_index])
+            or (mode == "AGB" and "ereader" in self._device.INFO and self._device.INFO["ereader"] is True)
+            or (
+                mode == "DMG"
+                and "256M Multi Cart" in self.cmbDMGHeaderMapperResult.currentText()
+                and not self._device.CanPowerCycleCart()
+            )
+        )
+        if unsupported:
+            QtWidgets.QMessageBox.information(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("Stress test is not supported for this save type."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return False
+
+        msg = __(
+            "The cartridge's save chip will be tested for potential problems as follows:\n- Read the same data multiple times\n- Writing and reading different test patterns\n\nPlease ensure the cartridge pins are freshly cleaned and the save data is backed up before proceeding.",
+        )
+        if not self._device.CanPowerCycleCart() and (
+            (mode == "AGB" and "SRAM" in self.cmbAGBSaveTypeResult.currentText())
+            or (mode == "DMG" and "SRAM" in self.cmbDMGHeaderSaveTypeResult.currentText())
+        ):
+            msg += "\n\n" + __(
+                "Note: Your {device_name} does not support automatic power cycling, so some tests may be skipped.",
+                device_name=self._device.GetName(),
+            )
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            msg,
+            QtWidgets.QMessageBox.StandardButton.Ok | QtWidgets.QMessageBox.StandardButton.Cancel,
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        return answer != QtWidgets.QMessageBox.StandardButton.Cancel
 
     def _PrepareSaveWrite(
         self,

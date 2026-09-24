@@ -15,7 +15,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, cast
 
 from loguru import logger
 
@@ -29,6 +29,13 @@ TRANSLATION_AUTHOR: str | None = None
 
 class _TranslationApplication(Protocol):
     def installTranslator(self, translator: object, /) -> bool: ...
+
+
+class _TranslationParseState(NamedTuple):
+    section: Literal["CTXT", "ID", "STR"] | None
+    context: bytes | None
+    msgid: bytes
+    msgstr: bytes
 
 
 # ISO 639-1 language codes: code -> (English name, native name)
@@ -302,6 +309,26 @@ def loadTranslation(language: str) -> gettext.GNUTranslations:
     return _compile_translation_messages(messages)
 
 
+def _append_translation_value(
+    state: _TranslationParseState,
+    encoded_value: bytes,
+    filename: Path,
+) -> _TranslationParseState:
+    context = state.context
+    msgid = state.msgid
+    msgstr = state.msgstr
+    if state.section == "CTXT":
+        if context is None:
+            msg = f"Context found without a matching msgctxt in {filename}"
+            raise ValueError(msg)
+        context += encoded_value
+    elif state.section == "ID":
+        msgid += encoded_value
+    elif state.section == "STR":
+        msgstr += encoded_value
+    return _TranslationParseState(state.section, context, msgid, msgstr)
+
+
 def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes, bytes]:
     """Parse PO entries from text lines into GNU catalog messages."""
     # Based on msgfmt.py by Martin v. Löwis: https://github.com/python/cpython/blob/main/Tools/i18n/msgfmt.py
@@ -352,16 +379,12 @@ def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes
                 msgstr += b"\0"
 
         encoded_value = _parse_po_value(value_source, filename)
-
-        if section == "CTXT":
-            if msgctxt is None:
-                msg_0: str = f"Context found without a matching msgctxt in {filename}"
-                raise ValueError(msg_0)
-            msgctxt += encoded_value
-        elif section == "ID":
-            msgid += encoded_value
-        elif section == "STR":
-            msgstr += encoded_value
+        parse_state = _append_translation_value(
+            _TranslationParseState(section, msgctxt, msgid, msgstr),
+            encoded_value,
+            filename,
+        )
+        msgctxt, msgid, msgstr = parse_state.context, parse_state.msgid, parse_state.msgstr
 
     if section == "STR":
         _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)

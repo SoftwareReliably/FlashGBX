@@ -664,6 +664,13 @@ class FlashGBX_CLI:
         except Exception:
             logger.exception("Failed to render the CLI progress bar")
 
+    @staticmethod
+    def _PrintProgressInitialization(method: str) -> None:
+        if method == "ROM_WRITE_VERIFY":
+            print("\n\n" + __("The newly written ROM data will now be checked for errors.") + "\n")
+        elif method == "SAVE_WRITE_VERIFY":
+            print("\n\n" + __("The newly written save data will now be checked for errors.") + "\n")
+
     def UpdateProgress(self, args: ProgressPayload | None) -> None:
         if args is None:
             return
@@ -680,10 +687,7 @@ class FlashGBX_CLI:
 
         if "action" in args:
             if args["action"] == "INITIALIZE":
-                if args["method"] == "ROM_WRITE_VERIFY":
-                    print("\n\n" + __("The newly written ROM data will now be checked for errors.") + "\n")
-                elif args["method"] == "SAVE_WRITE_VERIFY":
-                    print("\n\n" + __("The newly written save data will now be checked for errors.") + "\n")
+                self._PrintProgressInitialization(args["method"])
             elif args["action"] == "ERASE":
                 print(
                     ANSI.CLEAR_LINE
@@ -2404,6 +2408,18 @@ class FlashGBX_CLI:
             return False
         return True
 
+    @staticmethod
+    def _PrintSaveTransferMode(mode: str, save_type: int, rtc: bool, header: HeaderData) -> None:
+        if mode == "AGB":
+            print(
+                __(
+                    "Using Save Type “{save_type}”.",
+                    save_type=AgbSaveTypes(save_type).GetString(),
+                ),
+            )
+        elif mode == "DMG" and rtc and header["mapper_raw"] in (0x10, 0x110, 0xFE):
+            print(__("Real Time Clock register values will also be written if applicable/possible."))
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2445,24 +2461,7 @@ class FlashGBX_CLI:
             continue_write, buffer = self._PrepareEReaderCalibration(args, path)
             if not continue_write:
                 return
-        if mode == "AGB":
-            print(
-                __(
-                    "Using Save Type “{save_type}”.",
-                    save_type=AgbSaveTypes(save_type).GetString(),
-                ),
-            )
-        elif (
-            mode == "DMG"
-            and rtc
-            and header["mapper_raw"]
-            in (
-                0x10,
-                0x110,
-                0xFE,
-            )
-        ):  # RTC of MBC3, MBC30, HuC-3
-            print(__("Real Time Clock register values will also be written if applicable/possible."))
+        self._PrintSaveTransferMode(mode, save_type, rtc, header)
 
         if not self._SaveFileIsAccessible(args.action, path, buffer is None):
             return
@@ -2597,6 +2596,74 @@ class FlashGBX_CLI:
             bl_args["bl_layout"] = bl_layout
         return bl_args
 
+    def _ConfirmBatterylessFlashWrite(
+        self,
+        args: argparse.Namespace,
+        mode: str,
+        cart_type: int,
+        path: str,
+    ) -> bool:
+        erase = args.action == "erase-save"
+        if args.action == "restore-save":
+            if not args.overwrite:
+                answer = (
+                    input(
+                        __("Do you want to overwrite the existing Batteryless SRAM save data on the cartridge?")
+                        + " [y/N]: ",
+                    )
+                    .strip()
+                    .lower()
+                )
+                print()
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+            print(
+                __("The following save data file will now be written to the cartridge's Batteryless SRAM region:")
+                + "\n"
+                + str(Path(path).resolve()),
+            )
+            try:
+                with Path(path).open("rb+"):
+                    pass
+            except PermissionError, FileNotFoundError:
+                print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
+                return False
+        elif erase:
+            if not args.overwrite:
+                answer = (
+                    input(
+                        __("Do you really want to erase the Batteryless SRAM save data from the cartridge?")
+                        + " [y/N]: ",
+                    )
+                    .strip()
+                    .lower()
+                )
+                print()
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+            print(__("The Batteryless SRAM save data will now be erased from the cartridge."))
+
+        if mode == "DMG" and self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode():
+            bl_carts = self.CONN.GetSupportedCartridgesDMG()[1]
+            if isinstance(bl_carts[cart_type], dict) and (
+                bl_carts[cart_type].get("voltage") == 3.3 or "voltage_variants" in bl_carts[cart_type]
+            ):
+                print()
+                print(
+                    ANSI.YELLOW
+                    + __(
+                        "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
+                    )
+                    + ANSI.RESET,
+                )
+                answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
+                if answer != "y":
+                    print(__("Canceled."))
+                    return False
+        return True
+
     def _BatterylessSRAM(
         self,
         args: argparse.Namespace,
@@ -2643,65 +2710,8 @@ class FlashGBX_CLI:
         cart_type: int | None = self._ResolveFlashcartType(args)
         if cart_type is None:
             return
-
-        if args.action == "restore-save":
-            if not args.overwrite:
-                answer: str = (
-                    input(
-                        __("Do you want to overwrite the existing Batteryless SRAM save data on the cartridge?")
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(
-                __("The following save data file will now be written to the cartridge's Batteryless SRAM region:")
-                + "\n"
-                + str(Path(path).resolve()),
-            )
-            try:
-                with Path(path).open("rb+"):
-                    pass
-            except PermissionError, FileNotFoundError:
-                print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
-                return
-        elif erase:
-            if not args.overwrite:
-                answer = (
-                    input(
-                        __("Do you really want to erase the Batteryless SRAM save data from the cartridge?")
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
-            print(__("The Batteryless SRAM save data will now be erased from the cartridge."))
-
-        if mode == "DMG" and self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode():
-            bl_carts = self.CONN.GetSupportedCartridgesDMG()[1]
-            if isinstance(bl_carts[cart_type], dict) and (
-                bl_carts[cart_type].get("voltage") == 3.3 or "voltage_variants" in bl_carts[cart_type]
-            ):
-                print()
-                print(
-                    ANSI.YELLOW
-                    + __(
-                        "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
-                    )
-                    + ANSI.RESET,
-                )
-                answer = input(__("Do you want to continue?") + " [y/N]: ").strip().lower()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return
+        if not self._ConfirmBatterylessFlashWrite(args, mode, cart_type, path):
+            return
 
         print()
         verify_write: bool = args.no_verify_write is False

@@ -348,6 +348,34 @@ class _FlashSectorPlan(NamedTuple):
     has_sector_map: bool
 
 
+class _FlashWriteFailureContext(NamedTuple):
+    preparation: _FlashWritePreparation
+    flashcart: Flashcart
+    sector_offsets: list[list[int]]
+    errmsg_mbc_selection: str
+    sector_erase_result: DeviceWriteResult
+    retry_hp: int
+    buffer_len: int
+    buffer_pos: int
+    sector_pos: int
+    bank: int
+    position: int
+    status: DeviceWriteResult
+    start_bank: int
+    end_address: int
+    mbc: _FlashBankMapper
+
+
+class _FlashWriteFailureResult(NamedTuple):
+    action: Literal["break", "fail", "recovered", "retry"]
+    retry_hp: int
+    buffer_pos: int
+    sector_pos: int
+    bank: int
+    position: int
+    status: DeviceWriteResult
+
+
 class _FlashWritePreparation(NamedTuple):
     cart_name: str
     cart_type: dict[str, Any]
@@ -7075,6 +7103,27 @@ class LK_Device(ABC):
         return write_sectors
 
     @staticmethod
+    def _plan_batteryless_flash_sectors(
+        args: dict[str, Any],
+        sector_offsets: list[list[int]],
+        data_import: bytearray,
+        flash_offset: int,
+    ) -> tuple[list[list[int]], bytearray]:
+        flash_size = args.get("flash_size", len(data_import) - flash_offset)
+        if "flash_size" in args:
+            data_import = data_import[:flash_size]
+        batteryless_sectors = []
+        for sector in sector_offsets:
+            if flash_offset > sector[0]:
+                continue
+            if flash_offset + flash_size <= sector[0]:
+                break
+            batteryless_sectors.append(sector)
+        if "bl_save" in args:
+            data_import = bytearray([0] * batteryless_sectors[0][0]) + data_import
+        return batteryless_sectors, data_import
+
+    @staticmethod
     def _load_delta_flash_state(state_path: Path) -> Sequence[list[int]]:
         """Read saved delta sectors, treating malformed state as empty."""
         try:
@@ -7156,19 +7205,12 @@ class LK_Device(ABC):
                     write_sectors = args["flash_sectors"]
 
                 elif flash_offset > 0:  # Batteryless SRAM
-                    flash_size = args.get("flash_size", len(data_import) - flash_offset)
-                    if "flash_size" in args:
-                        data_import = data_import[:flash_size]
-                    batteryless_sectors = []
-                    for sector in sector_offsets:
-                        if flash_offset > sector[0]:
-                            continue
-                        if flash_offset + flash_size <= sector[0]:
-                            break
-                        batteryless_sectors.append(sector)
-                    write_sectors = batteryless_sectors
-                    if "bl_save" in args:
-                        data_import = bytearray([0] * batteryless_sectors[0][0]) + data_import
+                    write_sectors, data_import = self._plan_batteryless_flash_sectors(
+                        args,
+                        sector_offsets,
+                        data_import,
+                        flash_offset,
+                    )
                 else:
                     write_sectors = [sector for sector in sector_offsets if sector[0] < len(data_import)]
 
@@ -8105,6 +8147,107 @@ class LK_Device(ABC):
         self._cart_write(position, 0xFF)
         return flashcart.Unlock()
 
+    def _RecoverFlashWriteFailure(self, context: _FlashWriteFailureContext) -> _FlashWriteFailureResult:
+        self.CANCEL = True
+        self.ERROR = True
+        status_register = self._GetFlashWriteStatusRegister(context.flashcart, context.sector_erase_result)
+        dprint("Last status register value:", status_register)
+
+        if self.CANCEL_ARGS.get("from_user") or self._HandleDisconnectedFlashWrite(
+            context.buffer_len,
+            context.buffer_pos,
+            context.errmsg_mbc_selection,
+            status_register,
+        ):
+            return _FlashWriteFailureResult(
+                "break",
+                context.retry_hp,
+                context.buffer_pos,
+                context.sector_pos,
+                context.bank,
+                context.position,
+                context.status,
+            )
+
+        retry_hp, retry_exhausted = self._HandleFlashWriteRetry(
+            context.preparation,
+            context.retry_hp,
+            context.buffer_len,
+            context.buffer_pos,
+            status_register,
+        )
+        if retry_exhausted:
+            return _FlashWriteFailureResult(
+                "retry",
+                retry_hp,
+                context.buffer_pos,
+                context.sector_pos,
+                context.bank,
+                context.position,
+                context.status,
+            )
+
+        retry_buffer_pos = context.sector_offsets[context.sector_pos - 1][0]
+        retry_sector_pos = context.sector_pos - 1
+        retry_bank = context.start_bank
+        retry_position = context.end_address
+        err_text = __(
+            "Write error! Retrying from {address}...",
+            address=f"0x{retry_buffer_pos:X}",
+        )
+        print(ANSI.YELLOW + err_text + ANSI.RESET)
+        dprint(f"Bank {retry_bank:d} | HP: {retry_hp:d}/100")
+        self.SetProgress(
+            {
+                "action": "ERROR",
+                "abortable": True,
+                "pos": retry_buffer_pos,
+                "text": err_text,
+            },
+        )
+        delay = 0.5  # + (100-retry_hp)/100
+        self._PowerCycleFlashWriteCart(delay, context.mbc, retry_bank)
+        time.sleep(delay)
+        self._EnsureFlashWriteConnected(context.buffer_len, retry_buffer_pos)
+
+        self.ERROR = False
+        if self.CANCEL_ARGS.get("from_user"):
+            self.CANCEL_ARGS.update(
+                {
+                    "info_type": "msgbox_warning",
+                    "info_msg": __("The erroneous process has been stopped."),
+                    "abortable": False,
+                },
+            )
+            return _FlashWriteFailureResult(
+                "break",
+                retry_hp,
+                retry_buffer_pos,
+                retry_sector_pos,
+                retry_bank,
+                retry_position,
+                status=False,
+            )
+        if not self._ResetFlashWriteForRetry(context.flashcart, retry_position):
+            return _FlashWriteFailureResult(
+                "fail",
+                retry_hp,
+                retry_buffer_pos,
+                retry_sector_pos,
+                retry_bank,
+                retry_position,
+                status=False,
+            )
+        return _FlashWriteFailureResult(
+            "recovered",
+            retry_hp,
+            retry_buffer_pos,
+            retry_sector_pos,
+            retry_bank,
+            retry_position,
+            status=False,
+        )
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -8261,66 +8404,37 @@ class LK_Device(ABC):
                         )
 
                     if status is False or se_ret is False:
-                        self.CANCEL = True
-                        self.ERROR = True
-                        sr = self._GetFlashWriteStatusRegister(flashcart, se_ret)
-                        dprint("Last status register value:", sr)
-
-                        if self.CANCEL_ARGS.get("from_user") or self._HandleDisconnectedFlashWrite(
-                            buffer_len,
-                            buffer_pos,
-                            errmsg_mbc_selection,
-                            sr,
-                        ):
+                        failure = self._RecoverFlashWriteFailure(
+                            _FlashWriteFailureContext(
+                                preparation,
+                                flashcart,
+                                sector_offsets,
+                                errmsg_mbc_selection,
+                                se_ret,
+                                retry_hp,
+                                buffer_len,
+                                buffer_pos,
+                                sector_pos,
+                                bank,
+                                pos,
+                                status,
+                                start_bank,
+                                end_address,
+                                _mbc,
+                            ),
+                        )
+                        retry_hp = failure.retry_hp
+                        buffer_pos = failure.buffer_pos
+                        sector_pos = failure.sector_pos
+                        bank = failure.bank
+                        pos = failure.position
+                        status = failure.status
+                        if failure.action == "break":
                             break
-                        retry_hp, retry_exhausted = self._HandleFlashWriteRetry(
-                            preparation,
-                            retry_hp,
-                            buffer_len,
-                            buffer_pos,
-                            sr,
-                        )
-                        if retry_exhausted:
-                            continue
-
-                        rev_buffer_pos = sector_offsets[sector_pos - 1][0]
-                        buffer_pos = rev_buffer_pos
-                        bank = start_bank
-                        sector_pos -= 1
-                        err_text = __(
-                            "Write error! Retrying from {address}...",
-                            address=f"0x{rev_buffer_pos:X}",
-                        )
-                        print(ANSI.YELLOW + err_text + ANSI.RESET)
-                        dprint(f"Bank {bank:d} | HP: {retry_hp:d}/100")
-                        pos = end_address
-                        status = False
-
-                        self.SetProgress(
-                            {
-                                "action": "ERROR",
-                                "abortable": True,
-                                "pos": buffer_pos,
-                                "text": err_text,
-                            },
-                        )
-                        delay = 0.5  # + (100-retry_hp)/100
-                        self._PowerCycleFlashWriteCart(delay, _mbc, bank)
-                        time.sleep(delay)
-                        self._EnsureFlashWriteConnected(buffer_len, buffer_pos)
-
-                        self.ERROR = False
-                        if self.CANCEL_ARGS.get("from_user"):
-                            self.CANCEL_ARGS.update(
-                                {
-                                    "info_type": "msgbox_warning",
-                                    "info_msg": __("The erroneous process has been stopped."),
-                                    "abortable": False,
-                                },
-                            )
-                            break
-                        if not self._ResetFlashWriteForRetry(flashcart, pos):
+                        if failure.action == "fail":
                             return False
+                        if failure.action == "recovered":
+                            status = False
                         continue
 
                     skip_init = True
