@@ -1205,12 +1205,20 @@ class FlashGBX_CLI:
                 + ANSI.RESET,
             )
 
+    @staticmethod
+    def _RenderCartridgeRows(rows: list[tuple[str, str | None]]) -> str:
+        max_len = max((len(label) for label, _ in rows), default=0)
+        rendered = ""
+        for label, value in rows:
+            if value is not None:
+                rendered += f"{label.ljust(max_len + 1):s} {value:s}\n"
+        return rendered
+
     def ReadCartridge(
         self,
         data: HeaderData,
     ) -> tuple[bool, str, HeaderData]:
         bad_read = False
-        s = ""
         rows: list[tuple[str, str | None]] = []
         if self.CONN.GetMode() == "DMG":
             # Use (label_with_colon, value) pairs to match existing GUI translation keys
@@ -1342,12 +1350,7 @@ class FlashGBX_CLI:
                     + ANSI.RESET,
                 )
 
-        max_len: int = max((len(label) for label, _ in rows), default=0)
-        for label, value in rows:
-            if value is not None:
-                s += f"{label.ljust(max_len + 1):s} {value:s}\n"
-
-        return (bad_read, s, data)
+        return (bad_read, self._RenderCartridgeRows(rows), data)
 
     @staticmethod
     def _FormatDetectedCFI(cfi_data: str) -> str:
@@ -1371,6 +1374,28 @@ class FlashGBX_CLI:
             + c__("Common Flash Interface Data", "No data provided")
             + "\n\n"
         )
+
+    @staticmethod
+    def _UnknownFlashcartMessage(flash_id: str) -> str:
+        message = __("Flashcart Profile:") + " " + __("Unknown flash cartridge")
+        generic_profiles = (
+            ("[     0/90]", "Generic Flash Cartridge (0/90)"),
+            ("[   AAA/AA]", "Generic Flash Cartridge (AAA/AA)"),
+            ("[   AAA/A9]", "Generic Flash Cartridge (AAA/A9)"),
+            ("[WR   / AAA/AA]", "Generic Flash Cartridge (WR/AAA/AA)"),
+            ("[WR   / AAA/A9]", "Generic Flash Cartridge (WR/AAA/A9)"),
+            ("[WR   / 555/AA]", "Generic Flash Cartridge (WR/555/AA)"),
+            ("[WR   / 555/A9]", "Generic Flash Cartridge (WR/555/A9)"),
+            ("[AUDIO/ AAA/AA]", "Generic Flash Cartridge (AUDIO/AAA/AA)"),
+            ("[AUDIO/ 555/AA]", "Generic Flash Cartridge (AUDIO/555/AA)"),
+        )
+        try_this = next((profile for marker, profile in generic_profiles if marker in flash_id), "")
+        if try_this != "":
+            message += " " + __(
+                "For ROM writing, you can give the option called “{try_this}” a try at your own risk.",
+                try_this=try_this,
+            )
+        return message + "\n"
 
     def DetectCartridge(self, limitVoltage: bool = False) -> int | None:
         print(__("Now attempting to auto-detect the flashcart profile..."))
@@ -1473,25 +1498,7 @@ class FlashGBX_CLI:
         elif (len(flash_id.split("\n")) > 2) and (
             (self.CONN.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
         ):
-            msg_cart_type_s = __("Flashcart Profile:") + " " + __("Unknown flash cartridge")
-            generic_profiles = (
-                ("[     0/90]", "Generic Flash Cartridge (0/90)"),
-                ("[   AAA/AA]", "Generic Flash Cartridge (AAA/AA)"),
-                ("[   AAA/A9]", "Generic Flash Cartridge (AAA/A9)"),
-                ("[WR   / AAA/AA]", "Generic Flash Cartridge (WR/AAA/AA)"),
-                ("[WR   / AAA/A9]", "Generic Flash Cartridge (WR/AAA/A9)"),
-                ("[WR   / 555/AA]", "Generic Flash Cartridge (WR/555/AA)"),
-                ("[WR   / 555/A9]", "Generic Flash Cartridge (WR/555/A9)"),
-                ("[AUDIO/ AAA/AA]", "Generic Flash Cartridge (AUDIO/AAA/AA)"),
-                ("[AUDIO/ 555/AA]", "Generic Flash Cartridge (AUDIO/555/AA)"),
-            )
-            try_this = next((profile for marker, profile in generic_profiles if marker in flash_id), "")
-            if try_this != "":
-                msg_cart_type_s += " " + __(
-                    "For ROM writing, you can give the option called “{try_this}” a try at your own risk.",
-                    try_this=try_this,
-                )
-            msg_cart_type_s += "\n"
+            msg_cart_type_s = self._UnknownFlashcartMessage(flash_id)
         else:
             msg_cart_type_s = (
                 __("Flashcart Profile:")
@@ -1625,6 +1632,19 @@ class FlashGBX_CLI:
                 ),
             )
 
+    @staticmethod
+    def _CanWriteBackupPath(path: str) -> bool:
+        try:
+            with Path(path).open("ab+"):
+                pass
+        except PermissionError:
+            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
+            return False
+        except FileNotFoundError:
+            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
+            return False
+        return True
+
     def BackupROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         mbc = 1
         rom_size = 0
@@ -1682,14 +1702,7 @@ class FlashGBX_CLI:
                 print(__("Canceled."))
                 return
 
-        try:
-            with Path(path).open("ab+"):
-                pass
-        except PermissionError:
-            print(ANSI.RED + __("Couldn't access file “{path}”.", path=path) + ANSI.RESET)
-            return
-        except FileNotFoundError:
-            print(ANSI.RED + __("Couldn't find file “{path}”.", path=path) + ANSI.RESET)
+        if not self._CanWriteBackupPath(path):
             return
 
         print(

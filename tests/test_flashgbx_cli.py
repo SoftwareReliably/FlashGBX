@@ -844,6 +844,40 @@ def test_detect_cartridge_formats_successful_mock_detection(
     assert ("detect", {"limitVoltage": True, "checkSaveType": True}) in conn.calls
 
 
+@pytest.mark.parametrize(
+    ("flash_id", "expected_profile"),
+    [
+        ("prefix\nflash id\n", None),
+        ("prefix [   AAA/AA]\nflash id\n", "Generic Flash Cartridge (AAA/AA)"),
+        (
+            "prefix [   AAA/AA] [     0/90]\nflash id\n",
+            "Generic Flash Cartridge (0/90)",
+        ),
+    ],
+)
+def test_detect_cartridge_formats_unknown_flashcart_suggestions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flash_id: str,
+    expected_profile: str | None,
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    header = dmg_header()
+    conn.INFO["dmg_carts"] = (["Generic"], [{}])
+    conn.INFO["detect_cart"] = (header, None, 0, None, False, [], 0, "", None, flash_id, 0)
+    cli.CONN = conn
+    monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
+
+    assert cli.DetectCartridge() is None
+
+    output = capsys.readouterr().out
+    assert "Unknown flash cartridge" in output
+    if expected_profile is not None:
+        assert expected_profile in output
+
+
 def test_detect_cartridge_handles_failed_and_unknown_modes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -2696,6 +2696,15 @@ class LK_Device(ABC):
             return self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
         return 0
 
+    def _FindGoombaBatterylessOffset(self) -> int | None:
+        state_ids = (0x57A731D7, 0x57A731D8, 0x57A731D9)
+        state_offsets = (0x400000 - 0x40000, 0x800000 - 0x40000, 0x1000000 - 0x40000, 0x2000000 - 0x40000)
+        for offset in state_offsets:
+            state_id = struct.unpack("<I", self.ReadROM(offset, 4))[0]
+            if state_id in state_ids:
+                return offset
+        return None
+
     def CheckBatterylessSRAM(self) -> dict[str, int] | Literal[False]:
         bl_size: int | None = None
         bl_offset: int | None = None
@@ -2704,13 +2713,7 @@ class LK_Device(ABC):
             header: AGBHeader = RomFileAGB(buffer).GetHeader()
             if header["game_code"] in ("GMBC", "PNES"):
                 bl_size = 0x10000
-                state_ids = (0x57A731D7, 0x57A731D8, 0x57A731D9)
-                state_offsets = (0x400000 - 0x40000, 0x800000 - 0x40000, 0x1000000 - 0x40000, 0x2000000 - 0x40000)
-                for offset in state_offsets:
-                    state_id = struct.unpack("<I", self.ReadROM(offset, 4))[0]
-                    if state_id in state_ids:
-                        bl_offset = offset
-                        break
+                bl_offset = self._FindGoombaBatterylessOffset()
                 dprint("Detected Goomba Color or PocketNES Batteryless ROM by Lesserkuma")
             else:
                 boot_vector: int = (struct.unpack("<I", buffer[0:3] + bytearray([0]))[0] + 2) << 2
@@ -4653,13 +4656,18 @@ class LK_Device(ABC):
                 self.INFO["dump_info"]["agb_read_method"] = self.AGB_READ_METHODS[self.AGB_READ_METHOD]
 
             if flashcart and "flash_bank_size" in cart_type:
-                if "verify_write" in args:
-                    rom_banks = math.ceil(len(args["verify_write"]) / cart_type["flash_bank_size"])
-                else:
-                    rom_banks = math.ceil(size / cart_type["flash_bank_size"])
-                rom_bank_size = cart_type["flash_bank_size"]
+                rom_banks, rom_bank_size = self._GetROMFlashBankGeometry(args, cart_type, size)
 
         return _ROMReadConfiguration(mbc, size, rom_banks, rom_bank_size, buffer_len, is_3d_memory)
+
+    @staticmethod
+    def _GetROMFlashBankGeometry(args: dict[str, Any], cart_type: dict[str, Any], size: int) -> tuple[int, int]:
+        bank_size = cart_type["flash_bank_size"]
+        if "verify_write" in args:
+            bank_count = math.ceil(len(args["verify_write"]) / bank_size)
+        else:
+            bank_count = math.ceil(size / bank_size)
+        return bank_count, bank_size
 
     def _EnableDMGMapperForROMRead(self, mbc: _ROMReadSetupMapper, args: dict[str, Any]) -> None:
         """Enable a DMG mapper, applying the special TAMA5 and Sachen setup."""
@@ -5034,12 +5042,9 @@ class LK_Device(ABC):
                 buffer[pos_total : pos_total + len(temp)] = temp
                 pos_total += len(temp)
 
-                if "verify_write" in args:
-                    mismatch = self._VerifyROMReadChunk(args, temp, buffer, pos_total)
-                    if mismatch is not None:
-                        return mismatch
-                else:
-                    self.SetProgress({"action": "UPDATE_POS", "pos": pos_total})
+                verification_result = self._ReportROMBackupChunk(args, temp, buffer, pos_total)
+                if verification_result is not None:
+                    return verification_result
 
                 pos += buffer_len
 
@@ -5058,6 +5063,18 @@ class LK_Device(ABC):
 
         self._CompleteROMBackup(args["path"])
         return True
+
+    def _ReportROMBackupChunk(
+        self,
+        args: dict[str, Any],
+        chunk: bytearray,
+        buffer: bytearray,
+        position: int,
+    ) -> int | None:
+        if "verify_write" in args:
+            return self._VerifyROMReadChunk(args, chunk, buffer, position)
+        self.SetProgress({"action": "UPDATE_POS", "pos": position})
+        return None
 
     def _CompleteROMBackup(self, path: str) -> None:
         # Clean up after a successful ROM backup.
@@ -6437,16 +6454,19 @@ class LK_Device(ABC):
             self._send_flash_commands(flash_cmds)
             self._configure_flash_command_bank(cart_type)
 
-            if self.FW["fw_ver"] >= 12:
-                has_status_register = "status_register_mask" in cart_type
-                status_register_mask = cart_type["status_register_mask"] if has_status_register else 0x80
-                status_register_value = cart_type["status_register_value"] if has_status_register else 0x80
-                self._set_fw_variable("STATUS_REGISTER_MASK", status_register_mask)
-                self._set_fw_variable("STATUS_REGISTER_VALUE", status_register_value)
+            self._ConfigureFlashStatusRegisters(cart_type)
 
         self._configure_agb_irq(cart_type)
 
         return command_set_type, we
+
+    def _ConfigureFlashStatusRegisters(self, cart_type: dict[str, Any]) -> None:
+        if self.FW["fw_ver"] >= 12:
+            has_status_register = "status_register_mask" in cart_type
+            status_register_mask = cart_type["status_register_mask"] if has_status_register else 0x80
+            status_register_value = cart_type["status_register_value"] if has_status_register else 0x80
+            self._set_fw_variable("STATUS_REGISTER_MASK", status_register_mask)
+            self._set_fw_variable("STATUS_REGISTER_VALUE", status_register_value)
 
     def _map_batteryless_flash_data(self, args: dict[str, Any], data_import: bytearray) -> bytearray:
         args["bl_size"] <<= 1

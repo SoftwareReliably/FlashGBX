@@ -1701,6 +1701,31 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 ),
             )
 
+    def _AnnounceUpdate(self, latest_version: str, site: str) -> None:
+        msg_text = f"A new version of FlashGBX has been released!\nVersion {latest_version:s} is now available."
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Question,
+            windowTitle=AppInfo.NAME + " " + __("Update Check"),
+            text=msg_text,
+        )
+        button_open = msgbox.addButton(
+            c__(
+                "Button (& = Keyboard Shortcut)",
+                "&Open release notes",
+            ),
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        button_cancel = msgbox.addButton(
+            c__("Button (& = Keyboard Shortcut)", "&Close"),
+            QtWidgets.QMessageBox.ButtonRole.RejectRole,
+        )
+        msgbox.setDefaultButton(button_open)
+        msgbox.setEscapeButton(button_cancel)
+        msgbox.exec()
+        if msgbox.clickedButton() == button_open:
+            self.OpenWebURL(site)
+
     def UpdateCheck(self) -> None:
         update_check: str | None = self.SETTINGS.value("UpdateCheck")
         if update_check is None:
@@ -1744,35 +1769,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         if version.parse(latest_version) == version.parse(AppInfo.VERSION_PEP440):
                             print(__("You are using the latest version of FlashGBX."))
                         elif version.parse(latest_version) > version.parse(AppInfo.VERSION_PEP440):
-                            msg_text = f"A new version of FlashGBX has been released!\nVersion {latest_version:s} is now available."
                             print(
                                 __(
                                     "A new version of FlashGBX has been released!\nVersion {new_version} is now available.",
                                     new_version=latest_version,
                                 ),
                             )
-                            msgbox = _create_message_box(
-                                parent=self,
-                                icon=QtWidgets.QMessageBox.Icon.Question,
-                                windowTitle=AppInfo.NAME + " " + __("Update Check"),
-                                text=msg_text,
-                            )
-                            button_open = msgbox.addButton(
-                                c__(
-                                    "Button (& = Keyboard Shortcut)",
-                                    "&Open release notes",
-                                ),
-                                QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                            )
-                            button_cancel = msgbox.addButton(
-                                c__("Button (& = Keyboard Shortcut)", "&Close"),
-                                QtWidgets.QMessageBox.ButtonRole.RejectRole,
-                            )
-                            msgbox.setDefaultButton(button_open)
-                            msgbox.setEscapeButton(button_cancel)
-                            msgbox.exec()
-                            if msgbox.clickedButton() == button_open:
-                                self.OpenWebURL(site)
+                            self._AnnounceUpdate(latest_version, site)
                         else:
                             print(
                                 __(
@@ -3247,8 +3250,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         path = ""
         if dpath != "":
             if not self._ConfirmFlashROMPath(dpath):
-                if "detected_cart_type" in self.STATUS:
-                    del self.STATUS["detected_cart_type"]
+                self.STATUS.pop("detected_cart_type", None)
                 return None
             path = dpath
 
@@ -3587,6 +3589,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.setEnabled(False)
         self.mnuLanguage.setEnabled(False)
 
+    def _SelectFlashROMPath(self, path: str, mode: PlatformMode, last_dir: str) -> str:
+        if path != "":
+            return path
+        file_type_name, rom_extensions = {
+            "DMG": ("Game Boy ROM File", ROM_EXTS_DMG),
+            "AGB": ("Game Boy Advance ROM File", ROM_EXTS_AGB),
+        }[mode]
+        return QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            __("Write ROM"),
+            last_dir,
+            __(file_type_name)
+            + " ("
+            + " ".join("*" + extension for extension in rom_extensions)
+            + ");;"
+            + __("All Files")
+            + " (*.*)",
+        )[0]
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3601,22 +3622,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         else:
             mbc = 0
 
-        if path == "":
-            file_type_name, rom_extensions = {
-                "DMG": ("Game Boy ROM File", ROM_EXTS_DMG),
-                "AGB": ("Game Boy Advance ROM File", ROM_EXTS_AGB),
-            }[mode]
-            path = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                __("Write ROM"),
-                last_dir,
-                __(file_type_name)
-                + " ("
-                + " ".join("*" + extension for extension in rom_extensions)
-                + ");;"
-                + __("All Files")
-                + " (*.*)",
-            )[0]
+        path = self._SelectFlashROMPath(path, mode, last_dir)
 
         if path == "":
             msg = __("No ROM file was selected. Do you want to wipe the ROM contents of the cartridge instead?")
@@ -4925,8 +4931,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
             and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
         ):
-            if "detected_cart_type" in self.STATUS:
-                del self.STATUS["detected_cart_type"]
+            self.STATUS.pop("detected_cart_type", None)
 
             if "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]:
                 detected = self._device.INFO["dump_info"]["batteryless_sram"]
@@ -5174,11 +5179,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
             intro_msg += intro_msg2
 
-        try:
-            if loc_index is None:
-                loc_index = locs.index(int(str(self.SETTINGS.value(f"BatterylessSramLastLocation{mode:s}"))))
-        except Exception:
-            logger.exception("Failed to restore the last batteryless SRAM location")
+        if loc_index is None:
+            loc_index = self._GetRememberedBatterylessLocationIndex(mode, locs)
 
         if loc_index is None:
             loc_index = self._get_default_bl_location_index(rom_size, locs)
@@ -5187,6 +5189,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if lay_index is None:
             lay_index = 2
         return _BatterylessDialogSelection(locs, lens, intro_msg, loc_index, len_index, lay_index)
+
+    def _GetRememberedBatterylessLocationIndex(self, mode: PlatformMode, locations: list[int]) -> int | None:
+        try:
+            return locations.index(int(str(self.SETTINGS.value(f"BatterylessSramLastLocation{mode:s}"))))
+        except Exception:
+            logger.exception("Failed to restore the last batteryless SRAM location")
+            return None
 
     def _EditRTCFromMouseEvent(self, event: QtGui.QMouseEvent) -> None:
         self.EditRTC(event)

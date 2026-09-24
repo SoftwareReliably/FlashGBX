@@ -90,6 +90,18 @@ def _setting_text(settings: SettingsReader | None, key: str, default: str) -> st
     return value if isinstance(value, str) else default
 
 
+def _dmg_filename_extension(header: FilenameHeader, auto_sgb_extension: str) -> str:
+    if _required_int(header, "cgb") in (0xC0, 0x80):
+        return "gbc"
+    if (
+        _required_int(header, "old_lic") == 0x33
+        and _required_int(header, "sgb") == 0x03
+        and auto_sgb_extension.lower() == "enabled"
+    ):
+        return "sgb"
+    return "gb"
+
+
 def _gbmemory_cart_id(value: object) -> str | None:
     entry: Mapping[object, object]
     if isinstance(value, Mapping):
@@ -242,16 +254,7 @@ def generate_filename(
 
         if mapper_raw >= 0x200:
             path = "%TITLE%"
-        if _required_int(header, "cgb") in (0xC0, 0x80):
-            path_extension = "gbc"
-        elif (
-            _required_int(header, "old_lic") == 0x33
-            and _required_int(header, "sgb") == 0x03
-            and auto_sgb_extension.lower() == "enabled"
-        ):
-            path_extension = "sgb"
-        else:
-            path_extension = "gb"
+        path_extension = _dmg_filename_extension(header, auto_sgb_extension)
         if path_title == "":
             path = f"ROM.{path_extension:s}"
         else:

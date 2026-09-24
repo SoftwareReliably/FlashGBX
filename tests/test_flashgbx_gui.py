@@ -1744,6 +1744,30 @@ def test_batteryless_parameters_require_a_platform_mode(
     assert settings.writes == []
 
 
+@pytest.mark.parametrize("has_detected_cart", [False, True])
+def test_batteryless_write_clears_pending_cart_detection_before_parameter_prompt(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    has_detected_cart: bool,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "AGB")
+    gui._PrepareSaveWrite = lambda **_kwargs: ("AGB", "save.sav", 0, 0, 1, 0, None)
+    gui._PrepareSaveWriteRtc = lambda **_kwargs: (False, False)
+    gui.cmbAGBSaveTypeResult.setCurrentIndex(9)
+    device.INFO["dump_info"] = {"batteryless_sram": {"bl_offset": 0x500000, "bl_size": 0x10000}}
+    if has_detected_cart:
+        gui.STATUS["detected_cart_type"] = 1
+    get_bl_args = Mock(return_value=False)
+    gui.GetBLArgs = get_bl_args
+
+    gui.WriteRAM()
+
+    assert "detected_cart_type" not in gui.STATUS
+    get_bl_args.assert_called_once_with(rom_size=0x200000, detected=device.INFO["dump_info"]["batteryless_sram"])
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
 def test_gui_constructor_builds_complete_inert_widget_tree(
     gui_module: ModuleType,
     tmp_path: Path,
@@ -1966,6 +1990,59 @@ def test_update_check_handles_mock_http_responses(
     monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
 
     gui.UpdateCheck()
+
+
+@pytest.mark.parametrize(("choice", "expected_open"), [(0, True), (1, False)])
+def test_update_check_opens_release_notes_only_when_selected(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    choice: int,
+    expected_open: bool,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.OpenWebURL = Mock()
+    response = SimpleNamespace(status_code=200, content=b'{"tag_name":"99.0"}', headers={})
+    monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
+    dialog = FakeChoiceMessageBox(choice)
+    dialog_arguments: list[dict[str, object]] = []
+
+    def create_message_box(**kwargs: object) -> FakeChoiceMessageBox:
+        dialog_arguments.append(kwargs)
+        return dialog
+
+    monkeypatch.setattr(gui_module, "_create_message_box", create_message_box)
+
+    gui.UpdateCheck()
+
+    assert len(dialog.buttons) == 2
+    assert dialog.clickedButton() == dialog.buttons[choice]
+    assert "Version 99.0 is now available." in str(dialog_arguments[0]["text"])
+    assert gui.OpenWebURL.call_count == int(expected_open)
+    if expected_open:
+        gui.OpenWebURL.assert_called_once_with("https://github.com/Lesserkuma/FlashGBX/releases/latest")
+
+
+def test_update_check_does_not_announce_the_current_version(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    response = SimpleNamespace(
+        status_code=200,
+        content=f'{{"tag_name":"{gui_module.AppInfo.VERSION_PEP440}"}}'.encode(),
+        headers={},
+    )
+    monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
+    create_message_box = Mock()
+    monkeypatch.setattr(gui_module, "_create_message_box", create_message_box)
+
+    gui.UpdateCheck()
+
+    create_message_box.assert_not_called()
 
 
 @pytest.mark.parametrize(
