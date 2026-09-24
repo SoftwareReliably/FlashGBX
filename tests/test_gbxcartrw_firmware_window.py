@@ -266,6 +266,53 @@ def make_window(module: ModuleType) -> object:
     return window
 
 
+@pytest.mark.parametrize("window_class", ["FirmwareUpdaterWindow", "FirmwareUpdaterWindowV13"])
+def test_firmware_window_update_button_row_preserves_button_and_handler(
+    firmware_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    window_class: str,
+) -> None:
+    class RecordingLayout:
+        def __init__(self) -> None:
+            self.items: list[object | None] = []
+
+        def addStretch(self) -> None:
+            self.items.append(None)
+
+        def addWidget(self, widget: object) -> None:
+            self.items.append(widget)
+
+    class RecordingButton:
+        def __init__(self, text: str) -> None:
+            self.text = text
+            self.minimum_width: int | None = None
+            self.contents_margins: tuple[int, int, int, int] | None = None
+            self.handler: object | None = None
+
+        def setMinimumWidth(self, width: int) -> None:
+            self.minimum_width = width
+
+        def setContentsMargins(self, left: int, top: int, right: int, bottom: int) -> None:
+            self.contents_margins = (left, top, right, bottom)
+
+        @property
+        def clicked(self) -> SimpleNamespace:
+            return SimpleNamespace(connect=lambda handler: setattr(self, "handler", handler))
+
+    monkeypatch.setattr(firmware_module.QtWidgets, "QHBoxLayout", RecordingLayout, raising=False)
+    monkeypatch.setattr(firmware_module.QtWidgets, "QPushButton", RecordingButton, raising=False)
+    window = object.__new__(getattr(firmware_module, window_class))
+    window.UpdateFirmware = Mock()
+
+    window._CreateUpdateButtonRow()
+
+    assert window.rowUpdate.items == [None, window.btnUpdate, None]
+    assert window.btnUpdate.text == "Install Firmware Update"
+    assert window.btnUpdate.minimum_width == 200
+    assert window.btnUpdate.contents_margins == (20, 20, 20, 20)
+    assert window.btnUpdate.handler == window.UpdateFirmware
+
+
 def make_modern_window(
     module: ModuleType,
     tmp_path: Path,
@@ -1185,6 +1232,46 @@ def test_write_firmware_f_command_ack_exhaustion_prompts_retry(
     assert dialog_arguments[0]["defaultButton"] == FakeMessageBox.StandardButton.Yes
     assert "Protocol Error" in str(dialog_arguments[0]["text"])
     assert sleep_calls.count(1) == (1 if answer == FakeMessageBox.StandardButton.Yes else 0)
+
+
+def test_write_firmware_user_data_uses_remaining_handshake_retry_budget(
+    firmware_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    window = make_window(firmware_module)
+    user_data = bytearray(range(65))
+    events: list[tuple[str, object]] = [
+        ("write", b"F"),
+        ("read", (1, b"!")),
+        ("write", b"F"),
+        ("read", (1, b"?")),
+        ("write", b"?"),
+        ("read", (1, b"?")),
+        ("write", b"C"),
+        ("read", (1, b"!")),
+    ]
+    for _ in range(9):
+        events.extend([("write", b"C"), ("read", (1, b"!"))])
+    events.append(("write", b"?"))
+    dev = ScriptedSerial(events)
+    window._ConnectBootloader = Mock(return_value=(dev, bootloader_reply()))
+    window._PrepareUserData = Mock(return_value=user_data)
+    window._WriteFirmwarePages = Mock(return_value=None)
+    window._VerifyFirmwareWrite = Mock(return_value=None)
+    finish = Mock(return_value=1)
+    window._FinishFirmwareUpdate = finish
+    monkeypatch.setattr(firmware_module.time, "sleep", lambda _seconds: None)
+
+    result = window.WriteFirmware(bytearray(b"firmware"), window.SetStatus)
+
+    assert result == 2
+    dev.assert_finished()
+    assert dev.writes.count(b"F") == 2
+    assert dev.writes.count(b"C") == 10
+    assert dev.writes[-1] == b"?"
+    assert dev.closes == 1
+    finish.assert_not_called()
+    assert "Status: User data update error. Please try again." in window.lblStatus.text_history
 
 
 def test_connect_bootloader_accepts_expected_handshake_without_closing_port(

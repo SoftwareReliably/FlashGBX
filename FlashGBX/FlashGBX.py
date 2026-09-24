@@ -355,6 +355,36 @@ def _startup_paths(portable_mode: bool) -> tuple[str, ConfigPaths, str, str | No
     return app_path, cp, config_path, language_choice, cfgdir_default
 
 
+def _build_argument_parser(cp: ConfigPaths, cfgdir_default: str) -> argparse.ArgumentParser:
+    examples = (
+        "\n"
+        + __("Examples")
+        + ":\n"
+        + "  "
+        + __("Backup the ROM of a Game Boy Advance cartridge")
+        + ":\n\tFlashGBX --mode agb --action backup-rom\n\n"
+        + "  "
+        + __("Backup Save Data from a Game Boy cartridge")
+        + ":\n\tFlashGBX --mode dmg --action backup-save\n\n"
+        + "  "
+        + __("Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge")
+        + ":\n\tFlashGBX --mode agb --action flash-rom ROM.gba\n\n"
+        + "  "
+        + __("Extract Game Boy Camera pictures as .png files from a save data file")
+        + ":\n\tFlashGBX --mode dmg --action gbcamera-extract --gbcamera-outfile-format png GAMEBOYCAMERA.sav\n\n"
+        + "  "
+        + __(
+            "Backup a {gb_memory_cartridge} ROM including its hidden sector .map file",
+            gb_memory_cartridge="NP GB-Memory Cartridge",
+        )
+        + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
+    )
+    parser = _create_argument_parser(examples)
+    _add_primary_cli_arguments(parser, cp, cfgdir_default)
+    _add_optional_cli_arguments(parser)
+    return parser
+
+
 def _print_banner() -> None:
     print(f"FlashGBX {AppInfo.VERSION}\n© 2020-{time.strftime('%Y')} Lesserkuma")
     print("https://github.com/Lesserkuma/FlashGBX")
@@ -733,34 +763,7 @@ def main(portableMode: bool = False) -> int | None:
 
     _print_banner()
 
-    examples = (
-        "\n"
-        + __("Examples")
-        + ":\n"
-        + "  "
-        + __("Backup the ROM of a Game Boy Advance cartridge")
-        + ":\n\tFlashGBX --mode agb --action backup-rom\n\n"
-        + "  "
-        + __("Backup Save Data from a Game Boy cartridge")
-        + ":\n\tFlashGBX --mode dmg --action backup-save\n\n"
-        + "  "
-        + __("Write a Game Boy Advance ROM relying on auto-detecting the flash cartridge")
-        + ":\n\tFlashGBX --mode agb --action flash-rom ROM.gba\n\n"
-        + "  "
-        + __("Extract Game Boy Camera pictures as .png files from a save data file")
-        + ":\n\tFlashGBX --mode dmg --action gbcamera-extract --gbcamera-outfile-format png GAMEBOYCAMERA.sav\n\n"
-        + "  "
-        + __(
-            "Backup a {gb_memory_cartridge} ROM including its hidden sector .map file",
-            gb_memory_cartridge="NP GB-Memory Cartridge",
-        )
-        + ":\n\tFlashGBX --mode dmg --action backup-rom --dmg-mbc 0x105\n\n"
-    )
-
-    parser = _create_argument_parser(examples)
-    _add_primary_cli_arguments(parser, cp, cfgdir_default)
-
-    _add_optional_cli_arguments(parser)
+    parser = _build_argument_parser(cp, cfgdir_default)
     try:
         parsed_args, _ = parser.parse_known_args()
     except SystemExit:

@@ -1077,18 +1077,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._InitActionWidgetTexts()
 
-        # Transfer Status
-        self.grpStatus.setTitle(__("Transfer Status"))
-        self.lblStatus1a.setText(__("Data transferred:"))
-        self.lblStatus2a.setText(__("Transfer rate:"))
-        self.lblStatus3a.setText(__("Time elapsed:"))
-        self.lblStatus4a.setText(__("Ready."))
-        btnText = __("Stop")
-        self.btnCancel.setText(btnText)
-        btnWidth = self.btnCancel.fontMetrics().boundingRect(btnText).width() + 15
-        if platform.system() == "Darwin":
-            btnWidth += 12
-        self.btnCancel.setMaximumWidth(btnWidth)
+        self._InitTransferStatusWidgetTexts()
 
         # Device area
         self.lblDevice.setToolTip(__("Click here to generate a log file for debugging"))
@@ -1177,6 +1166,20 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnMainMenu.setMaximumWidth(btnWidth)
         self.btnConnect.setText(c__("Button (& = Keyboard Shortcut)", "&Connect"))
         self.ApplyInfoColumnWidths()
+
+    def _InitTransferStatusWidgetTexts(self) -> None:
+        # Transfer Status
+        self.grpStatus.setTitle(__("Transfer Status"))
+        self.lblStatus1a.setText(__("Data transferred:"))
+        self.lblStatus2a.setText(__("Transfer rate:"))
+        self.lblStatus3a.setText(__("Time elapsed:"))
+        self.lblStatus4a.setText(__("Ready."))
+        btnText = __("Stop")
+        self.btnCancel.setText(btnText)
+        btnWidth = self.btnCancel.fontMetrics().boundingRect(btnText).width() + 15
+        if platform.system() == "Darwin":
+            btnWidth += 12
+        self.btnCancel.setMaximumWidth(btnWidth)
 
     def _InitActionWidgetTexts(self) -> None:
         self.grpActions.setTitle(__("Functions"))
@@ -1306,6 +1309,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row.setStretch(1, 15)
         group_layout.addLayout(row)
 
+    def _CreateDMGHeaderROMSizeRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowDMGHeaderROMSize = QtWidgets.QHBoxLayout()
+        self.lblDMGHeaderROMSize = QtWidgets.QLabel()
+        rowDMGHeaderROMSize.addWidget(self.lblDMGHeaderROMSize)
+        self.cmbDMGHeaderROMSizeResult = QtWidgets.QComboBox()
+        self.cmbDMGHeaderROMSizeResult.setStyleSheet("combobox-popup: 0;")
+        self.cmbDMGHeaderROMSizeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        rowDMGHeaderROMSize.addWidget(self.cmbDMGHeaderROMSizeResult)
+        rowDMGHeaderROMSize.setStretch(0, 9)
+        rowDMGHeaderROMSize.setStretch(1, 15)
+        group_layout.addLayout(rowDMGHeaderROMSize)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1336,16 +1351,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateDMGHeaderROMChecksumRow(group_layout)
 
-        rowDMGHeaderROMSize = QtWidgets.QHBoxLayout()
-        self.lblDMGHeaderROMSize = QtWidgets.QLabel()
-        rowDMGHeaderROMSize.addWidget(self.lblDMGHeaderROMSize)
-        self.cmbDMGHeaderROMSizeResult = QtWidgets.QComboBox()
-        self.cmbDMGHeaderROMSizeResult.setStyleSheet("combobox-popup: 0;")
-        self.cmbDMGHeaderROMSizeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        rowDMGHeaderROMSize.addWidget(self.cmbDMGHeaderROMSizeResult)
-        rowDMGHeaderROMSize.setStretch(0, 9)
-        rowDMGHeaderROMSize.setStretch(1, 15)
-        group_layout.addLayout(rowDMGHeaderROMSize)
+        self._CreateDMGHeaderROMSizeRow(group_layout)
 
         rowDMGHeaderSaveType = QtWidgets.QHBoxLayout()
         self.lblDMGHeaderSaveType = QtWidgets.QLabel()
@@ -3573,6 +3579,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return None
         return mbc, fix_bootlogo, fix_header
 
+    def _DisableTransferControls(self) -> None:
+        self.grpDMGCartridgeInfo.setEnabled(False)
+        self.grpAGBCartridgeInfo.setEnabled(False)
+        self.grpActions.setEnabled(False)
+        self.mnuTools.setEnabled(False)
+        self.mnuConfig.setEnabled(False)
+        self.mnuLanguage.setEnabled(False)
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3651,12 +3665,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if self._CancelFlashForLockedVoltage(mode, cart_profile, override_voltage, device_voltage_locked):
             return
 
-        self.grpDMGCartridgeInfo.setEnabled(False)
-        self.grpAGBCartridgeInfo.setEnabled(False)
-        self.grpActions.setEnabled(False)
-        self.mnuTools.setEnabled(False)
-        self.mnuConfig.setEnabled(False)
-        self.mnuLanguage.setEnabled(False)
+        self._DisableTransferControls()
         self.lblStatus4a.setText(__("Preparing..."))
         qt_app.processEvents()
         if len(buffer) > 0x1000 or just_erase:
@@ -4724,6 +4733,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         msgbox.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
         return msgbox.exec() != QtWidgets.QMessageBox.StandardButton.No
 
+    def _WriteSaveStressTestDebugFiles(self, save1: bytearray, save2: bytearray) -> None:
+        with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as file:
+            file.write(save1)
+        with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as file:
+            file.write(save2)
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4777,10 +4792,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         stop = False
         if (save1 is not None and save1 != save2) and "stresstest_running" in self.STATUS:
-            with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_1.bin").open("wb") as f:
-                f.write(save1)
-            with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as f:
-                f.write(save2)
+            self._WriteSaveStressTestDebugFiles(save1, save2)
             if not self._ConfirmSaveStressTestMismatch(test_ok + 1, test_patterns_names[test_ok]):
                 stop = True
 
@@ -5007,12 +5019,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["time_start"] = time.time()
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
-        self.grpDMGCartridgeInfo.setEnabled(False)
-        self.grpAGBCartridgeInfo.setEnabled(False)
-        self.grpActions.setEnabled(False)
-        self.mnuTools.setEnabled(False)
-        self.mnuConfig.setEnabled(False)
-        self.mnuLanguage.setEnabled(False)
+        self._DisableTransferControls()
         self.lblStatus4a.setText(__("Preparing..."))
         self.grpStatus.setTitle(__("Transfer Status"))
         self.lblStatus1aResult.setText("-")

@@ -934,14 +934,7 @@ try:
             rowDeviceInfo4.addStretch(1)
             self.grpAvailableFwUpdatesLayout.addLayout(rowDeviceInfo4)
 
-            self.rowUpdate = QtWidgets.QHBoxLayout()
-            self.btnUpdate = QtWidgets.QPushButton(__("Install Firmware Update"))
-            self.btnUpdate.setMinimumWidth(200)
-            self.btnUpdate.setContentsMargins(20, 20, 20, 20)
-            self.btnUpdate.clicked.connect(self.UpdateFirmware)
-            self.rowUpdate.addStretch()
-            self.rowUpdate.addWidget(self.btnUpdate)
-            self.rowUpdate.addStretch()
+            self._CreateUpdateButtonRow()
 
             self.grpAvailableFwUpdatesLayout.addSpacing(3)
             self.grpAvailableFwUpdatesLayout.addItem(self.rowUpdate)
@@ -965,6 +958,16 @@ try:
                 self.optDevicePCBVer14a.setChecked(True)
                 self.optDevicePCBVer14.setEnabled(False)
             self.SetPCBVersion()
+
+        def _CreateUpdateButtonRow(self) -> None:
+            self.rowUpdate = QtWidgets.QHBoxLayout()
+            self.btnUpdate = QtWidgets.QPushButton(__("Install Firmware Update"))
+            self.btnUpdate.setMinimumWidth(200)
+            self.btnUpdate.setContentsMargins(20, 20, 20, 20)
+            self.btnUpdate.clicked.connect(self.UpdateFirmware)
+            self.rowUpdate.addStretch()
+            self.rowUpdate.addWidget(self.btnUpdate)
+            self.rowUpdate.addStretch()
 
         def SetPCBVersion(self) -> None:
             if self.optDevicePCBVer14.isChecked():
@@ -1287,14 +1290,7 @@ try:
             self.lblOFW_Info.mousePressEvent = self._select_ofw  # ty: ignore[invalid-assignment]
             self.optExternal = QtWidgets.QRadioButton(__("External firmware file"))
 
-            self.rowUpdate = QtWidgets.QHBoxLayout()
-            self.btnUpdate = QtWidgets.QPushButton(__("Install Firmware Update"))
-            self.btnUpdate.setMinimumWidth(200)
-            self.btnUpdate.setContentsMargins(20, 20, 20, 20)
-            self.btnUpdate.clicked.connect(self.UpdateFirmware)
-            self.rowUpdate.addStretch()
-            self.rowUpdate.addWidget(self.btnUpdate)
-            self.rowUpdate.addStretch()
+            self._CreateUpdateButtonRow()
 
             if self.PCB_VER == "v1.3":
                 self.grpAvailableFwUpdatesLayout.addWidget(self.optCFW)
@@ -1305,6 +1301,7 @@ try:
             self.grpAvailableFwUpdatesLayout.addWidget(self.optOFW)
             self.grpAvailableFwUpdatesLayout.addWidget(self.lblOFW_Info)
             self.grpAvailableFwUpdatesLayout.addWidget(self.optExternal)
+
             self.grpAvailableFwUpdatesLayout.addSpacing(3)
             self.grpAvailableFwUpdatesLayout.addItem(self.rowUpdate)
             self.grpAvailableFwUpdates.setLayout(self.grpAvailableFwUpdatesLayout)
@@ -1319,6 +1316,16 @@ try:
             self.setLayout(self.main_layout)
 
             self.ReadDeviceInfo()
+
+        def _CreateUpdateButtonRow(self) -> None:
+            self.rowUpdate = QtWidgets.QHBoxLayout()
+            self.btnUpdate = QtWidgets.QPushButton(__("Install Firmware Update"))
+            self.btnUpdate.setMinimumWidth(200)
+            self.btnUpdate.setContentsMargins(20, 20, 20, 20)
+            self.btnUpdate.clicked.connect(self.UpdateFirmware)
+            self.rowUpdate.addStretch()
+            self.rowUpdate.addWidget(self.btnUpdate)
+            self.rowUpdate.addStretch()
 
         def _select_cfw(self, event: QtGui.QMouseEvent) -> None:
             del event
@@ -1862,6 +1869,20 @@ try:
             if verification_result is not None:
                 return verification_result
 
+            result = self._WriteFirmwareUserData(dev, user_data, fncSetStatus, lives=lives)
+            if result is not None:
+                return result
+
+            return self._FinishFirmwareUpdate(dev, fncSetStatus)
+
+        def _WriteFirmwareUserData(
+            self,
+            dev: serial.Serial,
+            user_data: bytearray,
+            fncSetStatus: StatusCallback,
+            *,
+            lives: int,
+        ) -> FirmwareUpdateResult | None:
             # Change timeout to 1s
             fncSetStatus(__("Writing user data..."))
             user_data[2] = 42
@@ -1891,6 +1912,7 @@ try:
             time.sleep(0.00125)
             dev.read(0x41)
 
-            return self._FinishFirmwareUpdate(dev, fncSetStatus)
+            return None
+
 except ImportError:
     pass

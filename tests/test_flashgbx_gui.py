@@ -2291,6 +2291,68 @@ def test_save_stress_test_mismatch_confirmation(
     )
 
 
+@pytest.mark.parametrize("saves_match", [False, True], ids=["mismatch-refused", "equal-canceled"])
+def test_save_stress_test_diagnostic_files_follow_initial_read_result(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    saves_match: bool,
+) -> None:
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    device = FakeDevice()
+    gui = make_gui(
+        gui_module,
+        CONN=device,
+        STATUS={"stresstest_running": True},
+        lblStatus4a=FakeQtObject(),
+        SetProgressBars=Mock(),
+        SetStatus4aResult=Mock(),
+    )
+    patterns = [bytearray(b"pattern")]
+    gui._PrepareSaveStressTest = Mock(return_value=(patterns, ["reading twice", "writing pattern"]))
+    reads = iter([bytearray(b"same"), bytearray(b"same" if saves_match else b"changed")])
+    transfer_modes: list[int] = []
+
+    def transfer(args: dict[str, object]) -> None:
+        transfer_modes.append(int(args["mode"]))
+        device.INFO["data"] = next(reads)
+        if saves_match:
+            gui.STATUS.pop("stresstest_running", None)
+
+    gui._RunSaveStressTestTransfer = transfer
+    gui._WaitForSaveStressTestPowerCycle = Mock()
+    gui._RestoreSaveStressTest = Mock()
+    results: list[object] = []
+    gui._CompleteSaveStressTest = results.append
+    confirmation_files: list[tuple[bytes, bytes]] = []
+
+    def confirm(_test_number: int, _pattern_name: str) -> bool:
+        first = (tmp_path / "debug_stress_test_1.bin").read_bytes()
+        second = (tmp_path / "debug_stress_test_2.bin").read_bytes()
+        confirmation_files.append((first, second))
+        return False
+
+    gui._ConfirmSaveStressTestMismatch = confirm
+    monkeypatch.setattr(gui_module.time, "time", Mock(side_effect=[10.0, 12.5]))
+    preparation = gui_module._SaveWritePreparation("DMG", "save.sav", 1, 2, 3, 4, None)
+
+    gui._RunSaveStressTest(preparation, rtc_advance=False, erase=False)
+
+    first_path = tmp_path / "debug_stress_test_1.bin"
+    second_path = tmp_path / "debug_stress_test_2.bin"
+    if saves_match:
+        assert not first_path.exists()
+        assert not second_path.exists()
+        assert confirmation_files == []
+        assert transfer_modes == [2, 2]
+    else:
+        assert first_path.read_bytes() == b"same"
+        assert second_path.read_bytes() == b"changed"
+        assert confirmation_files == [(b"same", b"changed")]
+        assert transfer_modes == [2, 2]
+    assert len(results) == 1
+
+
 @pytest.mark.parametrize("cancel_during_events", [False, True], ids=["complete", "cancel"])
 def test_save_stress_test_completion_handles_cancellation_during_events(
     gui_module: ModuleType,

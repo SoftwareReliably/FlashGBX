@@ -4926,6 +4926,14 @@ class LK_Device(ABC):
                 end_address = min(cart_type["flash_bank_size"], start_address + temp)
         return start_address, end_address, buffer_len
 
+    def _InitializeROMBackupBuffer(self, size: int, *, is_3dmemory: bool) -> tuple[bytearray, int]:
+        buffer = bytearray(size)
+        max_length = self.MAX_BUFFER_READ
+        dprint(f"Max buffer size: 0x{max_length:X}")
+        max_length = min(max_length, 4096) if is_3dmemory else min(max_length, 8192)
+        self.INFO["dump_info"]["transfer_size"] = max_length
+        return buffer, max_length
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = self._OpenROMBackupFile(args["path"])
@@ -4958,11 +4966,7 @@ class LK_Device(ABC):
             self.INFO["action"] = self.ACTIONS[method]
             self._configure_rom_read_pullups(args, cart_type, flashcart)
 
-        buffer = bytearray(size)
-        max_length = self.MAX_BUFFER_READ
-        dprint(f"Max buffer size: 0x{max_length:X}")
-        max_length = min(max_length, 4096) if is_3dmemory else min(max_length, 8192)
-        self.INFO["dump_info"]["transfer_size"] = max_length
+        buffer, max_length = self._InitializeROMBackupBuffer(size, is_3dmemory=is_3dmemory)
         pos_total = 0
         # dprint("ROM banks:", rom_banks)
 
@@ -6959,18 +6963,14 @@ class LK_Device(ABC):
 
                 verified = False
                 if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
-                    if self.MODE == "AGB":
-                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
-                        buffer_pos = sector[0]
-                        start_address = buffer_pos
-                        end_address = sector[0] + sector[1]
-                        start_bank = math.floor(buffer_pos / rom_bank_size)
-                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
-                    elif self.MODE == "DMG":
+                    if self.MODE in ("AGB", "DMG"):
                         dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
                         buffer_pos = sector[0]
                         start_bank = math.floor(buffer_pos / rom_bank_size)
                         end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
+                        if self.MODE == "AGB":
+                            start_address = buffer_pos
+                            end_address = sector[0] + sector[1]
 
                     bank = start_bank
                     while bank < end_bank:
