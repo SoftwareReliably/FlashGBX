@@ -2050,3 +2050,63 @@ def test_probe_bung_16m_flash_cart_restores_write_pin(
         )
         set_write_pin.assert_called_once_with()
     assert writes.call_args_list == expected_writes
+
+
+@pytest.mark.parametrize(
+    ("supports_audio", "identifier", "expected_match"),
+    [
+        (True, bytearray([0x12, 0x34, 0x56, 0x78]), True),
+        (True, bytearray([0x56, 0x78, 0x9A, 0xBC]), False),
+        (False, bytearray([0x12, 0x34, 0x56, 0x78]), None),
+    ],
+)
+def test_probe_dmg_mbc5_flash_cart_preserves_probe_and_recovery_order(
+    monkeypatch: pytest.MonkeyPatch,
+    supports_audio: bool,
+    identifier: bytearray,
+    expected_match: bool | None,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    monkeypatch.setattr(device, "SupportsAudioAsWe", lambda: supports_audio)
+    reads = Mock(side_effect=[bytearray(b"\x00" * 8), identifier])
+    flash_writes = Mock()
+    set_audio_pin = Mock()
+    set_write_pin = Mock()
+    monkeypatch.setattr(device, "_cart_read", reads)
+    monkeypatch.setattr(device, "_cart_write_flash", flash_writes)
+    monkeypatch.setattr(device, "_set_we_pin_audio", set_audio_pin)
+    monkeypatch.setattr(device, "_set_we_pin_wr", set_write_pin)
+    cart_type = {
+        "command_set": "GENERIC",
+        "dmg-mbc5-32m-flash": True,
+        "flash_ids": [[0x12, 0x34]],
+        "commands": {
+            "unlock": [[0x5555, 0xAA]],
+            "reset": [[0, 0xF0]],
+            "read_identifier": [[0x5555, 0x90]],
+        },
+    }
+
+    assert device._ProbeSpecialFlashCart(cart_type) is expected_match
+
+    if expected_match is None:
+        reads.assert_not_called()
+        flash_writes.assert_not_called()
+        set_audio_pin.assert_not_called()
+        set_write_pin.assert_not_called()
+    else:
+        set_audio_pin.assert_called_once_with()
+        reads.assert_has_calls([call(0, 8), call(0, 8)])
+        expected_calls = [
+            call(cart_type["commands"]["unlock"], flashcart=False),
+            call(cart_type["commands"]["reset"]),
+            call(cart_type["commands"]["read_identifier"]),
+        ]
+        if expected_match:
+            expected_calls.append(call(cart_type["commands"]["reset"]))
+            set_write_pin.assert_not_called()
+        else:
+            expected_calls.extend([call([[0, 0xFF]], flashcart=True), call([[0, 0xF0]], flashcart=True)])
+            set_write_pin.assert_called_once_with()
+        assert flash_writes.call_args_list == expected_calls

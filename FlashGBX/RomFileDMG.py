@@ -49,6 +49,17 @@ SACHEN_OVERRIDES: dict[str, tuple[int, int, str, int, bool]] = {
 }
 
 
+def _update_unlicensed_mapper_title(data: dict[str, Any], title_bytes: bytearray, error_message: str) -> None:
+    try:
+        game_title: str = title_bytes.decode("ascii", "replace").replace("\xff", "")
+        game_title = re.sub(r"(\x00+)$", "", game_title)
+        game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
+        game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
+        data["game_title"] = game_title
+    except Exception:
+        logger.exception(error_message)
+
+
 class RomFileDMG:
     ROMFILE_PATH: Path | None = None
     ROMFILE = bytearray()
@@ -493,14 +504,7 @@ class RomFileDMG:
             data["ram_size_raw"] = 0x203
             data["mapper_raw"] = 0x203
             data["cgb"] = 0x80
-            try:
-                game_title: str = bytearray(buffer[0:0x10]).decode("ascii", "replace").replace("\xff", "")
-                game_title = re.sub(r"(\x00+)$", "", game_title)
-                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                data["game_title"] = game_title
-            except Exception:
-                logger.exception("Failed to parse the unlicensed mapper ROM title")
+            _update_unlicensed_mapper_title(data, buffer[0:0x10], "Failed to parse the unlicensed mapper ROM title")
             data["version"] = "{:d}.{:d}.{:d}:{:c} ({:02d}:{:02d} {:02d}-{:02d}-{:02d} / {:04X})".format(
                 buffer[0xD8],
                 buffer[0xD9],
@@ -543,14 +547,7 @@ class RomFileDMG:
             data["ram_size_raw"] = 0
             data["mapper_raw"] = 0x205
             data["cgb"] = 0x80
-            try:
-                game_title = bytearray(buffer[0x134:0x150]).decode("ascii", "replace").replace("\xff", "")
-                game_title = re.sub(r"(\x00+)$", "", game_title)
-                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                data["game_title"] = game_title
-            except Exception:
-                logger.exception("Failed to parse the Datel Orbit V2 ROM title")
+            _update_unlicensed_mapper_title(data, buffer[0x134:0x150], "Failed to parse the Datel Orbit V2 ROM title")
 
         # Unlicensed Datel Orbit V2 Mapper (older firmware)
         elif hashlib.sha1(buffer[0x101:0x140]).digest() == bytearray(
@@ -603,14 +600,9 @@ class RomFileDMG:
             data["rom_size_raw"] = 0x02
             data["ram_size_raw"] = 0
             data["mapper_raw"] = 0x205
-            try:
-                game_title = bytearray(buffer[0x134:0x140]).decode("ascii", "replace").replace("\xff", "")
-                game_title = re.sub(r"(\x00+)$", "", game_title)
-                game_title = re.sub(r"((_)_+|(\x00)\x00+|(\s)\s+)", "\\2\\3\\4", game_title).replace("\x00", "")
-                game_title = "".join(filter(lambda x: x in set(string.printable), game_title))
-                data["game_title"] = game_title
-            except Exception:
-                logger.exception("Failed to parse the legacy Datel Orbit V2 ROM title")
+            _update_unlicensed_mapper_title(
+                data, buffer[0x134:0x140], "Failed to parse the legacy Datel Orbit V2 ROM title"
+            )
 
         # Unlicensed Sachen MMC1/MMC2
         elif len(buffer) >= 0x280:

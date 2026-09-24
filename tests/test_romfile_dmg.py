@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import struct
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -178,6 +179,81 @@ def test_special_mapper_metadata_is_normalized(
     data = parse_without_databases(monkeypatch, header)
 
     assert data.items() >= expected.items()
+
+
+@pytest.mark.parametrize(
+    ("signature_size", "digest", "title_range", "title", "expected_mapper"),
+    [
+        (
+            0x4C,
+            "06ACDCB6D19BD9E395A238B800970D783FC6B7BD",
+            (0, 0x10),
+            b"XPLODER TEST",
+            0x203,
+        ),
+        (
+            0x33,
+            "FA685A3785EF65232D6F23AC020515208BDEC523",
+            (0x134, 0x150),
+            b"ORBIT V2 TEST",
+            0x205,
+        ),
+        (
+            0x3F,
+            "C1F4154AEFCC5BE7EC83A8BB7BC0958335EC9AF2",
+            (0x134, 0x140),
+            b"DATEL LEGACY",
+            0x205,
+        ),
+    ],
+)
+def test_special_mapper_titles_use_each_original_header_slice(
+    monkeypatch: pytest.MonkeyPatch,
+    signature_size: int,
+    digest: str,
+    title_range: tuple[int, int],
+    title: bytes,
+    expected_mapper: int,
+) -> None:
+    matching_digest = bytearray.fromhex(digest)
+
+    class FakeHash:
+        def __init__(self, value: bytearray) -> None:
+            self.value = value
+
+        def digest(self) -> bytearray:
+            return self.value
+
+    def signature_sha1(payload: bytes | bytearray) -> FakeHash:
+        result = matching_digest if len(payload) == signature_size else bytearray(20)
+        return FakeHash(result)
+
+    monkeypatch.setattr(dmg_module.hashlib, "sha1", signature_sha1)
+    buffer = bytearray(0x280)
+    start, end = title_range
+    buffer[start:end] = title.ljust(end - start, b"\x00")
+    data: dict[str, object] = {
+        "mapper_raw": 0,
+        "game_title": "REGULAR TEST",
+        "header_checksum": 0,
+        "version": 0,
+    }
+
+    RomFileDMG(buffer)._ApplySpecialMapperOverrides(data, buffer)
+
+    assert data["mapper_raw"] == expected_mapper
+    assert data["game_title"] == title.decode("ascii")
+
+
+def test_unlicensed_mapper_title_decode_failure_keeps_original_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dmg_module.re, "sub", Mock(side_effect=ValueError("malformed title")))
+    data: dict[str, object] = {"mapper_raw": 0x203}
+
+    dmg_module._update_unlicensed_mapper_title(data, bytearray(b"XPL"), "title parse failed")
+
+    assert data == {"mapper_raw": 0x203}
 
 
 def test_database_lookup_handles_match_corruption_and_missing_file(

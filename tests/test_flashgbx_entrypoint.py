@@ -128,6 +128,7 @@ def test_load_config_extracts_and_validates_profiles_and_archive_paths(
     assert test_profile["command"] == 0x10
     assert test_profile["names"] == ["Test Cart"]
     assert alias_profile["names"] == ["Alias"]
+    assert test_profile["flash_ids"] is not alias_profile["flash_ids"]
     assert not (tmp_path / "escape.txt").exists()
     assert any("unsafe path" in str(message[1]) for message in result["config_ret"])
     assert any("could not be parsed" in str(message[1]) for message in result["config_ret"])

@@ -13,6 +13,7 @@ from unittest.mock import Mock, call
 import pytest
 
 import FlashGBX.hw_GBxCartRW as gbxcartrw
+import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.hw_GBxCartRW import (
     MAX_V13_FIRMWARE_SIZE,
     FirmwareInfo,
@@ -739,6 +740,61 @@ def test_read_header_ignores_uninitialized_camera_calibration(
 
     assert "gbcamera_calibration1" not in header
     assert "gbcamera_calibration2" not in header
+
+
+@pytest.mark.parametrize(
+    ("is_ereader", "valid_signature", "calibration_key_present"),
+    [(True, True, True), (True, False, False), (False, True, True)],
+)
+def test_read_header_routes_ereader_calibration_through_real_header_path(
+    monkeypatch: pytest.MonkeyPatch,
+    is_ereader: bool,
+    valid_signature: bool,
+    calibration_key_present: bool,
+) -> None:
+    calibration = bytearray(b"Card-E Reader 2001\0\0" + bytes(0x2000 - 20))
+    returned_data: dict[str, object] = {
+        "logo_correct": True,
+        "vast_fame": False,
+        "ereader": is_ereader,
+        "ereader_calibration": "stale",
+    }
+    monkeypatch.setattr(lk_device_module.RomFileAGB, "GetHeader", lambda _self: dict(returned_data))
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = modern_firmware()
+    device.INFO = {"action": None, "last_action": None, "dump_info": {}}
+    monkeypatch.setattr(device, "IsConnected", lambda: True)
+    monkeypatch.setattr(device, "CanPowerCycleCart", lambda: True)
+    monkeypatch.setattr(device, "_PrepareHeaderRead", lambda: bytearray(0x180))
+    monkeypatch.setattr(device, "_GetAgbRomSize", lambda _header, _data: 0x200000)
+    monkeypatch.setattr(device, "_CheckAgbFlashDacs", lambda _data: None)
+    monkeypatch.setattr(device, "_ReadAgbRtc", lambda _data, _header, _check: None)
+    monkeypatch.setattr(device, "_StoreHeaderData", lambda _data, _header: None)
+    read_ram = Mock(return_value=calibration if valid_signature else bytearray(0x2000))
+    flash_writes = Mock()
+    monkeypatch.setattr(device, "ReadRAM", read_ram)
+    monkeypatch.setattr(device, "_cart_write_flash", flash_writes)
+
+    result = device.ReadHeader()
+
+    assert ("ereader_calibration" in result) is calibration_key_present
+    if is_ereader and valid_signature:
+        assert result["ereader_calibration"] == calibration
+    elif not is_ereader:
+        assert result["ereader_calibration"] == "stale"
+    if is_ereader:
+        read_ram.assert_called_once_with(
+            address=0xD000,
+            length=0x2000,
+            command=device.DEVICE_CMD["AGB_CART_READ_SRAM"],
+        )
+        flash_writes.assert_called_once_with(
+            [[0x5555, 0xAA], [0x2AAA, 0x55], [0x5555, 0xB0], [0, 0]],
+        )
+    else:
+        read_ram.assert_not_called()
+        flash_writes.assert_not_called()
 
 
 def test_connection_guards_and_typed_read_helpers_reject_missing_data() -> None:

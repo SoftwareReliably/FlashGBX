@@ -2363,6 +2363,8 @@ def test_read_cartridge_handles_empty_and_serial_failures(
         {"action": "UNLOCK", "pos": 1, "size": 10, "abortable": True},
         {"action": "UPDATE_RTC", "pos": 1, "size": 10},
         {"action": "CALC_CHECKSUMS", "pos": 1, "size": 10, "type": "SHA-1"},
+        {"action": "CALC_CHECKSUMS", "pos": 1, "size": 10},
+        {"action": "CALC_CHECKSUMS", "pos": 1, "size": 10, "type": ""},
         {"action": "SECTOR_ERASE", "pos": 1, "size": 10, "time_elapsed": 2, "sector_pos": 0x1000, "abortable": True},
         {"action": "ABORTING", "pos": 1, "size": 10, "abortable": False},
         {"action": "ERROR", "pos": 1, "size": 10, "text": "failed", "abortable": False},
@@ -2391,7 +2393,10 @@ def test_update_progress_handles_transfer_actions(
         "PROGRESS": "Time left:",
     }
     action = str(payload["action"])
-    assert gui.lblStatus4a.text() == expected_labels[action]
+    expected_label = expected_labels[action]
+    if action == "CALC_CHECKSUMS" and not payload.get("type"):
+        expected_label = "Calculating checksums..."
+    assert gui.lblStatus4a.text() == expected_label
     assert gui.btnCancel.isEnabled() is bool(payload.get("abortable", action == "PROGRESS"))
     assert gui.prgStatus.value() == payload["pos"]
 
@@ -2562,6 +2567,24 @@ def test_finish_detect_cartridge_handles_success_and_failure(
     gui.LimitBaudRateGBxCartRW = lambda: None
     gui.FinishDetectCartridge(False)
     assert disconnected == [True]
+
+
+def test_detection_firmware_footer_adds_clipboard_action_only_for_specific_profiles(
+    gui_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    gui.CONN = FakeDevice()
+    dialog = FakeChoiceMessageBox()
+
+    footer, button = gui._DetectionFirmwareFooter(dialog, False)
+    generic_footer, generic_button = gui._DetectionFirmwareFooter(dialog, True)
+
+    assert "Mock Reader" in footer
+    assert button is dialog.buttons[0]
+    assert button.text() == "&Copy to Clipboard"
+    assert (generic_footer, generic_button) == ("", None)
+    assert len(dialog.buttons) == 1
 
 
 def test_detect_cartridge_and_baud_fallback_are_mocked(
@@ -3105,6 +3128,29 @@ def test_confirm_flash_boot_logo_missing_file_can_continue_without_repair(
     assert gui._ConfirmFlashBootLogo("AGB", {"logo_correct": False}, 0) == (True, False)
 
 
+def test_confirm_flash_header_repairs_stops_when_checksum_choice_is_canceled(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module)
+    header = {
+        "header_checksum_correct": False,
+        "header_checksum_calc": 0x12,
+        "header_checksum": 0x34,
+    }
+    monkeypatch.setattr(gui, "_ConfirmFlashMapper", lambda *_args: (True, 0, header))
+    monkeypatch.setattr(gui, "_ConfirmFlashBootLogo", lambda *_args: (True, False))
+    dialog = FakeChoiceMessageBox(2)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: dialog)
+
+    assert gui._ConfirmFlashHeaderRepairs("AGB", bytearray(0x1000), 0, {}) is None
+    assert [button.text() for button in dialog.buttons] == [
+        "&Fix and Continue",
+        "Continue &without fixing",
+        "&Cancel",
+    ]
+
+
 def test_flash_rom_declined_mapper_choice_never_transfers(
     gui_module: ModuleType,
     tmp_path: Path,
@@ -3168,6 +3214,29 @@ def test_prepare_flash_cart_selection_uses_selected_profile(
     assert carts is device.INFO[f"{mode.lower()}_carts"][1]
     assert index == 1
     assert profile is carts[1]
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+@pytest.mark.parametrize("mode", ["DMG", "AGB"])
+def test_prepare_flash_cart_selection_resumes_detected_profile(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
+    combo = gui.cmbDMGCartridgeTypeResult if mode == "DMG" else gui.cmbAGBCartridgeTypeResult
+    combo.setCurrentIndex(0)
+    gui.STATUS["detected_cart_type"] = 1
+
+    selection = gui._PrepareFlashCartSelection("")
+
+    assert selection is not None
+    assert selection[0] == mode
+    assert selection[5] == 1
+    assert selection[6] is device.INFO[f"{mode.lower()}_carts"][1][1]
+    assert combo.currentIndex() == 1
+    assert "detected_cart_type" not in gui.STATUS
     assert not any(name == "flash" for name, _args in device.calls)
 
 

@@ -206,6 +206,46 @@ def _backup_deprecated_config_files(config_path: Path) -> None:
             deprecated_path.rename(_backup_path(deprecated_path))
 
 
+def _load_flashcart_profiles(
+    fc_files: list[Path],
+    flashcarts: FlashcartMap,
+    messages: list[ConfigMessage],
+) -> None:
+    """Read and validate configured flashcart profiles."""
+    for file in fc_files:
+        file_path = Path(file)
+        if file_path.exists():
+            try:
+                data = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                messages.append([2, f"The flashchip type file “{file_path.name}” could not be read.\n\nError: {exc}"])
+                continue
+            else:
+                specs_int = re.sub(
+                    r"(0x[0-9A-Fa-f]+)",
+                    lambda m: str(int(m.group(1), 16)),
+                    data,
+                )  # hex numbers to int numbers, otherwise not valid json
+                try:
+                    raw_specs: object = json.loads(specs_int)
+                except (json.JSONDecodeError, ValueError) as exc:
+                    messages.append(
+                        [
+                            2,
+                            f"The flashchip type file “{file_path.name:s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {exc}",
+                        ],
+                    )
+                    continue
+                profile_data = _flashcart_profile(raw_specs)
+                if profile_data is None:
+                    continue
+                cart_type, names, specs = profile_data
+                for name in names:
+                    temp = copy.deepcopy(specs)
+                    temp["names"] = [name]
+                    flashcarts[cart_type][name] = temp
+
+
 def LoadConfig(args: BaseArgs) -> ConfigLoadResult:
     app_path = Path(args["app_path"])
     config_path = Path(args["config_path"])
@@ -261,40 +301,7 @@ def LoadConfig(args: BaseArgs) -> ConfigLoadResult:
                 ),
             )
 
-    # Read flash cart types
-    for file in fc_files:
-        file_path = Path(file)
-        if file_path.exists():
-            try:
-                data = file_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                ret.append([2, f"The flashchip type file “{file_path.name}” could not be read.\n\nError: {exc}"])
-                continue
-            else:
-                specs_int = re.sub(
-                    r"(0x[0-9A-Fa-f]+)",
-                    lambda m: str(int(m.group(1), 16)),
-                    data,
-                )  # hex numbers to int numbers, otherwise not valid json
-                try:
-                    raw_specs: object = json.loads(specs_int)
-                except (json.JSONDecodeError, ValueError) as exc:
-                    ret.append(
-                        [
-                            2,
-                            f"The flashchip type file “{file_path.name:s}” could not be parsed and needs to be fixed before it can be used.\n\nError: {exc}",
-                        ],
-                    )
-                    continue
-                profile_data = _flashcart_profile(raw_specs)
-                if profile_data is None:
-                    continue
-                cart_type, names, specs = profile_data
-                for name in names:
-                    temp = copy.deepcopy(specs)
-                    temp["names"] = [name]
-                    flashcarts[cart_type][name] = temp
-
+    _load_flashcart_profiles(fc_files, flashcarts, ret)
     return {"flashcarts": flashcarts, "config_ret": ret}
 
 

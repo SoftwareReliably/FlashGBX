@@ -3246,8 +3246,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.DetectCartridge(checkSaveType=False)
                 return None
             cart_type = self.STATUS["detected_cart_type"]
-            if "detected_cart_type" in self.STATUS:
-                del self.STATUS["detected_cart_type"]
+            self.STATUS.pop("detected_cart_type", None)
 
             if cart_type is False:  # clicked Cancel button
                 return None
@@ -3265,8 +3264,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             else:
                 self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
 
-        if "detected_cart_type" in self.STATUS:
-            del self.STATUS["detected_cart_type"]
+        self.STATUS.pop("detected_cart_type", None)
 
         cart_profile = carts[cart_type]
         if not isinstance(cart_profile, dict):
@@ -3536,6 +3534,26 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False
         return False
 
+    def _ConfirmFlashHeaderRepairs(
+        self,
+        mode: PlatformMode,
+        buffer: bytearray,
+        mbc: int,
+        cart_profile: dict[str, Any],
+    ) -> tuple[int, bool | bytearray, bool] | None:
+        continue_write, mbc, header = self._ConfirmFlashMapper(mode, buffer, mbc, cart_profile)
+        if not continue_write:
+            return None
+
+        continue_write, fix_bootlogo = self._ConfirmFlashBootLogo(mode, header, mbc)
+        if not continue_write:
+            return None
+
+        fix_header = self._ConfirmFlashHeaderChecksum(mode, header, mbc)
+        if fix_header is None:
+            return None
+        return mbc, fix_bootlogo, fix_header
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3603,18 +3621,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         fix_bootlogo: bool | bytearray = False
         fix_header = False
         if not just_erase and len(buffer) >= 0x1000:
-            continue_write, mbc, hdr = self._ConfirmFlashMapper(mode, buffer, mbc, cart_profile)
-            if not continue_write:
+            header_repairs = self._ConfirmFlashHeaderRepairs(mode, buffer, mbc, cart_profile)
+            if header_repairs is None:
                 return
-
-            continue_write, fix_bootlogo = self._ConfirmFlashBootLogo(mode, hdr, mbc)
-            if not continue_write:
-                return
-
-            checksum_fix = self._ConfirmFlashHeaderChecksum(mode, hdr, mbc)
-            if checksum_fix is None:
-                return
-            fix_header = checksum_fix
+            mbc, fix_bootlogo, fix_header = header_repairs
 
         flash_offset = 0
         force_wr_pullup = str(self.SETTINGS.value("ForceWrPullup", default="disabled")).lower() == "enabled"
@@ -6593,6 +6603,20 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False, True
         return msgbox.clickedButton() == button_details, False
 
+    def _DetectionFirmwareFooter(
+        self,
+        msgbox: QtWidgets.QMessageBox,
+        is_generic: bool,
+    ) -> tuple[str, QtWidgets.QAbstractButton | None]:
+        if not is_generic:
+            footer = f'<br><span style="font-size: 8pt;"><i>{AppInfo.NAME:s} {AppInfo.VERSION:s} | {self._device.GetFullNameExtended():s}</i></span><br>'
+            button = msgbox.addButton(
+                c__("Button (& = Keyboard Shortcut)", "&Copy to Clipboard"),
+                QtWidgets.QMessageBox.ButtonRole.ActionRole,
+            )
+            return footer, button
+        return "", None
+
     def FinishDetectCartridge(self, ret: object) -> None:
         self._ResetDetectionLabels()
 
@@ -6702,15 +6726,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 msgbox.setEscapeButton(button_ok)
                 button_try = self._AddGenericProfileButton(msgbox, try_this)
 
-                if not is_generic:
-                    msg_fw = f'<br><span style="font-size: 8pt;"><i>{AppInfo.NAME:s} {AppInfo.VERSION:s} | {self._device.GetFullNameExtended():s}</i></span><br>'
-                    button_clipboard = msgbox.addButton(
-                        c__("Button (& = Keyboard Shortcut)", "&Copy to Clipboard"),
-                        QtWidgets.QMessageBox.ButtonRole.ActionRole,
-                    )
-                else:
-                    msg_fw = ""
-                    button_clipboard = None
+                msg_fw, button_clipboard = self._DetectionFirmwareFooter(msgbox, is_generic)
 
                 if self._RetryDetectionWithoutVoltageLimit(
                     limit_voltage=limitVoltage,
@@ -6974,14 +6990,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.lblStatus4a.setText(__("Updating Real Time Clock..."))
                 self._SetProgressActionControls(abortable=False, size=size, pos=pos)
             elif args["action"] == "CALC_CHECKSUMS":
-                self.lblStatus1aResult.setText(__("Pending..."))
-                self.lblStatus2aResult.setText(__("Pending..."))
-                self.lblStatus3aResult.setText(__("Pending..."))
-                if "type" in args and len(str(args["type"])) > 0:
-                    self.lblStatus4a.setText(__("Calculating {checksum_type}...", checksum_type=args["type"]))
-                else:
-                    self.lblStatus4a.setText(__("Calculating checksums..."))
-                self._SetProgressActionControls(abortable=False, size=size, pos=pos)
+                self._ShowChecksumProgress(args, pos, size)
             elif args["action"] == "SECTOR_ERASE":
                 if elapsed >= 1:
                     self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
@@ -7013,6 +7022,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
+
+    def _ShowChecksumProgress(self, args: Mapping[str, Any], pos: int, size: int) -> None:
+        self.lblStatus1aResult.setText(__("Pending..."))
+        self.lblStatus2aResult.setText(__("Pending..."))
+        self.lblStatus3aResult.setText(__("Pending..."))
+        if "type" in args and len(str(args["type"])) > 0:
+            self.lblStatus4a.setText(__("Calculating {checksum_type}...", checksum_type=args["type"]))
+        else:
+            self.lblStatus4a.setText(__("Calculating checksums..."))
+        self._SetProgressActionControls(abortable=False, size=size, pos=pos)
 
     def _SetProgressActionControls(self, *, abortable: bool, size: int, pos: int) -> None:
         self.SetStatus4aResult("")

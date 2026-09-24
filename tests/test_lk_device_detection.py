@@ -36,6 +36,50 @@ def make_identifier_profile(
     )
 
 
+def test_collect_flash_detection_commands_keeps_order_filters_and_identifier_deduplication() -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    read_identifier = [[0x5555, 0xAA]]
+    first_reset = [[0, 0xF0]]
+    second_reset = [[0, 0xFF]]
+    third_reset = [[0, 0xF1]]
+    unlock = [[0x5555, 0xAA]]
+    profiles = [
+        {
+            "command_set": "GENERIC",
+            "commands": {"reset": first_reset, "read_identifier": read_identifier, "read_cfi": [[0, 0x98]]},
+        },
+        {
+            "command_set": "GENERIC",
+            "commands": {
+                "reset": first_reset,
+                "unlock": unlock,
+                "read_identifier": read_identifier,
+                "read_cfi": [[0, 0x90]],
+            },
+        },
+        {
+            "command_set": "GENERIC",
+            "commands": {"reset": second_reset, "read_identifier": [[0x8000, 0x90]]},
+        },
+        {"command_set": "GENERIC", "commands": {"reset": third_reset, "read_cfi": [[0, 0x98]]}},
+        {
+            "command_set": "GENERIC",
+            "manual_select": True,
+            "commands": {"reset": [[[0, 0xAA]]], "read_identifier": [[0x5555, 0xAA]]},
+        },
+    ]
+    flash_types: list[int] = []
+
+    commands, reset_commands = device._CollectFlashDetectionCommands(profiles, flash_types)
+
+    assert commands == [
+        {"reset": first_reset, "read_identifier": read_identifier, "read_cfi": [[0, 0x98]]},
+    ]
+    assert reset_commands == [first_reset, unlock, second_reset, third_reset]
+    assert flash_types == []
+
+
 @pytest.mark.parametrize(
     ("save_size", "mbc", "expected"),
     [
