@@ -1901,6 +1901,73 @@ def test_device_settings_and_platform_firmware_switch(
     assert mode_calls == ["set"]
 
 
+def test_unsupported_required_firmware_disconnects_and_shows_warning(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module)
+    device = FakeDevice()
+    device.FW_UPDATE_REQ = True
+    disconnect = Mock()
+    warning = Mock()
+    gui.DisconnectDevice = disconnect
+    monkeypatch.setattr(gui_module.AppContext, "DEBUG", False)
+    monkeypatch.setattr(gui_module.QtWidgets.QMessageBox, "warning", warning)
+
+    gui._HandleFirmwareUpdate(device, supported=False)
+
+    disconnect.assert_called_once_with()
+    warning.assert_called_once()
+    assert "required to use this software" in warning.call_args.args[2]
+
+
+def test_supported_required_firmware_update_runs_updater_and_disconnects(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui = make_gui(gui_module, SETTINGS=FakeSettings())
+    device = FakeDevice()
+    device.INFO["update_available"] = True
+    device.FW_UPDATE_REQ = True
+    box = FakeMessageBox()
+    box.setResult(gui_module.QtWidgets.QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: box)
+    disconnect = Mock()
+    show_updater = Mock()
+    gui.DisconnectDevice = disconnect
+    gui.ShowFirmwareUpdateWindow = show_updater
+    monkeypatch.setattr(gui_module.AppContext, "DEBUG", False)
+
+    gui._HandleFirmwareUpdate(device, supported=True)
+
+    show_updater.assert_called_once_with()
+    disconnect.assert_called_once_with()
+
+
+def test_supported_optional_firmware_update_persists_ignore_choice(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = FakeSettings()
+    gui = make_gui(gui_module, SETTINGS=settings)
+    device = FakeDevice()
+    device.INFO["update_available"] = True
+    box = FakeMessageBox()
+    box.setResult(gui_module.QtWidgets.QMessageBox.StandardButton.Yes)
+    check_box = FakeQtObject()
+    check_box.setChecked(True)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: box)
+    monkeypatch.setattr(gui_module, "_create_check_box", lambda *_args, **_kwargs: check_box)
+    show_updater = Mock()
+    gui.ShowFirmwareUpdateWindow = show_updater
+
+    gui._HandleFirmwareUpdate(device, supported=True)
+
+    assert settings.values["SkipFirmwareUpdate"] == "enabled"
+    assert settings.writes == [("SkipFirmwareUpdate", "enabled")]
+    show_updater.assert_called_once_with()
+
+
 def test_gbxcartrw_baudrate_update_preferences_and_language(
     gui_module: ModuleType,
     tmp_path: Path,

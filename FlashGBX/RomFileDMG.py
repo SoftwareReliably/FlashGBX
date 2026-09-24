@@ -682,12 +682,7 @@ class RomFileDMG:
         return db_entry
 
     @classmethod
-    def GetBatterylessSramConfig(cls, header: dict[str, Any]) -> dict[str, Any] | None:
-        if not isinstance(header, dict):
-            return None
-        if "game_title_raw" not in header:
-            return None
-
+    def _load_batteryless_sram_database(cls) -> None:
         if cls.BATTERYLESS_SRAM_DB is None:
             config_paths: list[Path] = [Path(__file__).resolve().parent / "config"]
             if AppContext.CONFIG_PATH:
@@ -709,6 +704,14 @@ class RomFileDMG:
             if cls.BATTERYLESS_SRAM_DB is None:
                 cls.BATTERYLESS_SRAM_DB = False
 
+    @classmethod
+    def GetBatterylessSramConfig(cls, header: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(header, dict):
+            return None
+        if "game_title_raw" not in header:
+            return None
+
+        cls._load_batteryless_sram_database()
         db = cls.BATTERYLESS_SRAM_DB
         if not db:
             return None

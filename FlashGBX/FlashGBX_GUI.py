@@ -2096,84 +2096,88 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         return True, displayed_text
 
     def _HandleFirmwareUpdate(self, dev: LK_Device, *, supported: bool) -> None:
-        if supported:
-            if not dev.FirmwareUpdateAvailable():
-                return
-            dontShowAgain = str(self.SETTINGS.value("SkipFirmwareUpdate", default="disabled")).lower() == "enabled"
-            if dontShowAgain and not dev.FW_UPDATE_REQ:
-                return
-
-            cb = None
-            if dev.FW_UPDATE_REQ is True:
-                text = __(
-                    "A firmware update for your {device_name} is required to use this software. Do you want to update now?",
-                    device_name=dev.GetFullName(),
-                )
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Warning,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=text,
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                    defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                )
-            elif dev.FW_UPDATE_REQ == 2:
-                text = (
-                    __(
-                        "Your {device_name} is no longer supported in this version of FlashGBX due to technical limitations. The last supported version is {url}.",
-                        device_name=dev.GetFullName(),
-                        url='<a href="https://github.com/Lesserkuma/FlashGBX/releases/tag/3.37">FlashGBX v3.37</a>',
-                    )
-                    + "<br><br>"
-                    + __(
-                        "The Firmware Updater can still be used, however any other functions are no longer available.",
-                    )
-                    + "<br><br>"
-                    + __("Do you want to run the Firmware Updater now?")
-                )
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Warning,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=text,
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                    defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                )
-            else:
-                text = __(
-                    "A firmware update for your {device_name} is available. Do you want to update now?",
-                    device_name=dev.GetFullName(),
-                )
-                msgbox = _create_message_box(
-                    parent=self,
-                    icon=QtWidgets.QMessageBox.Icon.Information,
-                    windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    text=text,
-                    standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                    defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                )
-                cb = _create_check_box(
-                    c__(
-                        "Check Box (& = Keyboard Shortcut)",
-                        "&Ignore firmware updates",
-                    ),
-                    checked=dontShowAgain,
-                )
-            answer = msgbox.exec()
-            if dev.FW_UPDATE_REQ:
-                if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                    self.ShowFirmwareUpdateWindow()
-                if not AppContext.DEBUG:
-                    self.DisconnectDevice()
-                return
-            if cb is not None:
-                dontShowAgain = cb.isChecked()
-                if dontShowAgain:
-                    self.SETTINGS.setValue("SkipFirmwareUpdate", "enabled")
-            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                self.ShowFirmwareUpdateWindow()
+        if not supported:
+            self._HandleUnsupportedFirmwareUpdate(dev)
             return
 
+        if not dev.FirmwareUpdateAvailable():
+            return
+        dontShowAgain = str(self.SETTINGS.value("SkipFirmwareUpdate", default="disabled")).lower() == "enabled"
+        if dontShowAgain and not dev.FW_UPDATE_REQ:
+            return
+
+        cb = None
+        if dev.FW_UPDATE_REQ is True:
+            text = __(
+                "A firmware update for your {device_name} is required to use this software. Do you want to update now?",
+                device_name=dev.GetFullName(),
+            )
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Warning,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=text,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+        elif dev.FW_UPDATE_REQ == 2:
+            text = (
+                __(
+                    "Your {device_name} is no longer supported in this version of FlashGBX due to technical limitations. The last supported version is {url}.",
+                    device_name=dev.GetFullName(),
+                    url='<a href="https://github.com/Lesserkuma/FlashGBX/releases/tag/3.37">FlashGBX v3.37</a>',
+                )
+                + "<br><br>"
+                + __(
+                    "The Firmware Updater can still be used, however any other functions are no longer available.",
+                )
+                + "<br><br>"
+                + __("Do you want to run the Firmware Updater now?")
+            )
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Warning,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=text,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+        else:
+            text = __(
+                "A firmware update for your {device_name} is available. Do you want to update now?",
+                device_name=dev.GetFullName(),
+            )
+            msgbox = _create_message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Information,
+                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                text=text,
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+            cb = _create_check_box(
+                c__(
+                    "Check Box (& = Keyboard Shortcut)",
+                    "&Ignore firmware updates",
+                ),
+                checked=dontShowAgain,
+            )
+        answer = msgbox.exec()
+        if dev.FW_UPDATE_REQ:
+            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.ShowFirmwareUpdateWindow()
+            if not AppContext.DEBUG:
+                self.DisconnectDevice()
+            return
+        if cb is not None:
+            dontShowAgain = cb.isChecked()
+            if dontShowAgain:
+                self.SETTINGS.setValue("SkipFirmwareUpdate", "enabled")
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.ShowFirmwareUpdateWindow()
+        return
+
+    def _HandleUnsupportedFirmwareUpdate(self, dev: LK_Device) -> None:
         if dev.FW_UPDATE_REQ:
             text = (
                 __(
@@ -4309,6 +4313,30 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         setting_name: str,
         last_dir: str,
     ) -> tuple[str, int] | None:
+        erase = options.erase
+        test = options.test
+        path = self._select_save_write_path(options, setting_name, last_dir)
+        if not isinstance(path, str):
+            return None
+        filesize = 0
+        if not erase and not test and len(path) > 0:
+            filesize = Path(path).stat().st_size
+            if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("The size of this file is not supported."),
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
+                return None
+        return path, filesize
+
+    def _select_save_write_path(
+        self,
+        options: _SaveWritePathOptions,
+        setting_name: str,
+        last_dir: str,
+    ) -> str | None:
         mode, dpath, erase, test, skip_warning = options
         path: str | None = ""
         if dpath != "":
@@ -4355,20 +4383,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if path == "":
                 return None
 
-        if not isinstance(path, str):
-            return None
-        filesize = 0
-        if not erase and not test and len(path) > 0:
-            filesize = Path(path).stat().st_size
-            if filesize == 0 or filesize > 0x200000:  # reject too large files to avoid exploding RAM
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("The size of this file is not supported."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
-        return path, filesize
+        return path
 
     def _confirm_save_write_test(self, mode: PlatformMode) -> bool:
         if self._device.GetFWBuildDate() == "":  # Legacy Mode
@@ -7034,15 +7049,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "CALC_CHECKSUMS":
                 self._ShowChecksumProgress(args, pos, size)
             elif args["action"] == "SECTOR_ERASE":
-                if elapsed >= 1:
-                    self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
-                self.lblStatus4a.setText(
-                    __(
-                        "Erasing sector at address {address}...",
-                        address="0x{:X}".format(args["sector_pos"]),
-                    ),
-                )
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+                self._UpdateSectorEraseProgressAction(args, pos, size, elapsed)
             elif args["action"] == "ABORTING":
                 self.lblStatus1aResult.setText("-")
                 self.lblStatus2aResult.setText("-")
@@ -7064,6 +7071,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
+
+    def _UpdateSectorEraseProgressAction(
+        self,
+        args: Mapping[str, Any],
+        pos: int,
+        size: int,
+        elapsed: float,
+    ) -> None:
+        if elapsed >= 1:
+            self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
+        self.lblStatus4a.setText(
+            __(
+                "Erasing sector at address {address}...",
+                address="0x{:X}".format(args["sector_pos"]),
+            ),
+        )
+        self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
 
     def _UpdateEraseProgressAction(
         self,

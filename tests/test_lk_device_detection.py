@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import struct
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 
 from FlashGBX.CartridgeTypes import AgbSaveTypes, DmgSaveTypes
+from FlashGBX.Flashcart import CFI
 from FlashGBX.hw_GBxCartRW import GbxDevice
 
 if TYPE_CHECKING:
@@ -17,6 +19,64 @@ from tests.fakes import flashcart_profile
 
 STATE_OFFSETS = (0x400000 - 0x40000, 0x800000 - 0x40000, 0x1000000 - 0x40000, 0x2000000 - 0x40000)
 STATE_IDS = (0x57A731D7, 0x57A731D8, 0x57A731D9)
+
+
+@pytest.mark.parametrize(("magic", "offset", "stride"), [(b"QRY", 0x20, 2), (b"RQZ", 0x10, 1)])
+def test_recognize_cfi_buffer_handles_interleaved_and_swapped_signatures(
+    magic: bytes,
+    offset: int,
+    stride: int,
+) -> None:
+    buffer = bytearray(0x400)
+    for index, value in enumerate(magic):
+        buffer[offset + index * stride] = value
+
+    normalized = GbxDevice._recognize_cfi_buffer(buffer)
+
+    assert normalized is buffer
+    assert bytes(normalized[0x20:0x25:2]) == b"QRY" if offset == 0x20 else bytes(normalized[0x10:0x13]) == b"QRY"
+
+
+def test_read_flash_cfi_uses_ordered_commands_and_parses_original_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    buffer = bytearray(0x400)
+    buffer[0x20:0x25:2] = b"QRY"
+    commands: list[tuple[list[list[int]], bool]] = []
+    monkeypatch.setattr(
+        device,
+        "_cart_write_flash",
+        lambda command, flashcart=False: commands.append((command, flashcart)),
+    )
+    monkeypatch.setattr(device, "_cart_read", lambda _address, _length: buffer)
+    parse = Mock(return_value={"info": "parsed"})
+    monkeypatch.setattr(CFI, "Parse", parse)
+    profiles = [{"commands": {"read_cfi": [[0, 0x98]], "reset": [[0, 0xF0]]}}]
+
+    assert device._ReadFlashCFI(profiles, [0], [], []) == ({"info": "parsed"}, "parsed")
+
+    assert commands == [([[0, 0x98]], False), ([[0, 0xF0]], False)]
+    assert parse.call_args.args[0] == buffer
+
+
+@pytest.mark.parametrize("data", [False, bytearray(0x3FF), bytearray(0x400)])
+def test_read_flash_cfi_rejects_failed_short_and_unrecognized_data(
+    monkeypatch: pytest.MonkeyPatch,
+    data: bytearray | bool,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    writes: list[list[list[int]]] = []
+    monkeypatch.setattr(device, "_cart_write_flash", lambda command, **_kwargs: writes.append(command))
+    monkeypatch.setattr(device, "_cart_read", lambda _address, _length: data)
+    parse = Mock()
+    monkeypatch.setattr(CFI, "Parse", parse)
+    profiles = [{"commands": {"read_cfi": [[0, 0x98]], "reset": [[0, 0xF0]]}}]
+
+    assert device._ReadFlashCFI(profiles, [0], [], []) == (False, "")
+
+    assert writes == [[[0, 0x98]], [[0, 0xF0]]]
+    parse.assert_not_called()
 
 
 @pytest.mark.parametrize("game_code", ["GMBC", "PNES"])

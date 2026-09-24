@@ -98,6 +98,16 @@ def _decode_intel_hex_record(line: str, line_number: int) -> bytes:
     return record
 
 
+def _place_intel_hex_data(image: bytearray, address: int, data: bytes) -> None:
+    end_address = address + len(data)
+    if end_address >= MAX_V13_FIRMWARE_SIZE:
+        msg = "The firmware image is too large"
+        raise ValueError(msg)
+    if len(image) < end_address:
+        image.extend(b"\xff" * (end_address - len(image)))
+    image[address:end_address] = data
+
+
 def _parse_intel_hex(contents: str) -> bytearray:
     """Parse and validate an Intel HEX image for the legacy AVR updater."""
     image = bytearray()
@@ -118,13 +128,7 @@ def _parse_intel_hex(contents: str) -> bytearray:
 
         if record_type == 0x00:
             absolute_address = address_base + address
-            end_address = absolute_address + byte_count
-            if end_address >= MAX_V13_FIRMWARE_SIZE:
-                msg = "The firmware image is too large"
-                raise ValueError(msg)
-            if len(image) < end_address:
-                image.extend(b"\xff" * (end_address - len(image)))
-            image[absolute_address:end_address] = data
+            _place_intel_hex_data(image, absolute_address, data)
             found_data = True
         elif record_type == 0x01:
             if byte_count != 0:
@@ -311,15 +315,7 @@ class GbxDevice(LK_Device):
             if not self.FW or self.DEVICE is None:  # ty: ignore[redundant-condition]
                 self.FW = None
                 continue
-            target_baudrate = max(baudrate for baudrate in self.SUPPORTED_BAUD_RATES if baudrate <= max_baud)
-            if (
-                target_baudrate > min(self.SUPPORTED_BAUD_RATES)
-                and "pcb_ver" in self.FW
-                and self.FW["pcb_ver"] in (5, 6, 101)
-                and target_baudrate != self.BAUDRATE
-            ):
-                self.ChangeBaudRate(baudrate=target_baudrate)
-                self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
+            self._reopen_at_target_baud(current_port, max_baud)
 
             dprint(f"Found a {self.DEVICE_NAME}")
             dprint("Firmware information:", self.FW)
@@ -359,6 +355,20 @@ class GbxDevice(LK_Device):
             break
 
         return conn_msg
+
+    def _reopen_at_target_baud(self, current_port: str, max_baud: int) -> None:
+        firmware = self.FW
+        if firmware is None:
+            return
+        target_baudrate = max(baudrate for baudrate in self.SUPPORTED_BAUD_RATES if baudrate <= max_baud)
+        if (
+            target_baudrate > min(self.SUPPORTED_BAUD_RATES)
+            and "pcb_ver" in firmware
+            and firmware["pcb_ver"] in (5, 6, 101)
+            and target_baudrate != self.BAUDRATE
+        ):
+            self.ChangeBaudRate(baudrate=target_baudrate)
+            self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
 
     @staticmethod
     def _GetCandidatePorts(port: str | None) -> list[str]:

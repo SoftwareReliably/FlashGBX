@@ -2392,11 +2392,8 @@ class LK_Device(ABC):
         if save_size <= 0x10000:
             return save_size, save_type
 
-        check = True
-        for i in range(0x8000, 0x10000, 0x40):
-            if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
-                check = False
-                break
+        data: bytes | bytearray | memoryview = self.INFO["data"]
+        check = self._has_repeated_save_padding(data, 0x8000, 0x10000)
 
         if self.INFO["data"][0:0x8000] == self.INFO["data"][0x8000:0x10000]:  # MBCX
             check = True
@@ -2404,14 +2401,14 @@ class LK_Device(ABC):
         if check:
             return 32768, 0x03
 
-        check = True
-        for i in range(0x1A000, 0x20000, 0x40):
-            if self.INFO["data"][i : i + 3] != bytearray([self.INFO["data"][i]] * 3):
-                check = False
-                break
+        check = self._has_repeated_save_padding(data, 0x1A000, 0x20000)
         if check:
             return 65536, 0x05
         return save_size, save_type
+
+    @staticmethod
+    def _has_repeated_save_padding(data: bytes | bytearray | memoryview, start: int, end: int) -> bool:
+        return all(data[offset : offset + 3] == bytes([data[offset]] * 3) for offset in range(start, end, 0x40))
 
     def _DetectAgbFlashSaveType(self, save_size: int) -> tuple[int | None, int, str | None]:
         save_type = None
@@ -3226,9 +3223,7 @@ class LK_Device(ABC):
         configure_transfer = not skip_init
 
         if configure_transfer:
-            self._set_fw_variable("TRANSFER_SIZE", chunk_length)
-            if flash_buffer_size is not False:
-                self._set_fw_variable("BUFFER_SIZE", flash_buffer_size)
+            self._configure_rom_write_transfer(chunk_length, flash_buffer_size)
 
         for i in range(num):
             offset = i * chunk_length
@@ -3276,6 +3271,15 @@ class LK_Device(ABC):
 
         self.SKIPPING = skip_write
         return None
+
+    def _configure_rom_write_transfer(
+        self,
+        chunk_length: int,
+        flash_buffer_size: int | Literal[False],
+    ) -> None:
+        self._set_fw_variable("TRANSFER_SIZE", chunk_length)
+        if flash_buffer_size is not False:
+            self._set_fw_variable("BUFFER_SIZE", flash_buffer_size)
 
     def _SetFlashWriteAddress(self, address: int) -> None:
         if self.MODE == "DMG":
@@ -3655,38 +3659,7 @@ class LK_Device(ABC):
                 with (Path(AppContext.CONFIG_PATH) / "debug_cfi.bin").open("wb") as file:
                     file.write(cfi_buffer)
 
-            found = False
-            for offset, stride in ((0x20, 2), (0x10, 1)):
-                magic = "".join(chr(cfi_buffer[offset + index * stride]) for index in range(3))
-                dprint(
-                    "CFI magic:",
-                    hex(offset),
-                    hex(offset + stride),
-                    hex(offset + 2 * stride),
-                    "=",
-                    magic,
-                )
-                swaps: tuple[tuple[int, int], ...] = ()
-                if magic == "QRY":  # D0D1 not swapped
-                    found = True
-                elif magic == "RQZ":  # D0D1 swapped
-                    swaps = ((0, 1),)
-                    found = True
-                elif magic == "\x92\x91\x9a":  # D0D1+D6D7 swapped
-                    swaps = ((0, 1), (6, 7))
-                    found = True
-
-                for swap in swaps:
-                    for index, value in enumerate(cfi_buffer):
-                        cfi_buffer[index] = CFI.swap_bits(value, swap)
-
-                if magic == "\x92\x91\x9a" and (".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG):
-                    with (Path(AppContext.CONFIG_PATH) / "debug_cfi_d0d1+d6d7.bin").open("wb") as file:
-                        file.write(cfi_buffer)
-                if found:
-                    break
-            if not found:
-                cfi_buffer = None
+            cfi_buffer = self._recognize_cfi_buffer(cfi_buffer)
         except Exception:
             cfi_buffer = None
 
@@ -3694,6 +3667,38 @@ class LK_Device(ABC):
             return False, ""
         cfi = CFI().Parse(cfi_buffer_raw)
         return cfi, cfi["info"] if isinstance(cfi, dict) else ""
+
+    @staticmethod
+    def _recognize_cfi_buffer(cfi_buffer: bytearray) -> bytearray | None:
+        for offset, stride in ((0x20, 2), (0x10, 1)):
+            magic = "".join(chr(cfi_buffer[offset + index * stride]) for index in range(3))
+            dprint(
+                "CFI magic:",
+                hex(offset),
+                hex(offset + stride),
+                hex(offset + 2 * stride),
+                "=",
+                magic,
+            )
+            swaps: tuple[tuple[int, int], ...] = ()
+            if magic == "QRY":  # D0D1 not swapped
+                pass
+            elif magic == "RQZ":  # D0D1 swapped
+                swaps = ((0, 1),)
+            elif magic == "\x92\x91\x9a":  # D0D1+D6D7 swapped
+                swaps = ((0, 1), (6, 7))
+            else:
+                continue
+
+            for swap in swaps:
+                for index, value in enumerate(cfi_buffer):
+                    cfi_buffer[index] = CFI.swap_bits(value, swap)
+
+            if magic == "\x92\x91\x9a" and (".dev" in AppInfo.VERSION_PEP440 or AppContext.DEBUG):
+                with (Path(AppContext.CONFIG_PATH) / "debug_cfi_d0d1+d6d7.bin").open("wb") as file:
+                    file.write(cfi_buffer)
+            return cfi_buffer
+        return None
 
     def _DetectBankedFlashSize(
         self,
@@ -4300,25 +4305,7 @@ class LK_Device(ABC):
             self.INFO["rom_checksum_calc"] = mbc.CalcChecksum(buffer)
         elif self.MODE == "AGB":
             self.INFO["dump_info"]["header"].update(RomFileAGB(buffer[:0x180]).GetHeader())
-
-            save_library = "N/A"
-            try:
-                identifiers = (
-                    b"SRAM_",
-                    b"EEPROM_V",
-                    b"FLASH_V",
-                    b"FLASH512_V",
-                    b"FLASH1M_V",
-                    b"AGB_8MDACS_DL_V",
-                )
-                for identifier in identifiers:
-                    position = buffer.find(identifier)
-                    if position > 0:
-                        raw_version = buffer[position : position + 0x20]
-                        save_library = raw_version[: raw_version.index(0x00)].decode("ascii", "replace")
-                        break
-            except ValueError:
-                save_library = "N/A"
+            save_library = self._find_agb_save_library(buffer)
             self.INFO["dump_info"]["agb_savelib"] = save_library
             self.INFO["dump_info"]["agb_save_flash_id"] = None
             if "FLASH" in save_library:
@@ -4356,6 +4343,26 @@ class LK_Device(ABC):
         self.INFO["dump_info"]["hash_sha1"] = self.INFO["file_sha1"]
         self.INFO["dump_info"]["hash_sha256"] = self.INFO["file_sha256"]
         self.INFO["dump_info"]["hash_crc32"] = self.INFO["file_crc32"]
+
+    @staticmethod
+    def _find_agb_save_library(buffer: bytearray) -> str:
+        try:
+            identifiers = (
+                b"SRAM_",
+                b"EEPROM_V",
+                b"FLASH_V",
+                b"FLASH512_V",
+                b"FLASH1M_V",
+                b"AGB_8MDACS_DL_V",
+            )
+            for identifier in identifiers:
+                position = buffer.find(identifier)
+                if position > 0:
+                    raw_version = buffer[position : position + 0x20]
+                    return raw_version[: raw_version.index(0x00)].decode("ascii", "replace")
+        except ValueError:
+            return "N/A"
+        return "N/A"
 
     def _process_rom_backup_result(
         self,
@@ -5542,6 +5549,13 @@ class LK_Device(ABC):
         if verified_data[:end_address] == expected_data:
             return True
 
+        return self._report_save_verification_mismatch(verified_data, expected_data)
+
+    def _report_save_verification_mismatch(
+        self,
+        verified_data: bytes | bytearray | memoryview,
+        expected_data: bytes | bytearray | memoryview,
+    ) -> bool:
         differences = []
         difference_count = 0
         time_start = time.time()
@@ -6950,6 +6964,22 @@ class LK_Device(ABC):
             )
         return verified
 
+    @staticmethod
+    def _classify_flash_crc_result(
+        result: bool | tuple[int, int],
+        crc32_errors: int,
+        pos_from: int,
+    ) -> tuple[bool, int]:
+        if isinstance(result, tuple):
+            crc32_errors += 1
+            dprint(
+                f"Mismatch during CRC32 verification at 0x{pos_from:X}",
+                "Errors:",
+                crc32_errors,
+            )
+            return False, crc32_errors
+        return bool(result), crc32_errors
+
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
         args = context.args
         cart_type = context.cart_type
@@ -7031,17 +7061,12 @@ class LK_Device(ABC):
                                 start_address=start_address,
                                 verify_len=verify_len,
                             )
-                            if isinstance(verified, tuple) and len(verified) == 2:
-                                crc32_errors += 1
-                                dprint(
-                                    f"Mismatch during CRC32 verification at 0x{pos_from:X}",
-                                    "Errors:",
-                                    crc32_errors,
-                                )
-                                verified = False
-                                break
-
-                            if verified is False:
+                            verified, crc32_errors = self._classify_flash_crc_result(
+                                verified,
+                                crc32_errors,
+                                pos_from,
+                            )
+                            if not verified:
                                 break
 
                         else:

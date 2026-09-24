@@ -2451,6 +2451,12 @@ class FlashGBX_CLI:
             return generated_path
         return str(Path(path) / generated_path) if Path(path).is_dir() else path
 
+    def _StartSaveRestoreTransfer(self, args: dict[str, Any], buffer: bytearray | None) -> None:
+        if buffer is not None:
+            args["buffer"] = buffer
+            args["path"] = None
+        self.CONN.TransferData(args=args, signal=self.PROGRESS.SetProgress)
+
     def BackupRestoreRAM(
         self,
         args: argparse.Namespace,
@@ -2520,10 +2526,7 @@ class FlashGBX_CLI:
                 "verify_write": verify_write,
                 "cart_type": cart_type,
             }
-            if buffer is not None:
-                targs["buffer"] = buffer
-                targs["path"] = None
-            self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
+            self._StartSaveRestoreTransfer(targs, buffer)
         elif args.action == "erase-save":
             self.CONN.TransferData(
                 args={

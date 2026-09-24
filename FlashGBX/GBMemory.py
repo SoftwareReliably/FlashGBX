@@ -401,26 +401,7 @@ class GBMemoryMap:
                 "rom_size": rom_size,
                 "header": {},
             }
-            rom_header_game = self._read_header(rom_data[rom_offset : rom_offset + rom_size])
-            entry["header"] = rom_header_game
-            if rom_header_game and len(rom_data) >= rom_offset + rom_size:
-                rom_size_raw = rom_header_game.get("rom_size_raw")
-                if isinstance(rom_size_raw, int):
-                    actual_size = RomSizes().GetSize(rom_size_raw)
-                    if actual_size is not None:
-                        entry["rom_size"] = min(rom_size, actual_size)
-
-                rom_bytes = rom_data[rom_offset : rom_offset + entry["rom_size"]]
-                entry["crc32"] = zlib.crc32(rom_bytes) & 0xFFFFFFFF
-                entry["sha1"] = hashlib.sha1(rom_bytes).hexdigest()
-                entry["sha256"] = hashlib.sha256(rom_bytes).hexdigest()
-                entry["md5"] = hashlib.md5(rom_bytes).hexdigest()
-
-                db_entry = rom_header_game.get("db")
-                if isinstance(db_entry, dict) and db_entry.get("rc") == entry["crc32"]:
-                    entry["db_entry"] = cast("HeaderData", db_entry)
-                else:
-                    rom_header_game["db"] = None
+            self._enrich_menu_entry(entry, rom_data)
             dprint(f"GB-Memory Game {index:d}: {entry!s:s}")
             data_list.append(entry)
 
@@ -430,6 +411,32 @@ class GBMemoryMap:
             menu_data["timestamp"] = first_entry["timestamp"]
             menu_data["kiosk_id"] = first_entry["kiosk_id"]
         return data_list
+
+    def _enrich_menu_entry(self, entry: ParsedMenuEntry, rom_data: bytearray) -> None:
+        rom_offset = entry["rom_offset"]
+        rom_size = entry["rom_size"]
+        rom_header_game = self._read_header(rom_data[rom_offset : rom_offset + rom_size])
+        entry["header"] = rom_header_game
+        if not rom_header_game or len(rom_data) < rom_offset + rom_size:
+            return
+
+        rom_size_raw = rom_header_game.get("rom_size_raw")
+        if isinstance(rom_size_raw, int):
+            actual_size = RomSizes().GetSize(rom_size_raw)
+            if actual_size is not None:
+                entry["rom_size"] = min(rom_size, actual_size)
+
+        rom_bytes = rom_data[rom_offset : rom_offset + entry["rom_size"]]
+        entry["crc32"] = zlib.crc32(rom_bytes) & 0xFFFFFFFF
+        entry["sha1"] = hashlib.sha1(rom_bytes).hexdigest()
+        entry["sha256"] = hashlib.sha256(rom_bytes).hexdigest()
+        entry["md5"] = hashlib.md5(rom_bytes).hexdigest()
+
+        db_entry = rom_header_game.get("db")
+        if isinstance(db_entry, dict) and db_entry.get("rc") == entry["crc32"]:
+            entry["db_entry"] = cast("HeaderData", db_entry)
+        else:
+            rom_header_game["db"] = None
 
     def ImportROM(self, data: ByteBuffer) -> bool:
         """Generate hidden-sector map data for a ROM or GB-Memory menu ROM."""
