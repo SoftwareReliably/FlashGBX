@@ -2209,9 +2209,7 @@ class FlashGBX_CLI:
                 return header["ram_size_raw"]
             except KeyError, TypeError, ValueError, IndexError:
                 return 0
-        if save_type_name == "batteryless":
-            return 0x205
-        return DmgSaveTypes.GetMbcFromCLIName(save_type_name) or 0
+        return 0x205 if save_type_name == "batteryless" else DmgSaveTypes.GetMbcFromCLIName(save_type_name) or 0
 
     def _PrepareEReaderCalibration(
         self,
@@ -2865,6 +2863,30 @@ class FlashGBX_CLI:
                 print()
             print(text, flush=True)
 
+    def _ResolveFirmwarePort(
+        self,
+        port: str | Literal[False] | None,
+        vendor_id: int,
+        product_id: int,
+        no_device_message: str,
+        invalid_port_message: str,
+    ) -> str | None:
+        if port is None or port is False:
+            ports = [
+                comport.device
+                for comport in list_ports.comports()
+                if comport.vid == vendor_id and comport.pid == product_id
+            ]
+            if not ports:
+                print(no_device_message)
+                return None
+            port = ports[0]
+
+        if not isinstance(port, str):
+            print(invalid_port_message)
+            return None
+        return port
+
     def UpdateFirmwareGBxCartRW(
         self,
         pcb: int = 5,
@@ -2911,18 +2933,9 @@ class FlashGBX_CLI:
             return False
 
         try:
-            ports = []
-            if port is None or port is False:
-                comports = list_ports.comports()
-                ports.extend(
-                    [comport.device for comport in comports if comport.vid == 0x1A86 and comport.pid == 0x7523]
-                )
-                if len(ports) == 0:
-                    print(__("No devices found."))
-                    return False
-                port = ports[0]
-            if not isinstance(port, str):
-                print(__("No devices found."))
+            no_devices_message = __("No devices found.")
+            port = self._ResolveFirmwarePort(port, 0x1A86, 0x7523, no_devices_message, no_devices_message)
+            if port is None:
                 return False
 
             from . import hw_GBxCartRW  # noqa: PLC0415 - load only the selected firmware backend
@@ -2993,16 +3006,9 @@ class FlashGBX_CLI:
             return False
 
         try:
-            ports = []
-            if port is None or port is False:
-                comports = list_ports.comports()
-                ports.extend([c.device for c in comports if c.vid == 0x1A86 and c.pid == 0x7523])
-                if len(ports) == 0:
-                    print(__("No device found."))
-                    return False
-                port = ports[0]
-            if not isinstance(port, str):
-                print(__("No device found."))
+            no_device_message = __("No device found.")
+            port = self._ResolveFirmwarePort(port, 0x1A86, 0x7523, no_device_message, no_device_message)
+            if port is None:
                 return False
 
             from . import hw_GBFlash  # noqa: PLC0415 - load only the selected firmware backend
@@ -3025,13 +3031,12 @@ class FlashGBX_CLI:
                     print(err)
                     return False
 
-            if ret == 1:
+            update_succeeded = ret == 1
+            if update_succeeded:
                 print(__("The firmware update is complete!"))
-                return True
-            if ret == 3:
+            elif ret == 3:
                 print(__("Please re-install the application."))
-                return False
-            return False  # noqa: TRY300
+            return update_succeeded  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)
@@ -3072,24 +3077,16 @@ class FlashGBX_CLI:
             return False
 
         try:
-            ports = []
-            if port is None or port is False:
-                comports = list_ports.comports()
-                ports: list[str] = [
-                    comports[i].device
-                    for i in range(len(comports))
-                    if comports[i].vid == 0x483 and comports[i].pid == 0x5740
-                ]
-                if len(ports) == 0:
-                    print(
-                        __(
-                            "No devices found. If your Joey Jr is running the Drag'n'Drop firmware, you will have to use the JoeyGUI software to update the firmware.",
-                        ),
-                    )
-                    return False
-                port = ports[0]
-            if not isinstance(port, str):
-                print(__("No devices found."))
+            port = self._ResolveFirmwarePort(
+                port,
+                0x483,
+                0x5740,
+                __(
+                    "No devices found. If your Joey Jr is running the Drag'n'Drop firmware, you will have to use the JoeyGUI software to update the firmware.",
+                ),
+                __("No devices found."),
+            )
+            if port is None:
                 return False
 
             from . import hw_JoeyJr  # noqa: PLC0415 - load only the selected firmware backend
@@ -3117,13 +3114,12 @@ class FlashGBX_CLI:
                     return False
 
             print()
-            if ret == 1:
+            update_succeeded = ret == 1
+            if update_succeeded:
                 print(__("The firmware update is complete!"))
-                return True
-            if ret == 3:
+            elif ret == 3:
                 print(__("Please re-install the application."))
-                return False
-            return False  # noqa: TRY300
+            return update_succeeded  # noqa: TRY300
 
         except Exception as err:
             traceback.print_exception(type(err), err, err.__traceback__)

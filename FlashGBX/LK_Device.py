@@ -7529,30 +7529,33 @@ class LK_Device(ABC):
                     "abortable": False,
                 },
             )
-            return None
 
-        return _FlashWritePreparation(
-            cart_name=cart_name,
-            cart_type=cart_type,
-            flashcart=flashcart,
-            data_import=data_import,
-            data_map_import=data_map_import,
-            flash_offset=flash_offset,
-            active_voltage=active_voltage,
-            mbc=mbc,
-            end_bank=end_bank,
-            rom_bank_size=rom_bank_size,
-            enable_pullup_wr=enable_pullup_wr,
-            error_message=error_message,
-            flash_buffer_size=flash_buffer_size,
-            command_set_type=command_set_type,
-            sector_offsets=sector_offsets,
-            write_sectors=write_sectors,
-            delta_state=delta_state,
-            state_path=state_path,
-            chip_erase=chip_erase,
-            buffer_len=buffer_len,
-            verify_sectors=verify_sectors,
+        return (
+            _FlashWritePreparation(
+                cart_name=cart_name,
+                cart_type=cart_type,
+                flashcart=flashcart,
+                data_import=data_import,
+                data_map_import=data_map_import,
+                flash_offset=flash_offset,
+                active_voltage=active_voltage,
+                mbc=mbc,
+                end_bank=end_bank,
+                rom_bank_size=rom_bank_size,
+                enable_pullup_wr=enable_pullup_wr,
+                error_message=error_message,
+                flash_buffer_size=flash_buffer_size,
+                command_set_type=command_set_type,
+                sector_offsets=sector_offsets,
+                write_sectors=write_sectors,
+                delta_state=delta_state,
+                state_path=state_path,
+                chip_erase=chip_erase,
+                buffer_len=buffer_len,
+                verify_sectors=verify_sectors,
+            )
+            if write_sectors
+            else None
         )
 
     def _AbortFlashWriteIfCanceled(self) -> bool:

@@ -1313,7 +1313,7 @@ def test_prepare_flash_write_builds_complete_copied_preparation(
 
 @pytest.mark.parametrize(
     "rejected_stage",
-    ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase"],
+    ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase", "empty-write-sectors"],
 )
 def test_flash_rom_worker_stops_at_each_preparation_rejection(
     monkeypatch: pytest.MonkeyPatch,
@@ -1369,8 +1369,8 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
         return _FlashSectorPlan(
             data_import=bytearray(b"DATA"),
             smallest_sector_size=4,
-            sector_offsets=[[0, 4]],
-            write_sectors=[[0, 4]],
+            sector_offsets=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
+            write_sectors=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
             delta_state=None,
             state_path="",
             has_sector_map=True,
@@ -1392,7 +1392,8 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
     monkeypatch.setattr(device, "_plan_flash_sectors", plan_sectors)
     monkeypatch.setattr(device, "_EraseFlashForWrite", erase)
     monkeypatch.setattr(device, "_set_fw_variable", Mock())
-    monkeypatch.setattr(device, "SetProgress", Mock())
+    progress = Mock()
+    monkeypatch.setattr(device, "SetProgress", progress)
     monkeypatch.setattr(device, "_WritePreparedFlashROM", writer)
     args = {
         "buffer": b"DATA",
@@ -1404,9 +1405,13 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
 
     result = device._FlashROM_Worker(args)
 
-    rejected_index = expected_order.index(rejected_stage)
     assert result is False
-    assert calls == expected_order[: rejected_index + 1]
+    if rejected_stage == "empty-write-sectors":
+        assert calls == expected_order
+        assert progress.call_args.args[0]["action"] == "ABORT"
+    else:
+        rejected_index = expected_order.index(rejected_stage)
+        assert calls == expected_order[: rejected_index + 1]
     writer.assert_not_called()
     assert device.FAST_READ is True
 

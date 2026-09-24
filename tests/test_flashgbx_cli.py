@@ -1932,6 +1932,33 @@ def test_gbxcartrw_firmware_update_retries_serial_port(
     assert FirmwareUpdater.attempts == 2
 
 
+@pytest.mark.parametrize(("result", "expected"), [(1, True), (3, False), (0, False)])
+def test_gbflash_firmware_update_handles_status_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    result: int,
+    expected: bool,
+) -> None:
+    cli = make_cli(tmp_path)
+    monkeypatch.setattr(cli, "_LoadFirmwareInfo", lambda _path: ("1.0", 123))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+    updated_ports: list[str] = []
+
+    class FirmwareUpdater:
+        def __init__(self, *, port: str) -> None:
+            updated_ports.append(port)
+
+        def WriteFirmware(self, file_name: Path, callback: object) -> int:
+            del file_name, callback
+            return result
+
+    package = importlib.import_module("FlashGBX")
+    monkeypatch.setattr(package, "hw_GBFlash", SimpleNamespace(FirmwareUpdater=FirmwareUpdater), raising=False)
+
+    assert cli.UpdateFirmwareGBFlash(port="mock-port") is expected
+    assert updated_ports == ["mock-port"]
+
+
 @pytest.mark.parametrize(
     ("answer", "member", "result", "expected"),
     [
