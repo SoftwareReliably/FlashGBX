@@ -2679,33 +2679,13 @@ class LK_Device(ABC):
             header: AGBHeader = RomFileAGB(buffer).GetHeader()
             if header["game_code"] in ("GMBC", "PNES"):
                 bl_size = 0x10000
-                state_id1 = 0x57A731D7
-                state_id2 = 0x57A731D8
-                state_id3 = 0x57A731D9
-                if struct.unpack("<I", self.ReadROM(0x400000 - 0x40000, 4))[0] in (
-                    state_id1,
-                    state_id2,
-                    state_id3,
-                ):
-                    bl_offset = 0x400000 - 0x40000
-                elif struct.unpack("<I", self.ReadROM(0x800000 - 0x40000, 4))[0] in (
-                    state_id1,
-                    state_id2,
-                    state_id3,
-                ):
-                    bl_offset = 0x800000 - 0x40000
-                elif struct.unpack("<I", self.ReadROM(0x1000000 - 0x40000, 4))[0] in (
-                    state_id1,
-                    state_id2,
-                    state_id3,
-                ):
-                    bl_offset = 0x1000000 - 0x40000
-                elif struct.unpack("<I", self.ReadROM(0x2000000 - 0x40000, 4))[0] in (
-                    state_id1,
-                    state_id2,
-                    state_id3,
-                ):
-                    bl_offset = 0x2000000 - 0x40000
+                state_ids = (0x57A731D7, 0x57A731D8, 0x57A731D9)
+                state_offsets = (0x400000 - 0x40000, 0x800000 - 0x40000, 0x1000000 - 0x40000, 0x2000000 - 0x40000)
+                for offset in state_offsets:
+                    state_id = struct.unpack("<I", self.ReadROM(offset, 4))[0]
+                    if state_id in state_ids:
+                        bl_offset = offset
+                        break
                 dprint("Detected Goomba Color or PocketNES Batteryless ROM by Lesserkuma")
             else:
                 boot_vector: int = (struct.unpack("<I", buffer[0:3] + bytearray([0]))[0] + 2) << 2
@@ -5645,6 +5625,23 @@ class LK_Device(ABC):
         verified = "verify_write" not in args or args["verify_write"] is False
         return verification_only, verified
 
+    def _LoadSaveRestoreBuffer(self, args: dict[str, Any]) -> bytearray:
+        """Load a non-erased save restore source and validate its contents."""
+        if args["path"] is None:
+            source_buffer = args["buffer"] if "buffer" in args else self.INFO["data"]
+            if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
+                msg = "Save data must be a bytes-like object"
+                raise TypeError(msg)
+            buffer = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
+        else:
+            with Path(args["path"]).open("rb") as file:
+                buffer = bytearray(file.read())
+
+        if not buffer:
+            msg = "Save data must not be empty"
+            raise ValueError(msg)
+        return buffer
+
     def _PrepareSaveTransferAction(
         self,
         args: dict[str, Any],
@@ -5670,19 +5667,7 @@ class LK_Device(ABC):
                     )
                     buffer[0x11D7:0x11FC] = buffer[0x11B2:0x11D7]
             else:
-                if args["path"] is None:
-                    source_buffer = args["buffer"] if "buffer" in args else self.INFO["data"]
-                    if not isinstance(source_buffer, (bytes, bytearray, memoryview)):
-                        msg = "Save data must be a bytes-like object"
-                        raise TypeError(msg)
-                    buffer = source_buffer if isinstance(source_buffer, bytearray) else bytearray(source_buffer)
-                else:
-                    with Path(args["path"]).open("rb") as file:
-                        buffer = bytearray(file.read())
-
-                if not buffer:
-                    msg = "Save data must not be empty"
-                    raise ValueError(msg)
+                buffer = self._LoadSaveRestoreBuffer(args)
 
                 if self.MODE == "DMG" and args["save_type"] == 0x204:  # Unlicensed PHOTO!
                     ram_banks = 16

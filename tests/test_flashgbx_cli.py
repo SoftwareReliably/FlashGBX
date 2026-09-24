@@ -782,6 +782,21 @@ def test_detected_save_type_message(
     assert expected_text in message
 
 
+@pytest.mark.parametrize(
+    ("cfi_data", "expected_text"),
+    [
+        ("CFI details", "CFI details"),
+        ("", "No data provided"),
+    ],
+)
+def test_detected_cfi_message_preserves_data_and_empty_fallback(cfi_data: str, expected_text: str) -> None:
+    message = FlashGBX_CLI._FormatDetectedCFI(cfi_data)
+
+    assert "Common Flash Interface Data:" in message
+    assert expected_text in message
+    assert message.endswith("\n\n")
+
+
 @pytest.mark.parametrize(("stable", "profiles", "expected"), [(False, [{}], -1), (True, [], -2)])
 def test_detect_cartridge_rejects_unstable_or_missing_profiles(
     tmp_path: Path,
@@ -874,6 +889,20 @@ def test_backup_rom_transfers_generated_dmg_path(
             "cart_type": 1,
         },
     ]
+
+
+def test_backup_mapper_message_handles_known_and_unknown_ids(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    cli = make_cli(tmp_path)
+
+    cli._PrintBackupMapper(0x13)
+    known_mapper_message = capsys.readouterr().out
+    assert "Mapper Type" in known_mapper_message
+    assert "0x13" not in known_mapper_message
+
+    cli._PrintBackupMapper(0x7F)
+    assert "0x7F" in capsys.readouterr().out
 
 
 def test_backup_rom_handles_invalid_header_and_overwrite_cancel(

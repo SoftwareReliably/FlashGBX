@@ -1346,6 +1346,29 @@ class FlashGBX_CLI:
 
         return (bad_read, s, data)
 
+    @staticmethod
+    def _FormatDetectedCFI(cfi_data: str) -> str:
+        """Format Common Flash Interface detection data or its empty fallback."""
+        if cfi_data != "":
+            return (
+                __(
+                    "{common_flash_interface} Data:",
+                    common_flash_interface="Common Flash Interface",
+                )
+                + "\n"
+                + cfi_data
+                + "\n\n"
+            )
+        return (
+            __(
+                "{common_flash_interface} Data:",
+                common_flash_interface="Common Flash Interface",
+            )
+            + " "
+            + c__("Common Flash Interface Data", "No data provided")
+            + "\n\n"
+        )
+
     def DetectCartridge(self, limitVoltage: bool = False) -> int | None:
         print(__("Now attempting to auto-detect the flashcart profile..."))
         if self.CONN.CheckROMStable() is False:
@@ -1478,26 +1501,7 @@ class FlashGBX_CLI:
 
         msg_flash_id_s = __("Flash ID Check:") + "\n" + flash_id[:-1] + "\n\n"
 
-        if cfi_s != "":
-            msg_cfi_s = (
-                __(
-                    "{common_flash_interface} Data:",
-                    common_flash_interface="Common Flash Interface",
-                )
-                + "\n"
-                + cfi_s
-                + "\n\n"
-            )
-        else:
-            msg_cfi_s: str = (
-                __(
-                    "{common_flash_interface} Data:",
-                    common_flash_interface="Common Flash Interface",
-                )
-                + " "
-                + c__("Common Flash Interface Data", "No data provided")
-                + "\n\n"
-            )
+        msg_cfi_s = self._FormatDetectedCFI(cfi_s)
 
         msg: str = "\n\n" + __("The following cartridge configuration was detected:") + "\n\n"
         temp = (
@@ -1601,6 +1605,23 @@ class FlashGBX_CLI:
                         break
         return cart_type, rom_size
 
+    def _PrintBackupMapper(self, mbc: int) -> None:
+        """Print the selected DMG mapper using a friendly name when available."""
+        if mbc in DMG_Mapper().GetAllMapperIds():
+            print(
+                __(
+                    "Mapper Type “{mapper_type}” is used.",
+                    mapper_type=DMG_Mapper().GetMapperType(mbc),
+                ),
+            )
+        else:
+            print(
+                __(
+                    "Mapper Type {mapper_type_value} is used.",
+                    mapper_type_value=f"0x{mbc:02X}",
+                ),
+            )
+
     def BackupROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         mbc = 1
         rom_size = 0
@@ -1675,20 +1696,7 @@ class FlashGBX_CLI:
             ),
         )
         if self.CONN.GetMode() == "DMG":
-            if mbc in DMG_Mapper().GetAllMapperIds():
-                print(
-                    __(
-                        "Mapper Type “{mapper_type}” is used.",
-                        mapper_type=DMG_Mapper().GetMapperType(mbc),
-                    ),
-                )
-            else:
-                print(
-                    __(
-                        "Mapper Type {mapper_type_value} is used.",
-                        mapper_type_value=f"0x{mbc:02X}",
-                    ),
-                )
+            self._PrintBackupMapper(mbc)
 
         print()
 

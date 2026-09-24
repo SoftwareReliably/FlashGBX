@@ -294,7 +294,6 @@ def test_restore_reads_the_selected_file(
     path.write_bytes(b"FILE")
     device = GbxDevice()
     device.MODE = "DMG"
-    device.INFO["data"] = b"INFO"
     args = {
         "mode": 3,
         "save_type": 1,

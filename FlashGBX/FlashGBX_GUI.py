@@ -1673,6 +1673,22 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return update_check
 
+    def _ReportUpdateHTTPError(self, response: requests.Response) -> None:
+        """Report an unsuccessful HTTP response from the update endpoint."""
+        if (
+            response.status_code == 403
+            and "X-RateLimit-Remaining" in response.headers
+            and response.headers["X-RateLimit-Remaining"] == "0"
+        ):
+            print(__("Error: Failed to check for updates (too many API requests). Try again later."))
+        else:
+            print(
+                __(
+                    "Error: Failed to check for updates (HTTP status {status_code}).",
+                    status_code=response.status_code,
+                ),
+            )
+
     def UpdateCheck(self) -> None:
         update_check: str | None = self.SETTINGS.value("UpdateCheck")
         if update_check is None:
@@ -1770,19 +1786,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         sep="\n",
                     )
             elif ret is not False:
-                if (
-                    ret.status_code == 403
-                    and "X-RateLimit-Remaining" in ret.headers
-                    and ret.headers["X-RateLimit-Remaining"] == "0"
-                ):
-                    print(__("Error: Failed to check for updates (too many API requests). Try again later."))
-                else:
-                    print(
-                        __(
-                            "Error: Failed to check for updates (HTTP status {status_code}).",
-                            status_code=ret.status_code,
-                        ),
-                    )
+                self._ReportUpdateHTTPError(ret)
 
     def GetHostLauncherEnv(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -5952,6 +5956,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.lblAGBHeaderGameCodeRevisionResult.setText("")
             self.lblAGBGameNameResult.setText(c__("Game Data", "(No database entry)"))
 
+    def _DisplayAgbBootLogo(self, logo_correct: bool, raw: bytes | bytearray) -> None:
+        """Display AGB logo validity and cache the logo bytes on first read."""
+        if logo_correct:
+            self.lblAGBHeaderBootlogoResult.setText("OK")
+            self.lblAGBHeaderBootlogoResult.setStyleSheet(self.lblAGBRomTitleResult.styleSheet())
+            bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+            if not bootlogo_path.exists():
+                with bootlogo_path.open("wb") as file:
+                    file.write(raw[0x04:0xA0])
+        else:
+            self.lblAGBHeaderBootlogoResult.setText(c__("Game Data", "Invalid"))
+            self.lblAGBHeaderBootlogoResult.setStyleSheet("QLabel { color: red; }")
+
     def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
         self._PrepareAgbHeaderControls(data, reset_status=reset_status)
 
@@ -5959,16 +5976,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblAGBGameNameResult.setToolTip("")
         self._DisplayAgbGameName(data)
 
-        if data["logo_correct"]:
-            self.lblAGBHeaderBootlogoResult.setText("OK")
-            self.lblAGBHeaderBootlogoResult.setStyleSheet(self.lblAGBRomTitleResult.styleSheet())
-            bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
-            if not bootlogo_path.exists():
-                with bootlogo_path.open("wb") as f:
-                    f.write(data["raw"][0x04:0xA0])
-        else:
-            self.lblAGBHeaderBootlogoResult.setText(c__("Game Data", "Invalid"))
-            self.lblAGBHeaderBootlogoResult.setStyleSheet("QLabel { color: red; }")
+        self._DisplayAgbBootLogo(data["logo_correct"], data["raw"])
 
         self._DisplayAgbRtc(data)
 

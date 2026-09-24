@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import struct
 from typing import TYPE_CHECKING
 
 import pytest
@@ -13,6 +14,83 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from tests.fakes import flashcart_profile
+
+STATE_OFFSETS = (0x400000 - 0x40000, 0x800000 - 0x40000, 0x1000000 - 0x40000, 0x2000000 - 0x40000)
+STATE_IDS = (0x57A731D7, 0x57A731D8, 0x57A731D9)
+
+
+@pytest.mark.parametrize("game_code", ["GMBC", "PNES"])
+@pytest.mark.parametrize("state_id", STATE_IDS)
+@pytest.mark.parametrize("match_index", range(len(STATE_OFFSETS)))
+def test_batteryless_goomba_probe_stops_at_first_matching_state(
+    monkeypatch: pytest.MonkeyPatch,
+    game_code: str,
+    state_id: int,
+    match_index: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    header = bytearray(0x180)
+    header[0xAC:0xB0] = game_code.encode("ascii")
+    reads: list[tuple[int, int]] = []
+
+    def read_rom(address: int, length: int, **_kwargs: object) -> bytearray:
+        reads.append((address, length))
+        if address == 0:
+            return header
+        value = state_id if address == STATE_OFFSETS[match_index] else 0
+        return bytearray(struct.pack("<I", value))
+
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+
+    result = device.CheckBatterylessSRAM()
+
+    assert result == {"bl_offset": STATE_OFFSETS[match_index], "bl_size": 0x10000}
+    assert reads == [(0, 0x180), *((offset, 4) for offset in STATE_OFFSETS[: match_index + 1])]
+
+
+@pytest.mark.parametrize("game_code", ["GMBC", "PNES"])
+def test_batteryless_goomba_probe_returns_false_after_all_misses(
+    monkeypatch: pytest.MonkeyPatch,
+    game_code: str,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    header = bytearray(0x180)
+    header[0xAC:0xB0] = game_code.encode("ascii")
+    reads: list[tuple[int, int]] = []
+
+    def read_rom(address: int, length: int, **_kwargs: object) -> bytearray:
+        reads.append((address, length))
+        return header if address == 0 else bytearray(4)
+
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+
+    assert device.CheckBatterylessSRAM() is False
+    assert reads == [(0, 0x180), *((offset, 4) for offset in STATE_OFFSETS)]
+
+
+def test_batteryless_probe_skips_rom_reads_outside_agb_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "DMG"
+    monkeypatch.setattr(device, "ReadROM", lambda *_args, **_kwargs: pytest.fail("unexpected ROM read"))
+
+    assert device.CheckBatterylessSRAM() is False
+
+
+def test_batteryless_goomba_probe_propagates_short_state_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    header = bytearray(0x180)
+    header[0xAC:0xB0] = b"GMBC"
+
+    def read_rom(address: int, _length: int, **_kwargs: object) -> bytearray:
+        return header if address == 0 else bytearray([0])
+
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+
+    with pytest.raises(struct.error):
+        device.CheckBatterylessSRAM()
 
 
 def make_identifier_profile(

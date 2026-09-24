@@ -1969,6 +1969,34 @@ def test_update_check_handles_mock_http_responses(
 
 
 @pytest.mark.parametrize(
+    ("status_code", "headers", "expected_message"),
+    [
+        (403, {"X-RateLimit-Remaining": "0"}, "too many API requests"),
+        (403, {}, "HTTP status 403"),
+        (403, {"X-RateLimit-Remaining": "1"}, "HTTP status 403"),
+        (503, {}, "HTTP status 503"),
+    ],
+)
+def test_update_check_reports_http_error_variants(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status_code: int,
+    headers: dict[str, str],
+    expected_message: str,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    response = SimpleNamespace(status_code=status_code, content=b"", headers=headers)
+    monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
+
+    gui.UpdateCheck()
+
+    assert expected_message in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
     "error",
     [
         pytest.param(Exception("unexpected"), id="unexpected"),
@@ -2322,7 +2350,19 @@ def test_read_cartridge_populates_agb_widgets_without_hardware(
     assert gui.lblAGBRomTitleResult.text() == "TEST GAME"
     assert "Valid" in gui.lblAGBHeaderChecksumResult.text()
     assert gui.grpAGBCartridgeInfo.isVisible() is True
-    assert (tmp_path / "bootlogo_agb.bin").exists()
+    bootlogo_path = tmp_path / "bootlogo_agb.bin"
+    assert bootlogo_path.read_bytes() == device.header["raw"][0x04:0xA0]
+
+    bootlogo_path.write_bytes(b"existing logo")
+    gui.ReadCartridge(resetStatus=False)
+    assert bootlogo_path.read_bytes() == b"existing logo"
+
+    invalid_logo_header = agb_header()
+    invalid_logo_header["logo_correct"] = False
+    device.header = invalid_logo_header
+    gui.ReadCartridge(resetStatus=False)
+    assert "Invalid" in gui.lblAGBHeaderBootlogoResult.text()
+    assert bootlogo_path.read_bytes() == b"existing logo"
 
     database_header = agb_header()
     database_header["db"] = {"gc": "AGB-ABCD", "gn": "Database Game", "rs": 0x4000000, "rc": 0x123456, "st": 2}
