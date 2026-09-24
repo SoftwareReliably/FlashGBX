@@ -21,6 +21,12 @@ if TYPE_CHECKING:
 
 class DumpReport:
     @staticmethod
+    def _header_checksum_string(stored: int, calculated: int, *, correct: bool) -> str:
+        if correct:
+            return f"OK (0x{stored:02X})"
+        return f"Invalid (0x{calculated:02X}≠0x{stored:02X})"
+
+    @staticmethod
     def _fields_to_lines(fields: Iterable[tuple[str, str]], col: int = 19) -> list[str]:
         return [f"* {label + ':':<{col}}{value}" for label, value in fields]
 
@@ -217,6 +223,69 @@ class DumpReport:
         return fields
 
     @classmethod
+    def _dmg_parsed_lines(
+        cls,
+        header: dict[str, Any],
+        di: dict[str, Any],
+        device: LK_Device,
+        logo_str: str,
+    ) -> list[str]:
+        cgb_raw = header["cgb"]
+        target_platform = cls._target_platform(header)
+
+        sgb_str: Literal["Supported", "No support"] = (
+            "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"
+        )
+        cgb_str: str = DMG_Mapper().CGB_MAP.get(cgb_raw, f"Unknown (0x{cgb_raw:02X})")
+
+        hdr_chk = header["header_checksum"]
+        hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
+        header_checksum_str = cls._header_checksum_string(
+            hdr_chk,
+            hdr_chk_calc,
+            correct=header["header_checksum_correct"],
+        )
+
+        header["rom_checksum_calc"] = device.INFO.get("rom_checksum_calc", header.get("rom_checksum_calc"))
+        rom_chk_ok = header["rom_checksum_calc"] == header["rom_checksum"]
+        rom_checksum_str: str = (
+            f"OK (0x{header['rom_checksum']:04X})"
+            if rom_chk_ok
+            else f"Invalid (0x{header['rom_checksum_calc']:04X}≠0x{header['rom_checksum']:04X})"
+        )
+
+        hdr_rom_size_raw: int = header["rom_size_raw"]
+        if hdr_rom_size_raw < RomSizes().GetNumberOfTypes():
+            hdr_rom_size_str: str = RomSizes().GetString(index=hdr_rom_size_raw, localized=False)
+        else:
+            hdr_rom_size_str = f"Unknown (0x{hdr_rom_size_raw:02X})"
+
+        hdr_save_str = cls._dmg_save_size_string(header["ram_size_raw"])
+
+        mapper_raw = header["mapper_raw"]
+        if mapper_raw in DMG_Mapper().GetAllMapperIds():
+            hdr_mapper_str: str = f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
+        else:
+            hdr_mapper_str = f"Unknown (0x{mapper_raw:02X})"
+
+        parsed_fields = [("Game Title", (header.get("game_title") or "").replace("\0", "␀"))]
+        if cgb_raw in (0xC0, 0x80) and header.get("game_code"):
+            parsed_fields.append(("Game Code", header["game_code"].replace("\0", "␀")))
+        parsed_fields += [
+            ("Revision", str(header["version"])),
+            ("Super Game Boy", sgb_str),
+            ("Game Boy Color", cgb_str),
+            ("Nintendo Logo", logo_str),
+            ("Header Checksum", header_checksum_str),
+            ("ROM Checksum", rom_checksum_str),
+            ("ROM Size", hdr_rom_size_str),
+            ("SRAM Size", hdr_save_str),
+            ("Mapper Type", hdr_mapper_str),
+            ("Target Platform", target_platform),
+        ]
+        return cls._fields_to_lines(parsed_fields) + cls._gbmemory_lines(di)
+
+    @classmethod
     def generate(cls, di: dict[str, Any], device: LK_Device) -> str:
         header = cls._resolved_header(di)
 
@@ -256,69 +325,15 @@ class DumpReport:
         lines += ["", "== Parsed Data =="]
 
         if mode == "DMG":
-            cgb_raw = header["cgb"]
-            target_platform = cls._target_platform(header)
-
-            sgb_str: Literal["Supported", "No support"] = (
-                "Supported" if (header["old_lic"] == 0x33 and header["sgb"] == 0x03) else "No support"
-            )
-            cgb_str: str = DMG_Mapper().CGB_MAP.get(cgb_raw, f"Unknown (0x{cgb_raw:02X})")
-
-            hdr_chk = header["header_checksum"]
-            hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
-            header_checksum_str = (
-                f"OK (0x{hdr_chk:02X})"
-                if header["header_checksum_correct"]
-                else f"Invalid (0x{hdr_chk_calc:02X}≠0x{hdr_chk:02X})"
-            )
-
-            header["rom_checksum_calc"] = device.INFO.get("rom_checksum_calc", header.get("rom_checksum_calc"))
-            rom_chk_ok = header["rom_checksum_calc"] == header["rom_checksum"]
-            rom_checksum_str: str = (
-                f"OK (0x{header['rom_checksum']:04X})"
-                if rom_chk_ok
-                else f"Invalid (0x{header['rom_checksum_calc']:04X}≠0x{header['rom_checksum']:04X})"
-            )
-
-            hdr_rom_size_raw: int = header["rom_size_raw"]
-            if hdr_rom_size_raw < RomSizes().GetNumberOfTypes():
-                hdr_rom_size_str: str = RomSizes().GetString(index=hdr_rom_size_raw, localized=False)
-            else:
-                hdr_rom_size_str = f"Unknown (0x{hdr_rom_size_raw:02X})"
-
-            hdr_save_str = cls._dmg_save_size_string(header["ram_size_raw"])
-
-            mapper_raw = header["mapper_raw"]
-            if mapper_raw in DMG_Mapper().GetAllMapperIds():
-                hdr_mapper_str: str = f"{DMG_Mapper().GetMapperName(mapper_raw)} (0x{mapper_raw:02X})"
-            else:
-                hdr_mapper_str = f"Unknown (0x{mapper_raw:02X})"
-
-            parsed_fields = [("Game Title", (header.get("game_title") or "").replace("\0", "␀"))]
-            if cgb_raw in (0xC0, 0x80) and header.get("game_code"):
-                parsed_fields.append(("Game Code", header["game_code"].replace("\0", "␀")))
-            parsed_fields += [
-                ("Revision", str(header["version"])),
-                ("Super Game Boy", sgb_str),
-                ("Game Boy Color", cgb_str),
-                ("Nintendo Logo", logo_str),
-                ("Header Checksum", header_checksum_str),
-                ("ROM Checksum", rom_checksum_str),
-                ("ROM Size", hdr_rom_size_str),
-                ("SRAM Size", hdr_save_str),
-                ("Mapper Type", hdr_mapper_str),
-                ("Target Platform", target_platform),
-            ]
-            lines += cls._fields_to_lines(parsed_fields)
-            lines += cls._gbmemory_lines(di)
+            lines += cls._dmg_parsed_lines(header, di, device, logo_str)
 
         elif mode == "AGB":
             hdr_chk = header["header_checksum"]
             hdr_chk_calc = header.get("header_checksum_calc", hdr_chk)
-            header_checksum_str: str = (
-                f"OK (0x{hdr_chk:02X})"
-                if header["header_checksum_correct"]
-                else f"Invalid (0x{hdr_chk_calc:02X}≠0x{hdr_chk:02X})"
+            header_checksum_str: str = cls._header_checksum_string(
+                hdr_chk,
+                hdr_chk_calc,
+                correct=header["header_checksum_correct"],
             )
 
             savelib_str: str = AgbSaveTypes().GetStringFromSaveLib(di["agb_savelib"], localized=False)

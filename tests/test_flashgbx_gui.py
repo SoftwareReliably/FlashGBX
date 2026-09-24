@@ -2291,6 +2291,57 @@ def test_save_stress_test_mismatch_confirmation(
     )
 
 
+@pytest.mark.parametrize("cancel_during_events", [False, True], ids=["complete", "cancel"])
+def test_save_stress_test_completion_handles_cancellation_during_events(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_during_events: bool,
+) -> None:
+    events: list[str] = []
+    status = SimpleNamespace(setText=lambda _text: events.append("status"))
+    gui = make_gui(
+        gui_module,
+        STATUS={"stresstest_running": True},
+        lblStatus4a=status,
+        SetProgressBars=Mock(side_effect=lambda **_kwargs: events.append("progress")),
+    )
+    result = gui_module._SaveStressTestResult(
+        1, ["pattern"], "elapsed", bytearray(b"save"), bytearray(b"save"), bytearray(b"write"), bytearray(b"read")
+    )
+    result_dialog = Mock(side_effect=lambda _result: events.append("result"))
+    finish = Mock(side_effect=lambda: events.append("finish"))
+    gui._ShowSaveStressTestResult = result_dialog
+    gui._FinishSaveStressTest = finish
+
+    def process_events() -> None:
+        events.append("events")
+        if cancel_during_events:
+            gui.STATUS.pop("stresstest_running")
+
+    def create_message_box(**_kwargs: object) -> SimpleNamespace:
+        events.append("dialog")
+
+        def execute() -> int:
+            events.append("exec")
+            return FakeMessageBox.StandardButton.Ok
+
+        return SimpleNamespace(exec=execute)
+
+    monkeypatch.setattr(gui_module.qt_app, "processEvents", process_events)
+    monkeypatch.setattr(gui_module, "_create_message_box", create_message_box)
+
+    gui._CompleteSaveStressTest(result)
+
+    if cancel_during_events:
+        assert events == ["progress", "status", "events", "dialog", "exec", "finish"]
+        assert "stresstest_running" not in gui.STATUS
+        result_dialog.assert_not_called()
+    else:
+        assert events == ["progress", "status", "events", "result", "finish"]
+        result_dialog.assert_called_once_with(result)
+    finish.assert_called_once_with()
+
+
 def test_create_dmg_game_code_revision_row_preserves_layout(gui_module: ModuleType) -> None:
     gui = make_gui(gui_module)
     group_layout = gui_module.QtWidgets.QVBoxLayout()

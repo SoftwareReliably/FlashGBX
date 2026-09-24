@@ -1144,6 +1144,49 @@ def test_write_firmware_bootloader_handshake_exhausts_retries_without_success(
     assert "Status: Done!" not in window.lblStatus.text_history
 
 
+@pytest.mark.parametrize(
+    ("answer", "expected_result"),
+    [(FakeMessageBox.StandardButton.No, 2), (FakeMessageBox.StandardButton.Yes, 3)],
+)
+def test_write_firmware_f_command_ack_exhaustion_prompts_retry(
+    firmware_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: int,
+    expected_result: int,
+) -> None:
+    window = make_window(firmware_module)
+    events: list[tuple[str, object]] = []
+    for _ in range(11):
+        events.extend([("write", b"F"), ("read", (1, b"!"))])
+    events.append(("write", b"?"))
+    dev = ScriptedSerial(events)
+    window._ConnectBootloader = Mock(return_value=(dev, bootloader_reply()))
+    window._PrepareUserData = Mock(return_value=bytearray(range(65)))
+    dialog_arguments: list[dict[str, object]] = []
+    sleep_calls: list[float] = []
+
+    def show_dialog(**kwargs: object) -> SimpleNamespace:
+        assert dev.closes == 1
+        assert window.lblStatus.text == "Status: Protocol Error. Please try again."
+        dialog_arguments.append(kwargs)
+        return SimpleNamespace(exec=lambda: answer)
+
+    monkeypatch.setattr(firmware_module, "_message_box", show_dialog)
+    monkeypatch.setattr(firmware_module.time, "sleep", sleep_calls.append)
+
+    result = window.WriteFirmware(bytearray(b"firmware"), window.SetStatus)
+
+    assert result == expected_result
+    dev.assert_finished()
+    assert dev.writes.count(b"F") == 11
+    assert dev.writes[-1] == b"?"
+    assert dev.closes == 1
+    assert len(dialog_arguments) == 1
+    assert dialog_arguments[0]["defaultButton"] == FakeMessageBox.StandardButton.Yes
+    assert "Protocol Error" in str(dialog_arguments[0]["text"])
+    assert sleep_calls.count(1) == (1 if answer == FakeMessageBox.StandardButton.Yes else 0)
+
+
 def test_connect_bootloader_accepts_expected_handshake_without_closing_port(
     firmware_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,

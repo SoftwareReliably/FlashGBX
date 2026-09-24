@@ -1617,8 +1617,10 @@ class DMG_TAMA5(DMG_Mapper):
             self.WriteRTCDict(d)
             return
 
-        # advance=False: write raw nibbles directly to preserve all bit fields
-        # (bypasses WriteRTCDict which hardcodes weekday=6 in BCD encode)
+        self._WriteRawRTC(buffer)
+
+    def _WriteRawRTC(self, buffer: bytearray) -> None:
+        # Write raw nibbles directly; WriteRTCDict hardcodes weekday=6 in BCD encode.
         for page in range(4):
             page_buffer: bytearray = buffer[page * 8 : page * 8 + 8]
             for reg in range(0x0D):

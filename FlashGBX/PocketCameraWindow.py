@@ -104,6 +104,18 @@ class PocketCameraWindow(QtWidgets.QDialog):
         row_actions.addWidget(self.btnClose)
         self.layout_options3.addLayout(row_actions)
 
+    def _CreatePhotoSaveActionRow(self) -> None:
+        row_actions_general = QtWidgets.QHBoxLayout()
+        self.btnSavePhoto = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Save This Picture"))
+        self.btnSavePhoto.setStyleSheet("padding: 5px 10px;")
+        self.btnSavePhoto.clicked.connect(self.btnSavePhoto_Clicked)
+        row_actions_general.addWidget(self.btnSavePhoto)
+        self.btnSaveAll = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "Save &All Pictures"))
+        self.btnSaveAll.setStyleSheet("padding: 5px 10px;")
+        self.btnSaveAll.clicked.connect(self.btnSaveAll_Clicked)
+        row_actions_general.addWidget(self.btnSaveAll)
+        self.grpPhotoViewLayout.addLayout(row_actions_general)
+
     def __init__(
         self,
         app: FlashGBX_GUI,
@@ -192,16 +204,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.grpPhotoViewLayout.addWidget(self.lblPhotoViewer)
 
         # Actions below Viewer
-        rowActionsGeneral2 = QtWidgets.QHBoxLayout()
-        self.btnSavePhoto = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Save This Picture"))
-        self.btnSavePhoto.setStyleSheet("padding: 5px 10px;")
-        self.btnSavePhoto.clicked.connect(self.btnSavePhoto_Clicked)
-        rowActionsGeneral2.addWidget(self.btnSavePhoto)
-        self.btnSaveAll = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "Save &All Pictures"))
-        self.btnSaveAll.setStyleSheet("padding: 5px 10px;")
-        self.btnSaveAll.clicked.connect(self.btnSaveAll_Clicked)
-        rowActionsGeneral2.addWidget(self.btnSaveAll)
-        self.grpPhotoViewLayout.addLayout(rowActionsGeneral2)
+        self._CreatePhotoSaveActionRow()
 
         self.grpPhotoView.setLayout(self.grpPhotoViewLayout)
 

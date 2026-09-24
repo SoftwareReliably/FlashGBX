@@ -866,6 +866,14 @@ try:
             self.grpStatus.setLayout(self.grpStatusLayout)
             self.layout_device.addWidget(self.grpStatus)
 
+        def _CreateFooter(self) -> None:
+            self.grpFooterLayout = QtWidgets.QHBoxLayout()
+            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
+            self.btnClose.clicked.connect(self.reject)
+            self.grpFooterLayout.addStretch()
+            self.grpFooterLayout.addWidget(self.btnClose)
+            self.layout_device.addItem(self.grpFooterLayout)
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -940,12 +948,7 @@ try:
 
             self._CreateStatusGroup(maximum=1000, ready_text=__("Status: Ready."))
 
-            self.grpFooterLayout = QtWidgets.QHBoxLayout()
-            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
-            self.btnClose.clicked.connect(self.reject)
-            self.grpFooterLayout.addStretch()
-            self.grpFooterLayout.addWidget(self.btnClose)
-            self.layout_device.addItem(self.grpFooterLayout)
+            self._CreateFooter()
 
             self.main_layout.addLayout(self.layout_device, 0, 0)
             self.setLayout(self.main_layout)
@@ -1215,6 +1218,14 @@ try:
             self.grpStatus.setLayout(self.grpStatusLayout)
             self.layout_device.addWidget(self.grpStatus)
 
+        def _CreateFooter(self) -> None:
+            self.grpFooterLayout = QtWidgets.QHBoxLayout()
+            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
+            self.btnClose.clicked.connect(self.reject)
+            self.grpFooterLayout.addStretch()
+            self.grpFooterLayout.addWidget(self.btnClose)
+            self.layout_device.addItem(self.grpFooterLayout)
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -1299,12 +1310,7 @@ try:
 
             self._CreateStatusGroup(maximum=100, ready_text=__("Ready."))
 
-            self.grpFooterLayout = QtWidgets.QHBoxLayout()
-            self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
-            self.btnClose.clicked.connect(self.reject)
-            self.grpFooterLayout.addStretch()
-            self.grpFooterLayout.addWidget(self.btnClose)
-            self.layout_device.addItem(self.grpFooterLayout)
+            self._CreateFooter()
 
             self.main_layout.addLayout(self.layout_device, 0, 0)
             self.setLayout(self.main_layout)
@@ -1766,6 +1772,20 @@ try:
             dev.read(0x41)
             return user_data
 
+        def _PromptFirmwareProtocolRetry(self) -> FirmwareUpdateResult:
+            msgbox = _message_box(
+                parent=self,
+                icon=QtWidgets.QMessageBox.Icon.Critical,
+                windowTitle=AppInfo.NAME,
+                text="The firmware update was not successful (Protocol Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
+                standardButtons=QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+            answer = msgbox.exec()
+            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+                time.sleep(1)
+            return 3 if answer == QtWidgets.QMessageBox.StandardButton.Yes else 2
+
         def WriteFirmware(self, data: bytearray, fncSetStatus: StatusCallback) -> FirmwareUpdateResult:
             fw_buffer: bytearray = data
             bootloader = self._ConnectBootloader(fncSetStatus)
@@ -1825,19 +1845,7 @@ try:
                     time.sleep(0.00125)
                     dev.close()
                     fncSetStatus(text=__("Protocol Error. Please try again."), enableUI=True)
-                    msgbox = _message_box(
-                        parent=self,
-                        icon=QtWidgets.QMessageBox.Icon.Critical,
-                        windowTitle=AppInfo.NAME,
-                        text="The firmware update was not successful (Protocol Error). Do you want to try again?\n\nIf it doesn't work even after multiple retries, please use the insideGadgets standalone firmware updater instead.",
-                        standardButtons=QtWidgets.QMessageBox.StandardButton.Yes
-                        | QtWidgets.QMessageBox.StandardButton.No,
-                        defaultButton=QtWidgets.QMessageBox.StandardButton.Yes,
-                    )
-                    answer = msgbox.exec()
-                    if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                        time.sleep(1)
-                    return 3 if answer == QtWidgets.QMessageBox.StandardButton.Yes else 2
+                    return self._PromptFirmwareProtocolRetry()
 
             page_result = self._WriteFirmwarePages(dev, fw_buffer, iterations, fncSetStatus)
             if page_result is not None:

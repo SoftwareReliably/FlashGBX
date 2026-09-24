@@ -5011,13 +5011,16 @@ class LK_Device(ABC):
 
         self._ResetROMReadState(_mbc, cart_type, flashcart, dmg_read_method, agb_read_method)
 
-        # Clean up
+        self._CompleteROMBackup(args["path"])
+        return True
+
+    def _CompleteROMBackup(self, path: str) -> None:
+        # Clean up after a successful ROM backup.
         self.INFO["last_action"] = self.INFO["action"]
         self.INFO["action"] = None
-        self.INFO["last_path"] = args["path"]
+        self.INFO["last_path"] = path
         self._thread_worker_auto_poweroff_finish()
         self.SetProgress({"action": "FINISHED"})
-        return True
 
     def WriteRTC(self, args: dict[str, Any]) -> bool | None:
         if self.CanPowerCycleCart():
@@ -6853,6 +6856,35 @@ class LK_Device(ABC):
             return False
         return verified
 
+    def _CompareFlashVerificationBank(
+        self,
+        context: _FlashVerificationContext,
+        *,
+        bank: int,
+        pos_from: int,
+        start_address: int,
+        verify_len: int,
+    ) -> bool | tuple[int, int]:
+        verified = self.CompareCRC32(
+            buffer=context.data_import,
+            offset=pos_from,
+            length=verify_len,
+            address=start_address,
+            flashcart=context.flashcart,
+            reset=False,
+            mbc=context.mbc,
+            bank=bank,
+        )
+        if verified is True:
+            dprint(f"CRC32 verification successful between 0x{pos_from:X} and 0x{verify_len:X}")
+            self.SetProgress(
+                {
+                    "action": "UPDATE_POS",
+                    "pos": pos_from + verify_len,
+                },
+            )
+        return verified
+
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
         args = context.args
         cart_type = context.cart_type
@@ -6860,7 +6892,6 @@ class LK_Device(ABC):
         data_import = context.data_import
         verify_sectors = context.verify_sectors
         rom_bank_size = context.rom_bank_size
-        _mbc = context.mbc
         buffer_len = context.buffer_len
         pos_from = 0
         verify_len = 0
@@ -6932,25 +6963,14 @@ class LK_Device(ABC):
 
                         verified = False
                         if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
-                            verified = self.CompareCRC32(
-                                buffer=data_import,
-                                offset=pos_from,
-                                length=verify_len,
-                                address=start_address,
-                                flashcart=flashcart,
-                                reset=False,
-                                mbc=_mbc,
+                            verified = self._CompareFlashVerificationBank(
+                                context,
                                 bank=bank,
+                                pos_from=pos_from,
+                                start_address=start_address,
+                                verify_len=verify_len,
                             )
-                            if verified is True:
-                                dprint(f"CRC32 verification successful between 0x{pos_from:X} and 0x{verify_len:X}")
-                                self.SetProgress(
-                                    {
-                                        "action": "UPDATE_POS",
-                                        "pos": pos_from + verify_len,
-                                    },
-                                )
-                            elif isinstance(verified, tuple) and len(verified) == 2:
+                            if isinstance(verified, tuple) and len(verified) == 2:
                                 crc32_errors += 1
                                 dprint(
                                     f"Mismatch during CRC32 verification at 0x{pos_from:X}",

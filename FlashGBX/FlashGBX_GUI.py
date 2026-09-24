@@ -1295,6 +1295,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row.setStretch(1, 15)
         group_layout.addLayout(row)
 
+    def _CreateDMGHeaderROMChecksumRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.lblDMGHeaderROMChecksum = QtWidgets.QLabel()
+        self.lblDMGHeaderROMChecksum.setContentsMargins(0, 1, 3, 1)
+        row.addWidget(self.lblDMGHeaderROMChecksum)
+        self.lblDMGHeaderROMChecksumResult = QtWidgets.QLabel("")
+        row.addWidget(self.lblDMGHeaderROMChecksumResult)
+        row.setStretch(0, 9)
+        row.setStretch(1, 15)
+        group_layout.addLayout(row)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1323,15 +1334,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateDMGHeaderBootlogoRow(group_layout)
 
-        rowDMGHeaderROMChecksum = QtWidgets.QHBoxLayout()
-        self.lblDMGHeaderROMChecksum = QtWidgets.QLabel()
-        self.lblDMGHeaderROMChecksum.setContentsMargins(0, 1, 3, 1)
-        rowDMGHeaderROMChecksum.addWidget(self.lblDMGHeaderROMChecksum)
-        self.lblDMGHeaderROMChecksumResult = QtWidgets.QLabel("")
-        rowDMGHeaderROMChecksum.addWidget(self.lblDMGHeaderROMChecksumResult)
-        rowDMGHeaderROMChecksum.setStretch(0, 9)
-        rowDMGHeaderROMChecksum.setStretch(1, 15)
-        group_layout.addLayout(rowDMGHeaderROMChecksum)
+        self._CreateDMGHeaderROMChecksumRow(group_layout)
 
         rowDMGHeaderROMSize = QtWidgets.QHBoxLayout()
         self.lblDMGHeaderROMSize = QtWidgets.QLabel()
@@ -1423,6 +1426,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row.setStretch(1, 15)
         group_layout.addLayout(row)
 
+    def _CreateAGBHeaderChecksumRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.lblAGBHeaderChecksum = QtWidgets.QLabel()
+        self.lblAGBHeaderChecksum.setContentsMargins(0, 1, 3, 1)
+        row.addWidget(self.lblAGBHeaderChecksum)
+        self.lblAGBHeaderChecksumResult = QtWidgets.QLabel("")
+        row.addWidget(self.lblAGBHeaderChecksumResult)
+        row.setStretch(0, 9)
+        row.setStretch(1, 15)
+        group_layout.addLayout(row)
+
     def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
         self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
@@ -1449,15 +1463,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateAGBHeaderBootlogoRow(group_layout)
 
-        rowAGBHeaderChecksum = QtWidgets.QHBoxLayout()
-        self.lblAGBHeaderChecksum = QtWidgets.QLabel()
-        self.lblAGBHeaderChecksum.setContentsMargins(0, 1, 3, 1)
-        rowAGBHeaderChecksum.addWidget(self.lblAGBHeaderChecksum)
-        self.lblAGBHeaderChecksumResult = QtWidgets.QLabel("")
-        rowAGBHeaderChecksum.addWidget(self.lblAGBHeaderChecksumResult)
-        rowAGBHeaderChecksum.setStretch(0, 9)
-        rowAGBHeaderChecksum.setStretch(1, 15)
-        group_layout.addLayout(rowAGBHeaderChecksum)
+        self._CreateAGBHeaderChecksumRow(group_layout)
 
         rowAGBHeaderROMChecksum = QtWidgets.QHBoxLayout()
         self.lblAGBHeaderROMChecksum = QtWidgets.QLabel()
@@ -4831,14 +4837,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elapsed=Formatter.progress_time(time_elapsed, as_float=True),
         )
 
+        self._CompleteSaveStressTest(
+            _SaveStressTestResult(test_ok, test_patterns_names, msg_te, save1, save2, towrite, readback),
+        )
+
+    def _CompleteSaveStressTest(self, result: _SaveStressTestResult) -> None:
         self.SetProgressBars(min=0, max=100, value=100)
         self.lblStatus4a.setText(__("Done!"))
         qt_app.processEvents()
 
         if "stresstest_running" in self.STATUS:
-            self._ShowSaveStressTestResult(
-                _SaveStressTestResult(test_ok, test_patterns_names, msg_te, save1, save2, towrite, readback),
-            )
+            self._ShowSaveStressTestResult(result)
         else:
             msgbox = _create_message_box(
                 parent=self,
