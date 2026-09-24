@@ -837,6 +837,19 @@ try:
             self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
             self.layout_device.addWidget(self.grpDeviceInfo)
 
+        def _CreateStatusGroup(self, maximum: int, ready_text: str) -> None:
+            self.grpStatus = QtWidgets.QGroupBox("")
+            self.grpStatusLayout = QtWidgets.QGridLayout()
+            self.prgStatus = QtWidgets.QProgressBar()
+            self.prgStatus.setMinimum(0)
+            self.prgStatus.setMaximum(maximum)
+            self.prgStatus.setValue(0)
+            self.lblStatus = QtWidgets.QLabel(ready_text)
+            self.grpStatusLayout.addWidget(self.prgStatus, 1, 0)
+            self.grpStatusLayout.addWidget(self.lblStatus, 2, 0)
+            self.grpStatus.setLayout(self.grpStatusLayout)
+            self.layout_device.addWidget(self.grpStatus)
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -909,19 +922,7 @@ try:
             self.layout_device.addWidget(self.grpAvailableFwUpdates)
             # ↑↑↑ Available Firmware Updates
 
-            self.grpStatus = QtWidgets.QGroupBox("")
-            self.grpStatusLayout = QtWidgets.QGridLayout()
-            self.prgStatus = QtWidgets.QProgressBar()
-            self.prgStatus.setMinimum(0)
-            self.prgStatus.setMaximum(1000)
-            self.prgStatus.setValue(0)
-            self.lblStatus = QtWidgets.QLabel(__("Status: Ready."))
-
-            self.grpStatusLayout.addWidget(self.prgStatus, 1, 0)
-            self.grpStatusLayout.addWidget(self.lblStatus, 2, 0)
-
-            self.grpStatus.setLayout(self.grpStatusLayout)
-            self.layout_device.addWidget(self.grpStatus)
+            self._CreateStatusGroup(maximum=1000, ready_text=__("Status: Ready."))
 
             self.grpFooterLayout = QtWidgets.QHBoxLayout()
             self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
@@ -1185,6 +1186,19 @@ try:
             self.grpDeviceInfo.setLayout(self.grpDeviceInfoLayout)
             self.layout_device.addWidget(self.grpDeviceInfo)
 
+        def _CreateStatusGroup(self, maximum: int, ready_text: str) -> None:
+            self.grpStatus = QtWidgets.QGroupBox("")
+            self.grpStatusLayout = QtWidgets.QGridLayout()
+            self.prgStatus = QtWidgets.QProgressBar()
+            self.prgStatus.setMinimum(0)
+            self.prgStatus.setMaximum(maximum)
+            self.prgStatus.setValue(0)
+            self.lblStatus = QtWidgets.QLabel(ready_text)
+            self.grpStatusLayout.addWidget(self.prgStatus, 1, 0)
+            self.grpStatusLayout.addWidget(self.lblStatus, 2, 0)
+            self.grpStatus.setLayout(self.grpStatusLayout)
+            self.layout_device.addWidget(self.grpStatus)
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -1267,19 +1281,7 @@ try:
             self.layout_device.addWidget(self.grpAvailableFwUpdates)
             # ↑↑↑ Available Firmware Updates
 
-            self.grpStatus = QtWidgets.QGroupBox("")
-            self.grpStatusLayout = QtWidgets.QGridLayout()
-            self.prgStatus = QtWidgets.QProgressBar()
-            self.prgStatus.setMinimum(0)
-            self.prgStatus.setMaximum(100)
-            self.prgStatus.setValue(0)
-            self.lblStatus = QtWidgets.QLabel(__("Ready."))
-
-            self.grpStatusLayout.addWidget(self.prgStatus, 1, 0)
-            self.grpStatusLayout.addWidget(self.lblStatus, 2, 0)
-
-            self.grpStatus.setLayout(self.grpStatusLayout)
-            self.layout_device.addWidget(self.grpStatus)
+            self._CreateStatusGroup(maximum=100, ready_text=__("Ready."))
 
             self.grpFooterLayout = QtWidgets.QHBoxLayout()
             self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))

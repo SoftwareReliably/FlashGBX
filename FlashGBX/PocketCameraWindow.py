@@ -91,6 +91,19 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.grpPhotoThumbsLayout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         self.grpPhotoThumbs.setLayout(self.grpPhotoThumbsLayout)
 
+    def _CreateGeneralActionRow(self) -> None:
+        row_actions = QtWidgets.QHBoxLayout()
+        self.btnOpenSRAM = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Open Save Data File"))
+        self.btnOpenSRAM.setStyleSheet("padding: 5px 10px;")
+        self.btnOpenSRAM.clicked.connect(self.btnOpenSRAM_Clicked)
+        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
+        self.btnClose.setStyleSheet("padding: 5px 15px;")
+        self.btnClose.clicked.connect(self.btnClose_Clicked)
+        row_actions.addWidget(self.btnOpenSRAM)
+        row_actions.addStretch()
+        row_actions.addWidget(self.btnClose)
+        self.layout_options3.addLayout(row_actions)
+
     def __init__(
         self,
         app: FlashGBX_GUI,
@@ -162,17 +175,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         self.layout_options1.addWidget(self.grpOptions)
 
-        rowActionsGeneral1 = QtWidgets.QHBoxLayout()
-        self.btnOpenSRAM = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Open Save Data File"))
-        self.btnOpenSRAM.setStyleSheet("padding: 5px 10px;")
-        self.btnOpenSRAM.clicked.connect(self.btnOpenSRAM_Clicked)
-        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
-        self.btnClose.setStyleSheet("padding: 5px 15px;")
-        self.btnClose.clicked.connect(self.btnClose_Clicked)
-        rowActionsGeneral1.addWidget(self.btnOpenSRAM)
-        rowActionsGeneral1.addStretch()
-        rowActionsGeneral1.addWidget(self.btnClose)
-        self.layout_options3.addLayout(rowActionsGeneral1)
+        self._CreateGeneralActionRow()
 
         # Photo Viewer
         self.grpPhotoView = QtWidgets.QGroupBox(__("Preview"))

@@ -1282,6 +1282,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowDMGGameCodeRevision.setStretch(1, 15)
         group_layout.addLayout(rowDMGGameCodeRevision)
 
+    def _CreateDMGHeaderBootlogoRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.lblDMGHeaderBootlogo = QtWidgets.QLabel()
+        self.lblDMGHeaderBootlogo.setContentsMargins(0, 1, 3, 1)
+        row.addWidget(self.lblDMGHeaderBootlogo)
+        self.lblDMGHeaderBootlogoResult = QtWidgets.QLabel("")
+        row.addWidget(self.lblDMGHeaderBootlogoResult)
+        row.setStretch(0, 9)
+        row.setStretch(1, 15)
+        group_layout.addLayout(row)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1308,15 +1319,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowDMGHeaderRtc.setStretch(1, 15)
         group_layout.addLayout(rowDMGHeaderRtc)
 
-        rowDMGHeaderBootlogo = QtWidgets.QHBoxLayout()
-        self.lblDMGHeaderBootlogo = QtWidgets.QLabel()
-        self.lblDMGHeaderBootlogo.setContentsMargins(0, 1, 3, 1)
-        rowDMGHeaderBootlogo.addWidget(self.lblDMGHeaderBootlogo)
-        self.lblDMGHeaderBootlogoResult = QtWidgets.QLabel("")
-        rowDMGHeaderBootlogo.addWidget(self.lblDMGHeaderBootlogoResult)
-        rowDMGHeaderBootlogo.setStretch(0, 9)
-        rowDMGHeaderBootlogo.setStretch(1, 15)
-        group_layout.addLayout(rowDMGHeaderBootlogo)
+        self._CreateDMGHeaderBootlogoRow(group_layout)
 
         rowDMGHeaderROMChecksum = QtWidgets.QHBoxLayout()
         self.lblDMGHeaderROMChecksum = QtWidgets.QLabel()
@@ -1407,6 +1410,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowAGBHeaderGameCodeRevision.setStretch(1, 15)
         group_layout.addLayout(rowAGBHeaderGameCodeRevision)
 
+    def _CreateAGBHeaderBootlogoRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.lblAGBHeaderBootlogo = QtWidgets.QLabel()
+        self.lblAGBHeaderBootlogo.setContentsMargins(0, 1, 3, 1)
+        row.addWidget(self.lblAGBHeaderBootlogo)
+        self.lblAGBHeaderBootlogoResult = QtWidgets.QLabel("")
+        row.addWidget(self.lblAGBHeaderBootlogoResult)
+        row.setStretch(0, 9)
+        row.setStretch(1, 15)
+        group_layout.addLayout(row)
+
     def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
         self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
@@ -1431,15 +1445,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowAGBGpioRtc.setStretch(1, 15)
         group_layout.addLayout(rowAGBGpioRtc)
 
-        rowAGBHeaderBootlogo = QtWidgets.QHBoxLayout()
-        self.lblAGBHeaderBootlogo = QtWidgets.QLabel()
-        self.lblAGBHeaderBootlogo.setContentsMargins(0, 1, 3, 1)
-        rowAGBHeaderBootlogo.addWidget(self.lblAGBHeaderBootlogo)
-        self.lblAGBHeaderBootlogoResult = QtWidgets.QLabel("")
-        rowAGBHeaderBootlogo.addWidget(self.lblAGBHeaderBootlogoResult)
-        rowAGBHeaderBootlogo.setStretch(0, 9)
-        rowAGBHeaderBootlogo.setStretch(1, 15)
-        group_layout.addLayout(rowAGBHeaderBootlogo)
+        self._CreateAGBHeaderBootlogoRow(group_layout)
 
         rowAGBHeaderChecksum = QtWidgets.QHBoxLayout()
         self.lblAGBHeaderChecksum = QtWidgets.QLabel()
@@ -4557,6 +4563,44 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             time.sleep(0.02)
         transfer.join()
 
+    def _RestoreSaveStressTest(
+        self,
+        preparation: _SaveWritePreparation,
+        save_data: bytearray,
+        rtc_advance: bool,
+        *,
+        erase: bool,
+        progress_max: int,
+    ) -> None:
+        self.btnCancel.setEnabled(False)
+        self.lblStatus4a.setText(__("Restoring original save data..."))
+        self.SetProgressBars(min=0, max=progress_max, value=progress_max - 1)
+        qt_app.processEvents()
+        self._RunSaveStressTestTransfer(
+            {
+                "mode": 3,
+                "path": preparation.path,
+                "mbc": preparation.mbc,
+                "save_type": preparation.save_type,
+                "rtc": False,
+                "rtc_advance": rtc_advance,
+                "erase": erase,
+                "verify_write": False,
+                "buffer": save_data,
+                "cart_type": preparation.cart_type,
+            },
+        )
+        self._RunSaveStressTestTransfer(
+            {
+                "mode": 2,
+                "path": preparation.path,
+                "mbc": preparation.mbc,
+                "save_type": preparation.save_type,
+                "rtc": False,
+                "cart_type": preparation.cart_type,
+            },
+        )
+
     def _ShowSaveStressTestResult(self, result: _SaveStressTestResult) -> None:
         if result.tests_completed == len(result.pattern_names) + 1:
             msgbox = _create_message_box(
@@ -4735,32 +4779,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     break
                 test_ok += 1
 
-            self.btnCancel.setEnabled(False)
-            self.lblStatus4a.setText(__("Restoring original save data..."))
-            self.SetProgressBars(min=0, max=len(test_patterns) + 3, value=len(test_patterns) + 2)
-            qt_app.processEvents()
-            args = {
-                "mode": 3,
-                "path": path,
-                "mbc": mbc,
-                "save_type": save_type,
-                "rtc": False,
-                "rtc_advance": rtc_advance,
-                "erase": erase,
-                "verify_write": False,
-                "buffer": save1,
-                "cart_type": cart_type,
-            }
-            self._RunSaveStressTestTransfer(args)
-            args = {
-                "mode": 2,
-                "path": path,
-                "mbc": mbc,
-                "save_type": save_type,
-                "rtc": False,
-                "cart_type": cart_type,
-            }
-            self._RunSaveStressTestTransfer(args)
+            self._RestoreSaveStressTest(
+                preparation,
+                save1,
+                rtc_advance,
+                erase=erase,
+                progress_max=len(test_patterns) + 3,
+            )
 
         time_elapsed = time.time() - time_start
         msg_te = "\n\n" + __(

@@ -8065,6 +8065,16 @@ class LK_Device(ABC):
                 ),
             )
 
+    def _ResetFlashWriteForRetry(self, flashcart: Flashcart, position: int) -> bool:
+        self.CANCEL = False
+        self.CANCEL_ARGS = {}
+        device = self._serial_device()
+        device.reset_input_buffer()
+        device.reset_output_buffer()
+        self._cart_write(position, 0xF0)
+        self._cart_write(position, 0xFF)
+        return flashcart.Unlock()
+
     def _WritePreparedFlashROM(
         self,
         args: dict[str, Any],
@@ -8279,14 +8289,7 @@ class LK_Device(ABC):
                                 },
                             )
                             break
-                        self.CANCEL = False
-                        self.CANCEL_ARGS = {}
-                        device = self._serial_device()
-                        device.reset_input_buffer()
-                        device.reset_output_buffer()
-                        self._cart_write(pos, 0xF0)
-                        self._cart_write(pos, 0xFF)
-                        if flashcart.Unlock() is False:
+                        if not self._ResetFlashWriteForRetry(flashcart, pos):
                             return False
                         continue
 

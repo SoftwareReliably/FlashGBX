@@ -471,6 +471,52 @@ def _prepare_base_args(
     return config_path, {"app_path": app_path, "config_path": config_path, "argparsed": parsed_args}
 
 
+def _ensure_config_directory(
+    config_path: str,
+    config_paths: ConfigPaths,
+    parsed_args: argparse.Namespace,
+    base_args: BaseArgs,
+) -> str | None:
+    while True:
+        try:
+            config_dir = Path(config_path)
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "settings.ini").touch(exist_ok=True)
+        except PermissionError:
+            print(
+                "\n"
+                + ANSI.RED
+                + __(
+                    "Error: This program has no permission to use the configuration directory “{config_path}”!",
+                    config_path=config_path,
+                )
+                + ANSI.RESET,
+            )
+            if "appdata" in config_paths and parsed_args.cfgdir == "subdir":
+                answer = (
+                    input(
+                        __(
+                            "Use directory “{appdata_folder}” instead?",
+                            appdata_folder=config_paths["appdata"],
+                        )
+                        + " [y/N] ",
+                    )
+                    .strip()
+                    .lower()
+                )
+                if answer != "y":
+                    return None
+                config_path = config_paths["appdata"]
+                base_args["config_path"] = config_path
+                continue
+            input("")
+            if parsed_args.wait:
+                input("\n\n" + __("Press ENTER to exit.") + "\n")
+            return None
+        else:
+            return config_path
+
+
 def _add_device_cli_arguments(ap_cli: argparse._ArgumentGroup) -> None:
     ap_cli.add_argument(
         "--device-port",
@@ -715,44 +761,9 @@ def main(portableMode: bool = False) -> int | None:
         return 0
 
     config_path, base_args = _prepare_base_args(parsed_args, cp, config_path, app_path)
-    while True:
-        try:
-            config_dir = Path(config_path)
-            config_dir.mkdir(parents=True, exist_ok=True)
-            tf = config_dir / "settings.ini"
-            tf.touch(exist_ok=True)
-            break
-        except PermissionError:
-            print(
-                "\n"
-                + ANSI.RED
-                + __(
-                    "Error: This program has no permission to use the configuration directory “{config_path}”!",
-                    config_path=config_path,
-                )
-                + ANSI.RESET,
-            )
-            if "appdata" in cp and parsed_args.cfgdir == "subdir":
-                answer = (
-                    input(
-                        __(
-                            "Use directory “{appdata_folder}” instead?",
-                            appdata_folder=cp["appdata"],
-                        )
-                        + " [y/N] ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                if answer != "y":
-                    return None
-                config_path = cp["appdata"]
-                base_args["config_path"] = config_path
-                continue
-            input("")
-            if parsed_args.wait:
-                input("\n\n" + __("Press ENTER to exit.") + "\n")
-            return None
+    config_path = _ensure_config_directory(config_path, cp, parsed_args, base_args)
+    if config_path is None:
+        return None
 
     loaded_config = LoadConfig(base_args)
     startup_args: StartupArgs = {**base_args, **loaded_config}
