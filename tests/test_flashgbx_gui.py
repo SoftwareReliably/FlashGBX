@@ -1765,6 +1765,10 @@ def test_gui_constructor_builds_complete_inert_widget_tree(
     assert len(gui.mnuConfig.actions()) == 16
     assert len(gui.mnuRestoreRAM.actions()) == 4
     assert gui.btnConnect.isEnabled() is False
+    assert gui.optDMG.text() == "&Game Boy"
+    assert gui.optAGB.text() == "Game Boy &Advance"
+    assert gui.btnRestoreRAM.text() == "Writ&e Save Data"
+    assert gui.mnuRestoreRAM.actions()[0].text() == "&Restore from save data file"
     assert gui.MSGBOX_TIMER.timeout.callbacks == [gui.MsgBoxCheck]
     assert gui.LOG_ERROR_TIMER.timeout.callbacks == [gui.LogErrorCheck]
 
@@ -2087,6 +2091,10 @@ def test_connect_device_success_and_backend_failures(
     assert gui.CONN is device
     assert ("initialize", ("mock-port", 1_500_000)) in device.calls
     assert gui.btnConnect.text().replace("&", "") == "Disconnect"
+    assert gui.optDMG.isEnabled() is True
+    assert gui.optAGB.isEnabled() is True
+    assert gui.optDMG.isChecked() is True
+    assert gui.optAGB.isChecked() is False
 
     gui.DisconnectDevice()
     device.initialize_result = False
@@ -2098,6 +2106,26 @@ def test_connect_device_success_and_backend_failures(
     gui.DEVICES = {"Mock Reader": device}
     gui.lblDevice.setText("Mock Reader")
     assert gui.ConnectDevice() is False
+
+
+def test_connected_platform_controls_disable_voltage_code_for_autoswitch_only_device(
+    gui_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    device = FakeDevice()
+    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    gui.CONN = device
+    gui.optDMG.setChecked(True)
+    gui.optAGB.setChecked(True)
+
+    gui._ConfigureConnectedPlatformButtons()
+
+    assert gui.optDMG.isEnabled() is False
+    assert gui.optAGB.isEnabled() is False
+    assert gui.optDMG.isChecked() is False
+    assert gui.optAGB.isChecked() is False
+    assert gui.lblStatus4a.text() == "Ready. Please select Platform Mode."
 
 
 def test_find_devices_discovers_mock_and_handles_scan_exception(
@@ -2350,6 +2378,22 @@ def test_update_progress_handles_transfer_actions(
     gui = build_gui(gui_module, tmp_path)
     gui.CONN = FakeDevice()
     gui.UpdateProgress(payload)
+
+    expected_labels = {
+        "ERASE": "Erasing... This may take up to 5 seconds.",
+        "UNLOCK": "Unlocking flash...",
+        "UPDATE_RTC": "Updating Real Time Clock...",
+        "CALC_CHECKSUMS": "Calculating SHA-1...",
+        "SECTOR_ERASE": "Erasing sector at address 0x1000...",
+        "ABORTING": "Stopping... Please wait.",
+        "ERROR": '<span style="color: red;">failed</span>',
+        "UPDATE_INFO": "working",
+        "PROGRESS": "Time left:",
+    }
+    action = str(payload["action"])
+    assert gui.lblStatus4a.text() == expected_labels[action]
+    assert gui.btnCancel.isEnabled() is bool(payload.get("abortable", action == "PROGRESS"))
+    assert gui.prgStatus.value() == payload["pos"]
 
 
 @pytest.mark.parametrize(

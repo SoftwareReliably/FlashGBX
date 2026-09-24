@@ -1075,22 +1075,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._InitCartridgeInfoWidgetTexts()
 
-        # Actions
-        self.grpActions.setTitle(__("Functions"))
-        self.lblMode.setText(__("Plattform:") + " ")
-        self.optDMG.setText(c__("Radio Button (& = Keyboard Shortcut)", "&Game Boy"))
-        self.optAGB.setText(c__("Radio Button (& = Keyboard Shortcut)", "Game Boy &Advance"))
-        self.btnHeaderRefresh.setText(c__("Button (& = Keyboard Shortcut)", "&Refresh"))
-        self.btnDetectCartridge.setText(c__("Button (& = Keyboard Shortcut)", "Analyze &Flash Cart"))
-        self.btnBackupROM.setText(c__("Button (& = Keyboard Shortcut)", "&Backup ROM"))
-        self.btnBackupRAM.setText(c__("Button (& = Keyboard Shortcut)", "Backup &Save Data"))
-        self.btnFlashROM.setText(c__("Button (& = Keyboard Shortcut)", "&Write ROM"))
-        self.btnRestoreRAM.setText(c__("Button (& = Keyboard Shortcut)", "Writ&e Save Data"))
-        self.mnuRestoreRAM.actions()[0].setText(
-            c__("Menu Item (& = Keyboard Shortcut)", "&Restore from save data file")
-        )
-        self.mnuRestoreRAM.actions()[1].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Erase cartridge save data"))
-        self.mnuRestoreRAM.actions()[3].setText(c__("Menu Item (& = Keyboard Shortcut)", "Run stress &test"))
+        self._InitActionWidgetTexts()
 
         # Transfer Status
         self.grpStatus.setTitle(__("Transfer Status"))
@@ -1192,6 +1177,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnMainMenu.setMaximumWidth(btnWidth)
         self.btnConnect.setText(c__("Button (& = Keyboard Shortcut)", "&Connect"))
         self.ApplyInfoColumnWidths()
+
+    def _InitActionWidgetTexts(self) -> None:
+        self.grpActions.setTitle(__("Functions"))
+        self.lblMode.setText(__("Plattform:") + " ")
+        self.optDMG.setText(c__("Radio Button (& = Keyboard Shortcut)", "&Game Boy"))
+        self.optAGB.setText(c__("Radio Button (& = Keyboard Shortcut)", "Game Boy &Advance"))
+        self.btnHeaderRefresh.setText(c__("Button (& = Keyboard Shortcut)", "&Refresh"))
+        self.btnDetectCartridge.setText(c__("Button (& = Keyboard Shortcut)", "Analyze &Flash Cart"))
+        self.btnBackupROM.setText(c__("Button (& = Keyboard Shortcut)", "&Backup ROM"))
+        self.btnBackupRAM.setText(c__("Button (& = Keyboard Shortcut)", "Backup &Save Data"))
+        self.btnFlashROM.setText(c__("Button (& = Keyboard Shortcut)", "&Write ROM"))
+        self.btnRestoreRAM.setText(c__("Button (& = Keyboard Shortcut)", "Writ&e Save Data"))
+        self.mnuRestoreRAM.actions()[0].setText(
+            c__("Menu Item (& = Keyboard Shortcut)", "&Restore from save data file")
+        )
+        self.mnuRestoreRAM.actions()[1].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Erase cartridge save data"))
+        self.mnuRestoreRAM.actions()[3].setText(c__("Menu Item (& = Keyboard Shortcut)", "Run stress &test"))
 
     def ApplyInfoColumnWidths(self) -> None:
         labels = (
@@ -2174,6 +2176,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
 
+    def _ConfigureConnectedPlatformButtons(self) -> None:
+        self.optDMG.setAutoExclusive(False)
+        self.optAGB.setAutoExclusive(False)
+        device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
+        if "DMG" in self._device.GetSupprtedModes():
+            self.optDMG.setEnabled(not device_auto_switch_only)
+            self.optDMG.setChecked(False)
+        if "AGB" in self._device.GetSupprtedModes():
+            self.optAGB.setEnabled(not device_auto_switch_only)
+            self.optAGB.setChecked(False)
+        self.optAGB.setAutoExclusive(True)
+        self.optDMG.setAutoExclusive(True)
+        if len(self._device.GetSupprtedModes()) == 2:
+            self.lblStatus4a.setText(__("Ready. Please select Platform Mode."))
+        else:
+            self.lblStatus4a.setText(__("Ready."))
+
     def _complete_device_connection(self, dev: LK_Device, msg: str) -> bool:
         self.CONN = dev
         dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
@@ -2193,21 +2212,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.UpdateThirdPartySupportAction()
 
         cast("Any", self._device).SetTimeout(float(str(self.SETTINGS.value("SerialTimeout", default="1"))))
-        self.optDMG.setAutoExclusive(False)
-        self.optAGB.setAutoExclusive(False)
-        device_auto_switch_only = self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode()
-        if "DMG" in self._device.GetSupprtedModes():
-            self.optDMG.setEnabled(not device_auto_switch_only)
-            self.optDMG.setChecked(False)
-        if "AGB" in self._device.GetSupprtedModes():
-            self.optAGB.setEnabled(not device_auto_switch_only)
-            self.optAGB.setChecked(False)
-        self.optAGB.setAutoExclusive(True)
-        self.optDMG.setAutoExclusive(True)
-        if len(self._device.GetSupprtedModes()) == 2:
-            self.lblStatus4a.setText(__("Ready. Please select Platform Mode."))
-        else:
-            self.lblStatus4a.setText(__("Ready."))
+        self._ConfigureConnectedPlatformButtons()
         self.btnConnect.setText(c__("Button (& = Keyboard Shortcut)", "&Disconnect"))
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
         if dev.GetFWBuildDate() == "":
@@ -6955,25 +6960,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     )
                 else:
                     self.lblStatus4a.setText(__("Erasing... This may take some time."))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "UNLOCK":
                 self.lblStatus1aResult.setText(__("Pending..."))
                 self.lblStatus2aResult.setText(__("Pending..."))
                 self.lblStatus3aResult.setText(__("Pending..."))
                 self.lblStatus4a.setText(__("Unlocking flash..."))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "UPDATE_RTC":
                 self.lblStatus1aResult.setText(__("Pending..."))
                 self.lblStatus2aResult.setText(__("Pending..."))
                 self.lblStatus3aResult.setText(__("Pending..."))
                 self.lblStatus4a.setText(__("Updating Real Time Clock..."))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(False)
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=False, size=size, pos=pos)
             elif args["action"] == "CALC_CHECKSUMS":
                 self.lblStatus1aResult.setText(__("Pending..."))
                 self.lblStatus2aResult.setText(__("Pending..."))
@@ -6982,9 +6981,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     self.lblStatus4a.setText(__("Calculating {checksum_type}...", checksum_type=args["type"]))
                 else:
                     self.lblStatus4a.setText(__("Calculating checksums..."))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(False)
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=False, size=size, pos=pos)
             elif args["action"] == "SECTOR_ERASE":
                 if elapsed >= 1:
                     self.lblStatus3aResult.setText(Formatter.progress_time(elapsed))
@@ -6994,29 +6991,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         address="0x{:X}".format(args["sector_pos"]),
                     ),
                 )
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "ABORTING":
                 self.lblStatus1aResult.setText("-")
                 self.lblStatus2aResult.setText("-")
                 self.lblStatus3aResult.setText("-")
                 self.lblStatus4a.setText(__("Stopping... Please wait."))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "ERROR":
                 self.lblStatus2aResult.setText(__("Pending..."))
                 self.lblStatus3aResult.setText(__("Pending..."))
                 self.lblStatus4a.setText('<span style="color: red;">{:s}</span>'.format(args["text"]))
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "UPDATE_INFO":
                 self.lblStatus4a.setText(args["text"])
-                self.SetStatus4aResult("")
-                self.btnCancel.setEnabled(args["abortable"])
-                self.SetProgressBars(min=0, max=size, value=pos)
+                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "FINISHED":
                 if pos > 0:
                     self.lblStatus1aResult.setText(Formatter.file_size(pos))
@@ -7024,6 +7013,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
+
+    def _SetProgressActionControls(self, *, abortable: bool, size: int, pos: int) -> None:
+        self.SetStatus4aResult("")
+        self.btnCancel.setEnabled(abortable)
+        self.SetProgressBars(min=0, max=size, value=pos)
 
     def SetStatus4aResult(self, text: str) -> None:
         if text:
