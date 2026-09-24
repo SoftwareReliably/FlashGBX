@@ -2594,27 +2594,33 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.STATUS["time_start"] = 0
         return time_elapsed, message, speed
 
+    @staticmethod
+    def _FormatBrokenSectors(broken_sectors: list[list[int]]) -> tuple[str, int]:
+        sectors = ""
+        sector_count = 0
+        for sector in broken_sectors:
+            sector_count += 1
+            if sector_count > 10:
+                sectors += (
+                    c__(
+                        "Shortened list of Broken Sectors (e.g. 0x0000~0x07FF and others)",
+                        "and others",
+                    )
+                    + "  "
+                )
+                break
+            sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
+        return sectors[:-2], sector_count
+
     def _FinishFlashROM(self, msgbox: QtWidgets.QMessageBox, elapsed_message: str) -> bool:
         if "broken_sectors" in self._device.INFO:
-            sectors = ""
-            sector_count = 0
-            for sector in self._device.INFO["broken_sectors"]:
-                sector_count += 1
-                if sector_count > 10:
-                    sectors += (
-                        c__(
-                            "Shortened list of Broken Sectors (e.g. 0x0000~0x07FF and others)",
-                            "and others",
-                        )
-                        + "  "
-                    )
-                    break
-                sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
+            broken_sectors: list[list[int]] = self._device.INFO["broken_sectors"]
+            sectors, sector_count = self._FormatBrokenSectors(broken_sectors)
             message = ___(
                 "The ROM was written completely, but verification of written data failed in the following sector: {sectors}.",
                 "The ROM was written completely, but verification of written data failed in the following sectors: {sectors}.",
                 n=sector_count,
-                sectors=sectors[:-2],
+                sectors=sectors,
             )
             if "verify_error_params" in self._device.INFO:
                 cart_types = []

@@ -844,6 +844,18 @@ def test_v13_update_rejects_invalid_input_and_restores_controls(
         assert settings.writes == []
 
 
+def test_v13_image_loader_rejects_missing_bundled_member(
+    firmware_module: ModuleType,
+    tmp_path: Path,
+) -> None:
+    window = object.__new__(firmware_module.FirmwareUpdaterWindowV13)
+    window.APP_PATH = tmp_path
+    window.PCB_VER = "v1.3"
+
+    with pytest.raises(ValueError, match="No bundled firmware file was selected"):
+        window._LoadFirmwareImage("", None)
+
+
 def bootloader_reply(
     *,
     signature: bytes = b"\x1e\x93\x06",

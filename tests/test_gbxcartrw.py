@@ -362,6 +362,23 @@ def test_load_firmware_version_disconnects_after_truncated_protocol() -> None:
     assert serial_device.is_open is False
 
 
+def test_load_firmware_version_disconnects_after_truncated_modern_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    serial_device = MockSerial(timeout=0.3, responses=[b"\x06"])
+    device = GbxDevice()
+    monkeypatch.setattr(device, "DEVICE", serial_device)
+    monkeypatch.setattr(
+        device,
+        "_read",
+        Mock(side_effect=[31, 8, bytearray(struct.pack(">cHBI", b"L", 18, 6, 1_700_000_000)), 1, False]),
+    )
+
+    assert device.LoadFirmwareVersion() is False
+    assert device.DEVICE is None
+    assert serial_device.is_open is False
+
+
 def test_load_firmware_version_handles_non_utf8_device_name() -> None:
     timestamp = 1_700_000_000
     payload = bytes([8]) + struct.pack(">cHBI", b"L", 12, 6, timestamp)
@@ -629,13 +646,37 @@ def test_firmware_updater_rejects_corrupt_archive(tmp_path: Path) -> None:
 
 def test_firmware_updater_reports_when_no_device_is_discovered(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     archive_path = tmp_path / "firmware.zip"
     build_firmware_archive(archive_path, b"pokemon-red")
     status = Mock()
+    monkeypatch.setattr(gbxcartrw.serial.tools.list_ports, "comports", list)
 
     assert FirmwareUpdater().WriteFirmware(archive_path, status) == 2
     assert status.call_args.args[0] == "No device found."
+
+
+def test_firmware_updater_selects_first_supported_discovered_port(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive_path = tmp_path / "firmware.zip"
+    build_firmware_archive(archive_path, b"pokemon-red")
+    serial_device = EchoSerial()
+    serial_open = Mock(return_value=serial_device)
+    candidates = [
+        SimpleNamespace(device="unrelated", vid=0x1234, pid=0x5678),
+        SimpleNamespace(device="first-supported", vid=0x1A86, pid=0x7523),
+        SimpleNamespace(device="second-supported", vid=0x1A86, pid=0x7523),
+    ]
+    monkeypatch.setattr(gbxcartrw.serial.tools.list_ports, "comports", lambda: candidates)
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", serial_open)
+    monkeypatch.setattr(gbxcartrw.time, "sleep", lambda _seconds: None)
+
+    assert FirmwareUpdater().WriteFirmware(archive_path, Mock()) == 1
+
+    assert serial_open.call_args.kwargs == {"port": "first-supported", "baudrate": 57600, "timeout": 1}
 
 
 def test_firmware_updater_writes_decrypted_payload_over_mock_serial(
@@ -647,7 +688,10 @@ def test_firmware_updater_writes_decrypted_payload_over_mock_serial(
     build_firmware_archive(archive_path, firmware)
     serial_device = EchoSerial()
     status = Mock()
-    monkeypatch.setattr(gbxcartrw.serial, "Serial", lambda *_args, **_kwargs: serial_device)
+    serial_open = Mock(return_value=serial_device)
+    port_enumeration = Mock(side_effect=AssertionError("explicit port must skip discovery"))
+    monkeypatch.setattr(gbxcartrw.serial, "Serial", serial_open)
+    monkeypatch.setattr(gbxcartrw.serial.tools.list_ports, "comports", port_enumeration)
     monkeypatch.setattr(gbxcartrw.time, "sleep", lambda _seconds: None)
 
     result = FirmwareUpdater(port="mock-port").WriteFirmware(archive_path, status)
@@ -656,6 +700,8 @@ def test_firmware_updater_writes_decrypted_payload_over_mock_serial(
     assert serial_device.writes == [bytes([value]) for value in firmware]
     assert serial_device.is_open is False
     assert status.call_args.args[0] == "Done!"
+    assert serial_open.call_args.kwargs == {"port": "mock-port", "baudrate": 57600, "timeout": 1}
+    port_enumeration.assert_not_called()
 
 
 def test_read_header_identifies_synthetic_pokemon_red_without_hardware(

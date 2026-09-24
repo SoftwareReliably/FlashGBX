@@ -4320,6 +4320,38 @@ def test_finish_flash_rom_verification_failure_retry_or_decline(
         gui.ReadCartridge.assert_called_once_with(resetStatus=False)
 
 
+@pytest.mark.parametrize("sector_count", [0, 1, 10, 11])
+def test_finish_flash_rom_formats_broken_sector_warning_limit(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sector_count: int,
+) -> None:
+    gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    sectors = [[index * 0x1000, 0x1000] for index in range(sector_count)]
+    device.INFO.update(last_action=4, broken_sectors=sectors)
+    gui.ReadCartridge = Mock()
+    warnings: list[str] = []
+
+    def warn(_parent: object, _title: str, message: str, *_args: object) -> int:
+        warnings.append(message)
+        return FakeMessageBox.StandardButton.No
+
+    monkeypatch.setattr(FakeMessageBox, "warning", warn)
+    monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: FakeMessageBox())
+
+    gui.FinishOperation()
+
+    assert len(warnings) == 1
+    assert ("0x0~0xFFF" in warnings[0]) is (sector_count > 0)
+    assert ("0x9000~0x9FFF" in warnings[0]) is (sector_count >= 10)
+    assert ("and others" in warnings[0]) is (sector_count > 10)
+    assert "0xA000~0xAFFF" not in warnings[0]
+    assert device.calls == []
+    assert device.INFO["last_action"] == 0
+    gui.ReadCartridge.assert_called_once_with(resetStatus=False)
+
+
 def test_cancelled_flash_rom_shows_abort_result_and_restores_controls(
     gui_module: ModuleType,
     tmp_path: Path,

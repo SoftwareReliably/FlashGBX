@@ -392,6 +392,26 @@ class GbxDevice(LK_Device):
             self.MAX_BUFFER_READ = 0x1000
             self.MAX_BUFFER_WRITE = 0x100
 
+    def _ReadModernFirmwareMetadata(self, firmware: FirmwareInfo) -> None:
+        name_size = self._read_byte()
+        if name_size > 0:
+            name = self._read_bytes(name_size)
+            try:
+                firmware["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
+            except UnicodeDecodeError:
+                firmware["pcb_name"] = "Unnamed Device"
+            if firmware["pcb_name"]:
+                self.DEVICE_NAME = firmware["pcb_name"]
+
+        # Cartridge Power Control support
+        capabilities = self._read_byte()
+        firmware["cart_power_ctrl"] = capabilities & 1 == 1
+        firmware["cart_presence_switch"] = (capabilities >> 1) & 1 == 1
+        firmware["cart_mode_switch"] = (capabilities >> 2) & 1 == 1
+
+        # Reset to bootloader support
+        firmware["bootloader_reset"] = self._read_byte() == 1
+
     def LoadFirmwareVersion(self) -> bool:
         dprint("Querying firmware version")
         device = self.DEVICE
@@ -455,24 +475,7 @@ class GbxDevice(LK_Device):
             }
             self.FW = firmware
             if firmware["cfw_id"] == "L" and firmware["fw_ver"] >= 12:
-                name_size = self._read_byte()
-                if name_size > 0:
-                    name = self._read_bytes(name_size)
-                    try:
-                        firmware["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
-                    except UnicodeDecodeError:
-                        firmware["pcb_name"] = "Unnamed Device"
-                    if firmware["pcb_name"]:
-                        self.DEVICE_NAME = firmware["pcb_name"]
-
-                # Cartridge Power Control support
-                capabilities = self._read_byte()
-                firmware["cart_power_ctrl"] = capabilities & 1 == 1
-                firmware["cart_presence_switch"] = (capabilities >> 1) & 1 == 1
-                firmware["cart_mode_switch"] = (capabilities >> 2) & 1 == 1
-
-                # Reset to bootloader support
-                firmware["bootloader_reset"] = self._read_byte() == 1
+                self._ReadModernFirmwareMetadata(firmware)
 
             return True  # noqa: TRY300
         except (OSError, SerialException, ConnectionError, UnicodeDecodeError) as exc:
@@ -690,6 +693,18 @@ class FirmwareUpdater:
         self.APP_PATH = Path(app_path)
         self.PORT = port
 
+    def _ResolveUpdatePort(self) -> str | None:
+        if self.PORT is not None:
+            return self.PORT
+        return next(
+            (
+                candidate.device
+                for candidate in serial.tools.list_ports.comports()
+                if candidate.vid == 0x1A86 and candidate.pid == 0x7523
+            ),
+            None,
+        )
+
     def WriteFirmware(
         self,
         zipfn: str | Path,
@@ -720,18 +735,10 @@ class FirmwareUpdater:
             fncSetStatus(__("The firmware update file is corrupted."))
             return 3
 
-        if self.PORT is None:
-            ports = [
-                candidate.device
-                for candidate in serial.tools.list_ports.comports()
-                if candidate.vid == 0x1A86 and candidate.pid == 0x7523
-            ]
-            if not ports:
-                fncSetStatus(__("No device found."))
-                return 2
-            port = ports[0]
-        else:
-            port = self.PORT
+        port = self._ResolveUpdatePort()
+        if port is None:
+            fncSetStatus(__("No device found."))
+            return 2
         data = buffer
         buffer = bytearray()
 
@@ -1379,6 +1386,21 @@ try:
                 return False
             return True
 
+        def _LoadFirmwareImage(self, path: str, archive_member: str | None) -> bytearray:
+            if path == "":
+                if archive_member is None:
+                    msg = "No bundled firmware file was selected"
+                    raise ValueError(msg)
+                with (
+                    zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
+                    archive.open(archive_member) as firmware_file,
+                ):
+                    ihex = firmware_file.read().decode("ascii")
+            else:
+                with Path(path).open("rb") as firmware_file:
+                    ihex = firmware_file.read().decode("ascii")
+            return _parse_intel_hex(ihex)
+
         def UpdateFirmware(self) -> bool | None:
             fw = ""
             path = ""
@@ -1439,19 +1461,7 @@ try:
             self.grpAvailableFwUpdates.setEnabled(False)
 
             try:
-                if path == "":
-                    if archive_member is None:
-                        msg_0 = "No bundled firmware file was selected"
-                        raise ValueError(msg_0)  # noqa: TRY301
-                    with (
-                        zipfile.ZipFile(self.APP_PATH / "res" / self.FW_FILES[self.PCB_VER]) as archive,
-                        archive.open(archive_member) as firmware_file,
-                    ):
-                        ihex: str = firmware_file.read().decode("ascii")
-                else:
-                    with Path(path).open("rb") as firmware_file:
-                        ihex = firmware_file.read().decode("ascii")
-                buffer: bytearray = _parse_intel_hex(ihex)
+                buffer = self._LoadFirmwareImage(path, archive_member)
             except (
                 OSError,
                 UnicodeDecodeError,

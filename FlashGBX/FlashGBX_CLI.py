@@ -2248,6 +2248,14 @@ class FlashGBX_CLI:
             print(__("Note: Overwriting existing e-Reader calibration data."))
         return True, buffer
 
+    def _PowerCycleForSaveTest(self) -> None:
+        if self.CONN.CanPowerCycleCart():
+            print("\n" + __("Power cycling."))
+            for _ in range(5):
+                self.CONN.CartPowerCycle()
+                time.sleep(0.1)
+            self.CONN.ReadHeader(checkRtc=False)
+
     def _DebugTestSave(self, mbc: int, save_type: int) -> None:
         self.ARGS["debug"] = True
         config_path = Path(AppContext.CONFIG_PATH)
@@ -2297,12 +2305,7 @@ class FlashGBX_CLI:
         time.sleep(0.1)
         with test3_path.open("rb") as f:
             test3 = bytearray(f.read())
-        if self.CONN.CanPowerCycleCart():
-            print("\n" + __("Power cycling."))
-            for _ in range(5):
-                self.CONN.CartPowerCycle()
-                time.sleep(0.1)
-            self.CONN.ReadHeader(checkRtc=False)
+        self._PowerCycleForSaveTest()
         time.sleep(0.2)
         print("\n" + __("Reading back and comparing data again."))
         self.CONN.TransferData(

@@ -6,6 +6,7 @@ import importlib
 import sys
 import zipfile
 from argparse import Namespace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -18,7 +19,6 @@ from FlashGBX.PocketCamera import PocketCamera
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
 
 def make_args(**overrides: object) -> Namespace:
@@ -2758,3 +2758,79 @@ def test_finish_backup_ram_destination_collision_stops_exports(
     assert conn.INFO["last_action"] == 0
     assert destination.read_bytes() == b"existing destination"
     assert exports == []
+
+
+@pytest.mark.parametrize(
+    ("power_cycle", "fail_backup"),
+    [(True, False), (False, False), (True, True)],
+)
+def test_debug_save_test_restores_data_and_orders_optional_power_cycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    power_cycle: bool,
+    fail_backup: bool,
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    monkeypatch.setattr(cli_module.os, "urandom", lambda size: b"\xa5" * size)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    initial_data = bytes(index % 256 for index in range(512))
+    cartridge_data = bytearray(initial_data)
+    events: list[tuple[str, object]] = []
+    transfer_calls: list[dict[str, Any]] = []
+
+    def transfer(*, args: dict[str, Any], signal: object) -> bool:
+        del signal
+        transfer_calls.append(args)
+        mode = args["mode"]
+        path = Path(str(args["path"]))
+        events.append(("transfer", (mode, path.name)))
+        if len(transfer_calls) == 1 and fail_backup:
+            return False
+        if mode == 2:
+            path.write_bytes(cartridge_data)
+        else:
+            cartridge_data[:] = path.read_bytes()
+        return True
+
+    monkeypatch.setattr(conn, "TransferData", transfer)
+    monkeypatch.setattr(conn, "CanPowerCycleCart", lambda: power_cycle)
+    monkeypatch.setattr(conn, "CartPowerCycle", lambda: events.append(("power", "cycle")))
+    monkeypatch.setattr(
+        conn,
+        "ReadHeader",
+        lambda *, checkRtc=True: events.append(("header", checkRtc)) or {},
+    )
+    monkeypatch.setattr(cli_module.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
+
+    cli._DebugTestSave(mbc=0x02, save_type=0x02)
+
+    expected_names = ["test1.bin"] if fail_backup else ["test1.bin", "test2.bin", "test3.bin", "test4.bin", "test1.bin"]
+    assert [Path(str(args["path"])).name for args in transfer_calls] == expected_names
+    assert [args["mode"] for args in transfer_calls] == ([2] if fail_backup else [2, 3, 2, 2, 3])
+    assert all(args["mbc"] == 0x02 and args["save_type"] == 0x02 for args in transfer_calls)
+
+    if fail_backup:
+        assert cartridge_data == initial_data
+        assert not (tmp_path / "test1.bin").exists()
+        assert events == [("transfer", (2, "test1.bin"))]
+        return
+
+    assert (tmp_path / "test1.bin").read_bytes() == initial_data
+    assert cartridge_data == initial_data
+    power_events = [event for event in events if event[0] == "power"]
+    header_events = [event for event in events if event[0] == "header"]
+    assert len(power_events) == (5 if power_cycle else 0)
+    assert header_events == ([("header", False)] if power_cycle else [])
+    transfer_positions = [index for index, event in enumerate(events) if event[0] == "transfer"]
+    if power_cycle:
+        power_positions = [index for index, event in enumerate(events) if event[0] == "power"]
+        header_position = next(index for index, event in enumerate(events) if event[0] == "header")
+        delay_position = events.index(("sleep", 0.2))
+        assert transfer_positions[2] < power_positions[0] < power_positions[-1] < header_position
+        assert header_position < delay_position < transfer_positions[3]
+    else:
+        assert not any(event[0] == "header" for event in events)
