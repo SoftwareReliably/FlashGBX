@@ -94,7 +94,7 @@ class RomFileDMG:
     BATTERYLESS_SRAM_DB = None
 
     def __init__(self, file: str | Path | bytearray | None = None) -> None:
-        self.DATA: dict = {}
+        self.DATA: dict[str, Any] = {}
         if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):

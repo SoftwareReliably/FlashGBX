@@ -120,7 +120,6 @@ reportUnknownArgumentType=false
 reportUnknownMemberType=false
 
 reportUnknownLambdaType=false
-reportMissingTypeArgument=false
 
 [tool.ruff]
 target-version = "py314"
