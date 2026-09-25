@@ -1526,8 +1526,6 @@ try:
                     return True
                 if ret == 2:
                     return False
-                if ret == 3:
-                    continue
 
         def SetStatus(
             self,

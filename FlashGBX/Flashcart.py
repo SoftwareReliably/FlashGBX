@@ -547,6 +547,53 @@ class Flashcart:
             return raw_sector_map
         return False
 
+    def _WaitForSectorErase(
+        self,
+        address: int,
+        expected: int,
+        mask: int,
+        write_enable: str | None,
+        buffer_position: int,
+    ) -> bool:
+        time.sleep(0.05)
+        timeout = 100
+        while True:
+            self._WriteSectorEraseStatusCommands(write_enable)
+
+            self.CartRead(address, 2)  # dummy read (fixes some bootlegs)
+            temp: bytearray = self.CartRead(address, 2)
+            if len(temp) != 2:
+                dprint("Communication error 1 in SectorErase():", temp)
+                return False
+            wait_for = self.CartRead(address, 2)
+            if len(wait_for) != 2:
+                dprint("Communication error 2 in SectorErase():", temp)
+                return False
+            wait_for = struct.unpack("<H", wait_for)[0]
+            self._last_status = wait_for
+            dprint(
+                f"Status Register Check: 0x{wait_for:X} & 0x{mask:X} == 0x{expected:X}? "
+                f"{wait_for & mask == expected!s}",
+            )
+            wait_for = wait_for & mask
+            time.sleep(0.05)
+            timeout -= 1
+            if timeout < 1:
+                dprint(f"Timeout error in SectorErase(): 0x{self._last_status:X}")
+                return False
+            if wait_for == expected:
+                break
+            self._progress(
+                {
+                    "action": "SECTOR_ERASE",
+                    "sector_pos": buffer_position,
+                    "time_start": time.time(),
+                    "abortable": True,
+                },
+            )
+        dprint("Done waiting!")
+        return True
+
     def SectorErase(self, pos: int = 0, buffer_pos: int = 0, skip: bool = False) -> int | Literal[False]:
         if not skip:
             self.Reset(full_reset=False)
@@ -573,47 +620,9 @@ class Flashcart:
                     if addr is None:
                         msg = "Sector erase status address cannot be empty"
                         raise ValueError(msg)
-                    time.sleep(0.05)
-                    timeout = 100
-                    while True:
-                        self._WriteSectorEraseStatusCommands(we)
-
-                        self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
-                        temp: bytearray = self.CartRead(addr, 2)
-                        if len(temp) != 2:
-                            dprint("Communication error 1 in SectorErase():", temp)
-                            return False
-                        wait_for = self.CartRead(addr, 2)
-                        if len(wait_for) != 2:
-                            dprint("Communication error 2 in SectorErase():", temp)
-                            return False
-                        wait_for = struct.unpack("<H", wait_for)[0]
-                        self._last_status = wait_for
-                        dprint(
-                            "Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(
-                                wait_for,
-                                self._config["commands"]["sector_erase_wait_for"][i][2],
-                                data,
-                                str(wait_for & self._config["commands"]["sector_erase_wait_for"][i][2] == data),
-                            ),
-                        )
-                        wait_for = wait_for & self._config["commands"]["sector_erase_wait_for"][i][2]
-                        time.sleep(0.05)
-                        timeout -= 1
-                        if timeout < 1:
-                            dprint(f"Timeout error in SectorErase(): 0x{self._last_status:X}")
-                            return False
-                        if wait_for == data:
-                            break
-                        self._progress(
-                            {
-                                "action": "SECTOR_ERASE",
-                                "sector_pos": buffer_pos,
-                                "time_start": time.time(),
-                                "abortable": True,
-                            },
-                        )
-                    dprint("Done waiting!")
+                    mask = self._config["commands"]["sector_erase_wait_for"][i][2]
+                    if not self._WaitForSectorErase(addr, data, mask, we, buffer_pos):
+                        return False
 
             self.Reset(full_reset=False)
 

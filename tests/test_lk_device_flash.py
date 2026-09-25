@@ -453,6 +453,47 @@ def test_verify_flash_write_records_sector_when_crc_and_readback_disagree(
     )
 
 
+@pytest.mark.parametrize(
+    ("read_results", "expected", "expected_calls"),
+    [
+        ([True, True], True, 2),
+        ([False, True], True, 2),
+        ([True, False], False, 2),
+        ([None], None, 1),
+    ],
+    ids=["success", "failure-then-success", "final-failure", "cancelled"],
+)
+def test_verify_flash_write_preserves_readback_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+    read_results: list[bool | None],
+    expected: bool | None,
+    expected_calls: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    device.FW = {"fw_ver": 9}
+    data = bytearray(range(64))
+    context = verification_context(DecisionFlashcart(), VerificationMapper(), data)._replace(
+        args={"verify_write": True},
+        cart_type={"command_set": "AMD"},
+        verify_sectors=[[0, 32], [32, 32]],
+        rom_bank_size=32,
+    )
+    readback = Mock(side_effect=read_results)
+    finalize = Mock(side_effect=lambda _context, _broken, verified: verified)
+    monkeypatch.setattr(device, "_InitializeFlashVerification", Mock())
+    monkeypatch.setattr(device, "_VerifyFlashSectorByReading", readback)
+    monkeypatch.setattr(device, "_FinalizeFlashVerification", finalize)
+
+    assert device._verify_flash_write(context) is expected
+
+    assert readback.call_count == expected_calls
+    if expected is None:
+        finalize.assert_not_called()
+    else:
+        finalize.assert_called_once()
+
+
 def test_store_flash_verification_errors_records_dmg_mapper_metadata() -> None:
     device = GbxDevice()
     device.MODE = "DMG"

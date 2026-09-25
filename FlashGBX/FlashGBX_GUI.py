@@ -3278,8 +3278,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
         last_dir = self._GetLastDirectory(setting_name)
         if cart_type == 0:
-            if "detected_cart_type" not in self.STATUS:
-                self.STATUS["detected_cart_type"] = ""
+            self.STATUS.setdefault("detected_cart_type", "")
             if self.STATUS["detected_cart_type"] == "":
                 self.STATUS["detected_cart_type"] = "WAITING_FLASH"
                 self.STATUS["detect_cartridge_args"] = {"dpath": path}
@@ -4260,7 +4259,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                         "It is recommended to keep the existing calibration data, but you can also choose to erase it or overwrite it with data from the file you selected.",
                     )
                 )
-                button_overwrite = msgbox.addButton(
+                msgbox.addButton(
                     c__("Button (& = Keyboard Shortcut)", "&Erase everything"),
                     QtWidgets.QMessageBox.ButtonRole.ActionRole,
                 )
@@ -4271,7 +4270,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     "This {cart_name} cartridge currently has calibration data in place that is different from this save file's data.\n\nHow do you want to proceed?",
                     cart_name=cart_name,
                 )
-                button_overwrite = msgbox.addButton(
+                msgbox.addButton(
                     c__("Button (& = Keyboard Shortcut)", "&Restore from save data"),
                     QtWidgets.QMessageBox.ButtonRole.ActionRole,
                 )
@@ -4296,8 +4295,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 elif msgbox.clickedButton() == button_reset:
                     buffer[0x4FF2:0x5000] = bytearray([0xAA] * 0xE)
                     buffer[0x11FF2:0x12000] = bytearray([0xAA] * 0xE)
-                elif msgbox.clickedButton() == button_overwrite:
-                    pass
             return True, buffer
 
         msg_text = (
@@ -6328,6 +6325,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             else:
                 self.WriteRAM()
 
+    @staticmethod
+    def _DmgSaveTypeDescription(save_type: int) -> str:
+        try:
+            return DmgSaveTypes(mbc=save_type).GetString()
+        except IndexError, KeyError, TypeError, ValueError:
+            return "Unknown"
+
     def _FormatDetectedSaveType(
         self,
         save_size: int,
@@ -6352,10 +6356,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             else:
                 description = f"{AgbSaveTypes().GetStringList()[save_type]:s} ({save_chip:s})"
         elif self._device.GetMode() == "DMG":
-            try:
-                description = f"{DmgSaveTypes(mbc=save_type).GetString():s}"
-            except IndexError, KeyError, TypeError, ValueError:
-                description = "Unknown"
+            description = self._DmgSaveTypeDescription(save_type)
         elif self._device.GetMode() == "AGB":
             description = f"{AgbSaveTypes().GetStringList()[save_type]:s}"
             try:

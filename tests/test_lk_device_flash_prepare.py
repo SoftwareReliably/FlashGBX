@@ -249,6 +249,13 @@ def test_prepare_flash_data_accepts_bytes_like_buffers(
     assert flash_offset == 0
 
 
+def test_load_flash_rom_data_preserves_bytearray_identity() -> None:
+    device = GbxDevice()
+    source = bytearray(b"ROM")
+
+    assert device._LoadFlashROMData({"buffer": source}) is source
+
+
 def test_prepare_flash_data_reads_a_file(tmp_path: Path) -> None:
     device = GbxDevice()
     source_path = tmp_path / "input.gbc"

@@ -325,16 +325,15 @@ class RomFileAGB:
                         return None
 
                     db_entry = cast("AGBDatabaseEntry", raw_entry)
-                    if raw_game_code in ("ZMAJ", "ZMBJ", "ZMDE"):
-                        prefix = "AGS-"
-                    elif raw_game_code == "ZBBJ":
-                        prefix = "NTR-"
-                    elif raw_game_code == "PEAJ":
-                        prefix = "PEC-"
-                    elif raw_game_code in ("PSAJ", "PSAE"):
-                        prefix = "PES-"
-                    else:
-                        prefix = "AGB-"
+                    prefix = {
+                        "ZMAJ": "AGS-",
+                        "ZMBJ": "AGS-",
+                        "ZMDE": "AGS-",
+                        "ZBBJ": "NTR-",
+                        "PEAJ": "PEC-",
+                        "PSAJ": "PES-",
+                        "PSAE": "PES-",
+                    }.get(raw_game_code, "AGB-")
                     db_entry["gc"] = prefix + raw_game_code
                 else:
                     dprint(

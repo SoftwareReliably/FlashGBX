@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.CartridgeTypes import AgbSaveTypes, DmgSaveTypes
 from FlashGBX.Flashcart import CFI
 from FlashGBX.hw_GBxCartRW import GbxDevice
@@ -151,6 +152,66 @@ def test_batteryless_goomba_probe_propagates_short_state_reads(monkeypatch: pyte
 
     with pytest.raises(struct.error):
         device.CheckBatterylessSRAM()
+
+
+@pytest.mark.parametrize(
+    ("size_marker", "expected_size"),
+    [
+        (bytearray([0x09, 0x04, 0xA0, 0xE3]), 0x20000),
+        (bytearray(), 0x10000),
+    ],
+    ids=["128k-signature", "64k-default"],
+)
+def test_batteryless_chinese_loader_decodes_rom_offset_and_ram_size(
+    monkeypatch: pytest.MonkeyPatch,
+    size_marker: bytearray,
+    expected_size: int,
+) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    header = bytearray(0x180)
+    header[0xAC:0xB0] = b"TEST"
+    loader = bytearray(0x2000)
+    base_address = 0x40
+    loader[base_address - 8] = 0x20
+    loader[base_address - 7] = 0
+    loader[base_address - 3] = 4
+    loader[base_address : base_address + 4] = bytearray([0x02, 0x13, 0xA0, 0xE3])
+    loader[0x80 : 0x80 + len(size_marker)] = size_marker
+    monkeypatch.setattr(device, "ReadROM", lambda address, _length: header if address == 0 else loader)
+
+    result = device.CheckBatterylessSRAM()
+
+    assert result == {"bl_offset": 0x2000, "bl_size": expected_size}
+
+
+def test_agb_flash_header_size_probe_stops_at_first_matching_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    header = bytearray(0x180)
+    header[0xA0:0xB0] = b"GAME-CODE-HEADER"
+    reads: list[tuple[int, int]] = []
+
+    def read_rom(address: int, length: int) -> bytearray:
+        reads.append((address, length))
+        if address == 0:
+            return header
+        return bytearray(b"GAME-CODE-HEADER" if address == 0x40000 + 0xA0 else b"x" * 64)
+
+    monkeypatch.setattr(device, "ReadROM", read_rom)
+
+    assert device._FindAgbFlashSizeByHeader() == 0x40000
+    assert reads == [(0, 0x180), (0x10000 + 0xA0, 64), (0x20000 + 0xA0, 64), (0x40000 + 0xA0, 64)]
+
+
+def test_detect_flash_size_prefers_cfi_size_without_rom_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = GbxDevice()
+    device.MODE = "AGB"
+    profiles = [{"flash_size": 0x10000}, {"flash_size": 0x20000}]
+    monkeypatch.setattr(device, "GetSupportedCartridgesAGB", lambda: (["first", "second"], profiles))
+    monkeypatch.setattr(device, "ReadROM", lambda *_args: pytest.fail("CFI data should avoid ROM probing"))
+    monkeypatch.setattr(lk_device_module, "Flashcart", lambda **_kwargs: object())
+
+    assert device._detect_flash_size(profiles, [0, 1], {"device_size": 0x20000}, {}) == (1, 0)
 
 
 def make_identifier_profile(

@@ -1228,6 +1228,20 @@ class FlashGBX_CLI:
                 rendered += f"{label.ljust(max_len + 1):s} {value:s}\n"
         return rendered
 
+    def _AppendAgbBootLogoRow(self, rows: list[tuple[str, str | None]], data: HeaderData) -> bool:
+        if data["logo_correct"]:
+            rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
+            bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
+            self._WriteBootLogoIfMissing(bootlogo_path, data["raw"][0x04:0xA0])
+            return False
+        rows.append(
+            (
+                __("Boot Logo:"),
+                ANSI.RED + c__("Game Data", "Invalid") + ANSI.RESET,
+            ),
+        )
+        return True
+
     def ReadCartridge(
         self,
         data: HeaderData,
@@ -1307,18 +1321,7 @@ class FlashGBX_CLI:
 
             rows.append((__("Real Time Clock:"), data["rtc_string"]))
 
-            if data["logo_correct"]:
-                rows.append((__("Boot Logo:"), c__("Game Data", "OK")))
-                bootlogo_path = Path(AppContext.CONFIG_PATH) / "bootlogo_agb.bin"
-                self._WriteBootLogoIfMissing(bootlogo_path, data["raw"][0x04:0xA0])
-            else:
-                rows.append(
-                    (
-                        __("Boot Logo:"),
-                        ANSI.RED + c__("Game Data", "Invalid") + ANSI.RESET,
-                    ),
-                )
-                bad_read = True
+            bad_read |= self._AppendAgbBootLogoRow(rows, data)
 
             if data["header_checksum_correct"]:
                 rows.append(
@@ -1580,30 +1583,8 @@ class FlashGBX_CLI:
     ) -> tuple[int, int | None]:
         cart_type = 0
         if args.flashcart_type != "autodetect":
-            if self.CONN.GetMode() == "DMG":
-                carts = self.CONN.GetSupportedCartridgesDMG()[1]
-            elif self.CONN.GetMode() == "AGB":
-                carts = self.CONN.GetSupportedCartridgesAGB()[1]
-            else:
-                raise NotImplementedError
-
-            for i, cart in enumerate(carts):
-                if "names" not in cart or cart["type"] != self.CONN.GetMode():
-                    continue
-                if args.flashcart_type in cart["names"] and "flash_size" in cart:
-                    print(
-                        __(
-                            "Selected flashcart profile: {profile}",
-                            profile=args.flashcart_type,
-                        )
-                        + "\n",
-                    )
-                    cart_type = i
-                    rom_size = cart["flash_size"]
-                    break
-            if cart_type == 0:
-                print(__("Error: Couldn't select the flashcart profile.") + "\n")
-        elif self.CONN.GetMode() == "AGB":
+            return self._ResolveNamedBackupCartType(args.flashcart_type, rom_size)
+        if self.CONN.GetMode() == "AGB":
             cart_types = self.CONN.GetSupportedCartridgesAGB()
             if "flash_type" in header:
                 print(
@@ -1628,6 +1609,34 @@ class FlashGBX_CLI:
                         )
                         cart_type = i
                         break
+        return cart_type, rom_size
+
+    def _ResolveNamedBackupCartType(self, profile_name: str, rom_size: int | None) -> tuple[int, int | None]:
+        mode = self.CONN.GetMode()
+        if mode == "DMG":
+            carts = self.CONN.GetSupportedCartridgesDMG()[1]
+        elif mode == "AGB":
+            carts = self.CONN.GetSupportedCartridgesAGB()[1]
+        else:
+            raise NotImplementedError
+
+        cart_type = 0
+        for i, cart in enumerate(carts):
+            if "names" not in cart or cart["type"] != mode:
+                continue
+            if profile_name in cart["names"] and "flash_size" in cart:
+                print(
+                    __(
+                        "Selected flashcart profile: {profile}",
+                        profile=profile_name,
+                    )
+                    + "\n",
+                )
+                cart_type = i
+                rom_size = cart["flash_size"]
+                break
+        if cart_type == 0:
+            print(__("Error: Couldn't select the flashcart profile.") + "\n")
         return cart_type, rom_size
 
     def _PrintBackupMapper(self, mbc: int) -> None:
@@ -2042,20 +2051,7 @@ class FlashGBX_CLI:
             + str(rom_path.resolve()),
         )
         if self.CONN.GetMode() == "DMG":
-            if mbc in DMG_Mapper().GetAllMapperIds():
-                print(
-                    __(
-                        "Mapper Type “{mapper_type}” is used.",
-                        mapper_type=DMG_Mapper().GetMapperType(mbc),
-                    ),
-                )
-            else:
-                print(
-                    __(
-                        "Mapper Type {mapper_type_value} is used.",
-                        mapper_type_value=f"0x{mbc:02X}",
-                    ),
-                )
+            self._PrintFlashMapper(mbc)
 
         if not self._ConfirmSafeFlashVoltage(v, carts[cart_type], device_voltage_locked=device_voltage_locked):
             return
@@ -2095,6 +2091,23 @@ class FlashGBX_CLI:
         self.CONN.TransferData(signal=self.PROGRESS.SetProgress, args=transfer_args)
 
         buffer = None
+
+    @staticmethod
+    def _PrintFlashMapper(mbc: int) -> None:
+        if mbc in DMG_Mapper().GetAllMapperIds():
+            print(
+                __(
+                    "Mapper Type “{mapper_type}” is used.",
+                    mapper_type=DMG_Mapper().GetMapperType(mbc),
+                ),
+            )
+        else:
+            print(
+                __(
+                    "Mapper Type {mapper_type_value} is used.",
+                    mapper_type_value=f"0x{mbc:02X}",
+                ),
+            )
 
     def _ResolveFlashDmgMapper(self, args: argparse.Namespace, cart_type: Mapping[str, Any]) -> int:
         """Resolve the DMG mapper selected for a flash operation."""
