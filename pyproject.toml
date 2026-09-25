@@ -123,8 +123,6 @@ reportUnknownLambdaType=false
 reportMissingTypeArgument=false
 reportUnknownParameterType=false
 reportUnnecessaryCast=false
-reportArgumentType=false
-#reportAttributeAccessIssue=false
 
 [tool.ruff]
 target-version = "py314"

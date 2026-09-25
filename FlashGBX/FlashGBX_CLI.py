@@ -2867,7 +2867,7 @@ class FlashGBX_CLI:
 
         print()
         verify_write: bool = args.no_verify_write is False
-        targs = {
+        targs: dict[str, int | str | bool | bytearray] = {
             "mode": 4,
             "path": path,
             "cart_type": cart_type,
