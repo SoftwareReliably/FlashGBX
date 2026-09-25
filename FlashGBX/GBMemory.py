@@ -375,6 +375,15 @@ class GBMemoryMap:
             return data
 
         menu_data: ParsedMenuMapData = {**data, "num_games": 0}
+        return self._parse_menu_map(menu_data, game_title, rom_data, num_games)
+
+    def _parse_menu_map(
+        self,
+        menu_data: ParsedMenuMapData,
+        game_title: str,
+        rom_data: bytearray,
+        num_games: int,
+    ) -> ParsedMapResult:
         data_list: list[ParsedMapData | ParsedMenuEntry] = [menu_data]
         if len(rom_data) < 0x100000:
             return data_list
@@ -456,52 +465,7 @@ class GBMemoryMap:
             rom_data.extend(b"\xff" * (0x20000 - len(rom_data)))
 
         if not self.IS_MENU:
-            mapper_raw = rom_header.get("mapper_raw")
-            ram_size_raw = rom_header.get("ram_size_raw")
-            game_code = rom_header.get("game_code")
-            cgb = rom_header.get("cgb")
-            if (
-                not isinstance(mapper_raw, int)
-                or not isinstance(ram_size_raw, int)
-                or not isinstance(cgb, int)
-                or not isinstance(game_code, str)
-            ):
-                return False
-
-            mbc_type = self.MapperToMBCType(mapper_raw)
-            rom_size = self._rom_size_type(len(rom_data))
-            sram_type = self._sram_type(mbc_type, ram_size_raw)
-            title = game_title
-            db_entry = rom_header.get("db")
-            if isinstance(db_entry, dict) and isinstance(db_entry.get("gn"), str):
-                title = db_entry["gn"]
-
-            menu_data = struct.pack(
-                _SINGLE_GAME_FORMAT,
-                len(rom_data) // (128 * 1024),
-                {
-                    0b000: 0,
-                    0b001: 64,
-                    0b010: 64,
-                    0b011: 256,
-                    0b100: 512,
-                    0b101: 1024,
-                }.get(sram_type, 0),
-                f"{'CGB' if cgb == 0xC0 else 'DMG'} -{game_code:4s}-  ".encode("ASCII", "ignore"),
-                title.encode(self._title_encoding(game_title), "ignore").ljust(0x2C, b"\x00")[:0x2C],
-                self._timestamp(),
-                self._fixed_ascii(AppInfo.NAME, 8),
-            )
-            map_raw = self._pack_map(
-                mbc_type,
-                rom_size,
-                sram_type,
-                rom_start_block=0,
-                ram_start_block=0,
-            )
-            self.MAP_DATA[0:3] = struct.pack(">I", map_raw)[:3]
-            self.MAP_DATA[0x18 : 0x18 + len(menu_data)] = menu_data
-            return True
+            return self._import_single_game(rom_data, rom_header, game_title)
 
         layout = self._menu_layout(game_title)
         if layout is None:
@@ -551,6 +515,54 @@ class GBMemoryMap:
             self.MAP_DATA[pos : pos + 3] = struct.pack(">I", map_raw)[:3]
         self.MAP_DATA[0x54:0x66] = self._timestamp()
         self.MAP_DATA[0x66:0x6E] = self._fixed_ascii(AppInfo.NAME, 8)
+        return True
+
+    def _import_single_game(self, rom_data: bytearray, rom_header: HeaderData, game_title: str) -> bool:
+        mapper_raw = rom_header.get("mapper_raw")
+        ram_size_raw = rom_header.get("ram_size_raw")
+        game_code = rom_header.get("game_code")
+        cgb = rom_header.get("cgb")
+        if (
+            not isinstance(mapper_raw, int)
+            or not isinstance(ram_size_raw, int)
+            or not isinstance(cgb, int)
+            or not isinstance(game_code, str)
+        ):
+            return False
+
+        mbc_type = self.MapperToMBCType(mapper_raw)
+        rom_size = self._rom_size_type(len(rom_data))
+        sram_type = self._sram_type(mbc_type, ram_size_raw)
+        title = game_title
+        db_entry = rom_header.get("db")
+        if isinstance(db_entry, dict) and isinstance(db_entry.get("gn"), str):
+            title = db_entry["gn"]
+
+        menu_data = struct.pack(
+            _SINGLE_GAME_FORMAT,
+            len(rom_data) // (128 * 1024),
+            {
+                0b000: 0,
+                0b001: 64,
+                0b010: 64,
+                0b011: 256,
+                0b100: 512,
+                0b101: 1024,
+            }.get(sram_type, 0),
+            f"{'CGB' if cgb == 0xC0 else 'DMG'} -{game_code:4s}-  ".encode("ASCII", "ignore"),
+            title.encode(self._title_encoding(game_title), "ignore").ljust(0x2C, b"\x00")[:0x2C],
+            self._timestamp(),
+            self._fixed_ascii(AppInfo.NAME, 8),
+        )
+        map_raw = self._pack_map(
+            mbc_type,
+            rom_size,
+            sram_type,
+            rom_start_block=0,
+            ram_start_block=0,
+        )
+        self.MAP_DATA[0:3] = struct.pack(">I", map_raw)[:3]
+        self.MAP_DATA[0x18 : 0x18 + len(menu_data)] = menu_data
         return True
 
     def MapperToMBCType(self, mbc: int) -> int:

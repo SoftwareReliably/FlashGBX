@@ -2356,10 +2356,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if not connected:
                 return False
 
-        if dev.IsConnected():
-            return self._complete_device_connection(dev, msg)
-
-        return False
+        return self._complete_device_connection(dev, msg) if dev.IsConnected() else False
 
     def _SetRequestedMode(self, mode: PlatformMode | None) -> None:
         if mode == "DMG":
@@ -3292,15 +3289,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cart_type = self.STATUS["detected_cart_type"]
             self.STATUS.pop("detected_cart_type", None)
 
-            if cart_type is False:  # clicked Cancel button
-                return None
-            if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("A compatible flashcart profile could not be auto-detected."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
+            if cart_type is False or cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
+                if cart_type is not False:  # clicked Cancel button
+                    QtWidgets.QMessageBox.critical(
+                        self,
+                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                        __("A compatible flashcart profile could not be auto-detected."),
+                        QtWidgets.QMessageBox.StandardButton.Ok,
+                    )
                 return None
 
             if mode == "DMG":
@@ -3836,15 +3832,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False
 
         cart_type = self.STATUS.pop("detected_cart_type")
-        if cart_type is False:  # clicked Cancel button
-            return False
-        if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-            QtWidgets.QMessageBox.critical(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __("A compatible flashcart profile could not be auto-detected."),
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
+        if cart_type is False or cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
+            if cart_type is not False:  # clicked Cancel button
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("A compatible flashcart profile could not be auto-detected."),
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
             return False
         if mode == "AGB":
             self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
@@ -3878,13 +3873,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def BackupRAM(self, dpath: str = "") -> None:
         mode: Literal["DMG", "AGB"] | None = self._device.GetMode() if self.CheckDeviceAlive() else None
-        if mode not in ("DMG", "AGB"):
+        if mode not in ("DMG", "AGB") or not self._prepare_save_backup_cartridge(mode, dpath):
             return
         rtc = False
         path = ""
-
-        if not self._prepare_save_backup_cartridge(mode, dpath):
-            return
 
         cart_type = 0
         if mode == "DMG":
@@ -4078,15 +4070,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False
 
         cart_type = self.STATUS.pop("detected_cart_type")
-        if cart_type is False:  # clicked Cancel button
-            return False
-        if cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-            QtWidgets.QMessageBox.critical(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                __("A compatible flashcart profile could not be auto-detected."),
-                QtWidgets.QMessageBox.StandardButton.Ok,
-            )
+        if cart_type is False or cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
+            if cart_type is not False:  # clicked Cancel button
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                    __("A compatible flashcart profile could not be auto-detected."),
+                    QtWidgets.QMessageBox.StandardButton.Ok,
+                )
             return False
         if mode == "AGB":
             self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
@@ -4500,14 +4491,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
             mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
             save_type = DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetMbc()
-            if save_type in (None, 0):
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("No save type was selected."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
 
         else:
@@ -4519,15 +4502,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
             mbc = 0
             save_type = self.cmbAGBSaveTypeResult.currentIndex()
-            if save_type == 0:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("No save type was selected."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return None
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
+        if save_type is None or save_type == 0:
+            show_message = QtWidgets.QMessageBox.critical if mode == "DMG" else QtWidgets.QMessageBox.warning
+            show_message(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("No save type was selected."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return None
         if not self.CheckHeader():
             return None
 

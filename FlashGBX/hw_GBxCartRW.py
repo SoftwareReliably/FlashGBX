@@ -425,6 +425,21 @@ class GbxDevice(LK_Device):
         # Reset to bootloader support
         firmware["bootloader_reset"] = self._read_byte() == 1
 
+    def _ReadFirmwareVersionProbe(self, device: serial.Serial) -> tuple[int, int] | None:
+        self._write(self.DEVICE_CMD["OFW_PCB_VER"])
+        response = device.read(1)
+        if not response:
+            dprint("No response")
+            return None
+
+        pcb = response[0]
+        self._write(self.DEVICE_CMD["OFW_FW_VER"])
+        ofw = self._read_byte()
+        if (pcb == 2 and ofw == 2) or (pcb >= 5 and ofw == 0):
+            dprint(f"Not a {self.DEVICE_NAME}")
+            return None
+        return pcb, ofw
+
     def LoadFirmwareVersion(self) -> bool:
         dprint("Querying firmware version")
         device = self.DEVICE
@@ -437,18 +452,10 @@ class GbxDevice(LK_Device):
             device.timeout = 0.075
             device.reset_input_buffer()
             device.reset_output_buffer()
-            self._write(self.DEVICE_CMD["OFW_PCB_VER"])
-            response = device.read(1)
-            if not response:
-                dprint("No response")
+            firmware_versions = self._ReadFirmwareVersionProbe(device)
+            if firmware_versions is None:
                 return False
-
-            pcb = response[0]
-            self._write(self.DEVICE_CMD["OFW_FW_VER"])
-            ofw = self._read_byte()
-            if (pcb == 2 and ofw == 2) or (pcb >= 5 and ofw == 0):
-                dprint(f"Not a {self.DEVICE_NAME}")
-                return False
+            pcb, ofw = firmware_versions
             if pcb < 5 and ofw > 0:
                 self.FW = {
                     "ofw_ver": ofw,
@@ -464,7 +471,6 @@ class GbxDevice(LK_Device):
                     "bootloader_reset": False,
                 }
                 return True
-
             self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
             size = self._read_byte()
             if size != 8:
@@ -487,7 +493,6 @@ class GbxDevice(LK_Device):
             if firmware["cfw_id"] == "L" and firmware["fw_ver"] >= 12:
                 self._ReadModernFirmwareMetadata(firmware)
 
-            return True  # noqa: TRY300
         except (OSError, SerialException, ConnectionError, UnicodeDecodeError) as exc:
             dprint("Disconnecting due to an error", exc, sep="\n")
             try:
@@ -503,6 +508,8 @@ class GbxDevice(LK_Device):
         finally:
             if device.is_open:
                 device.timeout = old_timeout
+
+        return True
 
     def ChangeBaudRate(self, baudrate: int) -> None:
         if not self.IsConnected():
@@ -529,12 +536,10 @@ class GbxDevice(LK_Device):
                 self.LAST_CHECK_ACTIVE = time.time()
             return loaded
         try:
-            if firmware["fw_ver"] == 0:  # legacy GBxCart RW firmware
-                self.LAST_CHECK_ACTIVE = time.time()
-                return True
             if firmware["fw_ver"] < 12:
-                self._write(bytearray([self.DEVICE_CMD["OFW_FW_VER"]]))
-                self._read_byte()
+                if firmware["fw_ver"] != 0:
+                    self._write(bytearray([self.DEVICE_CMD["OFW_FW_VER"]]))
+                    self._read_byte()
                 self.LAST_CHECK_ACTIVE = time.time()
                 return True
             return super().CheckActive()
@@ -1883,11 +1888,14 @@ try:
             dev.read(1)
 
             verification_result = self._VerifyFirmwareWrite(dev, fw_buffer, fncSetStatus)
-            if verification_result is not None:
-                return verification_result
-
-            result = self._WriteFirmwareUserData(dev, user_data, fncSetStatus, lives=lives)
-            return result if result is not None else self._FinishFirmwareUpdate(dev, fncSetStatus)
+            if verification_result is None:
+                user_data_result = self._WriteFirmwareUserData(dev, user_data, fncSetStatus, lives=lives)
+                result: FirmwareUpdateResult = (
+                    user_data_result if user_data_result is not None else self._FinishFirmwareUpdate(dev, fncSetStatus)
+                )
+            else:
+                result = verification_result
+            return result
 
         def _WriteFirmwareUserData(
             self,

@@ -197,17 +197,14 @@ class AppInfo:
     def _windows_name(version_info: _WindowsVersion) -> str:
         if version_info.major == 10:
             return "Windows 11" if version_info.build >= 22000 else "Windows 10"
-        if version_info.major == 6 and version_info.minor == 3:
-            return "Windows 8.1"
-        if version_info.major == 6 and version_info.minor == 2:
-            return "Windows 8"
-        if version_info.major == 6 and version_info.minor == 1:
-            return "Windows 7"
-        if version_info.major == 6 and version_info.minor == 0:
-            return "Windows Vista"
-        if version_info.major == 5 and version_info.minor == 1:
-            return "Windows XP"
-        return f"Windows {version_info.major}.{version_info.minor}"
+        names = {
+            (6, 3): "Windows 8.1",
+            (6, 2): "Windows 8",
+            (6, 1): "Windows 7",
+            (6, 0): "Windows Vista",
+            (5, 1): "Windows XP",
+        }
+        return names.get((version_info.major, version_info.minor), f"Windows {version_info.major}.{version_info.minor}")
 
 
 class AppContext:

@@ -1447,6 +1447,15 @@ def has_3v_compatible_profile(carts: Iterable[object], cart_type_index: int | No
     if not selected_id_set:
         return False
     selected_type = selected_profile.get("type")
+    return _has_matching_3v_profile(profiles, cart_type_index, selected_type, selected_id_set)
+
+
+def _has_matching_3v_profile(
+    profiles: list[object],
+    cart_type_index: int,
+    selected_type: object,
+    selected_id_set: set[tuple[int, ...]],
+) -> bool:
     for i, profile in enumerate(profiles):
         if i == cart_type_index:
             continue

@@ -503,6 +503,10 @@ class FlashGBX_CLI:
         self.CONN.SetMode("DMG" if platform_mode == "dmg" else "AGB")
         # time.sleep(0.2)
 
+        return self._run_configured_cartridge_action(args)
+
+    def _run_configured_cartridge_action(self, args: argparse.Namespace) -> int:
+        """Run the selected action after a device mode has been configured."""
         if args.action == "interactive":
             try:
                 self.InteractiveConsole()
@@ -1104,20 +1108,23 @@ class FlashGBX_CLI:
     @staticmethod
     def _DmgSaveTypeString(data: HeaderData) -> str:
         try:
-            if data["mapper_raw"] == 0x06:  # MBC2
+            mapper = data["mapper_raw"]
+            if mapper == 0x06:  # MBC2
                 return DmgSaveTypes(index=1).GetString()
-            if data["mapper_raw"] == 0x22 and data["game_title"] in (
+            if mapper == 0x22 and data["game_title"] in (
                 "KORO2 KIRBY",
                 "KIRBY TNT",
             ):  # MBC7 Kirby
-                return DmgSaveTypes(mbc=0x101).GetString()
-            if data["mapper_raw"] == 0x22 and data["game_title"] in ("CMASTER"):  # MBC7 Command Master
-                return DmgSaveTypes(mbc=0x102).GetString()
-            if data["mapper_raw"] == 0xFD:  # TAMA5
-                return DmgSaveTypes(mbc=0x103).GetString()
-            if data["mapper_raw"] == 0x20:  # MBC6
-                return DmgSaveTypes(mbc=0x104).GetString()
-            return DmgSaveTypes(mbc=data["ram_size_raw"]).GetString()
+                mbc = 0x101
+            elif mapper == 0x22 and data["game_title"] in ("CMASTER"):  # MBC7 Command Master
+                mbc = 0x102
+            elif mapper == 0xFD:  # TAMA5
+                mbc = 0x103
+            elif mapper == 0x20:  # MBC6
+                mbc = 0x104
+            else:
+                mbc = data["ram_size_raw"]
+            return DmgSaveTypes(mbc=mbc).GetString()
         except KeyError, TypeError, ValueError, IndexError:
             return c__("Game Data", "Not detected")
 
@@ -2238,14 +2245,19 @@ class FlashGBX_CLI:
                 if mapper == 0x06:  # MBC2
                     return 0x100
                 if mapper == 0x22 and header["game_title"] in ("KORO2 KIRBYKKKJ", "KIRBY TNT_KTNE"):
-                    return 0x101  # MBC7 Kirby
-                if mapper == 0x22 and header["game_title"] in "CMASTER_KCEJ":
-                    return 0x102  # MBC7 Command Master
-                if mapper == 0xFD:  # TAMA5
-                    return 0x103
-                return 0x104 if mapper == 0x20 else header["ram_size_raw"]  # MBC6
+                    save_type = 0x101  # MBC7 Kirby
+                elif mapper == 0x22 and header["game_title"] in "CMASTER_KCEJ":
+                    save_type = 0x102  # MBC7 Command Master
+                elif mapper == 0xFD:  # TAMA5
+                    save_type = 0x103
+                elif mapper == 0x20:  # MBC6
+                    save_type = 0x104
+                else:
+                    save_type = header["ram_size_raw"]
             except KeyError, TypeError, ValueError, IndexError:
                 return 0
+            else:
+                return save_type
         return 0x205 if save_type_name == "batteryless" else DmgSaveTypes.GetMbcFromCLIName(save_type_name) or 0
 
     def _PrepareEReaderCalibration(

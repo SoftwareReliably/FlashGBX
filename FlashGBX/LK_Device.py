@@ -264,6 +264,18 @@ class _ROMBackupBankContext(NamedTuple):
     buffer_len: int
 
 
+class _ROMBackupCompletionContext(NamedTuple):
+    args: dict[str, Any]
+    buffer: bytearray
+    file: BinaryIO | None
+    mbc: _ROMBackupMapper
+    cart_type: dict[str, Any]
+    flashcart: Flashcart | Literal[False]
+    dmg_read_method: int
+    agb_read_method: int
+    pos_total: int
+
+
 class _FlashVerificationBankContext(NamedTuple):
     verification: _FlashVerificationContext
     sector: list[int]
@@ -1417,9 +1429,11 @@ class LK_Device(ABC):
                 else:
                     raw = self.ReadRAM(address - 0xA000, 1, max_length=self.MAX_BUFFER_READ)
                 return self._unpack_cart_read(raw, 1, "B")
-            if address < 0xA000:
-                return self.ReadROM(address, length, max_length=self.MAX_BUFFER_READ)
-            return self.ReadRAM(address - 0xA000, length, max_length=self.MAX_BUFFER_READ)
+            return (
+                self.ReadROM(address, length, max_length=self.MAX_BUFFER_READ)
+                if address < 0xA000
+                else self.ReadRAM(address - 0xA000, length, max_length=self.MAX_BUFFER_READ)
+            )
         if self.MODE == "AGB":
             if length == 0:
                 if agb_save_flash:
@@ -1784,12 +1798,12 @@ class LK_Device(ABC):
         modes: Sequence[str] = self.GetSupprtedModes()
         if mode > len(modes):
             print(ANSI.RED + __("Error: Invalid mode {mode}", mode=str(mode - 1)) + ANSI.RESET)
-            return self.MODE
-        selected_mode: str = modes[mode - 1]
-        if selected_mode not in ("DMG", "AGB"):
-            msg: str = f"Invalid cartridge mode reported by firmware: {selected_mode!r}"
-            raise ConnectionError(msg)
-        self.MODE = selected_mode
+        else:
+            selected_mode: str = modes[mode - 1]
+            if selected_mode not in ("DMG", "AGB"):
+                msg: str = f"Invalid cartridge mode reported by firmware: {selected_mode!r}"
+                raise ConnectionError(msg)
+            self.MODE = selected_mode
         return self.MODE
 
     def _require_cartridge_mode(self, operation: str) -> DeviceMode:
@@ -5052,15 +5066,31 @@ class LK_Device(ABC):
 
             bank += 1
 
+        return self._CompleteROMBackupWorker(
+            _ROMBackupCompletionContext(
+                args,
+                buffer,
+                file,
+                _mbc,
+                cart_type,
+                flashcart,
+                dmg_read_method,
+                agb_read_method,
+                pos_total,
+            ),
+        )
+
+    def _CompleteROMBackupWorker(self, context: _ROMBackupCompletionContext) -> ROMBackupResult:
+        args, buffer, file, mbc, cart_type, flashcart, dmg_read_method, agb_read_method, pos_total = context
         if "verify_write" in args:
             return min(pos_total, len(args["verify_write"]))
 
-        completed = self._process_rom_backup_result(args, buffer, file, _mbc)
+        completed = self._process_rom_backup_result(args, buffer, file, mbc)
         if completed:
             if file is not None:
                 file.close()
 
-            self._ResetROMReadState(_mbc, cart_type, flashcart, dmg_read_method, agb_read_method)
+            self._ResetROMReadState(mbc, cart_type, flashcart, dmg_read_method, agb_read_method)
 
             self._CompleteROMBackup(args["path"])
         return completed
@@ -5836,20 +5866,9 @@ class LK_Device(ABC):
         self,
         parameters: _SaveReadParameters,
     ) -> bytearray:
-        args, mbc, bank, pos, buffer_len, command, max_length = parameters
-        if self.MODE == "DMG" and mbc.GetName() == "MBC7":
-            return self.ReadRAM_MBC7(address=pos, length=buffer_len)
-        if self.MODE == "DMG" and mbc.GetName() == "MBC6" and bank > 7:  # MBC6 flash save memory
-            return self.ReadROM(address=pos, length=buffer_len, skip_init=False, max_length=max_length)
-        if self.MODE == "DMG" and mbc.GetName() == "TAMA5":
-            return self.ReadRAM_TAMA5()
-        if self.MODE == "DMG" and mbc.GetName() == "Xploder GB":
-            return self.ReadROM(
-                address=0x20000 + pos,
-                length=buffer_len,
-                skip_init=False,
-                max_length=max_length,
-            )
+        args, _mbc, _bank, pos, buffer_len, command, max_length = parameters
+        if self.MODE == "DMG":
+            return self._ReadDmgSaveChunk(parameters)
         if self.MODE == "AGB" and args["save_type"] in (1, 2):  # EEPROM
             return self.ReadRAM(
                 address=int(pos / 8),
@@ -5865,8 +5884,25 @@ class LK_Device(ABC):
                 max_length=max_length,
             )
 
+        return self.ReadRAM(address=pos, length=buffer_len, command=command, max_length=max_length)
+
+    def _ReadDmgSaveChunk(self, parameters: _SaveReadParameters) -> bytearray:
+        _args, mbc, bank, pos, buffer_len, command, max_length = parameters
+        if mbc.GetName() == "MBC7":
+            return self.ReadRAM_MBC7(address=pos, length=buffer_len)
+        if mbc.GetName() == "MBC6" and bank > 7:  # MBC6 flash save memory
+            return self.ReadROM(address=pos, length=buffer_len, skip_init=False, max_length=max_length)
+        if mbc.GetName() == "TAMA5":
+            return self.ReadRAM_TAMA5()
+        if mbc.GetName() == "Xploder GB":
+            return self.ReadROM(
+                address=0x20000 + pos,
+                length=buffer_len,
+                skip_init=False,
+                max_length=max_length,
+            )
         data = self.ReadRAM(address=pos, length=buffer_len, command=command, max_length=max_length)
-        if self.MODE == "DMG" and mbc.GetName() == "MBC2":
+        if mbc.GetName() == "MBC2":
             for index, value in enumerate(data):
                 data[index] = value & 0x0F
         return data
@@ -7659,10 +7695,11 @@ class LK_Device(ABC):
             dprint("Setting ROM bank 1")
             mbc.SelectBankROM(1)
         self._ConfigureFlashWritePins(cart_type, write_enable_pin)
-        if not self._CheckFlashID(cart_type, flashcart, command_set_type):
-            return None
-
-        sector_plan = self._plan_flash_sectors(args, flashcart, data_import, rom_bank_size, flash_offset)
+        sector_plan = (
+            self._plan_flash_sectors(args, flashcart, data_import, rom_bank_size, flash_offset)
+            if self._CheckFlashID(cart_type, flashcart, command_set_type)
+            else None
+        )
         if sector_plan is None:
             return None
         (
