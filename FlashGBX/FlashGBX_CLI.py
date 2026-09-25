@@ -16,7 +16,7 @@ import zipfile
 from argparse import Namespace
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NotRequired, TypedDict, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from serial import SerialException  # pyright: ignore[reportMissingModuleSource]
@@ -69,6 +69,16 @@ class CLIConfig(TypedDict):
     argparsed: argparse.Namespace
     called_with_args: NotRequired[bool]
     debug: NotRequired[bool]
+
+
+class _SaveTransferRequest(NamedTuple):
+    args: Namespace
+    path: str
+    mbc: int
+    save_type: int
+    cart_type: int | None
+    rtc: bool
+    buffer: bytearray | None
 
 
 class FlashGBX_CLI:
@@ -713,6 +723,9 @@ class FlashGBX_CLI:
         left = args.get("time_left", 0)
 
         action = args.get("action")
+        if self._HandleProgressTerminalAction(action, args):
+            return
+
         if action == "INITIALIZE":
             self._PrintProgressInitialization(args["method"])
         elif action == "ERASE":
@@ -748,14 +761,19 @@ class FlashGBX_CLI:
             print(ANSI.CLEAR_LINE + ANSI.RED + args["text"] + ANSI.RESET)
         elif action == "ABORTING":
             print("\n" + __("Stopping..."))
-        elif action == "FINISHED":
-            print("\n")
-            self.FinishOperation()
-        elif action == "ABORT":
-            self._HandleProgressAbort(args)
-            return
         elif action == "PROGRESS":
             self._RenderProgressBar(pos, size, speed, elapsed, left)
+
+    def _HandleProgressTerminalAction(self, action: object, args: ProgressPayload) -> bool:
+        """Handle completion and cancellation actions before progress rendering."""
+        if action == "FINISHED":
+            print("\n")
+            self.FinishOperation()
+            return True
+        if action == "ABORT":
+            self._HandleProgressAbort(args)
+            return True
+        return False
 
     def _HandleProgressAbort(self, args: ProgressPayload) -> None:
         print("\n" + __("Operation stopped.") + "\n")
@@ -784,30 +802,8 @@ class FlashGBX_CLI:
             if getattr(self.ARGS["argparsed"], "gbcamera_extract", False):
                 if self.CONN.INFO["transferred"] == 0x100000:
                     base = Path(self.CONN.INFO["last_path"]).with_suffix("")
-                    if base.is_file():
-                        print(
-                            __(
-                                "Can't save pictures at location “{path}”.",
-                                path=str(base.resolve()),
-                            ),
-                        )
-                        self.RETVAL = 1
+                    if not self._ExtractMultiRollCameraPictures(base):
                         return
-                    base.mkdir(parents=True, exist_ok=True)
-                    pc = PocketCamera()
-                    pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
-                    for roll in range(1, 9):
-                        with Path(self.CONN.INFO["last_path"]).open("rb") as f:
-                            f.seek(0x20000 * (roll - 1))
-                            roll_data = bytearray(f.read(0x20000))
-                        if pc.LoadFile(roll_data):
-                            for i in range(32):
-                                file = base / "IMG_P{:1d}{:02d}.{}".format(
-                                    roll,
-                                    i,
-                                    self.ARGS["argparsed"].gbcamera_outfile_format,
-                                )
-                                pc.ExportPicture(i, file, scale=1)
                 else:
                     file = self.CONN.INFO["last_path"]
                     pc = PocketCamera()
@@ -832,6 +828,34 @@ class FlashGBX_CLI:
             print()
 
         print(__("The save data backup is complete!"))
+
+    def _ExtractMultiRollCameraPictures(self, base: Path) -> bool:
+        """Export all eight camera rolls, rejecting a file as the destination."""
+        if base.is_file():
+            print(
+                __(
+                    "Can't save pictures at location “{path}”.",
+                    path=str(base.resolve()),
+                ),
+            )
+            self.RETVAL = 1
+            return False
+        base.mkdir(parents=True, exist_ok=True)
+        pc = PocketCamera()
+        pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
+        for roll in range(1, 9):
+            with Path(self.CONN.INFO["last_path"]).open("rb") as f:
+                f.seek(0x20000 * (roll - 1))
+                roll_data = bytearray(f.read(0x20000))
+            if pc.LoadFile(roll_data):
+                for i in range(32):
+                    file = base / "IMG_P{:1d}{:02d}.{}".format(
+                        roll,
+                        i,
+                        self.ARGS["argparsed"].gbcamera_outfile_format,
+                    )
+                    pc.ExportPicture(i, file, scale=1)
+        return True
 
     def _FormatBrokenSectors(self) -> tuple[str, int]:
         sectors = ""
@@ -2125,28 +2149,8 @@ class FlashGBX_CLI:
 
     def _ConfirmSaveAction(self, args: argparse.Namespace, target_path: Path) -> bool:
         if args.action == "backup-save":
-            if not args.overwrite and target_path.exists():
-                answer: str = (
-                    input(
-                        __(
-                            "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
-                            file_path=str(target_path),
-                        )
-                        + " [y/N]: ",
-                    )
-                    .strip()
-                    .lower()
-                )
-                print()
-                if answer != "y":
-                    print(__("Canceled."))
-                    return False
-            print(
-                __("The cartridge save data will now be read and saved to the following file:")
-                + "\n"
-                + str(target_path),
-            )
-        elif args.action == "restore-save":
+            return self._ConfirmBackupSaveAction(args, target_path)
+        if args.action == "restore-save":
             if not args.overwrite:
                 answer = (
                     input(
@@ -2180,6 +2184,30 @@ class FlashGBX_CLI:
                 + __("Note: This is for debug use only.")
                 + "\n",
             )
+        return True
+
+    @staticmethod
+    def _ConfirmBackupSaveAction(args: argparse.Namespace, target_path: Path) -> bool:
+        """Confirm a save backup destination and its overwrite policy."""
+        if not args.overwrite and target_path.exists():
+            answer: str = (
+                input(
+                    __(
+                        "The target file “{file_path}” already exists.\nDo you want to overwrite it?",
+                        file_path=str(target_path),
+                    )
+                    + " [y/N]: ",
+                )
+                .strip()
+                .lower()
+            )
+            print()
+            if answer != "y":
+                print(__("Canceled."))
+                return False
+        print(
+            __("The cartridge save data will now be read and saved to the following file:") + "\n" + str(target_path),
+        )
         return True
 
     def _ResolveDmgSaveMapper(self, args: argparse.Namespace, header: HeaderData) -> int:
@@ -2566,6 +2594,13 @@ class FlashGBX_CLI:
         if not self._SaveFileIsAccessible(args.action, path, buffer is None):
             return
 
+        self._DispatchSaveTransfer(
+            _SaveTransferRequest(args, path, mbc, save_type, cart_type, rtc, buffer),
+        )
+
+    def _DispatchSaveTransfer(self, request: _SaveTransferRequest) -> None:
+        """Dispatch a prepared backup, restore, erase, or save-debug action."""
+        args, path, mbc, save_type, cart_type, rtc, buffer = request
         print()
         if args.action == "backup-save":
             self.CONN.TransferData(
@@ -2758,6 +2793,10 @@ class FlashGBX_CLI:
                     return False
             print(__("The Batteryless SRAM save data will now be erased from the cartridge."))
 
+        return self._ConfirmBatterylessWriteVoltage(mode, cart_type)
+
+    def _ConfirmBatterylessWriteVoltage(self, mode: str, cart_type: int) -> bool:
+        """Warn before writing a 3.3V profile through a fixed 5V supply."""
         if mode == "DMG" and self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode():
             bl_carts = self.CONN.GetSupportedCartridgesDMG()[1]
             if isinstance(bl_carts[cart_type], dict) and (

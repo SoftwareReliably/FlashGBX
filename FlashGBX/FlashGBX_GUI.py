@@ -76,6 +76,7 @@ from .UserInputDialog import DialogArgs, UserInputDialog
 if TYPE_CHECKING:
     import argparse
     from collections.abc import Mapping, Sequence
+    from types import ModuleType
 
     from PIL.Image import Image as PILImage  # pyright: ignore[reportMissingImports]
 
@@ -1996,11 +1997,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         msgbox.exec()
 
     def OpenPath(self, path: str | None = None, select_file: bool = False) -> None:
-        if path is None:
-            path = AppContext.CONFIG_PATH
-            kbmod = QtWidgets.QApplication.keyboardModifiers()
-            if kbmod != QtCore.Qt.KeyboardModifier.ShiftModifier:
-                self.WriteDebugLog()
+        path = self._ResolvePathToOpen(path)
 
         system: str = platform.system()
         env: dict[str, str] = self.GetHostLauncherEnv()
@@ -2063,6 +2060,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 __("The file was not found.") + "\n\n" + str(path),
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
+
+    def _ResolvePathToOpen(self, path: str | None) -> str:
+        """Resolve the default application path and write its debug log."""
+        if path is None:
+            path = AppContext.CONFIG_PATH
+            kbmod = QtWidgets.QApplication.keyboardModifiers()
+            if kbmod != QtCore.Qt.KeyboardModifier.ShiftModifier:
+                self.WriteDebugLog()
+        return path
 
     def WriteDebugLog(self, event: QtGui.QMouseEvent | None = None, open_log: bool = False) -> None:
         if isinstance(event, QtGui.QMouseEvent) and event.button() in (
@@ -2476,33 +2482,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnConnect.setEnabled(False)
         qt_app.processEvents()
 
-        messages = []
+        messages: list[str] = []
 
         for hw_device in HW_DEVICES:
-            ports = []
-            while True:  # for finding other devices of the same type
-                dev = hw_device.GbxDevice()
-                max_baud = self._GetDeviceMaxBaudRate(dev)
-                try:
-                    ret = dev.Initialize(self.FLASHCARTS, port=port, max_baud=max_baud)
-                    is_active = dev.CheckActive()
-                except Exception as exc:
-                    self._RecordDeviceInitializationFailure(exc, port, messages)
-                    break
-                if ret is False or is_active is False:
-                    self.CONN = None
-                    break
-                if isinstance(ret, list):
-                    self._RecordDeviceInitializationMessages(ret, messages)
-
-                if dev.GetPort() in ports:
-                    break
-                ports.append(dev.GetPort())
-
-                if dev.IsConnected():
-                    self.DEVICES[dev.GetFullNameExtended()] = dev
-                    if dev.GetPort() in ports:
-                        break
+            self._ScanHardwareBackend(hw_device, port, messages)
 
         self._CloseDiscoveredDevices()
 
@@ -2514,6 +2497,34 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._SetRequestedMode(mode)
 
         return True
+
+    def _ScanHardwareBackend(self, hw_device: ModuleType, port: str | None, messages: list[str]) -> None:
+        """Discover connected instances from one hardware backend."""
+        ports: list[str] = []
+        while True:
+            dev = hw_device.GbxDevice()
+            max_baud = self._GetDeviceMaxBaudRate(dev)
+            try:
+                ret = dev.Initialize(self.FLASHCARTS, port=port, max_baud=max_baud)
+                is_active = dev.CheckActive()
+            except Exception as exc:
+                self._RecordDeviceInitializationFailure(exc, port, messages)
+                break
+            if ret is False or is_active is False:
+                self.CONN = None
+                break
+            if isinstance(ret, list):
+                self._RecordDeviceInitializationMessages(ret, messages)
+
+            device_port = dev.GetPort()
+            if device_port in ports:
+                break
+            ports.append(device_port)
+
+            if dev.IsConnected():
+                self.DEVICES[dev.GetFullNameExtended()] = dev
+                if dev.GetPort() in ports:
+                    break
 
     def _CloseDiscoveredDevices(self) -> None:
         for dev in self.DEVICES.values():
@@ -2997,20 +3008,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         time_elapsed, msg_te, speed = self._FinishTiming()
 
         if self._device.INFO["last_action"] == 1:  # Backup ROM
-            self._device.INFO["last_action"] = 0
-            report = self._PrepareROMBackupReport(
-                msgbox,
-                time_elapsed,
-                speed,
-            )
-
-            if self._device.GetMode() == "DMG":
-                if self._FinishDMGROMBackup(msgbox, msg_te):
-                    return
-            elif self._device.GetMode() == "AGB":
-                self._FinishAGBROMBackup(msgbox, msg_te)
-
-            self._HandleROMBackupReportAction(msgbox, report)
+            if self._FinishROMBackup(msgbox, time_elapsed, msg_te, speed):
+                return
 
         elif self._device.INFO["last_action"] == 2:  # Backup RAM
             if self._FinishRAMBackup(msgbox, msg_te, check_box_default=dontShowAgain):
@@ -3034,6 +3033,24 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         # if self.CONN is not None and self._device.CanPowerCycleCart(): self._device.CartPowerOff()
         self._CompleteOperationFinish(skip_finish_message=dontShowAgain)
+
+    def _FinishROMBackup(
+        self,
+        msgbox: QtWidgets.QMessageBox,
+        time_elapsed: float | None,
+        elapsed_message: str,
+        speed: str | None,
+    ) -> bool:
+        """Show ROM backup details and return whether a retry was started."""
+        self._device.INFO["last_action"] = 0
+        report = self._PrepareROMBackupReport(msgbox, time_elapsed, speed)
+        if self._device.GetMode() == "DMG":
+            if self._FinishDMGROMBackup(msgbox, elapsed_message):
+                return True
+        elif self._device.GetMode() == "AGB":
+            self._FinishAGBROMBackup(msgbox, elapsed_message)
+        self._HandleROMBackupReportAction(msgbox, report)
+        return False
 
     def _FinishDMGROMBackup(self, msgbox: QtWidgets.QMessageBox, msg_te: str) -> bool:
         """Show the DMG checksum result and report whether a retry started."""
@@ -3124,7 +3141,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return
         if "detect_cartridge_args" in self.STATUS:
             return
-        if self._device.GetMode() == "DMG":
+        mode = self._device.GetMode()
+        if mode in ("DMG", "AGB"):
+            self._ApplyCartridgeProfile(index, mode)
+
+    def _ApplyCartridgeProfile(self, index: int, mode: PlatformMode) -> None:
+        """Apply the selected profile's mapper and ROM-size defaults."""
+        if mode == "DMG":
             cart_types = self._device.GetSupportedCartridgesDMG()
             profile = cart_types[1][index]
             if isinstance(profile, dict):
@@ -3136,7 +3159,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.STATUS["cart_type"] = profile
                 self.SetDMGMapperResult(profile)
 
-        elif self._device.GetMode() == "AGB":
+        elif mode == "AGB":
             cart_types = self._device.GetSupportedCartridgesAGB()
             profile = cart_types[1][index]
             if isinstance(profile, dict):
@@ -3312,30 +3335,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
         last_dir = self._GetLastDirectory(setting_name)
         if cart_type == 0:
-            self.STATUS.setdefault("detected_cart_type", "")
-            if self.STATUS["detected_cart_type"] == "":
-                self.STATUS["detected_cart_type"] = "WAITING_FLASH"
-                self.STATUS["detect_cartridge_args"] = {"dpath": path}
-                self.STATUS["can_skip_message"] = True
-                self.DetectCartridge(checkSaveType=False)
+            detected_type = self._ResolveDetectedFlashcartType(mode, path)
+            if detected_type is None or detected_type is False:
                 return None
-            cart_type = self.STATUS["detected_cart_type"]
-            self.STATUS.pop("detected_cart_type", None)
-
-            if cart_type is False or cart_type is None or cart_type == 0 or not isinstance(cart_type, int):
-                if cart_type is not False:  # clicked Cancel button
-                    QtWidgets.QMessageBox.critical(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        __("A compatible flashcart profile could not be auto-detected."),
-                        QtWidgets.QMessageBox.StandardButton.Ok,
-                    )
-                return None
-
-            if mode == "DMG":
-                self.cmbDMGCartridgeTypeResult.setCurrentIndex(cart_type)
-            else:
-                self.cmbAGBCartridgeTypeResult.setCurrentIndex(cart_type)
+            cart_type = detected_type
 
         self.STATUS.pop("detected_cart_type", None)
 
@@ -3351,6 +3354,35 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         cart_profile = cast("dict[str, Any]", cart_profile)
 
         return mode, path, setting_name, last_dir, carts, cart_type, cart_profile
+
+    def _ResolveDetectedFlashcartType(self, mode: PlatformMode, path: str) -> int | Literal[False] | None:
+        """Complete automatic profile selection while preserving cancel and pending states."""
+        self.STATUS.setdefault("detected_cart_type", "")
+        detected_type = self.STATUS["detected_cart_type"]
+        if detected_type == "":
+            self.STATUS["detected_cart_type"] = "WAITING_FLASH"
+            self.STATUS["detect_cartridge_args"] = {"dpath": path}
+            self.STATUS["can_skip_message"] = True
+            self.DetectCartridge(checkSaveType=False)
+            return None
+
+        self.STATUS.pop("detected_cart_type", None)
+        if detected_type is False:
+            return False
+        if detected_type is None or detected_type == 0 or not isinstance(detected_type, int):
+            QtWidgets.QMessageBox.critical(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("A compatible flashcart profile could not be auto-detected."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return None
+
+        if mode == "DMG":
+            self.cmbDMGCartridgeTypeResult.setCurrentIndex(detected_type)
+        else:
+            self.cmbAGBCartridgeTypeResult.setCurrentIndex(detected_type)
+        return detected_type
 
     def _LoadFlashROMFile(
         self,
@@ -3677,10 +3709,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         path, just_erase = path_selection
 
         if not just_erase:
-            if not isinstance(path, str):
-                msg_0 = "ROM path must be a string when not erasing the cartridge."
-                raise TypeError(msg_0)
-            loaded_buffer = self._LoadFlashROMFile(path, setting_name, cart_profile)
+            loaded_buffer = self._LoadROMForFlashWrite(path, setting_name, cart_profile)
             if loaded_buffer is None:
                 return
             buffer = loaded_buffer
@@ -3754,6 +3783,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["time_start"] = time.time()
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
+
+    def _LoadROMForFlashWrite(
+        self,
+        path: str | bool,
+        setting_name: str,
+        cart_profile: dict[str, Any],
+    ) -> bytearray | None:
+        """Validate and load a ROM path after erase-only selection is ruled out."""
+        if not isinstance(path, str):
+            msg = "ROM path must be a string when not erasing the cartridge."
+            raise TypeError(msg)
+        return self._LoadFlashROMFile(path, setting_name, cart_profile)
 
     def _ResolveFlashROMPath(self, path: str) -> tuple[str | bool, bool] | None:
         if path == "":
@@ -4323,19 +4364,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             msgbox.setDefaultButton(button_keep)
             msgbox.setEscapeButton(button_cancel)
 
-            if (
-                buffer[0x4FF2:0x5000] != self._device.INFO["gbcamera_calibration1"]
-                or buffer[0x11FF2:0x12000] != self._device.INFO["gbcamera_calibration2"]
-            ):
-                msgbox.exec()
-                if msgbox.clickedButton() == button_cancel:
-                    return False, None
-                if msgbox.clickedButton() == button_keep:
-                    buffer[0x4FF2:0x5000] = self._device.INFO["gbcamera_calibration1"]
-                    buffer[0x11FF2:0x12000] = self._device.INFO["gbcamera_calibration2"]
-                elif msgbox.clickedButton() == button_reset:
-                    buffer[0x4FF2:0x5000] = bytearray([0xAA] * 0xE)
-                    buffer[0x11FF2:0x12000] = bytearray([0xAA] * 0xE)
+            if not self._ApplyCameraCalibrationChoice(msgbox, buffer, button_keep, button_reset, button_cancel):
+                return False, None
             return True, buffer
 
         msg_text = (
@@ -4354,6 +4384,30 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.StandardButton.No,
         )
         return answer != QtWidgets.QMessageBox.StandardButton.No, None
+
+    def _ApplyCameraCalibrationChoice(
+        self,
+        msgbox: QtWidgets.QMessageBox,
+        buffer: bytearray,
+        button_keep: QtWidgets.QPushButton,
+        button_reset: QtWidgets.QPushButton | None,
+        button_cancel: QtWidgets.QPushButton,
+    ) -> bool:
+        """Apply the selected keep, reset, or cancel calibration action."""
+        if (
+            buffer[0x4FF2:0x5000] != self._device.INFO["gbcamera_calibration1"]
+            or buffer[0x11FF2:0x12000] != self._device.INFO["gbcamera_calibration2"]
+        ):
+            msgbox.exec()
+            if msgbox.clickedButton() == button_cancel:
+                return False
+            if msgbox.clickedButton() == button_keep:
+                buffer[0x4FF2:0x5000] = self._device.INFO["gbcamera_calibration1"]
+                buffer[0x11FF2:0x12000] = self._device.INFO["gbcamera_calibration2"]
+            elif msgbox.clickedButton() == button_reset:
+                buffer[0x4FF2:0x5000] = bytearray([0xAA] * 0xE)
+                buffer[0x11FF2:0x12000] = bytearray([0xAA] * 0xE)
+        return True
 
     def _prepare_save_write_path(
         self,
@@ -4417,21 +4471,27 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if not self._confirm_save_write_test(mode):
                 return None
         else:
-            generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
-            path = generated_path if isinstance(generated_path, str) else "save.sav"
-            path = str(Path(path).with_suffix("")) + ".sav"
-            path = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                __("Restore Save Data"),
-                str(Path(last_dir) / path),
-                __("Save Data File") + " (" + " ".join("*" + e for e in SAVE_EXTS) + ");;" + __("All Files") + " (*.*)",
-            )[0]
-            if path != "":
-                self.SETTINGS.setValue(setting_name, str(Path(path).parent))
-            if path == "":
+            path = self._ChooseSaveRestorePath(mode, setting_name, last_dir)
+            if path is None:
                 return None
 
         return path
+
+    def _ChooseSaveRestorePath(self, mode: PlatformMode, setting_name: str, last_dir: str) -> str | None:
+        """Choose a save file and persist its directory only when selected."""
+        generated_path = generate_filename(mode=mode, header=self._device.INFO, settings=self.SETTINGS)
+        initial_name = generated_path if isinstance(generated_path, str) else "save.sav"
+        initial_name = str(Path(initial_name).with_suffix("")) + ".sav"
+        path = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            __("Restore Save Data"),
+            str(Path(last_dir) / initial_name),
+            __("Save Data File") + " (" + " ".join("*" + e for e in SAVE_EXTS) + ");;" + __("All Files") + " (*.*)",
+        )[0]
+        if path != "":
+            self.SETTINGS.setValue(setting_name, str(Path(path).parent))
+            return path
+        return None
 
     def _confirm_save_write_test(self, mode: PlatformMode) -> bool:
         if self._device.GetFWBuildDate() == "":  # Legacy Mode
@@ -5006,7 +5066,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         if preparation is None:
             return
-        mode, path, mbc, save_type, cart_type, filesize, buffer = preparation
+        mode, path, mbc, save_type, _, filesize, _ = preparation
 
         verify_write = self.SETTINGS.value("VerifyData", default="enabled")
         verify_write = bool(verify_write and verify_write.lower() == "enabled")
@@ -5030,88 +5090,111 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self._RunSaveStressTest(preparation, rtc_advance, erase=erase)
             return
 
-        args: dict[str, Any]
-        bl_args = {}
-        if (
-            mode == "AGB"
-            and self.cmbAGBSaveTypeResult.currentIndex() < AgbSaveTypes().GetNumberOfTypes()
-            and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[self.cmbAGBSaveTypeResult.currentIndex()]
-        ) or (
-            mode == "DMG"
-            and self.cmbDMGHeaderSaveTypeResult.currentIndex() < DmgSaveTypes().GetNumberOfTypes()
-            and "Batteryless SRAM" in DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetString()
-        ):
-            self.STATUS.pop("detected_cart_type", None)
-
-            if "dump_info" in self._device.INFO and "batteryless_sram" in self._device.INFO["dump_info"]:
-                detected = self._device.INFO["dump_info"]["batteryless_sram"]
-            else:
-                detected = False
-            rom_size_index = (
-                self.cmbAGBHeaderROMSizeResult.currentIndex()
-                if mode == "AGB"
-                else self.cmbDMGHeaderROMSizeResult.currentIndex()
-            )
-            rom_size = RomSizes().GetSize(rom_size_index)
-            if rom_size is None:
+        if self._IsBatterylessSaveType(mode):
+            args = self._PrepareBatterylessSaveWrite(preparation, erase, verify_write)
+            if args is None:
                 return
-            bl_args = self.GetBLArgs(
-                rom_size=rom_size,
-                detected=detected,
-            )
-            if bl_args is False:
-                return
-
-            if not self._ConfirmBatterylessDmgWriteVoltage(mode, cart_type):
-                return
-
-            args = {
-                "path": path,
-                "cart_type": cart_type,
-                "override_voltage": False,
-                "prefer_chip_erase": False,
-                "fast_read_mode": True,
-                "verify_write": verify_write,
-                "fix_header": False,
-                "fix_bootlogo": False,
-                "mbc": mbc,
-            }
-            args.update(bl_args)
-            args.update(
-                {
-                    "bl_save": True,
-                    "flash_offset": bl_args["bl_offset"],
-                    "flash_size": bl_args["bl_size"],
-                },
-            )
-            if erase:
-                args["path"] = ""
-                args["buffer"] = bytearray([0xFF] * bl_args["bl_size"])
-            self.STATUS["args"] = args
-            self._device.FlashROM(fncSetProgress=self.PROGRESS.SetProgress, args=args)
-            # self._device._FlashROM(args=args)
-
         else:
-            args = {
-                "path": path,
-                "mbc": mbc,
-                "save_type": save_type,
-                "rtc": rtc,
-                "rtc_advance": rtc_advance,
-                "erase": erase,
-                "verify_write": verify_write,
-                "cart_type": cart_type,
-            }
-            if buffer is not None:
-                args["buffer"] = buffer
-                args["path"] = None
-                args["erase"] = False
-            self.STATUS["args"] = args
-            self._device.RestoreRAM(fncSetProgress=self.PROGRESS.SetProgress, args=args)
-            # args = { "mode":3, "path":path, "mbc":mbc, "save_type":save_type, "rtc":rtc, "rtc_advance":rtc_advance, "erase":erase, "verify_write":verify_write }
-            # self._device._BackupRestoreRAM(args=args)
+            args = self._StartOrdinarySaveWrite(preparation, rtc, rtc_advance, verify_write, erase)
 
         self._CompleteSaveWrite(path, args)
+
+    def _IsBatterylessSaveType(self, mode: PlatformMode) -> bool:
+        """Return whether the selected save type lives in ROM flash."""
+        if mode == "AGB":
+            index = self.cmbAGBSaveTypeResult.currentIndex()
+            return (
+                index < AgbSaveTypes().GetNumberOfTypes()
+                and "Batteryless SRAM" in AgbSaveTypes().GetStringList()[index]
+            )
+        index = self.cmbDMGHeaderSaveTypeResult.currentIndex()
+        return index < DmgSaveTypes().GetNumberOfTypes() and "Batteryless SRAM" in DmgSaveTypes(index=index).GetString()
+
+    def _PrepareBatterylessSaveWrite(
+        self,
+        preparation: _SaveWritePreparation,
+        erase: bool,
+        verify_write: bool,
+    ) -> dict[str, Any] | None:
+        """Build and dispatch a batteryless SRAM flash write, or return on refusal."""
+        mode = preparation[0]
+        path = preparation[1]
+        mbc = preparation[2]
+        cart_type = preparation[4]
+        self.STATUS.pop("detected_cart_type", None)
+        dump_info = self._device.INFO.get("dump_info", {})
+        detected = dump_info.get("batteryless_sram", False)
+        rom_size_index = (
+            self.cmbAGBHeaderROMSizeResult.currentIndex()
+            if mode == "AGB"
+            else self.cmbDMGHeaderROMSizeResult.currentIndex()
+        )
+        rom_size = RomSizes().GetSize(rom_size_index)
+        if rom_size is None:
+            return None
+        bl_args = self.GetBLArgs(rom_size=rom_size, detected=detected)
+        if bl_args is False:
+            return None
+        if not self._ConfirmBatterylessDmgWriteVoltage(mode, cart_type):
+            return None
+
+        args: dict[str, Any] = {
+            "path": path,
+            "cart_type": cart_type,
+            "override_voltage": False,
+            "prefer_chip_erase": False,
+            "fast_read_mode": True,
+            "verify_write": verify_write,
+            "fix_header": False,
+            "fix_bootlogo": False,
+            "mbc": mbc,
+        }
+        args.update(bl_args)
+        args.update(
+            {
+                "bl_save": True,
+                "flash_offset": bl_args["bl_offset"],
+                "flash_size": bl_args["bl_size"],
+            },
+        )
+        if erase:
+            args["path"] = ""
+            args["buffer"] = bytearray([0xFF] * bl_args["bl_size"])
+        self.STATUS["args"] = args
+        self._device.FlashROM(fncSetProgress=self.PROGRESS.SetProgress, args=args)
+        return args
+
+    def _StartOrdinarySaveWrite(
+        self,
+        preparation: _SaveWritePreparation,
+        rtc: bool,
+        rtc_advance: bool,
+        verify_write: bool,
+        erase: bool,
+    ) -> dict[str, Any]:
+        """Build and dispatch a regular SRAM or EEPROM restore request."""
+        path = preparation[1]
+        mbc = preparation[2]
+        save_type = preparation[3]
+        cart_type = preparation[4]
+        buffer = preparation[6]
+        args: dict[str, Any] = {
+            "path": path,
+            "mbc": mbc,
+            "save_type": save_type,
+            "rtc": rtc,
+            "rtc_advance": rtc_advance,
+            "erase": erase,
+            "verify_write": verify_write,
+            "cart_type": cart_type,
+        }
+        if buffer is not None:
+            args["buffer"] = buffer
+            args["path"] = None
+            args["erase"] = False
+        self.STATUS["args"] = args
+        self._device.RestoreRAM(fncSetProgress=self.PROGRESS.SetProgress, args=args)
+        return args
 
     @staticmethod
     def _get_default_bl_location_index(rom_size: int, locations: list[int]) -> int:
@@ -6138,13 +6221,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.cmbAGBSaveTypeResult.setCurrentIndex(0)
         else:
             self.lblAGBGameNameResult.setStyleSheet(self.DEFAULT_STYLESHEET)
-            if data["logo_correct"]:
-                cart_types = self._device.GetSupportedCartridgesAGB()
-                for i in range(len(cart_types[0])):
-                    if (data["3d_memory"] is True and "3d_memory" in cart_types[1][i]) or (
-                        data["vast_fame"] is True and "vast_fame" in cart_types[1][i]
-                    ):
-                        self.cmbAGBCartridgeTypeResult.setCurrentIndex(i)
+            self._SelectAgbProfileFromHeader(data)
 
         if data["dacs_8m"] is True:
             self.cmbAGBSaveTypeResult.setCurrentIndex(6)
@@ -6171,6 +6248,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
 
         self._DisplayAgbLogo(data)
+
+    def _SelectAgbProfileFromHeader(self, data: dict[str, Any]) -> None:
+        """Select every matching special mapper profile in the existing order."""
+        if data["logo_correct"]:
+            cart_types = self._device.GetSupportedCartridgesAGB()
+            for i in range(len(cart_types[0])):
+                if (data["3d_memory"] is True and "3d_memory" in cart_types[1][i]) or (
+                    data["vast_fame"] is True and "vast_fame" in cart_types[1][i]
+                ):
+                    self.cmbAGBCartridgeTypeResult.setCurrentIndex(i)
 
     def ReadCartridge(self, resetStatus: bool = True) -> bool | None:
         if self.CheckDeviceAlive() is not True:
@@ -6391,17 +6478,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return ""
 
         if save_chip is not None:
-            if (
-                save_type == 5
-                and "Unlicensed" in save_chip
-                and "data" in self._device.INFO
-                and self._device.INFO["data"] == bytearray([0xFF] * len(self._device.INFO["data"]))
-            ):
-                description = (
-                    f"{AgbSaveTypes().GetStringList()[4]:s} or {AgbSaveTypes().GetStringList()[5]:s} ({save_chip:s})"
-                )
-            else:
-                description = f"{AgbSaveTypes().GetStringList()[save_type]:s} ({save_chip:s})"
+            description = self._FormatSaveChipDescription(save_type, save_chip)
         elif self._device.GetMode() == "DMG":
             description = self._DmgSaveTypeDescription(save_type)
         elif self._device.GetMode() == "AGB":
@@ -6433,6 +6510,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 + ")</span><br>"
             )
         return "<b>" + __("Save Type:") + f"</b> {description:s}<br>"
+
+    def _FormatSaveChipDescription(self, save_type: int, save_chip: str) -> str:
+        """Describe the detected chip, including ambiguous unlicensed flash."""
+        if (
+            save_type == 5
+            and "Unlicensed" in save_chip
+            and "data" in self._device.INFO
+            and self._device.INFO["data"] == bytearray([0xFF] * len(self._device.INFO["data"]))
+        ):
+            return f"{AgbSaveTypes().GetStringList()[4]:s} or {AgbSaveTypes().GetStringList()[5]:s} ({save_chip:s})"
+        return f"{AgbSaveTypes().GetStringList()[save_type]:s} ({save_chip:s})"
 
     def _SelectDetectedCartType(
         self,
@@ -7129,22 +7217,28 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         action = args.get("action")
         if action == "ERASE":
             self._UpdateEraseProgressAction(args, pos, size, elapsed, estimated)
-        elif action == "UNLOCK":
-            self.lblStatus1aResult.setText(__("Pending..."))
-            self.lblStatus2aResult.setText(__("Pending..."))
-            self.lblStatus3aResult.setText(__("Pending..."))
-            self.lblStatus4a.setText(__("Unlocking flash..."))
-            self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-        elif action == "UPDATE_RTC":
-            self.lblStatus1aResult.setText(__("Pending..."))
-            self.lblStatus2aResult.setText(__("Pending..."))
-            self.lblStatus3aResult.setText(__("Pending..."))
-            self.lblStatus4a.setText(__("Updating Real Time Clock..."))
-            self._SetProgressActionControls(abortable=False, size=size, pos=pos)
         elif action == "CALC_CHECKSUMS":
             self._ShowChecksumProgress(args, pos, size)
         elif action == "SECTOR_ERASE":
             self._UpdateSectorEraseProgressAction(args, pos, size, elapsed)
+        elif action in ("UNLOCK", "UPDATE_RTC", "ABORTING", "ERROR", "UPDATE_INFO"):
+            self._UpdateSimpleProgressAction(action, args, size, pos)
+        elif action == "FINISHED":
+            self._FinishProgressAction(pos)
+        elif action == "ABORT":
+            self._HandleProgressAbort(args)
+
+    def _UpdateSimpleProgressAction(self, action: object, args: Mapping[str, Any], size: int, pos: int) -> None:
+        """Render progress states that share status fields and control updates."""
+        if action in ("UNLOCK", "UPDATE_RTC"):
+            self.lblStatus1aResult.setText(__("Pending..."))
+            self.lblStatus2aResult.setText(__("Pending..."))
+            self.lblStatus3aResult.setText(__("Pending..."))
+            self.lblStatus4a.setText(
+                __("Unlocking flash...") if action == "UNLOCK" else __("Updating Real Time Clock...")
+            )
+            abortable = bool(args["abortable"]) if action == "UNLOCK" else False
+            self._SetProgressActionControls(abortable=abortable, size=size, pos=pos)
         elif action == "ABORTING":
             self.lblStatus1aResult.setText("-")
             self.lblStatus2aResult.setText("-")
@@ -7159,11 +7253,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         elif action == "UPDATE_INFO":
             self.lblStatus4a.setText(args["text"])
             self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-        elif action == "FINISHED":
-            self._FinishProgressAction(pos)
-        elif action == "ABORT":
-            self._HandleProgressAbort(args)
-            return
 
     def _FinishProgressAction(self, pos: int) -> None:
         if pos > 0:

@@ -1520,15 +1520,7 @@ try:
                 zipfile.BadZipFile,
                 KeyError,
             ) as exc:
-                dprint("Invalid GBxCart RW firmware image:", exc)
-                if "too large" in str(exc):
-                    self.SetStatus(__("Firmware file is too large."))
-                else:
-                    self.SetStatus(__("Firmware checksum error."))
-                self.prgStatus.setValue(0)
-                self.btnUpdate.setEnabled(True)
-                self.btnClose.setEnabled(True)
-                self.grpAvailableFwUpdates.setEnabled(True)
+                self._HandleFirmwareImageLoadFailure(exc)
                 return False
 
             self.APP.DisconnectDevice()
@@ -1539,6 +1531,18 @@ try:
                     return True
                 if ret == 2:
                     return False
+
+        def _HandleFirmwareImageLoadFailure(self, error: Exception) -> None:
+            """Report a rejected image and restore the firmware controls."""
+            dprint("Invalid GBxCart RW firmware image:", error)
+            if "too large" in str(error):
+                self.SetStatus(__("Firmware file is too large."))
+            else:
+                self.SetStatus(__("Firmware checksum error."))
+            self.prgStatus.setValue(0)
+            self.btnUpdate.setEnabled(True)
+            self.btnClose.setEnabled(True)
+            self.grpAvailableFwUpdates.setEnabled(True)
 
         def SetStatus(
             self,

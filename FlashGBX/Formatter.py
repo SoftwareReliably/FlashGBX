@@ -46,18 +46,6 @@ class Formatter:
 
     @classmethod
     def progress_time(cls, seconds: float, as_float: bool = False, localized: bool = True) -> str:
-        if not localized:
-
-            def t___(singular: str, plural: str, n: int = 1, **kwargs: object) -> str:
-                return (singular if n == 1 else plural).format(n=n, **kwargs)
-
-            def tc__(context: str, msgid: str, **kwargs: object) -> str:
-                del context
-                return msgid.format(**kwargs)
-        else:
-            t___ = ___
-            tc__ = c__
-
         seconds = max(seconds, 0)
 
         days: int = int(seconds // 86400)
@@ -67,37 +55,11 @@ class Formatter:
         minutes: int = int(remaining // 60)
         secs: float = remaining % 60
 
-        components: list[int] = [days, hours, minutes]
+        components: list[tuple[str, int]] = [("day", days), ("hour", hours), ("minute", minutes)]
         parts = []
-        for i in range(len(components)):
-            if components[i] > 0:
-                if i == 0:
-                    parts.append(
-                        t___(
-                            "{days} day",
-                            "{days} days",
-                            n=components[i],
-                            days=format_number(components[i]),
-                        ),
-                    )
-                elif i == 1:
-                    parts.append(
-                        t___(
-                            "{hours} hour",
-                            "{hours} hours",
-                            n=components[i],
-                            hours=format_number(components[i]),
-                        ),
-                    )
-                elif i == 2:
-                    parts.append(
-                        t___(
-                            "{minutes} minute",
-                            "{minutes} minutes",
-                            n=components[i],
-                            minutes=format_number(components[i]),
-                        ),
-                    )
+        for name, value in components:
+            if value > 0:
+                parts.append(cls._format_duration_component(name, value, localized))
 
         if (len(parts) == 0) or (int(secs) != 0) or (seconds < 1 and as_float):
             if seconds < 1 and as_float:
@@ -108,16 +70,25 @@ class Formatter:
                 secs_formatted = format_number(secs_int)
                 n_value = secs_int
             parts.append(
-                t___(
-                    "{seconds} second",
-                    "{seconds} seconds",
+                ___("{seconds} second", "{seconds} seconds", n=n_value, seconds=secs_formatted)
+                if localized
+                else ("{seconds} second" if n_value == 1 else "{seconds} seconds").format(
                     n=n_value,
                     seconds=secs_formatted,
                 ),
             )
 
-        separator: str = tc__("Time duration separator (e.g. 6 minutes, 4 seconds)", ", ")
+        separator: str = c__("Time duration separator (e.g. 6 minutes, 4 seconds)", ", ") if localized else ", "
         return separator.join(parts)
+
+    @staticmethod
+    def _format_duration_component(name: str, value: int, localized: bool) -> str:
+        singular = "{" + name + "} " + name
+        plural = singular + "s"
+        formatted = format_number(value)
+        if localized:
+            return ___(singular, plural, n=value, **{name: formatted})
+        return (singular if value == 1 else plural).format(n=value, **{name: formatted})
 
     @classmethod
     def validate_datetime(cls, string: str, fmt: str) -> bool:

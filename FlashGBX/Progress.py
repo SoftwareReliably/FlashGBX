@@ -270,6 +270,18 @@ class Progress:
         if now - state["time_last_emit"] <= self.EMIT_INTERVAL and not force_update:
             return
 
+        self._update_speed_and_eta(event, state, now, skip_speed)
+        self._emit(state)
+        state["time_last_emit"] = now
+
+    def _update_speed_and_eta(
+        self,
+        event: ProgressEvent,
+        state: ProgressState,
+        now: float,
+        skip_speed: bool,
+    ) -> None:
+        """Update elapsed time, speed samples, and estimated remaining time."""
         state["time_elapsed"] = max(now - state["time_start"], 0.0)
         time_delta: float = now - state["time_last_update_speed"]
         position_delta: int = state["pos"] - state["bytes_last_update_speed"]
@@ -296,9 +308,6 @@ class Progress:
                     state["sector_count"] - sector_position,
                     0,
                 )
-
-        self._emit(state)
-        state["time_last_emit"] = now
 
     def _update_sector_progress(self, event: ProgressEvent, state: ProgressState) -> None:
         """Update erase timing, sector position, and cancellation state."""

@@ -451,67 +451,68 @@ class Flashcart:
                 self._RestoreWriteEnablePin(we)
 
             time.sleep(0.1)
-            if self._config["commands"]["chip_erase_wait_for"][i][0] is not None:
-                addr = self._config["commands"]["chip_erase_wait_for"][i][0]
-                data = self._config["commands"]["chip_erase_wait_for"][i][1]
-                timeout = self._config["chip_erase_timeout"]
-                while True:
-                    self._progress(
-                        {
-                            "action": "ERASE",
-                            "time_start": time_start,
-                            "time_estimated": self._config["chip_erase_timeout"],
-                            "abortable": False,
-                        },
-                    )
-                    if self._config.get("wait_read_status_register"):
-                        for j in range(len(self._config["commands"]["read_status_register"])):
-                            sr_addr = self._config["commands"]["read_status_register"][j][0]
-                            sr_data = self._config["commands"]["read_status_register"][j][1]
-
-                            self._SetWriteEnablePin(we)
-                            self.CartWrite([[sr_addr, sr_data]])
-                            self._RestoreWriteEnablePin(we)
-
-                    self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
-                    temp: bytearray = self.CartRead(addr, 2)
-                    if len(temp) < 2:
-                        dprint("Communication error 1 in ChipErase():", temp)
-                        return False
-                    wait_for: int = struct.unpack("<H", temp)[0]
-                    self._last_status: int = wait_for
-                    dprint(
-                        "Status Register Check: 0x{:X} & 0x{:X} == 0x{:X}? {:s}".format(
-                            wait_for,
-                            self._config["commands"]["chip_erase_wait_for"][i][2],
-                            data,
-                            str((wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]) == data),
-                        ),
-                    )
-                    wait_for = wait_for & self._config["commands"]["chip_erase_wait_for"][i][2]
-                    if wait_for == data:
-                        break
-                    time.sleep(0.5)
-                    timeout -= 0.5
-                    if timeout <= 0:
-                        self._progress(
-                            {
-                                "action": "ABORT",
-                                "info_type": "msgbox_critical",
-                                "info_msg": __(
-                                    "Erasing the flash chip timed out. The last status register value was {value}.",
-                                    value=f"0x{self._last_status:X}",
-                                )
-                                + "\n\n"
-                                + __(
-                                    "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
-                                ),
-                                "abortable": False,
-                            },
-                        )
-                        return False
+            if self._config["commands"]["chip_erase_wait_for"][i][0] is not None and not self._WaitForChipErase(
+                i, we, time_start
+            ):
+                return False
         self.Reset(full_reset=True)
         return True
+
+    def _WaitForChipErase(self, index: int, write_enable: str | None, time_start: float) -> bool:
+        """Poll one erase status register until ready, communication failure, or timeout."""
+        wait_command = self._config["commands"]["chip_erase_wait_for"][index]
+        addr = wait_command[0]
+        if addr is None:
+            return True
+        data = wait_command[1]
+        mask = wait_command[2]
+        timeout = self._config["chip_erase_timeout"]
+        while True:
+            self._progress(
+                {
+                    "action": "ERASE",
+                    "time_start": time_start,
+                    "time_estimated": self._config["chip_erase_timeout"],
+                    "abortable": False,
+                },
+            )
+            if self._config.get("wait_read_status_register"):
+                for sr_addr, sr_data in self._config["commands"]["read_status_register"]:
+                    self._SetWriteEnablePin(write_enable)
+                    self.CartWrite([[sr_addr, sr_data]])
+                    self._RestoreWriteEnablePin(write_enable)
+
+            self.CartRead(addr, 2)  # dummy read (fixes some bootlegs)
+            temp: bytearray = self.CartRead(addr, 2)
+            if len(temp) < 2:
+                dprint("Communication error 1 in ChipErase():", temp)
+                return False
+            status: int = struct.unpack("<H", temp)[0]
+            self._last_status = status
+            dprint(
+                f"Status Register Check: 0x{status:X} & 0x{mask:X} == 0x{data:X}? {(status & mask) == data!s}",
+            )
+            if status & mask == data:
+                return True
+            time.sleep(0.5)
+            timeout -= 0.5
+            if timeout <= 0:
+                self._progress(
+                    {
+                        "action": "ABORT",
+                        "info_type": "msgbox_critical",
+                        "info_msg": __(
+                            "Erasing the flash chip timed out. The last status register value was {value}.",
+                            value=f"0x{self._last_status:X}",
+                        )
+                        + "\n\n"
+                        + __(
+                            "Please make sure that the cartridge contacts are clean, and that the selected flashcart profile and settings are correct.",
+                        ),
+                        "abortable": False,
+                    },
+                )
+                return False
 
     @staticmethod
     def _ResolveSectorAddress(address: int | str | None, sector_position: int) -> int | None:
