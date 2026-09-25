@@ -495,6 +495,7 @@ def test_finish_operation_reports_rom_write_results(
     [
         ("DMG", None, 1, 0x1234, 0x1234, False, None, "checksum was verified", False),
         ("DMG", None, 1, 0x1234, 0x9999, 0x8000, None, "checksum is not correct", True),
+        ("DMG", None, 1, 0x1234, 0x9999, 0, None, "checksum is not correct", True),
         ("DMG", None, 1, 0x1234, 0x9999, False, None, "checksum is not correct", False),
         ("DMG", None, 1, 0x1234, 0x9999, False, 0x105, "ROM backup is complete!", False),
         ("AGB", {"rc": 1}, 1, 0, 0, False, None, "checksum was verified", False),
@@ -845,6 +846,38 @@ def test_detect_cartridge_formats_successful_mock_detection(
 
 
 @pytest.mark.parametrize(
+    ("mapper_profile", "expected_mapper"),
+    [
+        ({"mbc": "manual"}, "Manual selection"),
+        ({"mbc": 0x13}, "MBC3"),
+        ({"mbc": 0x7F}, None),
+        ({}, "Default"),
+    ],
+)
+def test_detect_cartridge_formats_dmg_mapper_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mapper_profile: dict[str, object],
+    expected_mapper: str | None,
+) -> None:
+    cli = make_cli(tmp_path)
+    conn = FakeConnection()
+    conn.header = dmg_header()
+    conn.INFO["dmg_carts"] = (["Generic", "Selected"], [{}, {**mapper_profile}])
+    conn.INFO["detect_cart"] = (dmg_header(), None, 1, None, False, [1], 1, "", None, "id\n", 0)
+    cli.CONN = conn
+    monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
+
+    assert cli.DetectCartridge() == 1
+    output = capsys.readouterr().out
+    if expected_mapper is None:
+        assert "Mapper Type:" not in output
+    else:
+        assert expected_mapper in output
+
+
+@pytest.mark.parametrize(
     ("flash_id", "expected_profile"),
     [
         ("prefix\nflash id\n", None),
@@ -923,6 +956,39 @@ def test_backup_rom_transfers_generated_dmg_path(
             "cart_type": 1,
         },
     ]
+
+
+def test_backup_rom_falls_back_when_auto_size_lookup_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = make_args(action="backup-rom", path=str(tmp_path / "backup.gb"))
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+    monkeypatch.setattr(cli_module.RomSizes, "GetSize", lambda _self, _index: None)
+
+    cli.BackupROM(args, dmg_header())
+
+    assert conn.transfer_calls[0]["rom_size"] == 8 * 1024 * 1024
+    assert "Couldn't determine ROM size, will use 8 MiB" in capsys.readouterr().out
+
+
+def test_backup_rom_uses_explicit_dmg_size(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = make_args(action="backup-rom", path=str(tmp_path / "backup.gb"), dmg_romsize="2mb")
+    cli = make_cli(tmp_path, args)
+    conn = FakeConnection()
+    cli.CONN = conn
+    monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
+
+    cli.BackupROM(args, dmg_header())
+
+    assert conn.transfer_calls[0]["rom_size"] == 0x200000
 
 
 def test_backup_mapper_message_handles_known_and_unknown_ids(
@@ -2795,17 +2861,19 @@ def test_finish_backup_ram_destination_collision_stops_exports(
 
 
 @pytest.mark.parametrize(
-    ("power_cycle", "fail_backup"),
-    [(True, False), (False, False), (True, True)],
+    ("power_cycle", "fail_backup", "mode"),
+    [(True, False, "DMG"), (False, False, "DMG"), (True, True, "DMG"), (False, False, "AGB"), (True, True, "AGB")],
 )
 def test_debug_save_test_restores_data_and_orders_optional_power_cycle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     power_cycle: bool,
     fail_backup: bool,
+    mode: str,
 ) -> None:
     cli = make_cli(tmp_path)
-    conn = FakeConnection()
+    conn = FakeConnection(mode)
     cli.CONN = conn
     monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
     monkeypatch.setattr(cli_module.os, "urandom", lambda size: b"\xa5" * size)
@@ -2840,18 +2908,26 @@ def test_debug_save_test_restores_data_and_orders_optional_power_cycle(
     )
     monkeypatch.setattr(cli_module.time, "sleep", lambda seconds: events.append(("sleep", seconds)))
 
-    cli._DebugTestSave(mbc=0x02, save_type=0x02)
+    cli._DebugTestSave(mbc=0x02, save_type=1 if mode == "AGB" else 0x02)
 
     expected_names = ["test1.bin"] if fail_backup else ["test1.bin", "test2.bin", "test3.bin", "test4.bin", "test1.bin"]
     assert [Path(str(args["path"])).name for args in transfer_calls] == expected_names
     assert [args["mode"] for args in transfer_calls] == ([2] if fail_backup else [2, 3, 2, 2, 3])
-    assert all(args["mbc"] == 0x02 and args["save_type"] == 0x02 for args in transfer_calls)
+    expected_save_type = 1 if mode == "AGB" else 0x02
+    assert all(args["mbc"] == 0x02 and args["save_type"] == expected_save_type for args in transfer_calls)
 
     if fail_backup:
+        assert "Done! The writable save data size" not in capsys.readouterr().out
         assert cartridge_data == initial_data
         assert not (tmp_path / "test1.bin").exists()
         assert events == [("transfer", (2, "test1.bin"))]
         return
+
+    output = capsys.readouterr().out
+    if mode == "AGB":
+        assert "Done! The writable save data size using save type" in output
+    else:
+        assert "Done! The writable save data size is" in output
 
     assert (tmp_path / "test1.bin").read_bytes() == initial_data
     assert cartridge_data == initial_data

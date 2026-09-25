@@ -1673,6 +1673,24 @@ def test_batteryless_malformed_locations_and_unavailable_last_use_default(
     assert settings.writes == []
 
 
+def test_batteryless_location_extension_survives_detected_offset_error(
+    gui_module: ModuleType,
+) -> None:
+    class BrokenDetected(dict[str, int]):
+        def __getitem__(self, key: str) -> int:
+            if key == "bl_offset":
+                msg = "bad detected offset"
+                raise TypeError(msg)
+            return super().__getitem__(key)
+
+    settings = FakeSettings({"BatterylessSramLocationsAGB": json.dumps([0x500000])})
+    gui = make_gui(gui_module, SETTINGS=settings)
+
+    locations = gui._GetBatterylessDialogLocations("AGB", [0x3C0000], BrokenDetected(bl_size=0x8000))
+
+    assert locations == [0x3C0000, 0x500000]
+
+
 @pytest.mark.parametrize(
     ("mode", "selections", "expected", "expected_locations"),
     [
@@ -1765,6 +1783,29 @@ def test_batteryless_write_clears_pending_cart_detection_before_parameter_prompt
 
     assert "detected_cart_type" not in gui.STATUS
     get_bl_args.assert_called_once_with(rom_size=0x200000, detected=device.INFO["dump_info"]["batteryless_sram"])
+    assert not any(name == "flash" for name, _args in device.calls)
+
+
+def test_batteryless_fixed_voltage_cancel_stops_write_before_status_changes(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
+    gui._PrepareSaveWrite = lambda **_kwargs: ("DMG", "save.sav", 0x13, 0, 1, 0, None)
+    gui._PrepareSaveWriteRtc = lambda **_kwargs: (False, False)
+    gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(14)
+    gui.GetBLArgs = Mock(return_value={"bl_offset": 0x100000, "bl_size": 0x8000})
+    device.INFO["dmg_carts"][1][1]["voltage"] = 3.3
+    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    gui.STATUS["detected_cart_type"] = 1
+    monkeypatch.setattr(FakeMessageBox, "warning", Mock(return_value=FakeMessageBox.StandardButton.Cancel))
+
+    gui.WriteRAM()
+
+    assert "detected_cart_type" not in gui.STATUS
+    assert "args" not in gui.STATUS
+    assert gui.GetBLArgs.called is True
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -2161,6 +2202,40 @@ def test_update_check_handles_errors_and_disabled_setting(
         gui.SETTINGS.values["UpdateCheck"] = "enabled"
         monkeypatch.setattr(gui_module.requests, "get", Mock(side_effect=error))
     gui.UpdateCheck()
+
+
+@pytest.mark.parametrize(
+    ("exception_name", "expected_message"),
+    [
+        ("ConnectTimeout", "connection timeout. Please check your internet connection"),
+        ("ConnectionError", "connection error. Please check your network connection"),
+    ],
+)
+def test_update_check_reports_request_connection_errors(
+    gui_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    exception_name: str,
+    expected_message: str,
+) -> None:
+    gui = build_gui(gui_module, tmp_path)
+    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    error_type = getattr(gui_module.requests.exceptions, exception_name)
+    request = Mock(side_effect=error_type("network failure"))
+    monkeypatch.setattr(gui_module.requests, "get", request)
+    announce = Mock()
+    gui._AnnounceUpdate = announce
+
+    gui.UpdateCheck()
+
+    request.assert_called_once_with(
+        "https://api.github.com/repos/Lesserkuma/FlashGBX/releases/latest",
+        allow_redirects=True,
+        timeout=1.5,
+    )
+    assert expected_message in capsys.readouterr().out
+    announce.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -2606,6 +2681,8 @@ def test_read_cartridge_populates_agb_widgets_without_hardware(
 
     assert gui.lblAGBRomTitleResult.text() == "TEST GAME"
     assert "Valid" in gui.lblAGBHeaderChecksumResult.text()
+    assert gui.lblAGBHeaderChecksumResult.text() == "Valid (0x42)"
+    assert gui.lblAGBHeaderChecksumResult.styleSheet() == gui.lblAGBRomTitleResult.styleSheet()
     assert gui.grpAGBCartridgeInfo.isVisible() is True
     bootlogo_path = tmp_path / "bootlogo_agb.bin"
     assert bootlogo_path.read_bytes() == device.header["raw"][0x04:0xA0]
@@ -2616,9 +2693,13 @@ def test_read_cartridge_populates_agb_widgets_without_hardware(
 
     invalid_logo_header = agb_header()
     invalid_logo_header["logo_correct"] = False
+    invalid_logo_header["header_checksum_correct"] = False
+    invalid_logo_header["header_checksum"] = 0x99
     device.header = invalid_logo_header
     gui.ReadCartridge(resetStatus=False)
     assert "Invalid" in gui.lblAGBHeaderBootlogoResult.text()
+    assert gui.lblAGBHeaderChecksumResult.text() == "Invalid (0x99)"
+    assert gui.lblAGBHeaderChecksumResult.styleSheet() == "QLabel { color: red; }"
     assert bootlogo_path.read_bytes() == b"existing logo"
 
     database_header = agb_header()
@@ -4527,16 +4608,39 @@ def test_finish_flash_rom_shows_result_and_restores_controls(
     assert gui.btnCancel.isEnabled() is False
 
 
-@pytest.mark.parametrize("answer", [FakeMessageBox.StandardButton.Yes, FakeMessageBox.StandardButton.No])
+@pytest.mark.parametrize(
+    ("answer", "selection_type", "rom_size", "mapper_max_size", "mapper_source", "size_warning"),
+    [
+        (FakeMessageBox.StandardButton.Yes, 1, 0x200000, 0x100000, "manual selection", True),
+        (FakeMessageBox.StandardButton.No, 2, 0x100000, 0x200000, "forced by selected flashcart profile", False),
+        (FakeMessageBox.StandardButton.No, 3, 0x200000, 0x100000, None, True),
+        (FakeMessageBox.StandardButton.No, 3, 0x100000, 0x200000, None, False),
+    ],
+)
 def test_finish_flash_rom_verification_failure_retry_or_decline(
     gui_module: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     answer: int,
+    selection_type: int,
+    rom_size: int,
+    mapper_max_size: int,
+    mapper_source: str | None,
+    size_warning: bool,
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
     sectors = [[0x2000, 0x1000]]
-    device.INFO.update(last_action=4, broken_sectors=sectors)
+    device.INFO.update(
+        last_action=4,
+        broken_sectors=sectors,
+        dump_info={"cart_type": 1},
+        verify_error_params={
+            "mapper_selection_type": selection_type,
+            "mapper_name": "MBC5",
+            "rom_size": rom_size,
+            "mapper_max_size": mapper_max_size,
+        },
+    )
     gui.STATUS["args"] = {"path": "rom.gb", "verify_write": True}
     gui.grpActions.setEnabled(False)
     gui.btnCancel.setEnabled(True)
@@ -4562,6 +4666,11 @@ def test_finish_flash_rom_verification_failure_retry_or_decline(
     assert len(warnings) == 1
     assert "0x2000~0x2FFF" in warnings[0]
     assert "failed" in warnings[0]
+    if mapper_source is not None:
+        assert "MBC5 (" + mapper_source + ")" in warnings[0]
+    else:
+        assert "Check mapper type used" not in warnings[0]
+    assert ("Check mapper type ROM size limit" in warnings[0]) is size_warning
     if answer == FakeMessageBox.StandardButton.Yes:
         assert device.calls == [("flash", {"path": "rom.gb", "verify_write": True, "flash_sectors": sectors})]
         assert device.INFO["last_action"] == 4

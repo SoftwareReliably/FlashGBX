@@ -891,6 +891,18 @@ class FlashGBX_CLI:
         except Exception as e:
             print(__("Error:") + " " + str(e))
 
+    @staticmethod
+    def _GetBackupLoopWarningSuffix(loop_detected: int | Literal[False]) -> str:
+        if loop_detected is not False:
+            return "\n" + __(
+                "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
+                pos=f"0x{loop_detected:X}",
+                size=Formatter.file_size(loop_detected, as_int=True),
+            )
+        return "\n" + __(
+            "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
+        )
+
     def _FinishBackupROM(self, time_elapsed: float | None, speed: str | None) -> None:
         self.CONN.INFO["last_action"] = 0
         self._WriteDumpReport(time_elapsed, speed)
@@ -910,16 +922,7 @@ class FlashGBX_CLI:
                 print(__("The ROM backup is complete!"))
             else:
                 msg = __("The ROM was dumped, but the checksum is not correct.")
-                if self.CONN.INFO["loop_detected"] is not False:
-                    msg += "\n" + __(
-                        "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                        pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                        size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                    )
-                else:
-                    msg += "\n" + __(
-                        "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                    )
+                msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
                 print(f"{ANSI.YELLOW:s}{msg:s}{ANSI.RESET:s}")
         elif self.CONN.GetMode() == "AGB":
             print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
@@ -933,27 +936,14 @@ class FlashGBX_CLI:
                     )
                 else:
                     msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
-                    if self.CONN.INFO["loop_detected"] is not False:
-                        msg += "\n" + __(
-                            "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                            pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                            size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                        )
-                    else:
-                        msg += "\n" + __(
-                            "This may indicate a bad dump, however this can be normal for some reproduction cartridges, unlicensed games, prototypes, patched games and intentional overdumps.",
-                        )
+                    msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
                     print(ANSI.YELLOW + msg + ANSI.RESET)
             else:
                 msg = __(
                     "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
                 )
                 if self.CONN.INFO["loop_detected"] is not False:
-                    msg += "\n" + __(
-                        "A data loop was detected in the ROM backup at position {pos} ({size}). This may indicate a bad dump or overdump.",
-                        pos="0x{:X}".format(self.CONN.INFO["loop_detected"]),
-                        size=Formatter.file_size(self.CONN.INFO["loop_detected"], as_int=True),
-                    )
+                    msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
                 print(ANSI.YELLOW + msg + ANSI.RESET)
 
     def FinishOperation(self) -> None:
@@ -1414,6 +1404,18 @@ class FlashGBX_CLI:
             )
         return message + "\n"
 
+    @staticmethod
+    def _FormatDetectedDmgFlashMapper(cart_profile: Mapping[str, object]) -> str:
+        if "mbc" not in cart_profile:
+            return __("Mapper Type:") + " " + c__("Mapper Type", "Default") + " (MBC5)\n"
+
+        mapper = cart_profile["mbc"]
+        if mapper == "manual":
+            return __("Mapper Type:") + " " + __("Manual selection") + "\n"
+        if isinstance(mapper, int) and mapper in DMG_Mapper().GetAllMapperIds():
+            return __("Mapper Type:") + " " + DMG_Mapper().GetMapperType(mapper) + "\n"
+        return ""
+
     def DetectCartridge(self, limitVoltage: bool = False) -> int | None:
         print(__("Now attempting to auto-detect the flashcart profile..."))
         if self.CONN.CheckROMStable() is False:
@@ -1499,18 +1501,7 @@ class FlashGBX_CLI:
                 msg_flash_size_s = __("ROM Size:") + " " + Formatter.file_size(size, as_int=True) + "\n"
 
             if self.CONN.GetMode() == "DMG":
-                if "mbc" in supp_cart_types[1][cart_type_id]:
-                    if supp_cart_types[1][cart_type_id]["mbc"] == "manual":
-                        msg_flash_mapper_s: str = __("Mapper Type:") + " " + __("Manual selection") + "\n"
-                    elif supp_cart_types[1][cart_type_id]["mbc"] in DMG_Mapper().GetAllMapperIds():
-                        msg_flash_mapper_s = (
-                            __("Mapper Type:")
-                            + " "
-                            + DMG_Mapper().GetMapperType(supp_cart_types[1][cart_type_id]["mbc"])
-                            + "\n"
-                        )
-                else:
-                    msg_flash_mapper_s = __("Mapper Type:") + " " + c__("Mapper Type", "Default") + " (MBC5)\n"
+                msg_flash_mapper_s = self._FormatDetectedDmgFlashMapper(supp_cart_types[1][cart_type_id])
 
         elif (len(flash_id.split("\n")) > 2) and (
             (self.CONN.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
@@ -1662,6 +1653,28 @@ class FlashGBX_CLI:
             return False
         return True
 
+    def _ResolveDmgBackupRomSize(self, args: argparse.Namespace, header: HeaderData) -> int | None:
+        if args.dmg_romsize != "auto":
+            return RomSizes.GetSizeFromCLIName(args.dmg_romsize, mode="DMG")
+
+        try:
+            rom_size = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
+        except TypeError:
+            rom_size = None
+        if isinstance(rom_size, int):
+            return rom_size
+
+        print(
+            ANSI.YELLOW
+            + __(
+                "Couldn't determine ROM size, will use 8{mib}. It can also be manually set with the “{switch}” command line switch.",
+                mib=__(" MiB"),
+                switch="--dmg-romsize",
+            )
+            + ANSI.RESET,
+        )
+        return 8 * 1024 * 1024
+
     def BackupROM(self, args: argparse.Namespace, header: HeaderData) -> None:
         mbc = 1
         rom_size = 0
@@ -1670,25 +1683,7 @@ class FlashGBX_CLI:
         if self.CONN.GetMode() == "DMG":
             mbc = self._ResolveDmgBackupMapper(args, header)
 
-            if args.dmg_romsize == "auto":
-                try:
-                    rom_size: int | None = RomSizes().GetSize(self._GetHeaderInt(header, "rom_size_raw"))
-                    if not isinstance(rom_size, int):
-                        msg = "Invalid ROM size"
-                        raise TypeError(msg)  # noqa: TRY301
-                except TypeError:
-                    print(
-                        ANSI.YELLOW
-                        + __(
-                            "Couldn't determine ROM size, will use 8{mib}. It can also be manually set with the “{switch}” command line switch.",
-                            mib=__(" MiB"),
-                            switch="--dmg-romsize",
-                        )
-                        + ANSI.RESET,
-                    )
-                    rom_size = 8 * 1024 * 1024
-            else:
-                rom_size = RomSizes.GetSizeFromCLIName(args.dmg_romsize, mode="DMG")
+            rom_size = self._ResolveDmgBackupRomSize(args, header)
 
         elif self.CONN.GetMode() == "AGB":
             if args.agb_romsize == "auto":
@@ -2166,6 +2161,25 @@ class FlashGBX_CLI:
             )
         return True
 
+    def _ResolveDmgSaveMapper(self, args: argparse.Namespace, header: HeaderData) -> int:
+        if args.dmg_mbc != "auto":
+            return self._ParseDmgMbc(args.dmg_mbc)
+
+        try:
+            mbc = self._GetHeaderInt(header, "mapper_raw")
+        except TypeError:
+            print(
+                ANSI.YELLOW
+                + __(
+                    "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
+                    switch="--dmg-mbc",
+                )
+                + ANSI.RESET,
+            )
+            return 0x19
+        else:
+            return 0x19 if mbc == 0 else mbc
+
     def _ResolveSaveConfiguration(
         self,
         args: argparse.Namespace,
@@ -2173,23 +2187,7 @@ class FlashGBX_CLI:
     ) -> tuple[int, int, int | None] | None:
         cart_type = 0
         if self.CONN.GetMode() == "DMG":
-            if args.dmg_mbc == "auto":
-                try:
-                    mbc: int = self._GetHeaderInt(header, "mapper_raw")
-                    if mbc == 0:
-                        mbc = 0x19  # MBC5 default
-                except TypeError:
-                    print(
-                        ANSI.YELLOW
-                        + __(
-                            "Couldn't determine mapper type, will try to use MBC5. It can also be manually set with the “{switch}” command line switch.",
-                            switch="--dmg-mbc",
-                        )
-                        + ANSI.RESET,
-                    )
-                    mbc = 0x19
-            else:
-                mbc = self._ParseDmgMbc(args.dmg_mbc)
+            mbc = self._ResolveDmgSaveMapper(args, header)
 
             save_type = self._ResolveDmgSaveType(args.dmg_savetype, header)
 
@@ -2408,6 +2406,9 @@ class FlashGBX_CLI:
         else:
             found_length = len(test2) - found_offset
 
+        self._PrintDebugSaveResult(found_length, save_type)
+
+    def _PrintDebugSaveResult(self, found_length: int, save_type: int) -> None:
         if self.CONN.GetMode() == "DMG":
             print(
                 "\n"

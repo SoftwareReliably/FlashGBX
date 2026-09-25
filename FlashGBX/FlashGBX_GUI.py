@@ -1726,6 +1726,29 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if msgbox.clickedButton() == button_open:
             self.OpenWebURL(site)
 
+    def _RequestLatestRelease(self, url: str) -> requests.Response | Literal[False]:
+        try:
+            return requests.get(url, allow_redirects=True, timeout=1.5)
+        except requests.exceptions.ConnectTimeout as e:
+            print(
+                __("Error: Update check failed due to a connection timeout. Please check your internet connection."),
+                e,
+                sep="\n",
+            )
+        except requests.exceptions.ConnectionError as e:
+            print(
+                __("Error: Update check failed due to a connection error. Please check your network connection."),
+                e,
+                sep="\n",
+            )
+        except Exception as e:
+            print(
+                __("Error: An unexpected error occured while querying the latest version information from GitHub."),
+                e,
+                sep="\n",
+            )
+        return False
+
     def UpdateCheck(self) -> None:
         update_check: str | None = self.SETTINGS.value("UpdateCheck")
         if update_check is None:
@@ -1735,31 +1758,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             print()
             url = "https://api.github.com/repos/Lesserkuma/FlashGBX/releases/latest"
             site = "https://github.com/Lesserkuma/FlashGBX/releases/latest"
-            try:
-                ret = requests.get(url, allow_redirects=True, timeout=1.5)
-            except requests.exceptions.ConnectTimeout as e:
-                print(
-                    __(
-                        "Error: Update check failed due to a connection timeout. Please check your internet connection."
-                    ),
-                    e,
-                    sep="\n",
-                )
-                ret = False
-            except requests.exceptions.ConnectionError as e:
-                print(
-                    __("Error: Update check failed due to a connection error. Please check your network connection."),
-                    e,
-                    sep="\n",
-                )
-                ret = False
-            except Exception as e:
-                print(
-                    __("Error: An unexpected error occured while querying the latest version information from GitHub."),
-                    e,
-                    sep="\n",
-                )
-                ret = False
+            ret = self._RequestLatestRelease(url)
             if ret is not False and ret.status_code == 200:
                 ret = ret.content
                 try:
@@ -2634,6 +2633,30 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             sectors += f"0x{sector[0]:X}~0x{sector[0] + sector[1] - 1:X}, "
         return sectors[:-2], sector_count
 
+    def _FormatFlashMapperTroubleshooting(
+        self,
+        selection_type: int,
+        mapper_name: str,
+        rom_size: int,
+        mapper_max_size: int,
+    ) -> str:
+        if selection_type == 1:
+            mapper_source = c__("Mapper Type", "manual selection")
+        elif selection_type == 2:
+            mapper_source = c__("Mapper Type", "forced by selected flashcart profile")
+        else:
+            mapper_source = ""
+
+        message = ""
+        if mapper_source:
+            message = "\n" + __("- Check mapper type used:") + " " + mapper_name + f" ({mapper_source})"
+        if rom_size > mapper_max_size:
+            message += "\n" + __(
+                "- Check mapper type ROM size limit: likely up to {max_size}",
+                max_size=Formatter.file_size(mapper_max_size),
+            )
+        return message
+
     def _FinishFlashROM(self, msgbox: QtWidgets.QMessageBox, elapsed_message: str) -> bool:
         if "broken_sectors" in self._device.INFO:
             broken_sectors: list[list[int]] = self._device.INFO["broken_sectors"]
@@ -2673,31 +2696,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     )
                 )
                 if "mapper_selection_type" in self._device.INFO["verify_error_params"]:
-                    selection_type = self._device.INFO["verify_error_params"]["mapper_selection_type"]
-                    if selection_type == 1:  # manual
-                        mapper_source = c__("Mapper Type", "manual selection")
-                    elif selection_type == 2:  # forced by cart type
-                        mapper_source = c__("Mapper Type", "forced by selected flashcart profile")
-                    else:
-                        mapper_source = ""
-                    if mapper_source:
-                        message += (
-                            "\n"
-                            + __("- Check mapper type used:")
-                            + " "
-                            + self._device.INFO["verify_error_params"]["mapper_name"]
-                            + f" ({mapper_source})"
-                        )
-                    if (
-                        self._device.INFO["verify_error_params"]["rom_size"]
-                        > self._device.INFO["verify_error_params"]["mapper_max_size"]
-                    ):
-                        message += "\n" + __(
-                            "- Check mapper type ROM size limit: likely up to {max_size}",
-                            max_size=Formatter.file_size(
-                                self._device.INFO["verify_error_params"]["mapper_max_size"],
-                            ),
-                        )
+                    message += self._FormatFlashMapperTroubleshooting(
+                        self._device.INFO["verify_error_params"]["mapper_selection_type"],
+                        self._device.INFO["verify_error_params"]["mapper_name"],
+                        self._device.INFO["verify_error_params"]["rom_size"],
+                        self._device.INFO["verify_error_params"]["mapper_max_size"],
+                    )
             message += "\n\n" + __("Do you want to write the sectors again that failed verification?")
             answer = QtWidgets.QMessageBox.warning(
                 self,
@@ -3609,6 +3613,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             + " (*.*)",
         )[0]
 
+    def _SelectFlashMapperForWrite(self, mode: PlatformMode, cart_profile: dict[str, Any]) -> int:
+        if mode == "DMG":
+            self.SetDMGMapperResult(cart_profile)
+            return ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
+        return 0
+
     def FlashROM(self, dpath: str = "") -> None:
         selection = self._PrepareFlashCartSelection(dpath)
         if selection is None:
@@ -3617,11 +3627,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         just_erase = False
         buffer = bytearray()
 
-        if mode == "DMG":
-            self.SetDMGMapperResult(cart_profile)
-            mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
-        else:
-            mbc = 0
+        mbc = self._SelectFlashMapperForWrite(mode, cart_profile)
 
         path = self._SelectFlashROMPath(path, mode, last_dir)
 
@@ -4183,6 +4189,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return answer != QtWidgets.QMessageBox.StandardButton.No, None
 
+    @staticmethod
+    def _CreateCameraEraseBuffer(*, unlicensed_photo: bool) -> bytearray:
+        buffer = bytearray([0x00] * 0x20000)
+        if unlicensed_photo:
+            buffer += bytearray([0xFF] * 0xE0000)
+        return buffer
+
     def _prepare_camera_save(self, path: str, erase: bool, test: bool) -> tuple[bool, bytearray | None]:
         if self._device.GetFWBuildDate() == "":  # Legacy Mode
             msgbox = _create_message_box(
@@ -4226,14 +4239,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         if "gbcamera_calibration1" in self._device.INFO:
             if erase:
-                buffer = bytearray([0x00] * 0x20000)
-                if (
-                    "Unlicensed Photo!"
-                    in DmgSaveTypes(
-                        index=self.cmbDMGHeaderSaveTypeResult.currentIndex(),
-                    ).GetString()
-                ):
-                    buffer += bytearray([0xFF] * 0xE0000)
+                buffer = self._CreateCameraEraseBuffer(
+                    unlicensed_photo=(
+                        "Unlicensed Photo!"
+                        in DmgSaveTypes(
+                            index=self.cmbDMGHeaderSaveTypeResult.currentIndex(),
+                        ).GetString()
+                    ),
+                )
                 msg_text = (
                     __(
                         "This {cart_name} cartridge currently has calibration data in place.\n\nHow do you want to proceed?",
@@ -4888,6 +4901,29 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._FinishSaveStressTest()
 
+    def _ConfirmBatterylessDmgWriteVoltage(self, mode: PlatformMode, cart_type: int) -> bool:
+        if mode != "DMG" or not self._device.CanSetVoltageByAutoswitch() or self._device.CanSetVoltageByCode():
+            return True
+
+        bl_profile = self._device.GetSupportedCartridgesDMG()[1][cart_type]
+        if isinstance(bl_profile, dict) and (bl_profile.get("voltage") == 3.3 or "voltage_variants" in bl_profile):
+            msg_text = (
+                __(
+                    "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
+                )
+                + "\n"
+                + __("Do you want to continue?")
+            )
+            answer = QtWidgets.QMessageBox.warning(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                msg_text,
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
+                QtWidgets.QMessageBox.StandardButton.Cancel,
+            )
+            return answer != QtWidgets.QMessageBox.StandardButton.Cancel
+        return True
+
     def WriteRAM(
         self,
         dpath: str = "",
@@ -4959,28 +4995,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             if bl_args is False:
                 return
 
-            if mode == "DMG" and self._device.CanSetVoltageByAutoswitch() and not self._device.CanSetVoltageByCode():
-                bl_carts = self._device.GetSupportedCartridgesDMG()[1]
-                bl_profile = bl_carts[cart_type]
-                if isinstance(bl_profile, dict) and (
-                    bl_profile.get("voltage") == 3.3 or "voltage_variants" in bl_profile
-                ):
-                    msg_text = (
-                        __(
-                            "Warning: A 3.3V flashcart profile is selected, but your device is fixed to a 5V supply in Game Boy mode. Writing to a 3.3V flash chip at 5V may cause overvoltage issues.",
-                        )
-                        + "\n"
-                        + __("Do you want to continue?")
-                    )
-                    answer = QtWidgets.QMessageBox.warning(
-                        self,
-                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                        msg_text,
-                        QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
-                        QtWidgets.QMessageBox.StandardButton.Cancel,
-                    )
-                    if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
-                        return
+            if not self._ConfirmBatterylessDmgWriteVoltage(mode, cart_type):
+                return
 
             args = {
                 "path": path,
@@ -5136,6 +5152,25 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         del dlg
         return ret
 
+    def _GetBatterylessDialogLocations(
+        self,
+        mode: PlatformMode,
+        locations: list[int],
+        detected: BatterylessSramInfo | Literal[False],
+    ) -> list[int]:
+        saved_locations = self.SETTINGS.value(f"BatterylessSramLocations{mode:s}", "[]")
+        try:
+            parsed_locations = json.loads(str(saved_locations))
+            if isinstance(parsed_locations, list):
+                locations.extend(location for location in parsed_locations if isinstance(location, int))
+            if detected is not False:
+                locations.append(detected["bl_offset"])
+            locations = list(set(locations))
+            locations.sort()
+        except Exception:
+            logger.exception("Failed to load saved batteryless SRAM locations")
+        return locations
+
     def _PrepareBatterylessDialogSelection(
         self,
         mode: PlatformMode,
@@ -5149,21 +5184,11 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             locs = [0xD0000, 0x100000, 0x110000, 0x1D0000, 0x1E0000, 0x210000, 0x3D0000]
             lens = [0x2000, 0x8000, 0x10000, 0x20000]
 
-        saved_locations = self.SETTINGS.value(f"BatterylessSramLocations{mode:s}", "[]")
         loc_index = None
         len_index = None
         lay_index = None
 
-        try:
-            parsed_locations = json.loads(str(saved_locations))
-            if isinstance(parsed_locations, list):
-                locs.extend(location for location in parsed_locations if isinstance(location, int))
-            if detected is not False:
-                locs.append(detected["bl_offset"])
-            locs = list(set(locs))
-            locs.sort()
-        except Exception:
-            logger.exception("Failed to load saved batteryless SRAM locations")
+        locs = self._GetBatterylessDialogLocations(mode, locs, detected)
 
         intro_msg = ""
         if detected is not False:
@@ -5339,6 +5364,92 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         )
         return False
 
+    def _EditDmgTama5RTC(self, rtc_data: dict[str, Any]) -> dict[str, Any] | Literal[False]:
+        dlg_args: DialogArgs = {
+            "title": __("{mapper} Real Time Clock Editor", mapper="TAMA5"),
+            "intro": __("Enter the date and time used in the game.")
+            + "\n\n"
+            + __(
+                "Please note that the day value is an internal value. The game may use it only as a relative reference.",
+            ),
+            "params": [
+                # ID, Type, Value(s), Default Index
+                [
+                    "rtc_y",
+                    "spb",
+                    c__("Real Time Clock Setting", "Years passed:"),
+                    (0, 80),
+                    rtc_data["rtc_y"] - 19,
+                ],  # 19-99
+                [
+                    "rtc_leap_year_state",
+                    "spb",
+                    c__("Real Time Clock Setting", "Years since last leap year:"),
+                    (0, 4),
+                    rtc_data["rtc_leap_year_state"],
+                ],
+                [
+                    "rtc_m",
+                    "spb",
+                    c__("Real Time Clock Setting", "Month:"),
+                    (1, 12),
+                    rtc_data["rtc_m"],
+                ],
+                [
+                    "rtc_d",
+                    "spb",
+                    c__("Real Time Clock Setting", "Day:"),
+                    (1, 31),
+                    rtc_data["rtc_d"],
+                ],
+                [
+                    "rtc_h",
+                    "spb",
+                    c__("Real Time Clock Setting", "Hours:"),
+                    (0, 23),
+                    rtc_data["rtc_h"],
+                ],
+                [
+                    "rtc_i",
+                    "spb",
+                    c__("Real Time Clock Setting", "Minutes:"),
+                    (0, 59),
+                    rtc_data["rtc_i"],
+                ],
+                [
+                    "rtc_s",
+                    "spb",
+                    c__("Real Time Clock Setting", "Seconds:"),
+                    (0, 59),
+                    rtc_data["rtc_s"],
+                ],
+                [
+                    "current",
+                    "chk",
+                    c__(
+                        "Real Time Clock Setting",
+                        "Ignore above values and use the system time instead",
+                    ),
+                    None,
+                    False,
+                ],
+            ],
+        }
+        dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            result = dlg.GetResult()
+            rtc_dict = self._DmgRtcDialogValues(result)
+            if result["current"].isChecked():
+                rtc_dict = self._Tama5SystemTimeValues(rtc_dict, rtc_data)
+            mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
+            if not result["current"].isChecked():
+                rtc_dict["rtc_y"] += 19
+                rtc_dict["rtc_buffer"] = rtc_data["rtc_buffer"]
+            args = {"mbc": mbc, "rtc_dict": rtc_dict}
+        else:
+            return False
+        return args
+
     def _EditDmgRTC(self, rtc_data: dict[str, Any]) -> dict[str, Any] | Literal[False] | None:
         """Build a DMG RTC write request from the mapper-specific dialog."""
         args: dict[str, Any] | Literal[False] | None = None
@@ -5469,90 +5580,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 else:
                     return False
 
-            elif mbc in ("TAMA5"):
-                dlg_args = {
-                    "title": __("{mapper} Real Time Clock Editor", mapper="TAMA5"),
-                    "intro": __("Enter the date and time used in the game.")
-                    + "\n\n"
-                    + __(
-                        "Please note that the day value is an internal value. The game may use it only as a relative reference.",
-                    ),
-                    "params": [
-                        # ID, Type, Value(s), Default Index
-                        [
-                            "rtc_y",
-                            "spb",
-                            c__("Real Time Clock Setting", "Years passed:"),
-                            (0, 80),
-                            rtc_data["rtc_y"] - 19,
-                        ],  # 19-99
-                        [
-                            "rtc_leap_year_state",
-                            "spb",
-                            c__("Real Time Clock Setting", "Years since last leap year:"),
-                            (0, 4),
-                            rtc_data["rtc_leap_year_state"],
-                        ],
-                        [
-                            "rtc_m",
-                            "spb",
-                            c__("Real Time Clock Setting", "Month:"),
-                            (1, 12),
-                            rtc_data["rtc_m"],
-                        ],
-                        [
-                            "rtc_d",
-                            "spb",
-                            c__("Real Time Clock Setting", "Day:"),
-                            (1, 31),
-                            rtc_data["rtc_d"],
-                        ],
-                        [
-                            "rtc_h",
-                            "spb",
-                            c__("Real Time Clock Setting", "Hours:"),
-                            (0, 23),
-                            rtc_data["rtc_h"],
-                        ],
-                        [
-                            "rtc_i",
-                            "spb",
-                            c__("Real Time Clock Setting", "Minutes:"),
-                            (0, 59),
-                            rtc_data["rtc_i"],
-                        ],
-                        [
-                            "rtc_s",
-                            "spb",
-                            c__("Real Time Clock Setting", "Seconds:"),
-                            (0, 59),
-                            rtc_data["rtc_s"],
-                        ],
-                        [
-                            "current",
-                            "chk",
-                            c__(
-                                "Real Time Clock Setting",
-                                "Ignore above values and use the system time instead",
-                            ),
-                            None,
-                            False,
-                        ],
-                    ],
-                }
-                dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
-                if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-                    result = dlg.GetResult()
-                    rtc_dict = self._DmgRtcDialogValues(result)
-                    if result["current"].isChecked():
-                        rtc_dict = self._Tama5SystemTimeValues(rtc_dict, rtc_data)
-                    mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
-                    if not result["current"].isChecked():
-                        rtc_dict["rtc_y"] += 19
-                        rtc_dict["rtc_buffer"] = rtc_data["rtc_buffer"]
-                    args = {"mbc": mbc, "rtc_dict": rtc_dict}
-                else:
-                    return False
+            elif mbc == "TAMA5":
+                return self._EditDmgTama5RTC(rtc_data)
 
         return args
 
@@ -6010,6 +6039,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self.lblAGBHeaderBootlogoResult.setText(c__("Game Data", "Invalid"))
             self.lblAGBHeaderBootlogoResult.setStyleSheet("QLabel { color: red; }")
 
+    def _DisplayAgbHeaderChecksum(self, checksum: int, valid: bool) -> None:
+        if valid:
+            self.lblAGBHeaderChecksumResult.setText(c__("Game Data", "Valid") + f" (0x{checksum:02X})")
+            self.lblAGBHeaderChecksumResult.setStyleSheet(self.lblAGBRomTitleResult.styleSheet())
+        else:
+            self.lblAGBHeaderChecksumResult.setText(c__("Game Data", "Invalid") + f" (0x{checksum:02X})")
+            self.lblAGBHeaderChecksumResult.setStyleSheet("QLabel { color: red; }")
+
     def _DisplayAgbCartridge(self, data: dict[str, Any], *, reset_status: bool) -> None:
         self._PrepareAgbHeaderControls(data, reset_status=reset_status)
 
@@ -6021,16 +6058,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._DisplayAgbRtc(data)
 
-        if data["header_checksum_correct"]:
-            self.lblAGBHeaderChecksumResult.setText(
-                c__("Game Data", "Valid") + " (0x{:02X})".format(data["header_checksum"]),
-            )
-            self.lblAGBHeaderChecksumResult.setStyleSheet(self.lblAGBRomTitleResult.styleSheet())
-        else:
-            self.lblAGBHeaderChecksumResult.setText(
-                c__("Game Data", "Invalid") + " (0x{:02X})".format(data["header_checksum"]),
-            )
-            self.lblAGBHeaderChecksumResult.setStyleSheet("QLabel { color: red; }")
+        self._DisplayAgbHeaderChecksum(data["header_checksum"], data["header_checksum_correct"])
 
         self.lblAGBHeaderROMChecksumResult.setStyleSheet(self.DEFAULT_STYLESHEET)
         self.lblAGBHeaderROMChecksumResult.setText("Not available")

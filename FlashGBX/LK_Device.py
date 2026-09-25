@@ -2474,42 +2474,7 @@ class LK_Device(ABC):
                 save_type = None
                 save_size = 0
         else:
-            dprint("Testing EEPROM")
-            self._BackupRestoreRAM(
-                args={
-                    "mode": 2,
-                    "path": None,
-                    "mbc": mbc,
-                    "save_type": 1,
-                    "rtc": False,
-                    "detect": True,
-                },
-            )
-            eeprom_4k = self.INFO["data"]
-            self._BackupRestoreRAM(
-                args={
-                    "mode": 2,
-                    "path": None,
-                    "mbc": mbc,
-                    "save_type": 2,
-                    "rtc": False,
-                    "detect": True,
-                },
-            )
-            save_size = self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
-            eeprom_64k = self.INFO["data"]
-            if eeprom_64k in (
-                bytearray([0xFF] * len(eeprom_64k)),
-                bytearray([0] * len(eeprom_64k)),
-            ):
-                save_size = 0
-                save_type = 0
-            elif eeprom_4k == eeprom_64k[: len(eeprom_4k)]:
-                save_type = 2
-                save_size = 8192
-            else:
-                save_type = 1
-                save_size = 512
+            save_type, save_size = self._ProbeAgbEepromSaveType(mbc)
             check_batteryless_sram = False
 
         if check_batteryless_sram:
@@ -2519,6 +2484,37 @@ class LK_Device(ABC):
                 info["batteryless_sram"] = batteryless
                 self.INFO["dump_info"]["batteryless_sram"] = batteryless
         return save_type, save_size
+
+    def _ProbeAgbEepromSaveType(self, mbc: int | None) -> tuple[int, int]:
+        dprint("Testing EEPROM")
+        self._BackupRestoreRAM(
+            args={
+                "mode": 2,
+                "path": None,
+                "mbc": mbc,
+                "save_type": 1,
+                "rtc": False,
+                "detect": True,
+            },
+        )
+        eeprom_4k = self.INFO["data"]
+        self._BackupRestoreRAM(
+            args={
+                "mode": 2,
+                "path": None,
+                "mbc": mbc,
+                "save_type": 2,
+                "rtc": False,
+                "detect": True,
+            },
+        )
+        self._find_repeating_size(self.INFO["data"], len(self.INFO["data"]))
+        eeprom_64k = self.INFO["data"]
+        if eeprom_64k in (bytearray([0xFF] * len(eeprom_64k)), bytearray([0] * len(eeprom_64k))):
+            return 0, 0
+        if eeprom_4k == eeprom_64k[: len(eeprom_4k)]:
+            return 2, 8192
+        return 1, 512
 
     def _SetDetectionProgress(
         self,
@@ -6382,6 +6378,79 @@ class LK_Device(ABC):
         else:
             self._set_fw_variable("FLASH_COMMANDS_BANK_1", 0)
 
+    def _SelectFlashWriteMethod(
+        self,
+        command_set_type: str,
+        flashcart: Flashcart,
+        flash_buffer_size: int | Literal[False],
+    ) -> list[list[int | str | None]] | None:
+        method: int | None = None
+        debug_message = ""
+        include_buffer_size = False
+        command_name: Literal["buffer_write", "page_write", "single_write"] | None = None
+        flash_cmds: list[list[int | str | None]] = []
+
+        if flashcart.IsF2A():
+            method = 0x05  # FLASH_METHOD_AGB_FLASH2ADVANCE
+            debug_message = "Using Flash2Advance mode"
+            include_buffer_size = True
+            flash_cmds = [
+                ["SA", 0xE8],
+                ["SA", "BS"],
+                ["PA", "PD"],
+                ["SA", 0xD0],
+                ["SA", 0xFF],
+            ]
+        elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
+            method = 0x03  # FLASH_METHOD_DMG_MMSA
+            debug_message = "Using GB-Memory mode"
+        elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
+            method = 0x09  # FLASH_METHOD_DMG_DATEL_ORBITV2
+            debug_message = "Using Datel Orbit V2 mode"
+        elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] >= 12:
+            method = 0x0A  # FLASH_METHOD_DMG_E201264
+            debug_message = "Using E201264 mode"
+        elif command_set_type == "GBAMP" and self.FW["fw_ver"] >= 12:
+            method = 0x0B  # FLASH_METHOD_AGB_GBAMP
+            debug_message = "Using GBAMP mode"
+        elif command_set_type == "BUNG_16M" and self.FW["fw_ver"] >= 12:
+            method = 0x0C  # FLASH_METHOD_DMG_BUNG_16M
+            debug_message = "Using BUNG Doctor GB Card 16M mode"
+        elif flashcart.SupportsBufferWrite() and flash_buffer_size > 0:
+            method = 0x02  # FLASH_METHOD_BUFFERED
+            command_name = "buffer_write"
+            debug_message = "Using buffered writing"
+            include_buffer_size = True
+        elif flashcart.SupportsPageWrite() and flash_buffer_size > 0 and self.FW["fw_ver"] >= 12:
+            method = 0x08  # FLASH_METHOD_PAGED
+            command_name = "page_write"
+            debug_message = "Using paged writing"
+            include_buffer_size = True
+        elif flashcart.SupportsSingleWrite():
+            method = 0x01  # FLASH_METHOD_UNBUFFERED
+            command_name = "single_write"
+            debug_message = "Using single writing"
+
+        if method is None:
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
+                    "abortable": False,
+                },
+            )
+            return None
+
+        self._write(method)
+        if command_name is not None:
+            flash_cmds = flashcart.GetCommands(command_name)
+        if include_buffer_size:
+            dprint(f"{debug_message} with a buffer of {flash_buffer_size:d} bytes")
+        else:
+            dprint(debug_message)
+        return flash_cmds
+
     def _load_flash_commands(
         self,
         cart_type: dict[str, Any],
@@ -6406,53 +6475,10 @@ class LK_Device(ABC):
             self._write(self.DEVICE_CMD["SET_FLASH_CMD"])
             self._write(flash_command_set)
 
-            if flashcart.IsF2A():
-                self._write(0x05)  # FLASH_METHOD_AGB_FLASH2ADVANCE
-                flash_cmds = [
-                    ["SA", 0xE8],
-                    ["SA", "BS"],
-                    ["PA", "PD"],
-                    ["SA", 0xD0],
-                    ["SA", 0xFF],
-                ]
-                dprint(f"Using Flash2Advance mode with a buffer of {flash_buffer_size:d} bytes")
-            elif command_set_type == "GBMEMORY" and self.FW["fw_ver"] >= 2:
-                self._write(0x03)  # FLASH_METHOD_DMG_MMSA
-                dprint("Using GB-Memory mode")
-            elif command_set_type == "DATEL_ORBITV2" and self.FW["fw_ver"] >= 12:
-                self._write(0x09)  # FLASH_METHOD_DMG_DATEL_ORBITV2
-                dprint("Using Datel Orbit V2 mode")
-            elif command_set_type == "DMG-MBC5-32M-FLASH" and self.FW["fw_ver"] >= 12:
-                self._write(0x0A)  # FLASH_METHOD_DMG_E201264
-                dprint("Using E201264 mode")
-            elif command_set_type == "GBAMP" and self.FW["fw_ver"] >= 12:
-                self._write(0x0B)  # FLASH_METHOD_AGB_GBAMP
-                dprint("Using GBAMP mode")
-            elif command_set_type == "BUNG_16M" and self.FW["fw_ver"] >= 12:
-                self._write(0x0C)  # FLASH_METHOD_DMG_BUNG_16M
-                dprint("Using BUNG Doctor GB Card 16M mode")
-            elif flashcart.SupportsBufferWrite() and flash_buffer_size > 0:
-                self._write(0x02)  # FLASH_METHOD_BUFFERED
-                flash_cmds = flashcart.GetCommands("buffer_write")
-                dprint(f"Using buffered writing with a buffer of {flash_buffer_size:d} bytes")
-            elif flashcart.SupportsPageWrite() and flash_buffer_size > 0 and self.FW["fw_ver"] >= 12:
-                self._write(0x08)  # FLASH_METHOD_PAGED
-                flash_cmds = flashcart.GetCommands("page_write")
-                dprint(f"Using paged writing with a buffer of {flash_buffer_size:d} bytes")
-            elif flashcart.SupportsSingleWrite():
-                self._write(0x01)  # FLASH_METHOD_UNBUFFERED
-                flash_cmds = flashcart.GetCommands("single_write")
-                dprint("Using single writing")
-            else:
-                self.SetProgress(
-                    {
-                        "action": "ABORT",
-                        "info_type": "msgbox_critical",
-                        "info_msg": __("This flashcart profile is currently not supported for ROM writing."),
-                        "abortable": False,
-                    },
-                )
+            selected_flash_cmds = self._SelectFlashWriteMethod(command_set_type, flashcart, flash_buffer_size)
+            if selected_flash_cmds is None:
                 return None
+            flash_cmds = selected_flash_cmds
 
             we = self._configure_flash_write_pin(flashcart)
             self._send_flash_commands(flash_cmds)
