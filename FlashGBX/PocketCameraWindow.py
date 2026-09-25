@@ -19,6 +19,7 @@ from .app import AppInfo
 from .i18n import __, c__
 from .Logging import logger
 from .PocketCamera import CameraSource, FrameData, Palette, PocketCamera
+from .pyside import ClickableLabel
 from .UserInputDialog import DialogArgs, UserInputDialog
 
 if TYPE_CHECKING:
@@ -58,14 +59,11 @@ class PocketCameraWindow(QtWidgets.QDialog):
             rowsPhotos.append(QtWidgets.QHBoxLayout())
             rowsPhotos[row].setSpacing(2)
             for _ in range(6):
-                self.lblPhoto.append(QtWidgets.QLabel(self))
+                self.lblPhoto.append(
+                    ClickableLabel(functools.partial(self.lblPhoto_Clicked, index=len(self.lblPhoto)), parent=self),
+                )
                 self.lblPhoto[len(self.lblPhoto) - 1].setMinimumSize(49, 43)
                 self.lblPhoto[len(self.lblPhoto) - 1].setMaximumSize(49, 43)
-                # PySide supports assigning an event callback on the instance.
-                self.lblPhoto[len(self.lblPhoto) - 1].mousePressEvent = functools.partial(  # ty: ignore[invalid-assignment]
-                    self.lblPhoto_Clicked,
-                    index=len(self.lblPhoto) - 1,
-                )
                 self.lblPhoto[len(self.lblPhoto) - 1].setCursor(
                     QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor),
                 )
@@ -195,14 +193,12 @@ class PocketCameraWindow(QtWidgets.QDialog):
         self.grpPhotoView = QtWidgets.QGroupBox(__("Preview"))
         self.grpPhotoViewLayout = QtWidgets.QVBoxLayout()
         self.grpPhotoViewLayout.setContentsMargins(-1, 3, -1, -1)
-        self.lblPhotoViewer = QtWidgets.QLabel(self)
+        self.lblPhotoViewer = ClickableLabel(self.lblPhotoViewer_Clicked, parent=self)
         self.lblPhotoViewer.setMinimumSize(256, 223)
         self.lblPhotoViewer.setMaximumSize(256, 223)
         self.lblPhotoViewer.setStyleSheet(
             "border-top: 1px solid #adadad; border-left: 1px solid #adadad; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff;",
         )
-        # PySide supports assigning an event callback on the instance.
-        self.lblPhotoViewer.mousePressEvent = self.lblPhotoViewer_Clicked  # ty: ignore[invalid-assignment]
         self.grpPhotoViewLayout.addWidget(self.lblPhotoViewer)
 
         # Actions below Viewer

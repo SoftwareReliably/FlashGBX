@@ -273,6 +273,20 @@ class FakeQtObject:
         return 0
 
 
+class FakeClickableLabel(FakeQtObject):
+    def __init__(
+        self,
+        on_press: Callable[[object], None],
+        text: str = "",
+        parent: object = None,
+    ) -> None:
+        super().__init__(text, parent)
+        self.on_press = on_press
+
+    def mousePressEvent(self, event: object) -> None:
+        self.on_press(event)
+
+
 class FakeColor:
     def toTuple(self) -> tuple[int, int, int, int]:
         return (0, 0, 0, 255)
@@ -734,6 +748,7 @@ def gui_module() -> Generator[ModuleType]:
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
+        cast("Any", module).ClickableLabel = FakeClickableLabel
         cast("Any", module).IniSettings = FakeSettings
         yield module
     finally:

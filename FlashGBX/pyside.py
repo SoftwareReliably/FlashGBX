@@ -26,6 +26,22 @@ _IS_WINDOWS = _PLATFORM == "Windows"
 _IS_LINUX = _PLATFORM == "Linux"
 
 
+class ClickableLabel(QtWidgets.QLabel):
+    """Forward mouse presses to a callback through Qt's event override."""
+
+    def __init__(
+        self,
+        on_press: Callable[[QtGui.QMouseEvent], None],
+        text: str = "",
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(text, parent)
+        self._on_press = on_press
+
+    def mousePressEvent(self, ev: QtGui.QMouseEvent, /) -> None:
+        self._on_press(ev)
+
+
 class _TaskbarProgress(Protocol):
     """Small common interface used by the GUI's platform-specific progress bar."""
 
@@ -446,6 +462,7 @@ QtWinExtras: _QtWinExtrasNamespace = _QtWinExtrasNamespace(
 
 
 __all__ = [
+    "ClickableLabel",
     "IsDarkMode",
     "QtWinExtras",
     "bitmap2pixmap",

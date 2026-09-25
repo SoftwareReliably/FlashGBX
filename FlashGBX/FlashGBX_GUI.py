@@ -65,6 +65,7 @@ from .Mapper import (
 from .PocketCameraWindow import PocketCameraWindow
 from .Progress import Progress
 from .pyside import (
+    ClickableLabel,
     IsDarkMode,
     QtWinExtras,
     bitmap2pixmap,
@@ -180,18 +181,18 @@ class _SaveStressTestResult(NamedTuple):
 
 def _format_batteryless_sram_details(save_size: int, info: BatterylessSramInfo) -> str:
     """Build the save-size and ROM-location text shown after auto-detection."""
-    save_size_text = __("unknown size") if save_size == 0 else Formatter.file_size(save_size, as_int=True)
-    start = info["bl_offset"]
-    size = info["bl_size"]
-    end = start + size - 1
-    location_label = __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM")
-    detected_size = Formatter.file_size(size, as_int=True)
+    save_size_text: str = __("unknown size") if save_size == 0 else Formatter.file_size(save_size, as_int=True)
+    start: int = info["bl_offset"]
+    size: int = info["bl_size"]
+    end: int = start + size - 1
+    location_label: str = __("{batteryless_sram} Location:", batteryless_sram="Batteryless SRAM")
+    detected_size: str = Formatter.file_size(size, as_int=True)
     return f" ({save_size_text})<br><b>{location_label}</b> 0x{start:X}-0x{end:X} ({detected_size})"
 
 
 def _parse_hex_address(text: str) -> int:
     """Parse a hexadecimal address with or without a ``0x`` prefix."""
-    value = text.strip()
+    value: str = text.strip()
     return int(value, 0 if value.lower().startswith("0x") else 16)
 
 
@@ -240,8 +241,8 @@ def _set_bitmap(label: QtWidgets.QLabel, bitmap: PILImage) -> bool:
 
 def _format_device_initialization_error(error: Exception) -> str:
     """Build a useful connection error without hiding the driver details."""
-    message = __("The device could not be initialized. Reconnect it and try again.")
-    details = str(error).strip()
+    message: str = __("The device could not be initialized. Reconnect it and try again.")
+    details: str = str(error).strip()
     return f"{message}\n\n{details}" if details else message
 
 
@@ -446,31 +447,34 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def _ShowStartupMessages(self, config_ret: list[ConfigMessage]) -> None:
         for config_message in config_ret:
-            status = config_message[0]
+            status: int | str = config_message[0]
             message = str(config_message[1])
-            if status == 0:
-                print(message)
-            elif status == 1:
-                QtWidgets.QMessageBox.information(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    message,
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-            elif status == 2:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    message,
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-            elif status == 3:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    message,
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
+            match status:
+                case 0:
+                    print(message)
+                case 1:
+                    QtWidgets.QMessageBox.information(
+                        self,
+                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                        message,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
+                    )
+                case 2:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                        message,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
+                    )
+                case 3:
+                    QtWidgets.QMessageBox.critical(
+                        self,
+                        f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                        message,
+                        QtWidgets.QMessageBox.StandardButton.Ok,
+                    )
+                case _:
+                    print(message)
 
         if platform.system() == "Windows":
             # Warm up fallback font rendering to prevent lag on first use later
@@ -502,16 +506,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
     def _CreateDeviceStatusLayout(self) -> None:
         self.layout_devices = QtWidgets.QHBoxLayout()
-        self.lblDevice = QtWidgets.QLabel()
-        # PySide supports assigning an event callback on the instance.
-        self.lblDevice.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)  # ty: ignore[invalid-assignment]
+        self.lblDevice = ClickableLabel(lambda event: self.WriteDebugLog(event, open_log=True))
         self.lblDevice.setToolTip("")
         self.lblDevice.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.cmbDevice = QtWidgets.QComboBox()
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
-        self.lblWarning = QtWidgets.QLabel("⚠️")
-        # PySide supports assigning an event callback on the instance.
-        self.lblWarning.mousePressEvent = lambda event: self.WriteDebugLog(event, open_log=True)  # ty: ignore[invalid-assignment]
+        self.lblWarning = ClickableLabel(lambda event: self.WriteDebugLog(event, open_log=True), "⚠️")
         self.lblWarning.setToolTip("")
         self.lblWarning.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.lblWarning.setVisible(False)
@@ -967,10 +967,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
     def _UpdateDMGGameNameLayout(self) -> None:
         if not hasattr(self, "_rowDMGGameName"):
             return
-        default_col_w = self._dmgGameNameDefaultColWidth
+        default_col_w: int = self._dmgGameNameDefaultColWidth
         if default_col_w <= 0:
             return
-        row_w = self._rowDMGGameName.geometry().width()
+        row_w: int = self._rowDMGGameName.geometry().width()
         if row_w <= 0:
             return
 
@@ -979,8 +979,8 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         badge = self.lblDMGPlatformBadge
         full_text = self._dmgGameNameFullText
 
-        fm = result.fontMetrics()
-        text_w = fm.horizontalAdvance(full_text)
+        fm: QtGui.QFontMetrics = result.fontMetrics()
+        text_w: int = fm.horizontalAdvance(full_text)
 
         outer_spacing = self._rowDMGGameName.spacing()
         if outer_spacing < 0:
@@ -1021,7 +1021,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._UpdateDMGGameNameLayout()
 
     def _ResetWidgetTexts(self) -> None:
-        default_stylesheet = self.DEFAULT_STYLESHEET if self.DEFAULT_STYLESHEET is not None else ""
+        default_stylesheet: str = self.DEFAULT_STYLESHEET if self.DEFAULT_STYLESHEET is not None else ""
         for label in (
             self.lblDMGGameNameResult,
             self.lblDMGRomTitleResult,
@@ -1368,9 +1368,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblDMGHeaderRtc = QtWidgets.QLabel()
         self.lblDMGHeaderRtc.setContentsMargins(0, 1, 3, 1)
         rowDMGHeaderRtc.addWidget(self.lblDMGHeaderRtc)
-        self.lblDMGHeaderRtcResult = QtWidgets.QLabel("")
-        # PySide supports assigning an event callback on the instance.
-        self.lblDMGHeaderRtcResult.mousePressEvent = self._EditRTCFromMouseEvent  # ty: ignore[invalid-assignment]
+        self.lblDMGHeaderRtcResult = ClickableLabel(self._EditRTCFromMouseEvent)
         rowDMGHeaderRtc.addWidget(self.lblDMGHeaderRtcResult)
         rowDMGHeaderRtc.setStretch(0, 9)
         rowDMGHeaderRtc.setStretch(1, 15)
@@ -1502,9 +1500,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblAGBGpioRtc = QtWidgets.QLabel()
         self.lblAGBGpioRtc.setContentsMargins(0, 1, 3, 1)
         rowAGBGpioRtc.addWidget(self.lblAGBGpioRtc)
-        self.lblAGBGpioRtcResult = QtWidgets.QLabel("")
-        # PySide supports assigning an event callback on the instance.
-        self.lblAGBGpioRtcResult.mousePressEvent = self._EditRTCFromMouseEvent  # ty: ignore[invalid-assignment]
+        self.lblAGBGpioRtcResult = ClickableLabel(self._EditRTCFromMouseEvent)
         rowAGBGpioRtc.addWidget(self.lblAGBGpioRtcResult)
         rowAGBGpioRtc.setStretch(0, 9)
         rowAGBGpioRtc.setStretch(1, 15)

@@ -302,10 +302,9 @@ class GbxDevice(LK_Device):
 
         for current_port in ports:
             self.FW = None
-            self._connect_at_supported_baud(current_port, max_baud, conn_msg)
+            self.FW = self._connect_at_supported_baud(current_port, max_baud, conn_msg)
 
-            # Firmware reads populate FW through method side effects.
-            if not self.FW or self.DEVICE is None:  # ty: ignore[redundant-condition]
+            if not self.FW or self.DEVICE is None:
                 self.FW = None
                 continue
             self._reopen_at_target_baud(current_port, max_baud)
@@ -354,7 +353,7 @@ class GbxDevice(LK_Device):
         current_port: str,
         max_baud: int,
         conn_msg: list[ConnectionMessage],
-    ) -> None:
+    ) -> FirmwareInfo | None:
         for baudrate in self.SUPPORTED_BAUD_RATES:
             if max_baud < baudrate:
                 continue
@@ -368,6 +367,7 @@ class GbxDevice(LK_Device):
                 if failure_message is None:
                     continue
                 conn_msg.append(failure_message)
+        return self.FW
 
     def _reopen_at_target_baud(self, current_port: str, max_baud: int) -> None:
         firmware = self.FW
@@ -1188,6 +1188,8 @@ except ImportError:
 try:
     from PySide6 import QtCore, QtGui, QtWidgets  # pyright: ignore[reportMissingImports]
 
+    from .pyside import ClickableLabel
+
     class FirmwareUpdaterWindowV13(QtWidgets.QDialog):
         APP: Any
         DEVICE: GbxDevice | None
@@ -1328,15 +1330,11 @@ try:
             self.grpAvailableFwUpdatesLayout.setContentsMargins(-1, 3, -1, -1)
 
             self.optCFW = QtWidgets.QRadioButton(f"{self.CFW_VER:s}")
-            self.lblCFW_Info = QtWidgets.QLabel(f"{self.CFW_TEXT:s}")
+            self.lblCFW_Info = ClickableLabel(self._select_cfw, self.CFW_TEXT)
             self.lblCFW_Info.setWordWrap(True)
-            # PySide supports assigning an event callback on the instance.
-            self.lblCFW_Info.mousePressEvent = self._select_cfw  # ty: ignore[invalid-assignment]
             self.optOFW = QtWidgets.QRadioButton(f"{self.OFW_VER:s}")
-            self.lblOFW_Info = QtWidgets.QLabel(f"{self.OFW_TEXT:s}")
+            self.lblOFW_Info = ClickableLabel(self._select_ofw, self.OFW_TEXT)
             self.lblOFW_Info.setWordWrap(True)
-            # PySide supports assigning an event callback on the instance.
-            self.lblOFW_Info.mousePressEvent = self._select_ofw  # ty: ignore[invalid-assignment]
             self.optExternal = QtWidgets.QRadioButton(__("External firmware file"))
 
             self._CreateUpdateButtonRow()

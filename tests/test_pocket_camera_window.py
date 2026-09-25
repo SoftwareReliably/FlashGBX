@@ -153,6 +153,20 @@ class FakeQtObject:
         return self.checked
 
 
+class FakeClickableLabel(FakeQtObject):
+    def __init__(
+        self,
+        on_press: Callable[[object], None],
+        text: str = "",
+        parent: object = None,
+    ) -> None:
+        super().__init__(text, parent)
+        self.on_press = on_press
+
+    def mousePressEvent(self, event: object) -> None:
+        self.on_press(event)
+
+
 class FakeDialog(FakeQtObject):
     DialogCode = SimpleNamespace(Accepted=1, Rejected=0)
 
@@ -217,6 +231,7 @@ def load_window_with_fake_qt(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ClickableLabel", FakeClickableLabel)
     return module
 
 

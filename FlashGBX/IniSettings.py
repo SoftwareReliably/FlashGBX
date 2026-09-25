@@ -9,9 +9,18 @@ from .i18n import __
 from .Logging import dprint
 
 
+class _SettingsParser(configparser.RawConfigParser):
+    """Preserve setting names after the initial INI-string normalization."""
+
+    preserve_case: bool = True
+
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr if self.preserve_case else super().optionxform(optionstr)
+
+
 class IniSettings:
     FILENAME: Path | None = None
-    SETTINGS: configparser.RawConfigParser | None = None
+    SETTINGS: _SettingsParser | None = None
     MAIN_SECTION = "General"
 
     def __init__(self, path: str | Path = "", ini: str = "", main_section: str = "General") -> None:
@@ -24,9 +33,7 @@ class IniSettings:
                 print(__("Can't access the configuration directory or settings file."))
                 return
             self.FILENAME = settings_path
-            self.SETTINGS = configparser.RawConfigParser()
-            # ConfigParser supports an instance-level option-name transform.
-            self.SETTINGS.optionxform = lambda optionstr: optionstr  # ty: ignore[invalid-assignment]
+            self.SETTINGS = _SettingsParser()
             try:
                 self.reload()
             except configparser.MissingSectionHeaderError:
@@ -36,10 +43,10 @@ class IniSettings:
 
         if path == "":
             self.FILENAME = None
-            self.SETTINGS = configparser.RawConfigParser()
+            self.SETTINGS = _SettingsParser()
+            self.SETTINGS.preserve_case = False
             self.SETTINGS.read_string(ini)
-            # ConfigParser supports an instance-level option-name transform.
-            self.SETTINGS.optionxform = lambda optionstr: optionstr  # ty: ignore[invalid-assignment]
+            self.SETTINGS.preserve_case = True
 
         self.MAIN_SECTION: str = main_section
 

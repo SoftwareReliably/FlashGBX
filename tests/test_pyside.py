@@ -109,7 +109,7 @@ def fake_qt_dbus(bus_result: object) -> object:
 def fake_pyside(qt_dbus: object = _MISSING) -> ModuleType:
     qt_core = SimpleNamespace(Qt=SimpleNamespace(ColorScheme=SimpleNamespace(Dark=2)))
     qt_gui = SimpleNamespace(QGuiApplication=FakeGuiApplication, QPixmap=FakePixmap)
-    qt_widgets = SimpleNamespace(QApplication=FakeApplication)
+    qt_widgets = SimpleNamespace(QApplication=FakeApplication, QLabel=object)
     module = ModuleType("PySide6")
     module.QtCore = qt_core  # type: ignore[attr-defined]
     module.QtGui = qt_gui  # type: ignore[attr-defined]
