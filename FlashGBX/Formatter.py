@@ -2,8 +2,12 @@
 # Author: Lesserkuma (github.com/Lesserkuma)
 
 import datetime
+from typing import TYPE_CHECKING
 
 from .i18n import __, ___, c__, c___, format_decimal, format_number
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class Formatter:
@@ -16,7 +20,7 @@ class Formatter:
     def file_size(
         cls, size: int, as_int: bool = False, space: str = " ", short: bool = False, localized: bool = True
     ) -> str:
-        _translate = __ if localized else (lambda x: x)
+        _translate: Callable[[str], str] = __ if localized else (lambda x: x)
         if size == 1:
             if short:
                 return c___("Bytes (short form)", "B", "B", n=1)

@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 class DumpReport:
     @staticmethod
+    def _crc32_string(value: int) -> str:
+        return f"{value:08x}"
+
+    @staticmethod
     def _header_checksum_string(stored: int, calculated: int, *, correct: bool) -> str:
         if correct:
             return f"OK (0x{stored:02X})"
@@ -121,7 +125,7 @@ class DumpReport:
                 ("ROM Size", entry_size_str),
             ]
             hash_fields = (
-                ("crc32", "CRC32", lambda value: f"{value:08x}"),
+                ("crc32", "CRC32", cls._crc32_string),
                 ("md5", "MD5", str),
                 ("sha1", "SHA-1", str),
                 ("sha256", "SHA-256", str),
