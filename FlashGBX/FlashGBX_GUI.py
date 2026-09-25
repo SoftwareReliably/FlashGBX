@@ -318,20 +318,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.actions()[9].setChecked(self.SETTINGS.value("CompareSectors", default="enabled") == "enabled")
         self.mnuConfig.actions()[10].setChecked(self.SETTINGS.value("ForceWrPullup", default="disabled") == "enabled")
 
-    def _CreateActionsGroup(self) -> None:
-        self.grpActions = QtWidgets.QGroupBox()
-        self.grpActionsLayout = QtWidgets.QVBoxLayout()
-        self.grpActionsLayout.setContentsMargins(-1, 3, -1, -1)
-
-        rowActionsMode = QtWidgets.QHBoxLayout()
+    def _CreateActionsModeRow(self) -> QtWidgets.QHBoxLayout:
+        row_actions_mode = QtWidgets.QHBoxLayout()
         self.lblMode = QtWidgets.QLabel()
-        rowActionsMode.addWidget(self.lblMode)
+        row_actions_mode.addWidget(self.lblMode)
         self.optDMG = QtWidgets.QRadioButton()
         self.optDMG.clicked.connect(self.SetMode)
         self.optAGB = QtWidgets.QRadioButton()
         self.optAGB.clicked.connect(self.SetMode)
-        rowActionsMode.addWidget(self.optDMG)
-        rowActionsMode.addWidget(self.optAGB)
+        row_actions_mode.addWidget(self.optDMG)
+        row_actions_mode.addWidget(self.optAGB)
+        return row_actions_mode
+
+    def _CreateActionsGroup(self) -> None:
+        self.grpActions = QtWidgets.QGroupBox()
+        self.grpActionsLayout = QtWidgets.QVBoxLayout()
+        self.grpActionsLayout.setContentsMargins(-1, 3, -1, -1)
+        row_actions_mode = self._CreateActionsModeRow()
 
         rowActionsGeneral1 = QtWidgets.QHBoxLayout()
         self.btnHeaderRefresh = QtWidgets.QPushButton()
@@ -379,7 +382,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowActionsGeneral3.addWidget(self.btnRestoreRAM)
 
         self.grpActionsLayout.setSpacing(4)
-        self.grpActionsLayout.addLayout(rowActionsMode)
+        self.grpActionsLayout.addLayout(row_actions_mode)
         self.grpActionsLayout.addLayout(rowActionsGeneral1)
         self.grpActionsLayout.addLayout(rowActionsGeneral2)
         self.grpActionsLayout.addLayout(rowActionsGeneral3)
@@ -716,6 +719,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfig.addAction("", self.ReEnableMessages)
         self._ApplyConfigMenuSettings()
 
+    def _CreateThirdPartyMenu(self) -> None:
+        self.mnuThirdParty = QtWidgets.QMenu()
+        self.mnuDeviceSupport = self.mnuThirdParty.addAction("", self.AboutConnectedDevice)
+        self.mnuDeviceSupport.setVisible(False)
+        self.mnuThirdParty.addAction("", lambda: [QtWidgets.QMessageBox.aboutQt(None)])
+        self.mnuThirdParty.addAction("", self.AboutGameDB)
+        self.mnuThirdParty.addAction(
+            "",
+            lambda: [self.OpenPath(str(Path(AppContext.APP_PATH) / "res" / "Third Party Notices.md"))],
+        )
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -760,15 +774,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateLanguageMenu()
 
-        self.mnuThirdParty = QtWidgets.QMenu()
-        self.mnuDeviceSupport = self.mnuThirdParty.addAction("", self.AboutConnectedDevice)
-        self.mnuDeviceSupport.setVisible(False)
-        self.mnuThirdParty.addAction("", lambda: [QtWidgets.QMessageBox.aboutQt(None)])
-        self.mnuThirdParty.addAction("", self.AboutGameDB)
-        self.mnuThirdParty.addAction(
-            "",
-            lambda: [self.OpenPath(str(Path(AppContext.APP_PATH) / "res" / "Third Party Notices.md"))],
-        )
+        self._CreateThirdPartyMenu()
 
         self.btnMainMenu = QtWidgets.QPushButton()
         self.mnuMainMenu = QtWidgets.QMenu()
@@ -1443,6 +1449,17 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row.setStretch(1, 15)
         group_layout.addLayout(row)
 
+    def _CreateAGBHeaderROMChecksumRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.lblAGBHeaderROMChecksum = QtWidgets.QLabel()
+        self.lblAGBHeaderROMChecksum.setContentsMargins(0, 1, 3, 1)
+        row.addWidget(self.lblAGBHeaderROMChecksum)
+        self.lblAGBHeaderROMChecksumResult = QtWidgets.QLabel("")
+        row.addWidget(self.lblAGBHeaderROMChecksumResult)
+        row.setStretch(0, 9)
+        row.setStretch(1, 15)
+        group_layout.addLayout(row)
+
     def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
         self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
@@ -1471,15 +1488,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateAGBHeaderChecksumRow(group_layout)
 
-        rowAGBHeaderROMChecksum = QtWidgets.QHBoxLayout()
-        self.lblAGBHeaderROMChecksum = QtWidgets.QLabel()
-        self.lblAGBHeaderROMChecksum.setContentsMargins(0, 1, 3, 1)
-        rowAGBHeaderROMChecksum.addWidget(self.lblAGBHeaderROMChecksum)
-        self.lblAGBHeaderROMChecksumResult = QtWidgets.QLabel("")
-        rowAGBHeaderROMChecksum.addWidget(self.lblAGBHeaderROMChecksumResult)
-        rowAGBHeaderROMChecksum.setStretch(0, 9)
-        rowAGBHeaderROMChecksum.setStretch(1, 15)
-        group_layout.addLayout(rowAGBHeaderROMChecksum)
+        self._CreateAGBHeaderROMChecksumRow(group_layout)
 
         rowAGBHeaderROMSize = QtWidgets.QHBoxLayout()
         self.lblAGBHeaderROMSize = QtWidgets.QLabel()
@@ -2215,12 +2224,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         else:
             self.lblStatus4a.setText(__("Ready."))
 
-    def _complete_device_connection(self, dev: LK_Device, msg: str) -> bool:
-        self.CONN = dev
-        dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
-        self.SetAutoPowerOff()
-        self.SetDMGReadMethod()
-        self.SetAGBReadMethod()
+    def _ConfigureConnectedDeviceMenus(self) -> None:
         self.mnuConfig.actions()[5].setVisible(self._IsGBxCartRWDevice(self._device))  # GBxCart RW baud rate
         self.mnuConfig.actions()[8].setVisible(
             self._device.CanPowerCycleCart() and self._device.CanPowerCycleCart() and self._device.FW["fw_ver"] >= 12,
@@ -2232,6 +2236,14 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfigReadModeAGB.setEnabled(self._device.FW["fw_ver"] >= 12)
         self.mnuConfigReadModeDMG.setEnabled(self._device.FW["fw_ver"] >= 12)
         self.UpdateThirdPartySupportAction()
+
+    def _complete_device_connection(self, dev: LK_Device, msg: str) -> bool:
+        self.CONN = dev
+        dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
+        self.SetAutoPowerOff()
+        self.SetDMGReadMethod()
+        self.SetAGBReadMethod()
+        self._ConfigureConnectedDeviceMenus()
 
         cast("Any", self._device).SetTimeout(float(str(self.SETTINGS.value("SerialTimeout", default="1"))))
         self._ConfigureConnectedPlatformButtons()
@@ -4765,6 +4777,43 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         with (Path(AppContext.CONFIG_PATH) / "debug_stress_test_2.bin").open("wb") as file:
             file.write(save2)
 
+    def _TransferSaveStressTestPattern(
+        self,
+        preparation: _SaveWritePreparation,
+        pattern: bytearray,
+        rtc_advance: bool,
+        *,
+        erase: bool,
+        power_cycle: bool,
+    ) -> bytearray:
+        args = {
+            "mode": 3,
+            "path": preparation.path,
+            "mbc": preparation.mbc,
+            "save_type": preparation.save_type,
+            "rtc": False,
+            "rtc_advance": rtc_advance,
+            "erase": erase,
+            "verify_write": False,
+            "buffer": pattern,
+            "cart_type": preparation.cart_type,
+        }
+        self._RunSaveStressTestTransfer(args)
+        if power_cycle:
+            self._device.CartPowerOff()
+            time.sleep(0.5)
+            self._device.CartPowerOn()
+        args = {
+            "mode": 2,
+            "path": preparation.path,
+            "mbc": preparation.mbc,
+            "save_type": preparation.save_type,
+            "rtc": False,
+            "cart_type": preparation.cart_type,
+        }
+        self._RunSaveStressTestTransfer(args)
+        return self._device.INFO["data"]
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4833,33 +4882,13 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.SetProgressBars(min=0, max=len(test_patterns) + 3, value=i + 2)
                 qt_app.processEvents()
                 towrite = test_patterns[i]
-                args = {
-                    "mode": 3,
-                    "path": path,
-                    "mbc": mbc,
-                    "save_type": save_type,
-                    "rtc": False,
-                    "rtc_advance": rtc_advance,
-                    "erase": erase,
-                    "verify_write": False,
-                    "buffer": towrite,
-                    "cart_type": cart_type,
-                }
-                self._RunSaveStressTestTransfer(args)
-                if i == 0 and save1 == save2:  # user "continued anyway"
-                    self._device.CartPowerOff()
-                    time.sleep(0.5)
-                    self._device.CartPowerOn()
-                args = {
-                    "mode": 2,
-                    "path": path,
-                    "mbc": mbc,
-                    "save_type": save_type,
-                    "rtc": False,
-                    "cart_type": cart_type,
-                }
-                self._RunSaveStressTestTransfer(args)
-                readback = self._device.INFO["data"]
+                readback = self._TransferSaveStressTestPattern(
+                    preparation,
+                    towrite,
+                    rtc_advance,
+                    erase=erase,
+                    power_cycle=i == 0 and save1 == save2,
+                )
                 if towrite[: len(readback)] != readback:
                     break
                 test_ok += 1

@@ -116,36 +116,7 @@ class PocketCameraWindow(QtWidgets.QDialog):
         row_actions_general.addWidget(self.btnSaveAll)
         self.grpPhotoViewLayout.addLayout(row_actions_general)
 
-    def __init__(
-        self,
-        app: FlashGBX_GUI,
-        file: CameraSource | None = None,
-        icon: QtGui.QIcon | None = None,
-        config_path: str | PathLike[str] = ".",
-        app_path: str | PathLike[str] = ".",
-    ) -> None:
-        super().__init__(app)
-        self._InitializeState(app, file, config_path, app_path)
-
-        self.setAcceptDrops(True)
-        if icon is not None:
-            self.setWindowIcon(QtGui.QIcon(icon))
-
-        self.setWindowTitle(AppInfo.NAME + " - " + __("GB Camera Album Viewer"))
-        self.setWindowFlags(
-            (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
-            & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
-        )
-
-        self.main_layout = QtWidgets.QGridLayout()
-        self.main_layout.setContentsMargins(-1, 8, -1, 8)
-        self.main_layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
-        self.layout_options1 = QtWidgets.QVBoxLayout()
-        self.layout_options2 = QtWidgets.QVBoxLayout()
-        self.layout_options3 = QtWidgets.QVBoxLayout()
-        self.layout_photos = QtWidgets.QHBoxLayout()
-
-        # Options
+    def _CreateOptionsGroup(self) -> None:
         self.grpOptions = QtWidgets.QGroupBox(__("Options"))
         grpOptionsLayout = QtWidgets.QVBoxLayout()
         grpOptionsLayout.setContentsMargins(-1, 3, -1, -1)
@@ -184,8 +155,39 @@ class PocketCameraWindow(QtWidgets.QDialog):
 
         grpOptionsLayout.addLayout(self.rowOptions1)
         self.grpOptions.setLayout(grpOptionsLayout)
-
         self.layout_options1.addWidget(self.grpOptions)
+
+    def __init__(
+        self,
+        app: FlashGBX_GUI,
+        file: CameraSource | None = None,
+        icon: QtGui.QIcon | None = None,
+        config_path: str | PathLike[str] = ".",
+        app_path: str | PathLike[str] = ".",
+    ) -> None:
+        super().__init__(app)
+        self._InitializeState(app, file, config_path, app_path)
+
+        self.setAcceptDrops(True)
+        if icon is not None:
+            self.setWindowIcon(QtGui.QIcon(icon))
+
+        self.setWindowTitle(AppInfo.NAME + " - " + __("GB Camera Album Viewer"))
+        self.setWindowFlags(
+            (self.windowFlags() | QtCore.Qt.WindowType.MSWindowsFixedSizeDialogHint)
+            & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
+        )
+
+        self.main_layout = QtWidgets.QGridLayout()
+        self.main_layout.setContentsMargins(-1, 8, -1, 8)
+        self.main_layout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetFixedSize)
+        self.layout_options1 = QtWidgets.QVBoxLayout()
+        self.layout_options2 = QtWidgets.QVBoxLayout()
+        self.layout_options3 = QtWidgets.QVBoxLayout()
+        self.layout_photos = QtWidgets.QHBoxLayout()
+
+        # Options
+        self._CreateOptionsGroup()
 
         self._CreateGeneralActionRow()
 

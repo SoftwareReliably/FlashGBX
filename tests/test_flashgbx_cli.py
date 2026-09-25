@@ -2860,6 +2860,22 @@ def test_finish_backup_ram_destination_collision_stops_exports(
     assert exports == []
 
 
+def _assert_debug_save_power_cycle_events(events: list[tuple[str, object]], *, power_cycle: bool) -> None:
+    power_events = [event for event in events if event[0] == "power"]
+    header_events = [event for event in events if event[0] == "header"]
+    assert len(power_events) == (5 if power_cycle else 0)
+    assert header_events == ([("header", False)] if power_cycle else [])
+    transfer_positions = [index for index, event in enumerate(events) if event[0] == "transfer"]
+    if power_cycle:
+        power_positions = [index for index, event in enumerate(events) if event[0] == "power"]
+        header_position = next(index for index, event in enumerate(events) if event[0] == "header")
+        delay_position = events.index(("sleep", 0.2))
+        assert transfer_positions[2] < power_positions[0] < power_positions[-1] < header_position
+        assert header_position < delay_position < transfer_positions[3]
+    else:
+        assert not any(event[0] == "header" for event in events)
+
+
 @pytest.mark.parametrize(
     ("power_cycle", "fail_backup", "mode"),
     [(True, False, "DMG"), (False, False, "DMG"), (True, True, "DMG"), (False, False, "AGB"), (True, True, "AGB")],
@@ -2931,16 +2947,4 @@ def test_debug_save_test_restores_data_and_orders_optional_power_cycle(
 
     assert (tmp_path / "test1.bin").read_bytes() == initial_data
     assert cartridge_data == initial_data
-    power_events = [event for event in events if event[0] == "power"]
-    header_events = [event for event in events if event[0] == "header"]
-    assert len(power_events) == (5 if power_cycle else 0)
-    assert header_events == ([("header", False)] if power_cycle else [])
-    transfer_positions = [index for index, event in enumerate(events) if event[0] == "transfer"]
-    if power_cycle:
-        power_positions = [index for index, event in enumerate(events) if event[0] == "power"]
-        header_position = next(index for index, event in enumerate(events) if event[0] == "header")
-        delay_position = events.index(("sleep", 0.2))
-        assert transfer_positions[2] < power_positions[0] < power_positions[-1] < header_position
-        assert header_position < delay_position < transfer_positions[3]
-    else:
-        assert not any(event[0] == "header" for event in events)
+    _assert_debug_save_power_cycle_events(events, power_cycle=power_cycle)

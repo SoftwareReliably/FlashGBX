@@ -2572,6 +2572,90 @@ def test_save_stress_test_diagnostic_files_follow_initial_read_result(
     assert len(results) == 1
 
 
+def test_save_stress_test_pattern_transfer_preserves_requests_and_power_cycle(
+    gui_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(gui_module.AppContext, "CONFIG_PATH", str(tmp_path))
+    device = FakeDevice()
+    gui = make_gui(
+        gui_module,
+        CONN=device,
+        STATUS={"stresstest_running": True},
+        lblStatus4a=FakeQtObject(),
+        SetProgressBars=Mock(),
+    )
+    pattern = bytearray(b"pattern")
+    preparation = gui_module._SaveWritePreparation("DMG", "save.sav", 1, 2, 3, 4, None)
+    gui._PrepareSaveStressTest = Mock(return_value=([pattern], ["initial", "pattern"]))
+    gui._WaitForSaveStressTestPowerCycle = Mock()
+    gui._RestoreSaveStressTest = Mock()
+    results: list[object] = []
+    gui._CompleteSaveStressTest = results.append
+    events: list[str] = []
+    transfer_calls: list[dict[str, Any]] = []
+    read_data = iter([bytearray(b"saved"), bytearray(b"saved"), bytearray(pattern)])
+
+    def transfer(args: dict[str, Any]) -> None:
+        transfer_calls.append(dict(args))
+        events.append(f"transfer:{args['mode']}")
+        if args["mode"] == 2:
+            device.INFO["data"] = next(read_data)
+
+    gui._RunSaveStressTestTransfer = transfer
+    monkeypatch.setattr(device, "CartPowerOff", lambda: events.append("power_off"), raising=False)
+    monkeypatch.setattr(device, "CartPowerOn", lambda: events.append("power_on"), raising=False)
+    monkeypatch.setattr(gui_module.time, "sleep", lambda duration: events.append(f"sleep:{duration}"))
+    monkeypatch.setattr(gui_module.time, "time", Mock(side_effect=[10.0, 12.5]))
+
+    gui._RunSaveStressTest(preparation, rtc_advance=True, erase=True)
+
+    assert events == [
+        "transfer:2",
+        "transfer:2",
+        "transfer:3",
+        "power_off",
+        "sleep:0.5",
+        "power_on",
+        "transfer:2",
+    ]
+    assert transfer_calls[:2] == [
+        {"mode": 2, "path": "save.sav", "mbc": 1, "save_type": 2, "rtc": False, "cart_type": 3},
+        {"mode": 2, "path": "save.sav", "mbc": 1, "save_type": 2, "rtc": False, "cart_type": 3},
+    ]
+    assert transfer_calls[2] == {
+        "mode": 3,
+        "path": "save.sav",
+        "mbc": 1,
+        "save_type": 2,
+        "rtc": False,
+        "rtc_advance": True,
+        "erase": True,
+        "verify_write": False,
+        "buffer": pattern,
+        "cart_type": 3,
+    }
+    assert transfer_calls[3] == {
+        "mode": 2,
+        "path": "save.sav",
+        "mbc": 1,
+        "save_type": 2,
+        "rtc": False,
+        "cart_type": 3,
+    }
+    gui._RestoreSaveStressTest.assert_called_once_with(
+        preparation,
+        bytearray(b"saved"),
+        True,
+        erase=True,
+        progress_max=4,
+    )
+    result = results[0]
+    assert result.written_data is pattern
+    assert result.readback_data == pattern
+
+
 @pytest.mark.parametrize("cancel_during_events", [False, True], ids=["complete", "cancel"])
 def test_save_stress_test_completion_handles_cancellation_during_events(
     gui_module: ModuleType,

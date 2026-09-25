@@ -4936,6 +4936,18 @@ class LK_Device(ABC):
         self.INFO["dump_info"]["transfer_size"] = max_length
         return buffer, max_length
 
+    def _InitializeROMBackupProgress(
+        self,
+        args: dict[str, Any],
+        cart_type: dict[str, Any],
+        flashcart: Flashcart | Literal[False],
+        size: int,
+    ) -> None:
+        method = "SAVE_READ" if "bl_offset" in args else "ROM_READ"
+        self.SetProgress({"action": "INITIALIZE", "method": method, "size": size})
+        self.INFO["action"] = self.ACTIONS[method]
+        self._configure_rom_read_pullups(args, cart_type, flashcart)
+
     def _BackupROM_Worker(self, args: dict[str, Any]) -> ROMBackupResult:
         device_mode = self._require_cartridge_mode("reading ROM")
         file = self._OpenROMBackupFile(args["path"])
@@ -4962,11 +4974,7 @@ class LK_Device(ABC):
             size = len(args["verify_write"])
             buffer_len = min(buffer_len, size)
         else:
-            method = "SAVE_READ" if "bl_offset" in args else "ROM_READ"
-            pos = 0
-            self.SetProgress({"action": "INITIALIZE", "method": method, "size": size})
-            self.INFO["action"] = self.ACTIONS[method]
-            self._configure_rom_read_pullups(args, cart_type, flashcart)
+            self._InitializeROMBackupProgress(args, cart_type, flashcart, size)
 
         buffer, max_length = self._InitializeROMBackupBuffer(size, is_3dmemory=is_3dmemory)
         pos_total = 0

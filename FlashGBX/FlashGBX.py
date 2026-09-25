@@ -754,6 +754,22 @@ def _add_optional_cli_arguments(parser: argparse.ArgumentParser) -> None:
     _add_device_cli_arguments(ap_cli2)
 
 
+def _report_cli_fallback(parser: argparse.ArgumentParser, *, show_help: bool, error: str | None) -> None:
+    if show_help:
+        parser.print_help()
+        print(
+            f"\n\n{ANSI.RED}"
+            + __("Note: GUI mode couldn't be launched, but the application can be run in CLI mode.")
+            + "\n      "
+            + __("Optional command line switches are explained above.")
+            + f"{ANSI.RESET}\n",
+        )
+        if error is not None:
+            print(ANSI.YELLOW + str(error) + ANSI.RESET)
+
+    print(__("Falling back to CLI mode.") + "\n")
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -797,19 +813,7 @@ def main(portableMode: bool = False) -> int | None:
         if app is None:
             from . import FlashGBX_CLI  # noqa: PLC0415 - imported only when CLI fallback is needed
 
-            if parsed_args.action is None:
-                parser.print_help()
-                print(
-                    f"\n\n{ANSI.RED}"
-                    + __("Note: GUI mode couldn't be launched, but the application can be run in CLI mode.")
-                    + "\n      "
-                    + __("Optional command line switches are explained above.")
-                    + f"{ANSI.RESET}\n",
-                )
-                if exc is not None:
-                    print(ANSI.YELLOW + str(exc) + ANSI.RESET)
-
-            print(__("Falling back to CLI mode.") + "\n")
+            _report_cli_fallback(parser, show_help=parsed_args.action is None, error=exc)
             cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
             app = FlashGBX_CLI.FlashGBX_CLI(cli_args)
             try:

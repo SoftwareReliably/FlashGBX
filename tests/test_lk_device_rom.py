@@ -704,6 +704,17 @@ def test_process_rom_backup_result_writes_map_and_only_valid_child_roms(
     assert_hash_metadata(device, buffer)
 
 
+def _assert_dmg_rom_bank_reads(mapper: IntegratedROMMapper, read_rom: Mock) -> None:
+    assert mapper.enable_calls == 1
+    assert mapper.requested_sizes == [0x8000]
+    assert mapper.reset_requests == [0, 1, 0]
+    assert mapper.selected_banks == [0, 1, 0]
+    assert read_rom.call_args_list == [
+        call(address=0, length=0x4000, skip_init=False, max_length=0x2000),
+        call(address=0x4000, length=0x4000, skip_init=False, max_length=0x2000),
+    ]
+
+
 def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     tmp_path: Path,
     pokemon_red_header: bytearray,
@@ -755,14 +766,7 @@ def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     process.assert_called_once()
     assert process.call_args.args[1] == expected
     reset.assert_called_once_with(mapper, {}, False, original_read_method, device.AGB_READ_METHOD)
-    assert mapper.enable_calls == 1
-    assert mapper.requested_sizes == [0x8000]
-    assert mapper.reset_requests == [0, 1, 0]
-    assert mapper.selected_banks == [0, 1, 0]
-    assert read_rom.call_args_list == [
-        call(address=0, length=0x4000, skip_init=False, max_length=0x2000),
-        call(address=0x4000, length=0x4000, skip_init=False, max_length=0x2000),
-    ]
+    _assert_dmg_rom_bank_reads(mapper, read_rom)
     set_read_method.assert_called_once_with(original_read_method)
     auto_poweroff_finish.assert_called_once_with()
     assert device.INFO["loop_detected"] is False

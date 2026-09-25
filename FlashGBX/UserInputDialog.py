@@ -18,6 +18,13 @@ class DialogArgs(TypedDict):
 class UserInputDialog(QtWidgets.QDialog):
     APP: QtWidgets.QWidget | None = None
 
+    def _CreateButtonRow(self, grid_layout: QtWidgets.QGridLayout, grid_rows: int) -> None:
+        buttons_layout = QtWidgets.QHBoxLayout()
+        buttons_layout.addStretch(30)
+        buttons_layout.addWidget(self.btnOK, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
+        buttons_layout.addWidget(self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
+        grid_layout.addLayout(buttons_layout, grid_rows, 0, 1, 2)
+
     def __init__(
         self,
         app: QtWidgets.QWidget | None,
@@ -87,12 +94,7 @@ class UserInputDialog(QtWidgets.QDialog):
             grid_rows += 1
         grid_layout.setColumnStretch(1, 1)
 
-        grpButtonsLayout = QtWidgets.QHBoxLayout()
-        grpButtonsLayout.addStretch(30)
-        grpButtonsLayout.addWidget(self.btnOK, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
-        grpButtonsLayout.addWidget(self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
-
-        grid_layout.addLayout(grpButtonsLayout, grid_rows, 0, 1, 2)
+        self._CreateButtonRow(grid_layout, grid_rows)
         self.setLayout(grid_layout)
 
         self.btnOK.clicked.connect(self.accept)

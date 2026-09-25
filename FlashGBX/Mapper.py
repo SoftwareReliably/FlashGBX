@@ -2234,28 +2234,25 @@ class AGB_GPIO:
         )
         return True
 
-    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
-        rtc_status = None
+    @staticmethod
+    def _DecodeRTCWriteBuffer(buffer: bytearray) -> tuple[int, int, int, int, int, int, int, int]:
         if buffer == bytearray([0xFF] * len(buffer)):  # Reset
-            years = 0
-            months = 1
-            days = 1
-            weekday = 0
-            hours = 0
-            minutes = 0
-            seconds = 0
-            rtc_status = 0x40 | 0x80
-        else:
-            years: int = BCD.decode(buffer[0x00])
-            months: int = BCD.decode(buffer[0x01])
-            days: int = BCD.decode(buffer[0x02])
-            weekday: int = BCD.decode(buffer[0x03])
-            hours: int = BCD.decode(buffer[0x04] & 0x7F)
-            minutes: int = BCD.decode(buffer[0x05])
-            seconds: int = BCD.decode(buffer[0x06])
-            rtc_status = buffer[0x07]
-            if rtc_status == 0x01:
-                rtc_status = 0x40  # old dumps had this value
+            return 0, 1, 1, 0, 0, 0, 0, 0x40 | 0x80
+
+        years = BCD.decode(buffer[0x00])
+        months = BCD.decode(buffer[0x01])
+        days = BCD.decode(buffer[0x02])
+        weekday = BCD.decode(buffer[0x03])
+        hours = BCD.decode(buffer[0x04] & 0x7F)
+        minutes = BCD.decode(buffer[0x05])
+        seconds = BCD.decode(buffer[0x06])
+        rtc_status = buffer[0x07]
+        if rtc_status == 0x01:
+            rtc_status = 0x40  # old dumps had this value
+        return years, months, days, weekday, hours, minutes, seconds, rtc_status
+
+    def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
+        years, months, days, weekday, hours, minutes, seconds, rtc_status = self._DecodeRTCWriteBuffer(buffer)
 
         if advance:
             try:
@@ -2311,8 +2308,7 @@ class AGB_GPIO:
         dprint(d)
         self.WriteRTCDict(d)
 
-        if rtc_status is not None:
-            self.RTCWriteStatus(rtc_status)
+        self.RTCWriteStatus(rtc_status)
 
     def GetRTCDict(self, has_rtc: bool | Literal[1, 2, 3] | None = None) -> RTCDict:
         if has_rtc is None:
