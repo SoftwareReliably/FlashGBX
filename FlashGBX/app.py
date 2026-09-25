@@ -145,6 +145,21 @@ def _database_filename(
     return f"{game_name} {edition_name}.{extension}"
 
 
+def _agb_filename(header: FilenameHeader, settings: SettingsReader | None) -> str:
+    path = _setting_text(settings, "FileNameFormatAGB", "%TITLE%_%CODE%-%REVISION%")
+    path_title = _required_text(header, "game_title")
+    path_code = _required_text(header, "game_code")
+    path_revision = str(header["version"])
+    if path_title == "" and path_code == "":
+        path = "ROM"
+    else:
+        path = path.replace("%TITLE%", path_title.strip())
+        path = path.replace("%CODE%", path_code.strip())
+        path = path.replace("%REVISION%", path_revision)
+        path = _INVALID_FILENAME_CHARS.sub("_", path)
+    return path + ".gba"
+
+
 class AppInfo:
     NAME: ClassVar[str] = "FlashGBX"
     VERSION_PEP440: ClassVar[str] = "5.0.1"
@@ -267,20 +282,8 @@ def generate_filename(
                 path += f"_{gbmemory_cart_id}"
             path += f".{path_extension:s}"
     elif mode == "AGB":
-        path = "%TITLE%_%CODE%-%REVISION%"
-        path = _setting_text(settings, "FileNameFormatAGB", path)
-        path_title = _required_text(header, "game_title")
-        path_code = _required_text(header, "game_code")
-        path_revision = str(header["version"])
+        path = _agb_filename(header, settings)
         path_extension = "gba"
-        if path_title == "" and path_code == "":
-            path = "ROM"
-        else:
-            path = path.replace("%TITLE%", path_title.strip())
-            path = path.replace("%CODE%", path_code.strip())
-            path = path.replace("%REVISION%", path_revision)
-            path = _INVALID_FILENAME_CHARS.sub("_", path)
-        path += "." + path_extension
 
     if use_no_intro_filename:
         database_path = _database_filename(

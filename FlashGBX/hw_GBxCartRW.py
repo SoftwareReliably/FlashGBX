@@ -912,6 +912,16 @@ try:
             self.grpFooterLayout.addWidget(self.btnClose)
             self.layout_device.addItem(self.grpFooterLayout)
 
+        def _CreateAvailableFirmwareVersionRow(self) -> None:
+            rowDeviceInfo4 = QtWidgets.QHBoxLayout()
+            self.lblDeviceFWVer2 = QtWidgets.QLabel(__("Firmware version:"))
+            self.lblDeviceFWVer2.setMinimumWidth(120)
+            self.lblDeviceFWVer2Result = QtWidgets.QLabel("(" + __("Please choose the PCB version") + ")")
+            rowDeviceInfo4.addWidget(self.lblDeviceFWVer2)
+            rowDeviceInfo4.addWidget(self.lblDeviceFWVer2Result)
+            rowDeviceInfo4.addStretch(1)
+            self.grpAvailableFwUpdatesLayout.addLayout(rowDeviceInfo4)
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -960,14 +970,7 @@ try:
             self.grpAvailableFwUpdatesLayout = QtWidgets.QVBoxLayout()
             self.grpAvailableFwUpdatesLayout.setContentsMargins(-1, 3, -1, -1)
 
-            rowDeviceInfo4 = QtWidgets.QHBoxLayout()
-            self.lblDeviceFWVer2 = QtWidgets.QLabel(__("Firmware version:"))
-            self.lblDeviceFWVer2.setMinimumWidth(120)
-            self.lblDeviceFWVer2Result = QtWidgets.QLabel("(" + __("Please choose the PCB version") + ")")
-            rowDeviceInfo4.addWidget(self.lblDeviceFWVer2)
-            rowDeviceInfo4.addWidget(self.lblDeviceFWVer2Result)
-            rowDeviceInfo4.addStretch(1)
-            self.grpAvailableFwUpdatesLayout.addLayout(rowDeviceInfo4)
+            self._CreateAvailableFirmwareVersionRow()
 
             self._CreateUpdateButtonRow()
 
@@ -1071,6 +1074,12 @@ try:
                     return False
             return True
 
+        def _SetUpdateControlsEnabled(self, *, enabled: bool) -> None:
+            self.btnUpdate.setEnabled(enabled)
+            self.btnClose.setEnabled(enabled)
+            self.optDevicePCBVer14.setEnabled(enabled)
+            self.optDevicePCBVer14a.setEnabled(enabled)
+
         def UpdateFirmware(self) -> bool | None:
             if self.optDevicePCBVer14.isChecked():
                 device_version = "v1.4"
@@ -1114,19 +1123,13 @@ try:
             answer = msgbox.exec()
             if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
                 return None
-            self.btnUpdate.setEnabled(False)
-            self.btnClose.setEnabled(False)
-            self.optDevicePCBVer14.setEnabled(False)
-            self.optDevicePCBVer14a.setEnabled(False)
+            self._SetUpdateControlsEnabled(enabled=False)
 
             while True:
                 ret = self.FWUPD.WriteFirmware(file_name, self.SetStatus)
                 if ret == 1:
                     text = __("The firmware update is complete!")
-                    self.btnUpdate.setEnabled(True)
-                    self.btnClose.setEnabled(True)
-                    self.optDevicePCBVer14.setEnabled(True)
-                    self.optDevicePCBVer14a.setEnabled(True)
+                    self._SetUpdateControlsEnabled(enabled=True)
                     msgbox = _message_box(
                         parent=self,
                         icon=QtWidgets.QMessageBox.Icon.Information,
@@ -1140,10 +1143,7 @@ try:
                     return True
                 if ret == 2:
                     text = __("The firmware update has failed. Please try again.")
-                    self.btnUpdate.setEnabled(True)
-                    self.btnClose.setEnabled(True)
-                    self.optDevicePCBVer14.setEnabled(True)
-                    self.optDevicePCBVer14a.setEnabled(True)
+                    self._SetUpdateControlsEnabled(enabled=True)
                     msgbox = _message_box(
                         parent=self,
                         icon=QtWidgets.QMessageBox.Icon.Critical,
@@ -1155,10 +1155,7 @@ try:
                     return False
                 if ret == 3:
                     text = __("The firmware update file is corrupted. Please re-install the application.")
-                    self.btnUpdate.setEnabled(True)
-                    self.btnClose.setEnabled(True)
-                    self.optDevicePCBVer14.setEnabled(True)
-                    self.optDevicePCBVer14a.setEnabled(True)
+                    self._SetUpdateControlsEnabled(enabled=True)
                     msgbox = _message_box(
                         parent=self,
                         icon=QtWidgets.QMessageBox.Icon.Critical,
@@ -1267,6 +1264,23 @@ try:
             self.grpFooterLayout.addWidget(self.btnClose)
             self.layout_device.addItem(self.grpFooterLayout)
 
+        def _CreateFirmwareChoices(self) -> None:
+            if self.PCB_VER == "v1.3":
+                self.grpAvailableFwUpdatesLayout.addWidget(self.optCFW)
+                self.grpAvailableFwUpdatesLayout.addWidget(self.lblCFW_Info)
+                self.optCFW.setChecked(True)
+            else:
+                self.optOFW.setChecked(True)
+            self.grpAvailableFwUpdatesLayout.addWidget(self.optOFW)
+            self.grpAvailableFwUpdatesLayout.addWidget(self.lblOFW_Info)
+            self.grpAvailableFwUpdatesLayout.addWidget(self.optExternal)
+
+            self.grpAvailableFwUpdatesLayout.addSpacing(3)
+            self.grpAvailableFwUpdatesLayout.addItem(self.rowUpdate)
+            self.grpAvailableFwUpdates.setLayout(self.grpAvailableFwUpdatesLayout)
+            self.layout_device.addWidget(self.grpAvailableFwUpdates)
+            # ↑↑↑ Available Firmware Updates
+
         def __init__(
             self,
             app: FlashGBX_GUI,
@@ -1327,21 +1341,7 @@ try:
 
             self._CreateUpdateButtonRow()
 
-            if self.PCB_VER == "v1.3":
-                self.grpAvailableFwUpdatesLayout.addWidget(self.optCFW)
-                self.grpAvailableFwUpdatesLayout.addWidget(self.lblCFW_Info)
-                self.optCFW.setChecked(True)
-            else:
-                self.optOFW.setChecked(True)
-            self.grpAvailableFwUpdatesLayout.addWidget(self.optOFW)
-            self.grpAvailableFwUpdatesLayout.addWidget(self.lblOFW_Info)
-            self.grpAvailableFwUpdatesLayout.addWidget(self.optExternal)
-
-            self.grpAvailableFwUpdatesLayout.addSpacing(3)
-            self.grpAvailableFwUpdatesLayout.addItem(self.rowUpdate)
-            self.grpAvailableFwUpdates.setLayout(self.grpAvailableFwUpdatesLayout)
-            self.layout_device.addWidget(self.grpAvailableFwUpdates)
-            # ↑↑↑ Available Firmware Updates
+            self._CreateFirmwareChoices()
 
             self._CreateStatusGroup(maximum=100, ready_text=__("Ready."))
 

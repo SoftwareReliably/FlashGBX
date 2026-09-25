@@ -25,6 +25,13 @@ class UserInputDialog(QtWidgets.QDialog):
         buttons_layout.addWidget(self.btnCancel, grid_rows, QtCore.Qt.AlignmentFlag.AlignRight)
         grid_layout.addLayout(buttons_layout, grid_rows, 0, 1, 2)
 
+    def _CreateIntroAndButtons(self, intro: str) -> None:
+        self.lblIntro = QtWidgets.QLabel(intro)
+        self.lblIntro.setMaximumWidth(350)
+        self.lblIntro.setWordWrap(True)
+        self.btnOK = QtWidgets.QPushButton(__("&OK"))
+        self.btnCancel = QtWidgets.QPushButton(__("&Cancel"))
+
     def __init__(
         self,
         app: QtWidgets.QWidget | None,
@@ -45,11 +52,7 @@ class UserInputDialog(QtWidgets.QDialog):
 
         self.APP = app
 
-        self.lblIntro = QtWidgets.QLabel(args["intro"])
-        self.lblIntro.setMaximumWidth(350)
-        self.lblIntro.setWordWrap(True)
-        self.btnOK = QtWidgets.QPushButton(__("&OK"))
-        self.btnCancel = QtWidgets.QPushButton(__("&Cancel"))
+        self._CreateIntroAndButtons(args["intro"])
 
         grid_layout = QtWidgets.QGridLayout()
         grid_layout.addWidget(self.lblIntro, 0, 0, 1, 2)

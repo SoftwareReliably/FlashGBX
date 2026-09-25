@@ -18,6 +18,17 @@ if TYPE_CHECKING:
 
 
 class InteractiveConsoleWindow(QtWidgets.QDialog):
+    def _CreateCloseButtonRow(self) -> None:
+        row_buttons = QtWidgets.QHBoxLayout()
+        row_buttons.addStretch()
+        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
+        self.btnClose.setStyleSheet("padding: 5px 15px;")
+        self.btnClose.setAutoDefault(False)
+        self.btnClose.setDefault(False)
+        self.btnClose.clicked.connect(self.reject)
+        row_buttons.addWidget(self.btnClose)
+        self.main_layout.addLayout(row_buttons)
+
     def __init__(self, app: FlashGBX_GUI, icon: QtGui.QIcon | None = None) -> None:
         super().__init__(app)
         if icon is not None:
@@ -67,15 +78,7 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         row_input.addWidget(self.txtInput)
         self.main_layout.addLayout(row_input)
 
-        row_buttons = QtWidgets.QHBoxLayout()
-        row_buttons.addStretch()
-        self.btnClose = QtWidgets.QPushButton(c__("Button (& = Keyboard Shortcut)", "&Close"))
-        self.btnClose.setStyleSheet("padding: 5px 15px;")
-        self.btnClose.setAutoDefault(False)
-        self.btnClose.setDefault(False)
-        self.btnClose.clicked.connect(self.reject)
-        row_buttons.addWidget(self.btnClose)
-        self.main_layout.addLayout(row_buttons)
+        self._CreateCloseButtonRow()
 
         self.setLayout(self.main_layout)
 

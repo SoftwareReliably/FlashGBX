@@ -330,6 +330,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row_actions_mode.addWidget(self.optAGB)
         return row_actions_mode
 
+    def _CreateRestoreRAMButton(self, row_layout: QtWidgets.QHBoxLayout) -> QtWidgets.QPushButton:
+        self.btnRestoreRAM = QtWidgets.QPushButton()
+        self.mnuRestoreRAM = QtWidgets.QMenu()
+        self.mnuRestoreRAM.addAction("", lambda _checked=False: self.WriteRAM())
+        self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(erase=True))
+        self.mnuRestoreRAM.addSeparator()
+        self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(test=True))
+        self.btnRestoreRAM.setMenu(self.mnuRestoreRAM)
+        self.btnRestoreRAM.setMinimumHeight(25)
+        self.btnRestoreRAM.setMinimumWidth(140)
+        row_layout.addWidget(self.btnRestoreRAM)
+        return self.btnRestoreRAM
+
     def _CreateActionsGroup(self) -> None:
         self.grpActions = QtWidgets.QGroupBox()
         self.grpActionsLayout = QtWidgets.QVBoxLayout()
@@ -370,16 +383,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.btnFlashROM.setMinimumWidth(140)
         self.btnFlashROM.clicked.connect(lambda _checked=False: self.FlashROM())
         rowActionsGeneral3.addWidget(self.btnFlashROM)
-        self.btnRestoreRAM = QtWidgets.QPushButton()
-        self.mnuRestoreRAM = QtWidgets.QMenu()
-        self.mnuRestoreRAM.addAction("", lambda _checked=False: self.WriteRAM())
-        self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(erase=True))
-        self.mnuRestoreRAM.addSeparator()
-        self.mnuRestoreRAM.addAction("", lambda: self.WriteRAM(test=True))
-        self.btnRestoreRAM.setMenu(self.mnuRestoreRAM)
-        self.btnRestoreRAM.setMinimumHeight(25)
-        self.btnRestoreRAM.setMinimumWidth(140)
-        rowActionsGeneral3.addWidget(self.btnRestoreRAM)
+        self._CreateRestoreRAMButton(rowActionsGeneral3)
 
         self.grpActionsLayout.setSpacing(4)
         self.grpActionsLayout.addLayout(row_actions_mode)
@@ -730,6 +734,20 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             lambda: [self.OpenPath(str(Path(AppContext.APP_PATH) / "res" / "Third Party Notices.md"))],
         )
 
+    def _CreateMainMenu(self) -> None:
+        self.btnMainMenu = QtWidgets.QPushButton()
+        self.mnuMainMenu = QtWidgets.QMenu()
+        self.mnuMainMenu.addMenu(self.mnuConfig)
+        self.mnuMainMenu.addMenu(self.mnuTools)
+        self.mnuMainMenu.addMenu(self.mnuLanguage)
+        self.mnuMainMenu.addSeparator()
+        self.mnuMainMenu.addSeparator()
+        self.mnuMainMenu.addAction("", lambda _checked=False: self.OpenPath())
+        self.mnuMainMenu.addSeparator()
+        self.mnuMainMenu.addMenu(self.mnuThirdParty)
+        self.mnuMainMenu.addAction("", self.AboutFlashGBX)
+        self.btnMainMenu.setMenu(self.mnuMainMenu)
+
     def __init__(self, args: GuiArgs) -> None:
         sys.excepthook = Logger.exception_hook
         self._InitializeState(args)
@@ -776,18 +794,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateThirdPartyMenu()
 
-        self.btnMainMenu = QtWidgets.QPushButton()
-        self.mnuMainMenu = QtWidgets.QMenu()
-        self.mnuMainMenu.addMenu(self.mnuConfig)
-        self.mnuMainMenu.addMenu(self.mnuTools)
-        self.mnuMainMenu.addMenu(self.mnuLanguage)
-        self.mnuMainMenu.addSeparator()
-        self.mnuMainMenu.addSeparator()
-        self.mnuMainMenu.addAction("", lambda _checked=False: self.OpenPath())
-        self.mnuMainMenu.addSeparator()
-        self.mnuMainMenu.addMenu(self.mnuThirdParty)
-        self.mnuMainMenu.addAction("", self.AboutFlashGBX)
-        self.btnMainMenu.setMenu(self.mnuMainMenu)
+        self._CreateMainMenu()
 
         self.btnConnect = QtWidgets.QPushButton()
         self.btnConnect.clicked.connect(self.ConnectDevice)
@@ -1076,26 +1083,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.lblAGBHeaderSaveType.setText(__("Save Type:"))
         self.lblAGBCartridgeType.setText(__("Profile:"))
 
-    def InitWidgetTexts(self) -> None:
-        self._ResetWidgetTexts()
-
-        self._InitCartridgeInfoWidgetTexts()
-
-        self._InitActionWidgetTexts()
-
-        self._InitTransferStatusWidgetTexts()
-
-        # Device area
-        self.lblDevice.setToolTip(__("Click here to generate a log file for debugging"))
-        self.lblWarning.setToolTip(__("Click here to generate a log file for debugging"))
-
-        # Tools menu
-        self.mnuTools.setTitle(c__("Menu Item (& = Keyboard Shortcut)", "&Tools"))
-        self.mnuTools.actions()[0].setText(c__("Menu Item (& = Keyboard Shortcut)", "Game Boy &Camera Album Viewer"))
-        self.mnuTools.actions()[1].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Interactive Console"))
-        self.mnuTools.actions()[3].setText(c__("Menu Item (& = Keyboard Shortcut)", "Firmware &Updater"))
-
-        # Settings menu
+    def _InitConfigMenuTexts(self) -> None:
         self.mnuConfig.setTitle(c__("Menu Item (& = Keyboard Shortcut)", "&Settings"))
         self.mnuConfig.actions()[0].setText(
             c__(
@@ -1136,6 +1124,28 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             ),
         )
         self.mnuConfig.actions()[15].setText(c__("Menu Item (& = Keyboard Shortcut)", "Re-&enable suppressed messages"))
+
+    def InitWidgetTexts(self) -> None:
+        self._ResetWidgetTexts()
+
+        self._InitCartridgeInfoWidgetTexts()
+
+        self._InitActionWidgetTexts()
+
+        self._InitTransferStatusWidgetTexts()
+
+        # Device area
+        self.lblDevice.setToolTip(__("Click here to generate a log file for debugging"))
+        self.lblWarning.setToolTip(__("Click here to generate a log file for debugging"))
+
+        # Tools menu
+        self.mnuTools.setTitle(c__("Menu Item (& = Keyboard Shortcut)", "&Tools"))
+        self.mnuTools.actions()[0].setText(c__("Menu Item (& = Keyboard Shortcut)", "Game Boy &Camera Album Viewer"))
+        self.mnuTools.actions()[1].setText(c__("Menu Item (& = Keyboard Shortcut)", "&Interactive Console"))
+        self.mnuTools.actions()[3].setText(c__("Menu Item (& = Keyboard Shortcut)", "Firmware &Updater"))
+
+        # Settings menu
+        self._InitConfigMenuTexts()
 
         # Read method sub-menus
         self.mnuConfigReadModeAGB.setTitle(c__("Menu Item (& = Keyboard Shortcut)", "&Read Method (Game Boy Advance)"))
@@ -1327,6 +1337,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         rowDMGHeaderROMSize.setStretch(1, 15)
         group_layout.addLayout(rowDMGHeaderROMSize)
 
+    def _CreateDMGHeaderSaveTypeRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowDMGHeaderSaveType = QtWidgets.QHBoxLayout()
+        self.lblDMGHeaderSaveType = QtWidgets.QLabel()
+        rowDMGHeaderSaveType.addWidget(self.lblDMGHeaderSaveType)
+        self.cmbDMGHeaderSaveTypeResult = QtWidgets.QComboBox()
+        self.cmbDMGHeaderSaveTypeResult.setStyleSheet("combobox-popup: 0;")
+        self.cmbDMGHeaderSaveTypeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        rowDMGHeaderSaveType.addWidget(self.cmbDMGHeaderSaveTypeResult)
+        rowDMGHeaderSaveType.setStretch(0, 9)
+        rowDMGHeaderSaveType.setStretch(1, 15)
+        group_layout.addLayout(rowDMGHeaderSaveType)
+
     def GuiCreateGroupBoxDMGCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpDMGCartridgeInfo = QtWidgets.QGroupBox()
         self.grpDMGCartridgeInfo.setMinimumWidth(450 if platform.system() == "Linux" else 400)
@@ -1359,16 +1381,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateDMGHeaderROMSizeRow(group_layout)
 
-        rowDMGHeaderSaveType = QtWidgets.QHBoxLayout()
-        self.lblDMGHeaderSaveType = QtWidgets.QLabel()
-        rowDMGHeaderSaveType.addWidget(self.lblDMGHeaderSaveType)
-        self.cmbDMGHeaderSaveTypeResult = QtWidgets.QComboBox()
-        self.cmbDMGHeaderSaveTypeResult.setStyleSheet("combobox-popup: 0;")
-        self.cmbDMGHeaderSaveTypeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        rowDMGHeaderSaveType.addWidget(self.cmbDMGHeaderSaveTypeResult)
-        rowDMGHeaderSaveType.setStretch(0, 9)
-        rowDMGHeaderSaveType.setStretch(1, 15)
-        group_layout.addLayout(rowDMGHeaderSaveType)
+        self._CreateDMGHeaderSaveTypeRow(group_layout)
 
         rowDMGHeaderMapper = QtWidgets.QHBoxLayout()
         self.lblDMGHeaderMapper = QtWidgets.QLabel()
@@ -1460,6 +1473,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         row.setStretch(1, 15)
         group_layout.addLayout(row)
 
+    def _CreateAGBHeaderROMSizeRow(self, group_layout: QtWidgets.QVBoxLayout) -> None:
+        rowAGBHeaderROMSize = QtWidgets.QHBoxLayout()
+        self.lblAGBHeaderROMSize = QtWidgets.QLabel()
+        rowAGBHeaderROMSize.addWidget(self.lblAGBHeaderROMSize)
+        self.cmbAGBHeaderROMSizeResult = QtWidgets.QComboBox()
+        self.cmbAGBHeaderROMSizeResult.setStyleSheet("combobox-popup: 0;")
+        self.cmbAGBHeaderROMSizeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        rowAGBHeaderROMSize.addWidget(self.cmbAGBHeaderROMSizeResult)
+        rowAGBHeaderROMSize.setStretch(0, 9)
+        rowAGBHeaderROMSize.setStretch(1, 15)
+        group_layout.addLayout(rowAGBHeaderROMSize)
+
     def GuiCreateGroupBoxAGBCartInfo(self) -> QtWidgets.QGroupBox:
         self.grpAGBCartridgeInfo = QtWidgets.QGroupBox()
         self.grpAGBCartridgeInfo.setMinimumWidth(432 if platform.system() == "Linux" else 400)
@@ -1490,16 +1515,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self._CreateAGBHeaderROMChecksumRow(group_layout)
 
-        rowAGBHeaderROMSize = QtWidgets.QHBoxLayout()
-        self.lblAGBHeaderROMSize = QtWidgets.QLabel()
-        rowAGBHeaderROMSize.addWidget(self.lblAGBHeaderROMSize)
-        self.cmbAGBHeaderROMSizeResult = QtWidgets.QComboBox()
-        self.cmbAGBHeaderROMSizeResult.setStyleSheet("combobox-popup: 0;")
-        self.cmbAGBHeaderROMSizeResult.view().setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        rowAGBHeaderROMSize.addWidget(self.cmbAGBHeaderROMSizeResult)
-        rowAGBHeaderROMSize.setStretch(0, 9)
-        rowAGBHeaderROMSize.setStretch(1, 15)
-        group_layout.addLayout(rowAGBHeaderROMSize)
+        self._CreateAGBHeaderROMSizeRow(group_layout)
 
         rowAGBHeaderSaveType = QtWidgets.QHBoxLayout()
         self.lblAGBHeaderSaveType = QtWidgets.QLabel()
@@ -2240,6 +2256,18 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.mnuConfigReadModeDMG.setEnabled(self._device.FW["fw_ver"] >= 12)
         self.UpdateThirdPartySupportAction()
 
+    def _ShowConnectedCartridgeMode(self) -> None:
+        if self._device.GetMode() == "DMG":
+            self.cmbDMGCartridgeTypeResult.clear()
+            self.cmbDMGCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesDMG()[0])
+            self.grpAGBCartridgeInfo.setVisible(False)
+            self.grpDMGCartridgeInfo.setVisible(True)
+        elif self._device.GetMode() == "AGB":
+            self.cmbAGBCartridgeTypeResult.clear()
+            self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
+            self.grpDMGCartridgeInfo.setVisible(False)
+            self.grpAGBCartridgeInfo.setVisible(True)
+
     def _complete_device_connection(self, dev: LK_Device, msg: str) -> bool:
         self.CONN = dev
         dev.SetWriteDelay(enable=str(self.SETTINGS.value("WriteDelay", default="disabled")).lower() == "enabled")
@@ -2280,16 +2308,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
 
         self.SetProgressBars(min=0, max=1, value=0)
 
-        if self._device.GetMode() == "DMG":
-            self.cmbDMGCartridgeTypeResult.clear()
-            self.cmbDMGCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesDMG()[0])
-            self.grpAGBCartridgeInfo.setVisible(False)
-            self.grpDMGCartridgeInfo.setVisible(True)
-        elif self._device.GetMode() == "AGB":
-            self.cmbAGBCartridgeTypeResult.clear()
-            self.cmbAGBCartridgeTypeResult.addItems(self._device.GetSupportedCartridgesAGB()[0])
-            self.grpDMGCartridgeInfo.setVisible(False)
-            self.grpAGBCartridgeInfo.setVisible(True)
+        self._ShowConnectedCartridgeMode()
 
         print(msg, end="")
 
@@ -4817,6 +4836,16 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._RunSaveStressTestTransfer(args)
         return self._device.INFO["data"]
 
+    def _ShowSaveStressTestReadError(self) -> None:
+        msgbox = _create_message_box(
+            parent=self,
+            icon=QtWidgets.QMessageBox.Icon.Critical,
+            windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            text=__("An error occured. Please ensure you selected the correct save type."),
+            standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        msgbox.exec()
+
     def _RunSaveStressTest(
         self,
         preparation: _SaveWritePreparation,
@@ -4858,14 +4887,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             self._RunSaveStressTestTransfer(args)
             save2 = self._device.INFO["data"]
         except KeyError:
-            msgbox = _create_message_box(
-                parent=self,
-                icon=QtWidgets.QMessageBox.Icon.Critical,
-                windowTitle=f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                text=__("An error occured. Please ensure you selected the correct save type."),
-                standardButtons=QtWidgets.QMessageBox.StandardButton.Ok,
-            )
-            msgbox.exec()
+            self._ShowSaveStressTestReadError()
             save1 = None
 
         stop = False
@@ -4955,6 +4977,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
             return answer != QtWidgets.QMessageBox.StandardButton.Cancel
         return True
+
+    def _CompleteSaveWrite(self, path: str, args: dict[str, Any]) -> None:
+        self.STATUS["time_start"] = time.time()
+        self.STATUS["last_path"] = path
+        self.STATUS["args"] = args
+        self._DisableTransferControls()
+        self.lblStatus4a.setText(__("Preparing..."))
+        self.grpStatus.setTitle(__("Transfer Status"))
+        self.lblStatus1aResult.setText("-")
+        self.lblStatus2aResult.setText("-")
+        self.lblStatus3aResult.setText("-")
+        self.SetStatus4aResult("")
+        qt_app.processEvents()
 
     def WriteRAM(
         self,
@@ -5076,17 +5111,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             # args = { "mode":3, "path":path, "mbc":mbc, "save_type":save_type, "rtc":rtc, "rtc_advance":rtc_advance, "erase":erase, "verify_write":verify_write }
             # self._device._BackupRestoreRAM(args=args)
 
-        self.STATUS["time_start"] = time.time()
-        self.STATUS["last_path"] = path
-        self.STATUS["args"] = args
-        self._DisableTransferControls()
-        self.lblStatus4a.setText(__("Preparing..."))
-        self.grpStatus.setTitle(__("Transfer Status"))
-        self.lblStatus1aResult.setText("-")
-        self.lblStatus2aResult.setText("-")
-        self.lblStatus3aResult.setText("-")
-        self.SetStatus4aResult("")
-        qt_app.processEvents()
+        self._CompleteSaveWrite(path, args)
 
     @staticmethod
     def _get_default_bl_location_index(rom_size: int, locations: list[int]) -> int:

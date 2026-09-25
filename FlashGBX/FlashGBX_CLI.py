@@ -2322,6 +2322,26 @@ class FlashGBX_CLI:
                 time.sleep(0.1)
             self.CONN.ReadHeader(checkRtc=False)
 
+    def _ReportDebugSaveDifferences(
+        self,
+        expected: bytearray,
+        first_readback: bytearray,
+        second_readback: bytearray,
+    ) -> None:
+        if expected != second_readback:
+            diffcount = self._CountDifferences(expected, second_readback)
+            print("\n" + ANSI.RED + __("Differences found:") + str(diffcount) + ANSI.RESET)
+        if first_readback != second_readback:
+            diffcount = self._CountDifferences(first_readback, second_readback)
+            print(
+                "\n"
+                + ANSI.RED
+                + __("Differences found between two consecutive readbacks:")
+                + str(diffcount)
+                + ANSI.RESET,
+            )
+            input("")
+
     def _DebugTestSave(self, mbc: int, save_type: int) -> None:
         self.ARGS["debug"] = True
         config_path = Path(AppContext.CONFIG_PATH)
@@ -2405,19 +2425,7 @@ class FlashGBX_CLI:
                 test3[i] &= 0x0F
                 test4[i] &= 0x0F
 
-        if test2 != test4:
-            diffcount = self._CountDifferences(test2, test4)
-            print("\n" + ANSI.RED + __("Differences found:") + str(diffcount) + ANSI.RESET)
-        if test3 != test4:
-            diffcount = self._CountDifferences(test3, test4)
-            print(
-                "\n"
-                + ANSI.RED
-                + __("Differences found between two consecutive readbacks:")
-                + str(diffcount)
-                + ANSI.RESET,
-            )
-            input("")
+        self._ReportDebugSaveDifferences(test2, test3, test4)
 
         found_offset: int = test2.find(test3[0:512])
         if found_offset < 0:

@@ -1541,6 +1541,19 @@ class DMG_TAMA5(DMG_Mapper):
 
         return True
 
+    @staticmethod
+    def _AdjustRTCYears(years: int, year_delta: int) -> int:
+        years += year_delta
+        if years >= 160:
+            years -= 140
+        elif years >= 140:
+            years -= 100
+        elif years >= 120:
+            years -= 60
+        elif years >= 100 and (years - year_delta) < 100:
+            years -= 100
+        return years
+
     def WriteRTC(self, buffer: bytearray, advance: bool = False) -> None:
         if advance:
             try:
@@ -1578,15 +1591,7 @@ class DMG_TAMA5(DMG_Mapper):
 
                         # Weird cases
                         year_new: int = dt_new.year - 2000 - leap_year_state
-                        years += year_new
-                        if years >= 160:
-                            years -= 140
-                        elif years >= 140:
-                            years -= 100
-                        elif years >= 120:
-                            years -= 60
-                        elif years >= 100 and (years - year_new) < 100:
-                            years -= 100
+                        years = self._AdjustRTCYears(years, year_new)
 
                         months = dt_new.month
                         days = dt_new.day

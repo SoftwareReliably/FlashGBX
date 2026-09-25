@@ -328,6 +328,21 @@ def test_tama5_advance_and_decode_paths(monkeypatch: pytest.MonkeyPatch) -> None
     assert "ᴸ" not in mapper.GetRTCDict()["string"]
 
 
+@pytest.mark.parametrize(
+    ("years", "year_delta", "expected"),
+    [
+        (90, 5, 95),
+        (95, 5, 0),
+        (100, 0, 100),
+        (115, 5, 60),
+        (139, 1, 40),
+        (159, 1, 20),
+    ],
+)
+def test_tama5_rtc_year_rollover_thresholds(years: int, year_delta: int, expected: int) -> None:
+    assert DMG_TAMA5._AdjustRTCYears(years, year_delta) == expected
+
+
 def test_unlicensed_256m_ram_bank_boundaries_are_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
     cartridge = DMGCartridge()
     monkeypatch.setattr(mapper_module.time, "sleep", lambda _seconds: None)

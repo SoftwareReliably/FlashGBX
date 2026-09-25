@@ -11,7 +11,7 @@ import pytest
 import FlashGBX.LK_Device as lk_device_module
 from FlashGBX.Flashcart import Flashcart
 from FlashGBX.hw_GBxCartRW import GbxDevice
-from FlashGBX.LK_Device import _FlashConfiguration, _FlashSectorPlan
+from FlashGBX.LK_Device import _FlashConfiguration, _FlashSectorPlan, _FlashWritePreparation
 from tests.fakes import flashcart_callbacks, flashcart_profile
 
 if TYPE_CHECKING:
@@ -49,6 +49,22 @@ class FlashCommandRecords:
         self.firmware_variables: list[tuple[str, int]] = []
         self.progress: list[dict[str, object]] = []
         self.ack_count = 0
+
+
+def _assert_prepared_flash_configuration(
+    preparation: _FlashWritePreparation,
+    active_voltage: float,
+    mapper: object,
+) -> None:
+    assert preparation.flash_offset == 0
+    assert preparation.active_voltage == active_voltage
+    assert preparation.mbc is mapper
+    assert preparation.end_bank == 2
+    assert preparation.rom_bank_size == 4
+    assert preparation.enable_pullup_wr == 2
+    assert preparation.error_message == "mapper details"
+    assert preparation.flash_buffer_size == 16
+    assert preparation.command_set_type == "AMD"
 
 
 def _rejected_stage_sector_plan(rejected_stage: str, calls: list[str]) -> _FlashSectorPlan | None:
@@ -1294,15 +1310,7 @@ def test_prepare_flash_write_builds_complete_copied_preparation(
     assert preparation.flashcart is flashcart
     assert preparation.data_import == bytearray(b"PREPARED")
     assert preparation.data_map_import == bytearray(b"MAP")
-    assert preparation.flash_offset == 0
-    assert preparation.active_voltage == active_voltage
-    assert preparation.mbc is mapper
-    assert preparation.end_bank == 2
-    assert preparation.rom_bank_size == 4
-    assert preparation.enable_pullup_wr == 2
-    assert preparation.error_message == "mapper details"
-    assert preparation.flash_buffer_size == 16
-    assert preparation.command_set_type == "AMD"
+    _assert_prepared_flash_configuration(preparation, active_voltage, mapper)
     assert preparation.sector_offsets == [[0, 4], [4, 4]]
     assert preparation.write_sectors == expected_write_sectors
     assert preparation.delta_state == [[0, 4, 123]]
@@ -1333,15 +1341,7 @@ def test_prepare_flash_write_builds_complete_copied_preparation(
     assert device.INFO["action"] == device.ACTIONS["ROM_WRITE"]
 
 
-@pytest.mark.parametrize(
-    "rejected_stage",
-    ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase", "empty-write-sectors"],
-)
-def test_flash_rom_worker_stops_at_each_preparation_rejection(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    rejected_stage: str,
-) -> None:
+def _make_rejected_flash_device(rejected_stage: str) -> tuple[GbxDevice, Flashcart]:
     device = GbxDevice()
     device.MODE = "DMG"
     device.FW = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
@@ -1351,6 +1351,19 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
         profile["set_audio_high"] = True
     device.SUPPORTED_CARTS = {"DMG": {profile_name: profile}, "AGB": {}}
     _cart_profile, flashcart = make_command_flashcart(type="DMG", names=[profile_name])
+    return device, flashcart
+
+
+@pytest.mark.parametrize(
+    "rejected_stage",
+    ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase", "empty-write-sectors"],
+)
+def test_flash_rom_worker_stops_at_each_preparation_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    rejected_stage: str,
+) -> None:
+    device, flashcart = _make_rejected_flash_device(rejected_stage)
     calls: list[str] = []
     expected_order = ["firmware", "configuration", "map", "commands", "flash-id", "sector-plan", "erase"]
     real_firmware_check = device._check_flashcart_firmware

@@ -18,7 +18,7 @@ import zipfile
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, cast
 
 from .app import GBXCART_RW_BAUD_RATES, HW_DEVICES, AppContext, AppInfo
 from .CartridgeTypes import AgbSaveTypes, DmgSaveTypes, RomSizes
@@ -30,6 +30,11 @@ from .PocketCamera import PocketCamera
 
 if TYPE_CHECKING:
     from .Flashcart import FlashcartMap
+
+
+class _CLIApplication(Protocol):
+    def run(self) -> int: ...
+
 
 ConfigVersion = str | Literal[False] | None
 ConfigMessage = list[int | str]
@@ -770,6 +775,17 @@ def _report_cli_fallback(parser: argparse.ArgumentParser, *, show_help: bool, er
     print(__("Falling back to CLI mode.") + "\n")
 
 
+def _run_cli(app: _CLIApplication, *, wait: bool) -> int:
+    retval = -1
+    try:
+        retval = app.run()
+    except KeyboardInterrupt:
+        print("\n\n" + __("Program stopped."))
+    if wait:
+        input("\n" + __("Press ENTER to exit.") + "\n")
+    return retval
+
+
 def main(portableMode: bool = False) -> int | None:
     _configure_platform_environment()
     AppContext.LAUNCH_TIMESTAMP = time.time()
@@ -796,7 +812,6 @@ def main(portableMode: bool = False) -> int | None:
 
     app: Any = None
     exc: str | None = None
-    retval = -1
     if not parsed_args.cli:
         try:
             from . import FlashGBX_GUI  # noqa: PLC0415 - keep the GUI dependency optional in CLI mode
@@ -816,13 +831,7 @@ def main(portableMode: bool = False) -> int | None:
             _report_cli_fallback(parser, show_help=parsed_args.action is None, error=exc)
             cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
             app = FlashGBX_CLI.FlashGBX_CLI(cli_args)
-            try:
-                retval = app.run()
-            except KeyboardInterrupt:
-                print("\n\n" + __("Program stopped."))
-            if parsed_args.wait:
-                input("\n" + __("Press ENTER to exit.") + "\n")
-            sys.exit(retval)
+            sys.exit(_run_cli(app, wait=parsed_args.wait))
 
         app.run()
 
@@ -832,11 +841,5 @@ def main(portableMode: bool = False) -> int | None:
         print("\n" + __("Now running in CLI mode."))
         cli_args = cast("FlashGBX_CLI.CLIConfig", startup_args)
         app = FlashGBX_CLI.FlashGBX_CLI(cli_args)
-        try:
-            retval = app.run()
-        except KeyboardInterrupt:
-            print("\n\n" + __("Program stopped."))
-        if parsed_args.wait:
-            input("\n" + __("Press ENTER to exit.") + "\n")
-        sys.exit(retval)
+        sys.exit(_run_cli(app, wait=parsed_args.wait))
     return None

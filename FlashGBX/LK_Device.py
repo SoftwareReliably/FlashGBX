@@ -6216,6 +6216,13 @@ class LK_Device(ABC):
             self.INFO["last_action"] = self.INFO["action"]
             self.INFO["action"] = None
 
+    def _CompleteSaveTransfer(self, path: str | Path | None, *, verified: bool) -> None:
+        self.INFO["last_action"] = self.INFO["action"]
+        self.INFO["action"] = None
+        self.INFO["last_path"] = path
+        self._thread_worker_auto_poweroff_finish()
+        self.SetProgress({"action": "FINISHED", "verified": verified})
+
     def _BackupRestoreRAM_Worker(self, args: dict[str, Any]) -> bool | None:
         mode = self._require_cartridge_mode("accessing save data")
         self.FAST_READ = False
@@ -6316,12 +6323,7 @@ class LK_Device(ABC):
 
         self._ResetSaveTransferHardware(_mbc, cart_type, buffer, audio_low)
 
-        # Clean up
-        self.INFO["last_action"] = self.INFO["action"]
-        self.INFO["action"] = None
-        self.INFO["last_path"] = args["path"]
-        self._thread_worker_auto_poweroff_finish()
-        self.SetProgress({"action": "FINISHED", "verified": verified})
+        self._CompleteSaveTransfer(args["path"], verified=verified)
         return True
 
     def _RunSaveTransferLoop(self, context: _SaveTransferLoopContext) -> _SaveTransferLoopResult:

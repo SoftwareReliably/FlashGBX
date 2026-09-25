@@ -715,6 +715,14 @@ def _assert_dmg_rom_bank_reads(mapper: IntegratedROMMapper, read_rom: Mock) -> N
     ]
 
 
+def _assert_rom_backup_completion(device: GbxDevice, path: Path, progress: list[dict[str, Any]]) -> None:
+    assert device.INFO["loop_detected"] is False
+    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
+    assert device.INFO["action"] is None
+    assert device.INFO["last_path"] == str(path)
+    assert progress[-1] == {"action": "FINISHED"}
+
+
 def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     tmp_path: Path,
     pokemon_red_header: bytearray,
@@ -769,11 +777,7 @@ def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     _assert_dmg_rom_bank_reads(mapper, read_rom)
     set_read_method.assert_called_once_with(original_read_method)
     auto_poweroff_finish.assert_called_once_with()
-    assert device.INFO["loop_detected"] is False
-    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] == str(path)
-    assert progress[-1] == {"action": "FINISHED"}
+    _assert_rom_backup_completion(device, path, progress)
     assert_hash_metadata(device, expected)
 
 
@@ -842,9 +846,5 @@ def test_backup_rom_worker_integrates_agb_preparation_result_and_reset(
     ]
     set_read_method.assert_called_once_with(original_read_method)
     auto_poweroff_finish.assert_called_once_with()
-    assert device.INFO["loop_detected"] is False
-    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] == str(path)
-    assert progress[-1] == {"action": "FINISHED"}
+    _assert_rom_backup_completion(device, path, progress)
     assert_hash_metadata(device, expected)
