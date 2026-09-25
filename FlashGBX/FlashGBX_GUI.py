@@ -5250,7 +5250,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         len_index = selection.length_index
         lay_index = selection.layout_index
 
-        dlg_args = {
+        dlg_args: DialogArgs = {
             "title": __("{batteryless_sram} Parameters", batteryless_sram="Batteryless SRAM"),
             "intro": intro_msg.replace("\n", "<br>"),
             "params": [
@@ -5269,7 +5269,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 ],
             )
 
-        dlg = UserInputDialog(self, icon=self.windowIcon(), args=cast("DialogArgs", dlg_args))
+        dlg = UserInputDialog(self, icon=self.windowIcon(), args=dlg_args)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             result = dlg.GetResult()
             if result["loc"].currentText() not in [f"0x{location:X}" for location in locs]:
