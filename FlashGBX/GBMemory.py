@@ -524,8 +524,6 @@ class GBMemoryMap:
             ram_offset += ram_data_size
 
             game_header = self._read_header(rom_data[rom_data_offset : rom_data_offset + 0x180])
-            if not game_header:
-                return False
             mapper_raw = game_header.get("mapper_raw")
             ram_size_raw = game_header.get("ram_size_raw")
             nested_title = game_header.get("game_title")

@@ -192,18 +192,17 @@ class AgbSaveTypes:
     def GetStringFromSaveLib(self, savelib_string: str, localized: bool = True) -> str:
         if not savelib_string or savelib_string == "N/A":
             return __("None") if localized else "None"
-        if "SRAM_F_" in savelib_string:
-            return f"256K SRAM/FRAM ({savelib_string:s})"
-        if "SRAM_" in savelib_string:
-            return f"256K SRAM ({savelib_string:s})"
-        if "EEPROM_V" in savelib_string:
-            return f"4K or 64K EEPROM ({savelib_string:s})"
-        if "FLASH_V" in savelib_string or "FLASH512_V" in savelib_string:
-            return f"512K FLASH ({savelib_string:s})"
-        if "FLASH1M_V" in savelib_string:
-            return f"1M FLASH ({savelib_string:s})"
-        if "AGB_8MDACS_DL_V" in savelib_string:
-            return f"8M DACS ({savelib_string:s})"
+        save_type_labels: tuple[tuple[tuple[str, ...], str], ...] = (
+            (("SRAM_F_",), "256K SRAM/FRAM"),
+            (("SRAM_",), "256K SRAM"),
+            (("EEPROM_V",), "4K or 64K EEPROM"),
+            (("FLASH_V", "FLASH512_V"), "512K FLASH"),
+            (("FLASH1M_V",), "1M FLASH"),
+            (("AGB_8MDACS_DL_V",), "8M DACS"),
+        )
+        for tokens, label in save_type_labels:
+            if any(token in savelib_string for token in tokens):
+                return f"{label} ({savelib_string:s})"
         return c__("Save Type", "Unknown") + f" ({savelib_string:s})" if localized else f"Unknown ({savelib_string:s})"
 
     def GetStringList(self) -> list[str]:

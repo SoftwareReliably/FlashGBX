@@ -372,9 +372,8 @@ class Progress:
                 return
 
             if action == "INITIALIZE":
-                if not isinstance(event.get("method"), str):
-                    return
-                self._initialize(event, now)
+                if isinstance(event.get("method"), str):
+                    self._initialize(event, now)
                 return
 
             if action == "ABORT":

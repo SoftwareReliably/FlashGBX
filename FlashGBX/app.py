@@ -195,10 +195,8 @@ class AppInfo:
 
     @staticmethod
     def _windows_name(version_info: _WindowsVersion) -> str:
-        if version_info.major == 10 and version_info.build >= 22000:
-            return "Windows 11"
         if version_info.major == 10:
-            return "Windows 10"
+            return "Windows 11" if version_info.build >= 22000 else "Windows 10"
         if version_info.major == 6 and version_info.minor == 3:
             return "Windows 8.1"
         if version_info.major == 6 and version_info.minor == 2:

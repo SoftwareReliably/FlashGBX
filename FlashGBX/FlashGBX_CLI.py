@@ -513,13 +513,36 @@ class FlashGBX_CLI:
 
         header = self.CONN.ReadHeader()
         (bad_read, s_header, header) = self.ReadCartridge(header)
-        if s_header == "":
+        if not self._ValidateCartridgeHeader(
+            bad_read,
+            s_header,
+            header,
+            ignore_bad_header=args.ignore_bad_header,
+        ):
+            return 1
+
+        print("\n" + __("Cartridge Information:"))
+        print(s_header)
+
+        action_result = self._RunCartridgeAction(args, header)
+        self.DisconnectDevice()
+        return self.RETVAL if action_result is None else action_result
+
+    def _ValidateCartridgeHeader(
+        self,
+        bad_read: bool,
+        header_text: str,
+        header: HeaderData,
+        *,
+        ignore_bad_header: bool,
+    ) -> bool:
+        if header_text == "":
             print("\n" + ANSI.RED + __("Couldn't read cartridge header. Please try again.") + ANSI.RESET + "\n")
             self.DisconnectDevice()
-            return 1
+            return False
         if (
             bad_read
-            and not args.ignore_bad_header
+            and not ignore_bad_header
             and (
                 self.CONN.GetMode() == "AGB"
                 or (self.CONN.GetMode() == "DMG" and "mapper_raw" in header and header["mapper_raw"] != 0x203)
@@ -536,16 +559,10 @@ class FlashGBX_CLI:
                 + "\n",
             )
             print(__("Cartridge Information:"))
-            print(s_header)
+            print(header_text)
             self.DisconnectDevice()
-            return 1
-
-        print("\n" + __("Cartridge Information:"))
-        print(s_header)
-
-        action_result = self._RunCartridgeAction(args, header)
-        self.DisconnectDevice()
-        return self.RETVAL if action_result is None else action_result
+            return False
+        return True
 
     def _SelectPlatformMode(self) -> PlatformMode | int:
         """Choose a platform mode or return a CLI result when selection stops."""
@@ -2228,9 +2245,7 @@ class FlashGBX_CLI:
                     return 0x102  # MBC7 Command Master
                 if mapper == 0xFD:  # TAMA5
                     return 0x103
-                if mapper == 0x20:  # MBC6
-                    return 0x104
-                return header["ram_size_raw"]
+                return 0x104 if mapper == 0x20 else header["ram_size_raw"]  # MBC6
             except KeyError, TypeError, ValueError, IndexError:
                 return 0
         return 0x205 if save_type_name == "batteryless" else DmgSaveTypes.GetMbcFromCLIName(save_type_name) or 0
@@ -2922,6 +2937,36 @@ class FlashGBX_CLI:
             return None
         return port
 
+    def _WriteGBxCartRWFirmware(
+        self,
+        file_name: Path,
+        port: str | Literal[False] | None,
+    ) -> Literal[1, 2, 3] | None:
+        no_devices_message = __("No devices found.")
+        resolved_port = self._ResolveFirmwarePort(port, 0x1A86, 0x7523, no_devices_message, no_devices_message)
+        if resolved_port is None:
+            return None
+
+        from . import hw_GBxCartRW  # noqa: PLC0415 - load only the selected firmware backend
+
+        while True:
+            try:
+                print(__("Using port {port}", port=resolved_port) + "\n")
+                FirmwareUpdater = hw_GBxCartRW.FirmwareUpdater
+                updater = FirmwareUpdater(port=resolved_port)
+                return updater.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
+            except SerialException:
+                resolved_port = input(
+                    __("Couldn't access port {port}.\nEnter new port:", port=resolved_port) + " ",
+                ).strip()
+                if len(resolved_port) == 0:
+                    print(__("Canceled."))
+                    return None
+            except Exception as err:
+                traceback.print_exception(type(err), err, err.__traceback__)
+                print(err)
+                return None
+
     def UpdateFirmwareGBxCartRW(
         self,
         pcb: int = 5,
@@ -2968,30 +3013,9 @@ class FlashGBX_CLI:
             return False
 
         try:
-            no_devices_message = __("No devices found.")
-            port = self._ResolveFirmwarePort(port, 0x1A86, 0x7523, no_devices_message, no_devices_message)
-            if port is None:
+            ret = self._WriteGBxCartRWFirmware(file_name, port)
+            if ret is None:
                 return False
-
-            from . import hw_GBxCartRW  # noqa: PLC0415 - load only the selected firmware backend
-
-            while True:
-                try:
-                    print(__("Using port {port}", port=port) + "\n")
-                    FirmwareUpdater = hw_GBxCartRW.FirmwareUpdater
-                    FWUPD = FirmwareUpdater(port=port)
-                    ret: Literal[1, 2, 3] = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
-                    break
-                except SerialException:
-                    port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
-                    if len(port) == 0:
-                        print(__("Canceled."))
-                        return False
-                    continue
-                except Exception as err:
-                    traceback.print_exception(type(err), err, err.__traceback__)
-                    print(err)
-                    return False
 
             update_succeeded: bool = ret == 1
             if update_succeeded:

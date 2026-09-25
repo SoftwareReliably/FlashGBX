@@ -3245,10 +3245,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         dpath: str,
     ) -> tuple[PlatformMode, str, str, str, list[Any], int, dict[str, Any]] | None:
         """Resolve the device mode and selected flash-cart profile."""
-        if not self.CheckDeviceAlive():
-            return None
-
-        mode = self._device.GetMode()
+        mode: PlatformMode | None = self._device.GetMode() if self.CheckDeviceAlive() else None
         if mode not in ("DMG", "AGB"):
             return None
         path = ""
@@ -3876,29 +3873,26 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             setting_name = "LastDirSaveDataDMG"
             mbc = ConvertMapperTypeToMapper(self.cmbDMGHeaderMapperResult.currentIndex())
             save_type = DmgSaveTypes(index=self.cmbDMGHeaderSaveTypeResult.currentIndex()).GetMbc()
-            if save_type == 0:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("No save type was selected."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return
-            cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
 
         else:
             setting_name = "LastDirSaveDataAGB"
             mbc = 0
             save_type = self.cmbAGBSaveTypeResult.currentIndex()
-            if save_type == 0:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                    __("No save type was selected."),
-                    QtWidgets.QMessageBox.StandardButton.Ok,
-                )
-                return
-            cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
+
+        if save_type == 0:
+            show_message = QtWidgets.QMessageBox.critical if mode == "DMG" else QtWidgets.QMessageBox.warning
+            show_message(
+                self,
+                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+                __("No save type was selected."),
+                QtWidgets.QMessageBox.StandardButton.Ok,
+            )
+            return
+        cart_type = (
+            self.cmbDMGCartridgeTypeResult.currentIndex()
+            if mode == "DMG"
+            else self.cmbAGBCartridgeTypeResult.currentIndex()
+        )
         last_dir = self._GetLastDirectory(setting_name)
         if not self.CheckHeader():
             return
@@ -4491,7 +4485,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 return None
             cart_type = self.cmbDMGCartridgeTypeResult.currentIndex()
 
-        elif mode == "AGB":
+        else:
             setting_name = "LastDirSaveDataAGB"
             last_dir = self.SETTINGS.value(setting_name)
             if last_dir is None:
@@ -4509,8 +4503,6 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 )
                 return None
             cart_type = self.cmbAGBCartridgeTypeResult.currentIndex()
-        else:
-            return None
         if not self.CheckHeader():
             return None
 

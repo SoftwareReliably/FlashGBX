@@ -446,10 +446,7 @@ class GbxDevice(LK_Device):
             pcb = response[0]
             self._write(self.DEVICE_CMD["OFW_FW_VER"])
             ofw = self._read_byte()
-            if pcb == 2 and ofw == 2:
-                dprint(f"Not a {self.DEVICE_NAME}")
-                return False
-            if pcb >= 5 and ofw == 0:
+            if (pcb == 2 and ofw == 2) or (pcb >= 5 and ofw == 0):
                 dprint(f"Not a {self.DEVICE_NAME}")
                 return False
             if pcb < 5 and ofw > 0:
@@ -527,10 +524,10 @@ class GbxDevice(LK_Device):
             return False
         firmware = self.FW
         if firmware.get("pcb_name") is None:
-            if self.LoadFirmwareVersion():
+            loaded = self.LoadFirmwareVersion()
+            if loaded:
                 self.LAST_CHECK_ACTIVE = time.time()
-                return True
-            return False
+            return loaded
         try:
             if firmware["fw_ver"] == 0:  # legacy GBxCart RW firmware
                 self.LAST_CHECK_ACTIVE = time.time()
@@ -718,11 +715,11 @@ class FirmwareUpdater:
             None,
         )
 
-    def WriteFirmware(
+    def _DecodeFirmwareArchive(
         self,
         zipfn: str | Path,
         fncSetStatus: StatusCallback,
-    ) -> FirmwareUpdateResult:
+    ) -> bytearray | None:
         try:
             with zipfile.ZipFile(zipfn) as archive:
                 with archive.open("fw.ini") as f:
@@ -731,10 +728,10 @@ class FirmwareUpdater:
                     buffer2 = bytearray(f.read())
         except OSError, zipfile.BadZipFile, KeyError:
             fncSetStatus(__("The firmware update file is corrupted."))
-            return 3
+            return None
         if not buffer1 or len(buffer2) < 0x20:
             fncSetStatus(__("The firmware update file is corrupted."))
-            return 3
+            return None
         while len(buffer1) < len(buffer2):
             buffer1 = buffer1 + buffer1
         rng = random.Random(struct.unpack("<I", buffer2[-0x18:-0x14])[0])  # noqa: S311
@@ -746,6 +743,16 @@ class FirmwareUpdater:
             buffer.append(encrypted[len(encrypted) - i - 1] ^ random_byte ^ buffer1[len(buffer1) - i - 1])
         if chk != hashlib.sha1(buffer).digest():
             fncSetStatus(__("The firmware update file is corrupted."))
+            return None
+        return buffer
+
+    def WriteFirmware(
+        self,
+        zipfn: str | Path,
+        fncSetStatus: StatusCallback,
+    ) -> FirmwareUpdateResult:
+        buffer = self._DecodeFirmwareArchive(zipfn, fncSetStatus)
+        if buffer is None:
             return 3
 
         port = self._ResolveUpdatePort()
@@ -1880,10 +1887,7 @@ try:
                 return verification_result
 
             result = self._WriteFirmwareUserData(dev, user_data, fncSetStatus, lives=lives)
-            if result is not None:
-                return result
-
-            return self._FinishFirmwareUpdate(dev, fncSetStatus)
+            return result if result is not None else self._FinishFirmwareUpdate(dev, fncSetStatus)
 
         def _WriteFirmwareUserData(
             self,
