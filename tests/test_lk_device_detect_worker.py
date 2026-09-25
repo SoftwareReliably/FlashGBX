@@ -2,11 +2,35 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from FlashGBX.hw_GBxCartRW import GbxDevice
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def _make_prepare_callback(
+    records: dict[str, list[Any]],
+    prepare_error: Exception | None,
+    check_save_type: bool | None,
+) -> Callable[[dict[str, Any], bool, dict[str, Any], object], tuple[bool, int | None, int | None]]:
+    def prepare(
+        cart_type: dict[str, Any],
+        should_check_save_type: bool,
+        header: dict[str, Any],
+        signal: object,
+    ) -> tuple[bool, int | None, int | None]:
+        records["preparations"].append((cart_type, should_check_save_type, header, signal))
+        if prepare_error is not None:
+            raise prepare_error
+        if check_save_type is None:
+            return should_check_save_type, None, None
+        return check_save_type, None, None
+
+    return prepare
 
 
 def install_detection_worker_boundaries(
@@ -74,19 +98,6 @@ def install_detection_worker_boundaries(
         records["flash_calls"].append(limitVoltage)
         return flash_result
 
-    def prepare(
-        cart_type: dict[str, Any],
-        should_check_save_type: bool,
-        header: dict[str, Any],
-        signal: object,
-    ) -> tuple[bool, int | None, int | None]:
-        records["preparations"].append((cart_type, should_check_save_type, header, signal))
-        if prepare_error is not None:
-            raise prepare_error
-        if check_save_type is None:
-            return should_check_save_type, None, None
-        return check_save_type, None, None
-
     def backup_restore(*, args: dict[str, Any]) -> bool:
         records["save_reads"].append(args.copy())
         if save_read_result:
@@ -105,7 +116,9 @@ def install_detection_worker_boundaries(
 
     monkeypatch.setattr(device, "ReadHeader", read_header)
     monkeypatch.setattr(device, "DetectFlash", detect_flash)
-    monkeypatch.setattr(device, "_PrepareCartridgeSaveDetection", prepare)
+    monkeypatch.setattr(
+        device, "_PrepareCartridgeSaveDetection", _make_prepare_callback(records, prepare_error, check_save_type)
+    )
     monkeypatch.setattr(device, "_BackupRestoreRAM", backup_restore)
     monkeypatch.setattr(device, "CanPowerCycleCart", lambda: supports_power_cycle)
     monkeypatch.setattr(device, "CartPowerCycle", lambda: records["power_cycles"].append(True))

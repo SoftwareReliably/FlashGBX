@@ -511,6 +511,32 @@ class _FlashChunkParameters(NamedTuple):
     rumble: bool
 
 
+class _FlashBankChunkWriteContext(NamedTuple):
+    preparation: _FlashWritePreparation
+    sector: list[int]
+    bank: int
+    buffer_pos: int
+    buffer_len: int
+    sector_pos: int
+    sector_size: int
+    retry_hp: int
+    start_bank: int
+    end_address: int
+    position: int
+    rumble: bool
+
+
+class _FlashBankChunkWriteResult(NamedTuple):
+    outcome: Literal["done", "canceled", "failed"]
+    buffer_pos: int
+    buffer_len: int
+    sector_pos: int
+    sector_size: int
+    retry_hp: int
+    bank: int
+    status: DeviceWriteResult
+
+
 class _FlashBankContext(NamedTuple):
     mbc: Any
     flashcart: Flashcart
@@ -3254,7 +3280,7 @@ class LK_Device(ABC):
             if (num_of_chunks == 1 or flash_buffer_size == 0) and (data == bytearray([0xFF] * len(data))):
                 skip_init = False
                 skip_write = True
-            elif skip_write:
+            else:
                 skip_write = False
 
             if not skip_write:
@@ -3825,32 +3851,31 @@ class LK_Device(ABC):
             if "commands" not in cart_type or len(cart_type["commands"]) == 0:
                 continue
             found = False
-            if flash_id_methods:
-                for we, command_index, flash_id, _, cmd_rfi in flash_id_methods:
-                    if cmd_rfi != cart_type["commands"]["read_identifier"]:
-                        continue
-                    if self.MODE == "DMG" and "write_pin" in cart_type and cart_type["write_pin"] != we_pins[we]:
-                        continue
-                    fcm_flash_ids = list(map(list, {tuple(sublist) for sublist in cart_type["flash_ids"]}))
-                    for fcm_flash_id in fcm_flash_ids:
-                        if fcm_flash_id == flash_id[: len(fcm_flash_id)]:
-                            self._LogDetectedFlashTypeMatch(
-                                _FlashTypeMatchLogContext(
-                                    cart_type,
-                                    fcm_flash_id,
-                                    we,
-                                    command_index,
-                                    flash_id_cmds,
-                                    we_pins,
-                                ),
-                            )
-                            found = True
-                            flash_types.append(flash_type_index)
-                            if "reset" in cart_type["commands"]:
-                                self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
-                            break
-                    if found:
+            for we, command_index, flash_id, _, cmd_rfi in flash_id_methods:
+                if cmd_rfi != cart_type["commands"]["read_identifier"]:
+                    continue
+                if self.MODE == "DMG" and "write_pin" in cart_type and cart_type["write_pin"] != we_pins[we]:
+                    continue
+                fcm_flash_ids = list(map(list, {tuple(sublist) for sublist in cart_type["flash_ids"]}))
+                for fcm_flash_id in fcm_flash_ids:
+                    if fcm_flash_id == flash_id[: len(fcm_flash_id)]:
+                        self._LogDetectedFlashTypeMatch(
+                            _FlashTypeMatchLogContext(
+                                cart_type,
+                                fcm_flash_id,
+                                we,
+                                command_index,
+                                flash_id_cmds,
+                                we_pins,
+                            ),
+                        )
+                        found = True
+                        flash_types.append(flash_type_index)
+                        if "reset" in cart_type["commands"]:
+                            self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
                         break
+                if found:
+                    break
 
     def _LogDetectedFlashTypeMatch(self, context: _FlashTypeMatchLogContext) -> None:
         flash_id_text = " ".join(format(value, "02X") for value in context.flash_id)
@@ -3992,18 +4017,22 @@ class LK_Device(ABC):
             matched = self._ProbeDmgMbc532MFlashCart(cart_type)
 
         elif self.MODE == "AGB" and cart_type["command_set"] == "GBAMP":
-            rom1 = self._cart_read(0x1E8F << 1, 2) + self._cart_read(0x168F << 1, 2)
-            for command in cart_type["commands"]["unlock_read"]:
-                self._cart_read(command[0] << 1)
-            self._cart_write_flash(cart_type["commands"]["read_identifier"], flashcart=True)
-            rom2 = self._cart_read(0x1E8F << 1, 2) + self._cart_read(0x168F << 1, 2)
-            matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
-            if matched:
-                dprint("Found a GBA Movie Player v2")
-                self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
+            matched = self._ProbeGbampFlashCart(cart_type)
         elif self.MODE == "DMG" and cart_type["command_set"] == "BUNG_16M" and self.SupportsAudioAsWe():
             matched = self._ProbeBung16MFlashCart(cart_type)
 
+        return matched
+
+    def _ProbeGbampFlashCart(self, cart_type: dict[str, Any]) -> bool:
+        rom1 = self._cart_read(0x1E8F << 1, 2) + self._cart_read(0x168F << 1, 2)
+        for command in cart_type["commands"]["unlock_read"]:
+            self._cart_read(command[0] << 1)
+        self._cart_write_flash(cart_type["commands"]["read_identifier"], flashcart=True)
+        rom2 = self._cart_read(0x1E8F << 1, 2) + self._cart_read(0x168F << 1, 2)
+        matched = rom1 != rom2 and list(rom2[: len(cart_type["flash_ids"][0])]) == cart_type["flash_ids"][0]
+        if matched:
+            dprint("Found a GBA Movie Player v2")
+            self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
         return matched
 
     def _ProbeDatelOrbitV2FlashCart(self, cart_type: dict[str, Any]) -> bool:
@@ -5319,6 +5348,30 @@ class LK_Device(ABC):
             audio_low=audio_low,
         )
 
+    def _DetectDacsSaveFlash(self, *, detect: bool) -> bool:
+        self._cart_write(0, 0x90)
+        flash_id = self._cart_read(0, 4)
+        self._cart_write(0, 0x50)
+        self._cart_write(0, 0xFF)
+        if flash_id == bytearray([0xB0, 0x00, 0x9F, 0x00]):
+            return True
+
+        flash_id_text = " ".join(format(value, "02X") for value in flash_id)
+        dprint(f"Warning: Unknown DACS flash chip ID ({flash_id_text:s})")
+        if not detect:
+            self.SetProgress(
+                {
+                    "action": "ABORT",
+                    "info_type": "msgbox_critical",
+                    "info_msg": __(
+                        "Couldn't detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
+                        flash_id=flash_id_text,
+                    ),
+                    "abortable": False,
+                },
+            )
+        return False
+
     def _configure_agb_save_transfer(
         self,
         args: dict[str, Any],
@@ -5361,28 +5414,7 @@ class LK_Device(ABC):
         elif args["save_type"] == 6:  # DACS
             empty_data_byte = 0xFF
             ram_banks = 1
-            self._cart_write(0, 0x90)
-            flash_id = self._cart_read(0, 4)
-            self._cart_write(0, 0x50)
-            self._cart_write(0, 0xFF)
-            if flash_id != bytearray([0xB0, 0x00, 0x9F, 0x00]):
-                dprint(
-                    "Warning: Unknown DACS flash chip ID ({:s})".format(
-                        " ".join(format(x, "02X") for x in flash_id),
-                    ),
-                )
-                if not args.get("detect"):
-                    self.SetProgress(
-                        {
-                            "action": "ABORT",
-                            "info_type": "msgbox_critical",
-                            "info_msg": __(
-                                "Couldn't detect the DACS flash chip.\nUnknown Flash ID: {flash_id}",
-                                flash_id=" ".join(format(x, "02X") for x in flash_id),
-                            ),
-                            "abortable": False,
-                        },
-                    )
+            if not self._DetectDacsSaveFlash(detect=bool(args.get("detect"))):
                 return None
             buffer_len = 0x2000
 
@@ -8527,10 +8559,10 @@ class LK_Device(ABC):
             end_bank,
             rom_bank_size,
             _enable_pullup_wr,
-            errmsg_mbc_selection,
-            flash_buffer_size,
-            command_set_type,
-            sector_offsets,
+            _errmsg_mbc_selection,
+            _flash_buffer_size,
+            _command_set_type,
+            _sector_offsets,
             write_sectors,
             _delta_state_new,
             _json_file,
@@ -8613,7 +8645,6 @@ class LK_Device(ABC):
                 if self._AbortFlashWriteIfCanceled():
                     return None
 
-                status = None
                 # ↓↓↓ Switch ROM bank
                 start_address, end_address, current_bank, buffer_len = self._SelectFlashWriteBank(
                     _FlashBankContext(
@@ -8632,78 +8663,152 @@ class LK_Device(ABC):
                 )
                 # ↑↑↑ Switch ROM bank
 
-                skip_init = False
                 pos = start_address
                 dprint(f"buffer_pos=0x{buffer_pos:X}, start_address=0x{start_address:X}, end_address=0x{end_address:X}")
 
-                while pos < end_address and buffer_pos < len(data_import):
-                    if self._AbortFlashWriteIfCanceled():
-                        return None
-
-                    erase_result, status, buffer_len, skip_init = self._AttemptFlashChunkWrite(
-                        _FlashSectorEraseContext(preparation, sector, bank, pos, buffer_pos, sector_pos, sector_size),
-                        _FlashChunkParameters(
-                            command_set_type,
-                            pos,
-                            data_import,
-                            buffer_pos,
-                            buffer_len,
-                            bank,
-                            flash_buffer_size,
-                            skip_init,
-                            rumble,
-                        ),
-                        status,
-                    )
-                    se_ret = erase_result.status
-                    sector_pos = erase_result.sector_position
-                    sector_size = erase_result.sector_size
-                    erase_canceled = erase_result.canceled
-                    if erase_canceled:
-                        continue
-
-                    if status is False or se_ret is False:
-                        failure = self._RecoverFlashWriteFailure(
-                            _FlashWriteFailureContext(
-                                preparation,
-                                flashcart,
-                                sector_offsets,
-                                errmsg_mbc_selection,
-                                se_ret,
-                                retry_hp,
-                                buffer_len,
-                                buffer_pos,
-                                sector_pos,
-                                bank,
-                                pos,
-                                status,
-                                start_bank,
-                                end_address,
-                                _mbc,
-                            ),
-                        )
-                        retry_hp = failure.retry_hp
-                        buffer_pos = failure.buffer_pos
-                        sector_pos = failure.sector_pos
-                        bank = failure.bank
-                        pos = failure.position
-                        status = failure.status
-                        if failure.action == "break":
-                            break
-                        if failure.action == "fail":
-                            return False
-                        continue
-
-                    skip_init = True
-
-                    buffer_pos += buffer_len
-                    pos += buffer_len
-                    self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
-
-                bank = self._NextFlashWriteBank(bank, status)
+                chunk_result = self._WritePreparedFlashBankChunks(
+                    _FlashBankChunkWriteContext(
+                        preparation,
+                        sector,
+                        bank,
+                        buffer_pos,
+                        buffer_len,
+                        sector_pos,
+                        sector_size,
+                        retry_hp,
+                        start_bank,
+                        end_address,
+                        pos,
+                        rumble,
+                    ),
+                )
+                buffer_pos = chunk_result.buffer_pos
+                buffer_len = chunk_result.buffer_len
+                sector_pos = chunk_result.sector_pos
+                sector_size = chunk_result.sector_size
+                retry_hp = chunk_result.retry_hp
+                if chunk_result.outcome == "canceled":
+                    return None
+                if chunk_result.outcome == "failed":
+                    return False
+                bank = self._NextFlashWriteBank(chunk_result.bank, chunk_result.status)
             first_sector_written = True
 
         return self._FinishFlashWrite(args, mode, preparation, buffer_len)
+
+    def _WritePreparedFlashBankChunks(
+        self,
+        context: _FlashBankChunkWriteContext,
+    ) -> _FlashBankChunkWriteResult:
+        preparation = context.preparation
+        data_import = preparation.data_import
+        command_set_type = preparation.command_set_type
+        flash_buffer_size = preparation.flash_buffer_size
+        flashcart = preparation.flashcart
+        sector_offsets = preparation.sector_offsets
+        errmsg_mbc_selection = preparation.error_message
+        mbc = preparation.mbc
+
+        bank = context.bank
+        buffer_pos = context.buffer_pos
+        buffer_len = context.buffer_len
+        sector_pos = context.sector_pos
+        sector_size = context.sector_size
+        retry_hp = context.retry_hp
+        pos = context.position
+        status: DeviceWriteResult = None
+        skip_init = False
+
+        while pos < context.end_address and buffer_pos < len(data_import):
+            if self._AbortFlashWriteIfCanceled():
+                return _FlashBankChunkWriteResult(
+                    "canceled",
+                    buffer_pos,
+                    buffer_len,
+                    sector_pos,
+                    sector_size,
+                    retry_hp,
+                    bank,
+                    status,
+                )
+
+            erase_result, status, buffer_len, skip_init = self._AttemptFlashChunkWrite(
+                _FlashSectorEraseContext(preparation, context.sector, bank, pos, buffer_pos, sector_pos, sector_size),
+                _FlashChunkParameters(
+                    command_set_type,
+                    pos,
+                    data_import,
+                    buffer_pos,
+                    buffer_len,
+                    bank,
+                    flash_buffer_size,
+                    skip_init,
+                    context.rumble,
+                ),
+                status,
+            )
+            sector_erase_result = erase_result.status
+            sector_pos = erase_result.sector_position
+            sector_size = erase_result.sector_size
+            if erase_result.canceled:
+                continue
+
+            if status is False or sector_erase_result is False:
+                failure = self._RecoverFlashWriteFailure(
+                    _FlashWriteFailureContext(
+                        preparation,
+                        flashcart,
+                        sector_offsets,
+                        errmsg_mbc_selection,
+                        sector_erase_result,
+                        retry_hp,
+                        buffer_len,
+                        buffer_pos,
+                        sector_pos,
+                        bank,
+                        pos,
+                        status,
+                        context.start_bank,
+                        context.end_address,
+                        mbc,
+                    ),
+                )
+                retry_hp = failure.retry_hp
+                buffer_pos = failure.buffer_pos
+                sector_pos = failure.sector_pos
+                bank = failure.bank
+                pos = failure.position
+                status = failure.status
+                if failure.action == "break":
+                    break
+                if failure.action == "fail":
+                    return _FlashBankChunkWriteResult(
+                        "failed",
+                        buffer_pos,
+                        buffer_len,
+                        sector_pos,
+                        sector_size,
+                        retry_hp,
+                        bank,
+                        status,
+                    )
+                continue
+
+            skip_init = True
+            buffer_pos += buffer_len
+            pos += buffer_len
+            self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
+
+        return _FlashBankChunkWriteResult(
+            "done",
+            buffer_pos,
+            buffer_len,
+            sector_pos,
+            sector_size,
+            retry_hp,
+            bank,
+            status,
+        )
 
     def _AttemptFlashChunkWrite(
         self,

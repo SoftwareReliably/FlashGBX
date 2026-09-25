@@ -741,8 +741,6 @@ class FlashGBX_CLI:
                 )
             elif args["action"] == "UPDATE_RTC":
                 print("\n" + __("Updating Real Time Clock..."))
-            elif args["action"] == "CALC_CHECKSUMS":
-                pass
             elif args["action"] == "ERROR":
                 print(ANSI.CLEAR_LINE + ANSI.RED + args["text"] + ANSI.RESET)
             elif args["action"] == "ABORTING":
@@ -2302,6 +2300,17 @@ class FlashGBX_CLI:
             print(__("Note: Overwriting existing e-Reader calibration data."))
         return True, buffer
 
+    def _PrepareSaveCalibration(
+        self,
+        mode: str,
+        args: argparse.Namespace,
+        path: str,
+    ) -> tuple[bool, bytearray | None]:
+        """Prepare e-Reader calibration data when this save action needs it."""
+        if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.CONN.INFO.get("ereader") is True:
+            return self._PrepareEReaderCalibration(args, path)
+        return True, None
+
     def _PowerCycleForSaveTest(self) -> None:
         if self.CONN.CanPowerCycleCart():
             print("\n" + __("Power cycling."))
@@ -2534,10 +2543,9 @@ class FlashGBX_CLI:
             self._PrintMapperType(mbc)
 
         mode = self.CONN.GetMode()
-        if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.CONN.INFO.get("ereader") is True:
-            continue_write, buffer = self._PrepareEReaderCalibration(args, path)
-            if not continue_write:
-                return
+        continue_write, buffer = self._PrepareSaveCalibration(mode, args, path)
+        if not continue_write:
+            return
         self._PrintSaveTransferMode(mode, save_type, rtc, header)
 
         if not self._SaveFileIsAccessible(args.action, path, buffer is None):
@@ -2634,13 +2642,12 @@ class FlashGBX_CLI:
             and "dump_info" in self.CONN.INFO
             and "batteryless_sram" in self.CONN.INFO["dump_info"]
         ):
-            detected = self.CONN.INFO["dump_info"]["batteryless_sram"]
-            if bl_offset is None and "bl_offset" in detected:
-                bl_offset = detected["bl_offset"]
-            if bl_size is None and "bl_size" in detected:
-                bl_size = detected["bl_size"]
-            if mode == "DMG" and bl_layout is None and "bl_layout" in detected:
-                bl_layout = detected["bl_layout"]
+            bl_offset, bl_size, bl_layout = self._ApplyDetectedBatterylessConfig(
+                mode,
+                bl_offset,
+                bl_size,
+                bl_layout,
+            )
 
         # 3) DMG title-based fallback database
         bl_offset, bl_size, bl_layout = self._ApplyBatterylessHeaderFallback(
@@ -2669,6 +2676,23 @@ class FlashGBX_CLI:
         if mode == "DMG" and bl_layout is not None:
             bl_args["bl_layout"] = bl_layout
         return bl_args
+
+    def _ApplyDetectedBatterylessConfig(
+        self,
+        mode: str,
+        bl_offset: int | None,
+        bl_size: int | None,
+        bl_layout: int | None,
+    ) -> tuple[int | None, int | None, int | None]:
+        """Fill missing batteryless settings with detection from this connection."""
+        detected = self.CONN.INFO["dump_info"]["batteryless_sram"]
+        if bl_offset is None and "bl_offset" in detected:
+            bl_offset = detected["bl_offset"]
+        if bl_size is None and "bl_size" in detected:
+            bl_size = detected["bl_size"]
+        if mode == "DMG" and bl_layout is None and "bl_layout" in detected:
+            bl_layout = detected["bl_layout"]
+        return bl_offset, bl_size, bl_layout
 
     def _ConfirmBatterylessFlashWrite(
         self,

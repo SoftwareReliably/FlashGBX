@@ -398,10 +398,13 @@ class Progress:
             if action in ("READ", "WRITE", "UPDATE_POS"):
                 self._handle_position_event(event, state, now)
             elif action == "UPDATE_INFO":
-                text: str | None = event.get("text")
-                if isinstance(text, str):
-                    state["text"] = text
-                    state["action"] = "UPDATE_INFO"
-                    self._emit(state)
+                self._handle_info_event(event, state)
             elif action == "FINISHED":
                 self._finish(event, state, now)
+
+    def _handle_info_event(self, event: ProgressEvent, state: ProgressState) -> None:
+        text: str | None = event.get("text")
+        if isinstance(text, str):
+            state["text"] = text
+            state["action"] = "UPDATE_INFO"
+            self._emit(state)

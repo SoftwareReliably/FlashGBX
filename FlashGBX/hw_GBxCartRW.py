@@ -297,19 +297,7 @@ class GbxDevice(LK_Device):
 
         for current_port in ports:
             self.FW = None
-            for baudrate in self.SUPPORTED_BAUD_RATES:
-                if max_baud < baudrate:
-                    continue
-                try:
-                    if self.TryConnect(current_port, baudrate):
-                        self.BAUDRATE = baudrate
-                        self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
-                        break
-                except (OSError, SerialException) as exc:
-                    failure_message = _connection_failure_message(current_port, exc)
-                    if failure_message is None:
-                        continue
-                    conn_msg.append(failure_message)
+            self._connect_at_supported_baud(current_port, max_baud, conn_msg)
 
             # Firmware reads populate FW through method side effects.
             if not self.FW or self.DEVICE is None:  # ty: ignore[redundant-condition]
@@ -355,6 +343,26 @@ class GbxDevice(LK_Device):
             break
 
         return conn_msg
+
+    def _connect_at_supported_baud(
+        self,
+        current_port: str,
+        max_baud: int,
+        conn_msg: list[ConnectionMessage],
+    ) -> None:
+        for baudrate in self.SUPPORTED_BAUD_RATES:
+            if max_baud < baudrate:
+                continue
+            try:
+                if self.TryConnect(current_port, baudrate):
+                    self.BAUDRATE = baudrate
+                    self.DEVICE = serial.Serial(current_port, self.BAUDRATE, timeout=0.1)
+                    break
+            except (OSError, SerialException) as exc:
+                failure_message = _connection_failure_message(current_port, exc)
+                if failure_message is None:
+                    continue
+                conn_msg.append(failure_message)
 
     def _reopen_at_target_baud(self, current_port: str, max_baud: int) -> None:
         firmware = self.FW

@@ -276,6 +276,15 @@ def _store_translation_message(
         messages[key] = msgstr
 
 
+def _flush_translation_state(
+    messages: dict[bytes, bytes],
+    state: _TranslationParseState,
+    fuzzy: bool,
+) -> None:
+    if state.section == "STR":
+        _store_translation_message(messages, state.context, state.msgid, state.msgstr, fuzzy)
+
+
 def _parse_po_value(value_source: str, filename: Path) -> bytes:
     value = ast.literal_eval(value_source)
     if not isinstance(value, str):
@@ -349,8 +358,7 @@ def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes
             fuzzy = True
 
         if line.startswith("#"):
-            if section == "STR":
-                _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
+            _flush_translation_state(messages, _TranslationParseState(section, msgctxt, msgid, msgstr), fuzzy)
             section = msgctxt = None
             fuzzy = False
             continue
@@ -361,8 +369,7 @@ def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes
             msgctxt = b""
             value_source = line[7:].strip()
         elif line.startswith("msgid") and not line.startswith("msgid_plural"):
-            if section == "STR":
-                _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
+            _flush_translation_state(messages, _TranslationParseState(section, msgctxt, msgid, msgstr), fuzzy)
             section = "ID"
             msgid = msgstr = b""
             is_plural = False
@@ -386,8 +393,7 @@ def _parse_translation_lines(lines: Iterable[str], filename: Path) -> dict[bytes
         )
         msgctxt, msgid, msgstr = parse_state.context, parse_state.msgid, parse_state.msgstr
 
-    if section == "STR":
-        _store_translation_message(messages, msgctxt, msgid, msgstr, fuzzy)
+    _flush_translation_state(messages, _TranslationParseState(section, msgctxt, msgid, msgstr), fuzzy)
 
     return messages
 

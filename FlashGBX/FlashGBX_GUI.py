@@ -2465,11 +2465,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     ret = dev.Initialize(self.FLASHCARTS, port=port, max_baud=max_baud)
                     is_active = dev.CheckActive()
                 except Exception as exc:
-                    logger.exception("Failed to initialize a device while scanning port {}", port)
-                    message = _format_device_initialization_error(exc)
-                    if message not in messages:
-                        messages.append(message)
-                    self.CONN = None
+                    self._RecordDeviceInitializationFailure(exc, port, messages)
                     break
                 if ret is False or is_active is False:
                     self.CONN = None
@@ -2497,6 +2493,19 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._SetRequestedMode(mode)
 
         return True
+
+    def _RecordDeviceInitializationFailure(
+        self,
+        exc: Exception,
+        port: str | None,
+        messages: list[str],
+    ) -> None:
+        """Log a failed scan and retain its unique user-facing error message."""
+        logger.exception("Failed to initialize a device while scanning port {}", port)
+        message = _format_device_initialization_error(exc)
+        if message not in messages:
+            messages.append(message)
+        self.CONN = None
 
     def _PresentFoundDevices(self, messages: list[str], connect_to_first: bool, first_run: bool) -> None:
         self.cmbDevice.setStyleSheet("QComboBox { border: 0; margin: 0; padding: 0; max-width: 0px; }")
@@ -7099,12 +7108,15 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 self.lblStatus4a.setText(args["text"])
                 self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
             elif args["action"] == "FINISHED":
-                if pos > 0:
-                    self.lblStatus1aResult.setText(Formatter.file_size(pos))
-                self.FinishOperation()
+                self._FinishProgressAction(pos)
             elif args["action"] == "ABORT":
                 self._HandleProgressAbort(args)
                 return
+
+    def _FinishProgressAction(self, pos: int) -> None:
+        if pos > 0:
+            self.lblStatus1aResult.setText(Formatter.file_size(pos))
+        self.FinishOperation()
 
     def _UpdateSectorEraseProgressAction(
         self,

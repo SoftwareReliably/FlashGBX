@@ -369,8 +369,12 @@ class RomFileDMG:
             data["ram_size_raw"] = 0x201
             data["mapper_raw"] = 0x201
 
+        else:
+            self._ApplyUnlicensedMapperOverrides(data, buffer)
+
+    def _ApplyUnlicensedMapperOverrides(self, data: dict[str, Any], buffer: bytearray) -> None:
         # Unlicensed Wisdom Tree Mapper
-        elif hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
+        if hashlib.sha1(buffer[0x0:0x150]).digest() == bytearray(
             [
                 0xF5,
                 0xD2,
