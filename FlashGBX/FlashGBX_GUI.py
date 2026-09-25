@@ -2172,10 +2172,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             )
         answer = msgbox.exec()
         if dev.FW_UPDATE_REQ:
-            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                self.ShowFirmwareUpdateWindow()
-            if not AppContext.DEBUG:
-                self.DisconnectDevice()
+            self._HandleRequiredFirmwareUpdateAnswer(answer)
             return
         if cb is not None:
             dontShowAgain = cb.isChecked()
@@ -2184,6 +2181,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         if answer == QtWidgets.QMessageBox.StandardButton.Yes:
             self.ShowFirmwareUpdateWindow()
         return
+
+    def _HandleRequiredFirmwareUpdateAnswer(self, answer: int) -> None:
+        if answer == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.ShowFirmwareUpdateWindow()
+        if not AppContext.DEBUG:
+            self.DisconnectDevice()
 
     def _HandleUnsupportedFirmwareUpdate(self, dev: LK_Device) -> None:
         if dev.FW_UPDATE_REQ:
@@ -2482,8 +2485,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                     if dev.GetPort() in ports:
                         break
 
-        for dev in self.DEVICES.values():
-            dev.Close()
+        self._CloseDiscoveredDevices()
 
         self._PresentFoundDevices(messages, connectToFirst, firstRun)
 
@@ -2493,6 +2495,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self._SetRequestedMode(mode)
 
         return True
+
+    def _CloseDiscoveredDevices(self) -> None:
+        for dev in self.DEVICES.values():
+            dev.Close()
 
     def _RecordDeviceInitializationFailure(
         self,
@@ -3646,20 +3652,10 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         mbc = self._SelectFlashMapperForWrite(mode, cart_profile)
 
         path = self._SelectFlashROMPath(path, mode, last_dir)
-
-        if path == "":
-            msg = __("No ROM file was selected. Do you want to wipe the ROM contents of the cartridge instead?")
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
-                msg,
-                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
-                QtWidgets.QMessageBox.StandardButton.No,
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.No:
-                return
-            just_erase = True
-            path = False
+        path_selection = self._ResolveFlashROMPath(path)
+        if path_selection is None:
+            return
+        path, just_erase = path_selection
 
         if not just_erase:
             if not isinstance(path, str):
@@ -3739,6 +3735,23 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         self.STATUS["time_start"] = time.time()
         self.STATUS["last_path"] = path
         self.STATUS["args"] = args
+
+    def _ResolveFlashROMPath(self, path: str) -> tuple[str | bool, bool] | None:
+        if path == "":
+            if not self._ConfirmEraseWithoutROM():
+                return None
+            return False, True
+        return path, False
+
+    def _ConfirmEraseWithoutROM(self) -> bool:
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            f"{AppInfo.NAME:s} {AppInfo.VERSION:s}",
+            __("No ROM file was selected. Do you want to wipe the ROM contents of the cartridge instead?"),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        return answer != QtWidgets.QMessageBox.StandardButton.No
 
     def _ResolveFlashVoltage(
         self,
@@ -6720,6 +6733,21 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             return False, True
         return msgbox.clickedButton() == button_details, False
 
+    def _ResolveSupportedDetectionSummary(
+        self,
+        found_supported: bool,
+        summary: str,
+        message: str,
+    ) -> tuple[bool, bool, str]:
+        if not found_supported:
+            return False, False, message
+        show_details, cancelled = self._ShowSupportedDetectionSummary(summary)
+        if cancelled:
+            return True, False, message
+        if show_details:
+            message = ""
+        return False, show_details, message
+
     def _DetectionFirmwareFooter(
         self,
         msgbox: QtWidgets.QMessageBox,
@@ -6821,13 +6849,12 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
             msg_gbmem = self._format_gb_memory_detection_message(header)
 
             msg = __("The following cartridge configuration was detected:") + "<br><br>"
-            if found_supported:
-                summary = f"{msg:s}{msg_flash_size_s:s}{msg_save_type_s:s}{msg_flash_mapper_s:s}{msg_cart_type_s:s}{msg_gbmem:s}"
-                show_details, cancelled = self._ShowSupportedDetectionSummary(summary)
-                if cancelled:
-                    return
-                if show_details:
-                    msg = ""
+            summary = (
+                f"{msg:s}{msg_flash_size_s:s}{msg_save_type_s:s}{msg_flash_mapper_s:s}{msg_cart_type_s:s}{msg_gbmem:s}"
+            )
+            cancelled, show_details, msg = self._ResolveSupportedDetectionSummary(found_supported, summary, msg)
+            if cancelled:
+                return
 
             if not found_supported or show_details is True:
                 msgbox = _create_message_box(
@@ -7074,44 +7101,44 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
         elapsed: float,
         estimated: float,
     ) -> None:
-        if "action" in args:
-            if args["action"] == "ERASE":
-                self._UpdateEraseProgressAction(args, pos, size, elapsed, estimated)
-            elif args["action"] == "UNLOCK":
-                self.lblStatus1aResult.setText(__("Pending..."))
-                self.lblStatus2aResult.setText(__("Pending..."))
-                self.lblStatus3aResult.setText(__("Pending..."))
-                self.lblStatus4a.setText(__("Unlocking flash..."))
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-            elif args["action"] == "UPDATE_RTC":
-                self.lblStatus1aResult.setText(__("Pending..."))
-                self.lblStatus2aResult.setText(__("Pending..."))
-                self.lblStatus3aResult.setText(__("Pending..."))
-                self.lblStatus4a.setText(__("Updating Real Time Clock..."))
-                self._SetProgressActionControls(abortable=False, size=size, pos=pos)
-            elif args["action"] == "CALC_CHECKSUMS":
-                self._ShowChecksumProgress(args, pos, size)
-            elif args["action"] == "SECTOR_ERASE":
-                self._UpdateSectorEraseProgressAction(args, pos, size, elapsed)
-            elif args["action"] == "ABORTING":
-                self.lblStatus1aResult.setText("-")
-                self.lblStatus2aResult.setText("-")
-                self.lblStatus3aResult.setText("-")
-                self.lblStatus4a.setText(__("Stopping... Please wait."))
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-            elif args["action"] == "ERROR":
-                self.lblStatus2aResult.setText(__("Pending..."))
-                self.lblStatus3aResult.setText(__("Pending..."))
-                self.lblStatus4a.setText('<span style="color: red;">{:s}</span>'.format(args["text"]))
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-            elif args["action"] == "UPDATE_INFO":
-                self.lblStatus4a.setText(args["text"])
-                self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
-            elif args["action"] == "FINISHED":
-                self._FinishProgressAction(pos)
-            elif args["action"] == "ABORT":
-                self._HandleProgressAbort(args)
-                return
+        action = args.get("action")
+        if action == "ERASE":
+            self._UpdateEraseProgressAction(args, pos, size, elapsed, estimated)
+        elif action == "UNLOCK":
+            self.lblStatus1aResult.setText(__("Pending..."))
+            self.lblStatus2aResult.setText(__("Pending..."))
+            self.lblStatus3aResult.setText(__("Pending..."))
+            self.lblStatus4a.setText(__("Unlocking flash..."))
+            self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+        elif action == "UPDATE_RTC":
+            self.lblStatus1aResult.setText(__("Pending..."))
+            self.lblStatus2aResult.setText(__("Pending..."))
+            self.lblStatus3aResult.setText(__("Pending..."))
+            self.lblStatus4a.setText(__("Updating Real Time Clock..."))
+            self._SetProgressActionControls(abortable=False, size=size, pos=pos)
+        elif action == "CALC_CHECKSUMS":
+            self._ShowChecksumProgress(args, pos, size)
+        elif action == "SECTOR_ERASE":
+            self._UpdateSectorEraseProgressAction(args, pos, size, elapsed)
+        elif action == "ABORTING":
+            self.lblStatus1aResult.setText("-")
+            self.lblStatus2aResult.setText("-")
+            self.lblStatus3aResult.setText("-")
+            self.lblStatus4a.setText(__("Stopping... Please wait."))
+            self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+        elif action == "ERROR":
+            self.lblStatus2aResult.setText(__("Pending..."))
+            self.lblStatus3aResult.setText(__("Pending..."))
+            self.lblStatus4a.setText('<span style="color: red;">{:s}</span>'.format(args["text"]))
+            self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+        elif action == "UPDATE_INFO":
+            self.lblStatus4a.setText(args["text"])
+            self._SetProgressActionControls(abortable=bool(args["abortable"]), size=size, pos=pos)
+        elif action == "FINISHED":
+            self._FinishProgressAction(pos)
+        elif action == "ABORT":
+            self._HandleProgressAbort(args)
+            return
 
     def _FinishProgressAction(self, pos: int) -> None:
         if pos > 0:

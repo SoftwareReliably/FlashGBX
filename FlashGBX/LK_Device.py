@@ -2656,10 +2656,12 @@ class LK_Device(ABC):
                 info,
                 signal,
             )
-            if self.MODE == "AGB" and info["3d_memory"] is True:
-                checkSaveType = False
-                save_size = 0
-                save_type = None
+            checkSaveType, save_size, save_type = self._Apply3DMemoryDetectionOverride(
+                info,
+                checkSaveType,
+                save_size,
+                save_type,
+            )
 
             # Save Type and Size
             if checkSaveType:
@@ -2710,6 +2712,17 @@ class LK_Device(ABC):
         finally:
             if _auto_poweroff_time_changed:
                 self._set_fw_variable("AUTO_POWEROFF_TIME", _apot)
+
+    def _Apply3DMemoryDetectionOverride(
+        self,
+        info: Mapping[str, object],
+        check_save_type: bool,
+        save_size: int | None,
+        save_type: int | None,
+    ) -> tuple[bool, int | None, int | None]:
+        if self.MODE == "AGB" and info.get("3d_memory") is True:
+            return False, 0, None
+        return check_save_type, save_size, save_type
 
     def _DetectCartridgeSaveType(
         self,
@@ -3308,14 +3321,14 @@ class LK_Device(ABC):
                     rumble_stop = False
 
             address += current_length
-            if (
-                self.INFO["action"] in (self.ACTIONS["ROM_WRITE"], self.ACTIONS["SAVE_WRITE"])
-                and not self.NO_PROG_UPDATE
-            ):
-                self.SetProgress({"action": "WRITE", "bytes_added": current_length, "skipping": skip_write})
+            self._UpdateROMWriteProgress(current_length, skip_write)
 
         self.SKIPPING = skip_write
         return None
+
+    def _UpdateROMWriteProgress(self, current_length: int, skip_write: bool) -> None:
+        if self.INFO["action"] in (self.ACTIONS["ROM_WRITE"], self.ACTIONS["SAVE_WRITE"]) and not self.NO_PROG_UPDATE:
+            self.SetProgress({"action": "WRITE", "bytes_added": current_length, "skipping": skip_write})
 
     def _configure_rom_write_transfer(
         self,
@@ -3844,38 +3857,44 @@ class LK_Device(ABC):
     ) -> None:
         for flash_type_index in range(1, len(supported_carts)):
             cart_type = supported_carts[flash_type_index]
-            if not isinstance(cart_type, dict):
+            if self._MatchesDetectedFlashType(cart_type, flash_id_methods, flash_id_cmds, we_pins):
+                flash_types.append(flash_type_index)
+                if "reset" in cart_type["commands"]:
+                    self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
+
+    def _MatchesDetectedFlashType(
+        self,
+        cart_type: object,
+        flash_id_methods: list[Any],
+        flash_id_cmds: list[Any],
+        we_pins: list[str],
+    ) -> bool:
+        if not isinstance(cart_type, dict):
+            return False
+        if "flash_ids" not in cart_type or len(cart_type["flash_ids"]) == 0:
+            return False
+        if "commands" not in cart_type or len(cart_type["commands"]) == 0:
+            return False
+        for we, command_index, flash_id, _, cmd_rfi in flash_id_methods:
+            if cmd_rfi != cart_type["commands"]["read_identifier"]:
                 continue
-            if "flash_ids" not in cart_type or len(cart_type["flash_ids"]) == 0:
+            if self.MODE == "DMG" and "write_pin" in cart_type and cart_type["write_pin"] != we_pins[we]:
                 continue
-            if "commands" not in cart_type or len(cart_type["commands"]) == 0:
-                continue
-            found = False
-            for we, command_index, flash_id, _, cmd_rfi in flash_id_methods:
-                if cmd_rfi != cart_type["commands"]["read_identifier"]:
-                    continue
-                if self.MODE == "DMG" and "write_pin" in cart_type and cart_type["write_pin"] != we_pins[we]:
-                    continue
-                fcm_flash_ids = list(map(list, {tuple(sublist) for sublist in cart_type["flash_ids"]}))
-                for fcm_flash_id in fcm_flash_ids:
-                    if fcm_flash_id == flash_id[: len(fcm_flash_id)]:
-                        self._LogDetectedFlashTypeMatch(
-                            _FlashTypeMatchLogContext(
-                                cart_type,
-                                fcm_flash_id,
-                                we,
-                                command_index,
-                                flash_id_cmds,
-                                we_pins,
-                            ),
-                        )
-                        found = True
-                        flash_types.append(flash_type_index)
-                        if "reset" in cart_type["commands"]:
-                            self._cart_write_flash(cart_type["commands"]["reset"], flashcart=True)
-                        break
-                if found:
-                    break
+            fcm_flash_ids = list(map(list, {tuple(sublist) for sublist in cart_type["flash_ids"]}))
+            for fcm_flash_id in fcm_flash_ids:
+                if fcm_flash_id == flash_id[: len(fcm_flash_id)]:
+                    self._LogDetectedFlashTypeMatch(
+                        _FlashTypeMatchLogContext(
+                            cart_type,
+                            fcm_flash_id,
+                            we,
+                            command_index,
+                            flash_id_cmds,
+                            we_pins,
+                        ),
+                    )
+                    return True
+        return False
 
     def _LogDetectedFlashTypeMatch(self, context: _FlashTypeMatchLogContext) -> None:
         flash_id_text = " ".join(format(value, "02X") for value in context.flash_id)
@@ -5393,24 +5412,10 @@ class LK_Device(ABC):
             buffer_len = 64 if args["mode"] == 3 else 256
         elif args["save_type"] in (4, 5):  # FLASH
             empty_data_byte = 0xFF
-            ret = self.ReadFlashSaveID()
-            if ret is False:
-                if not args.get("detect"):
-                    self.SetProgress(
-                        {
-                            "action": "ABORT",
-                            "info_type": "msgbox_critical",
-                            "info_msg": __("Couldn't detect the save data flash chip type."),
-                            "abortable": False,
-                        },
-                    )
+            flash_configuration = self._DetectAgbSaveFlashConfiguration(args)
+            if flash_configuration is None:
                 return None
-            buffer_len = 0x1000
-            (agb_flash_chip, _) = ret
-            if agb_flash_chip in (0xBF4B, 0xBF5B, 0xFFFF):  # Bootlegs
-                buffer_len = 0x800
-            elif agb_flash_chip == 0xBF6D:
-                buffer_len = 0x8000
+            agb_flash_chip, buffer_len = flash_configuration
         elif args["save_type"] == 6:  # DACS
             empty_data_byte = 0xFF
             ram_banks = 1
@@ -5476,6 +5481,28 @@ class LK_Device(ABC):
             empty_data_byte=empty_data_byte,
             extra_size=extra_size,
         )
+
+    def _DetectAgbSaveFlashConfiguration(self, args: Mapping[str, Any]) -> tuple[int, int] | None:
+        result = self.ReadFlashSaveID()
+        if result is False:
+            if not args.get("detect"):
+                self.SetProgress(
+                    {
+                        "action": "ABORT",
+                        "info_type": "msgbox_critical",
+                        "info_msg": __("Couldn't detect the save data flash chip type."),
+                        "abortable": False,
+                    },
+                )
+            return None
+
+        flash_chip, _ = result
+        buffer_len = 0x1000
+        if flash_chip in (0xBF4B, 0xBF5B, 0xFFFF):
+            buffer_len = 0x800
+        elif flash_chip == 0xBF6D:
+            buffer_len = 0x8000
+        return flash_chip, buffer_len
 
     def _configure_dacs_flash_commands(self) -> None:
         """Program the DACS Intel command set and wait for modern firmware."""
@@ -6083,11 +6110,7 @@ class LK_Device(ABC):
         if self.MODE == "DMG" and mbc.GetName() == "MBC7":
             self.WriteEEPROM_MBC7(address=pos, buffer=chunk)
         elif self.MODE == "DMG" and mbc.GetName() == "MBC6" and bank > 7:  # MBC6 flash save memory
-            if self.FW["fw_ver"] > 1:
-                self.WriteROM(address=pos, buffer=chunk)
-                self._cart_write(pos + buffer_len - 1, 0xF0)
-            else:
-                self.WriteFlash_MBC6(address=pos, buffer=chunk, mapper=mbc)
+            self._WriteMbc6SaveChunk(parameters, chunk)
         elif self.MODE == "DMG" and mbc.GetName() == "TAMA5":
             self.WriteRAM_TAMA5(buffer=chunk)
         elif self.MODE == "DMG" and mbc.GetName() == "Xploder GB":
@@ -6104,6 +6127,14 @@ class LK_Device(ABC):
         elif self.WriteRAM(address=pos, buffer=chunk, command=command) is False:
             return False
         return True
+
+    def _WriteMbc6SaveChunk(self, parameters: _SaveWriteParameters, chunk: bytearray) -> None:
+        _, mbc, _, pos, _, _, buffer_len, _, _ = parameters
+        if self.FW["fw_ver"] > 1:
+            self.WriteROM(address=pos, buffer=chunk)
+            self._cart_write(pos + buffer_len - 1, 0xF0)
+        else:
+            self.WriteFlash_MBC6(address=pos, buffer=chunk, mapper=mbc)
 
     def _SaveBackupReadsMatch(self, reads: Sequence[bytearray], args: Mapping[str, Any]) -> bool:
         if reads[0] == reads[1]:
@@ -6545,10 +6576,19 @@ class LK_Device(ABC):
             return None
 
         self._write(method)
-        if command_name is not None:
-            flash_cmds = flashcart.GetCommands(command_name)
+        flash_cmds = self._ResolveFlashWriteCommands(flashcart, command_name, flash_cmds)
         self._LogFlashWriteMethod(debug_message, flash_buffer_size, include_buffer_size=include_buffer_size)
         return flash_cmds
+
+    @staticmethod
+    def _ResolveFlashWriteCommands(
+        flashcart: Flashcart,
+        command_name: Literal["buffer_write", "page_write", "single_write"] | None,
+        flash_commands: list[list[int | str | None]],
+    ) -> list[list[int | str | None]]:
+        if command_name is not None:
+            return flashcart.GetCommands(command_name)
+        return flash_commands
 
     @staticmethod
     def _LogFlashWriteMethod(
@@ -7113,7 +7153,12 @@ class LK_Device(ABC):
         return bool(result), crc32_errors
 
     def _verify_flash_write(self, context: _FlashVerificationContext) -> bool | None:
-        args = context.args
+        self.INFO.pop("broken_sectors", None)
+        if "verify_write" not in context.args or context.args["verify_write"] is not True:
+            return False
+        return self._verify_flash_write_enabled(context)
+
+    def _verify_flash_write_enabled(self, context: _FlashVerificationContext) -> bool | None:
         cart_type = context.cart_type
         flashcart = context.flashcart
         data_import = context.data_import
@@ -7131,92 +7176,89 @@ class LK_Device(ABC):
         # ↓↓↓ Flash verify
         verified = False
         crc32_errors = 0
-        self.INFO.pop("broken_sectors", None)
-        if "verify_write" in args and args["verify_write"] is True:
-            self._InitializeFlashVerification(context)
+        self._InitializeFlashVerification(context)
 
-            current_bank: int | None = None
-            broken_sectors = []
+        current_bank: int | None = None
+        broken_sectors = []
 
-            for sector in takewhile(lambda item: item[0] < len(data_import), verify_sectors):
-                if self.CANCEL:
-                    self._AbortFlashVerification()
-                    return None
+        for sector in takewhile(lambda item: item[0] < len(data_import), verify_sectors):
+            if self.CANCEL:
+                self._AbortFlashVerification()
+                return None
 
-                verified = False
-                if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
-                    if self.MODE in ("AGB", "DMG"):
-                        dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
-                        buffer_pos = sector[0]
-                        start_bank = math.floor(buffer_pos / rom_bank_size)
-                        end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
-                        if self.MODE == "AGB":
-                            start_address = buffer_pos
-                            end_address = sector[0] + sector[1]
+            verified = False
+            if self.FW["fw_ver"] >= 10 and not (flashcart and cart_type["command_set"] == "GBAMP"):
+                if self.MODE in ("AGB", "DMG"):
+                    dprint("Verifying sector:", hex(sector[0]), hex(sector[1]))
+                    buffer_pos = sector[0]
+                    start_bank = math.floor(buffer_pos / rom_bank_size)
+                    end_bank = math.ceil((buffer_pos + sector[1]) / rom_bank_size)
+                    if self.MODE == "AGB":
+                        start_address = buffer_pos
+                        end_address = sector[0] + sector[1]
 
-                    bank = start_bank
-                    while bank < end_bank:
-                        # ↓↓↓ Switch ROM bank
-                        (
+                bank = start_bank
+                while bank < end_bank:
+                    # ↓↓↓ Switch ROM bank
+                    (
+                        start_address,
+                        end_address,
+                        verify_len,
+                        pos_from,
+                        buffer_len,
+                        current_bank,
+                    ) = self._PrepareFlashVerificationBank(
+                        _FlashVerificationBankContext(
+                            context,
+                            sector,
+                            bank,
+                            current_bank,
+                            buffer_pos,
                             start_address,
                             end_address,
+                            buffer_len,
                             verify_len,
                             pos_from,
-                            buffer_len,
-                            current_bank,
-                        ) = self._PrepareFlashVerificationBank(
-                            _FlashVerificationBankContext(
-                                context,
-                                sector,
-                                bank,
-                                current_bank,
-                                buffer_pos,
-                                start_address,
-                                end_address,
-                                buffer_len,
-                                verify_len,
-                                pos_from,
-                            ),
+                        ),
+                    )
+                    # ↑↑↑ Switch ROM bank
+
+                    dprint(
+                        f"Verifying ROM bank #{bank} at 0x{pos_from:x} (physical 0x{start_address:X}, 0x{verify_len:X} bytes)",
+                    )
+
+                    verified = False
+                    if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
+                        verified = self._CompareFlashVerificationBank(
+                            context,
+                            bank=bank,
+                            pos_from=pos_from,
+                            start_address=start_address,
+                            verify_len=verify_len,
                         )
-                        # ↑↑↑ Switch ROM bank
-
-                        dprint(
-                            f"Verifying ROM bank #{bank} at 0x{pos_from:x} (physical 0x{start_address:X}, 0x{verify_len:X} bytes)",
+                        verified, crc32_errors = self._classify_flash_crc_result(
+                            verified,
+                            crc32_errors,
+                            pos_from,
                         )
+                        if not verified:
+                            break
 
-                        verified = False
-                        if self.FW["fw_ver"] >= 12 and sector[1] >= verify_len and crc32_errors < 5:
-                            verified = self._CompareFlashVerificationBank(
-                                context,
-                                bank=bank,
-                                pos_from=pos_from,
-                                start_address=start_address,
-                                verify_len=verify_len,
-                            )
-                            verified, crc32_errors = self._classify_flash_crc_result(
-                                verified,
-                                crc32_errors,
-                                pos_from,
-                            )
-                            if not verified:
-                                break
+                    else:
+                        self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
 
-                        else:
-                            self.SetProgress({"action": "UPDATE_POS", "pos": buffer_pos})
+                    bank += 1
 
-                        bank += 1
+            if not verified:
+                start_address = 0
+                end_address = buffer_pos
+                read_verified = self._VerifyFlashSectorByReading(context, sector, broken_sectors)
+                if read_verified is None:
+                    return None
+                verified = read_verified
 
-                if not verified:
-                    start_address = 0
-                    end_address = buffer_pos
-                    read_verified = self._VerifyFlashSectorByReading(context, sector, broken_sectors)
-                    if read_verified is None:
-                        return None
-                    verified = read_verified
-
-            verified = self._FinalizeFlashVerification(context, broken_sectors, verified)
         # ↑↑↑ Flash verify
-        return verified
+        return self._FinalizeFlashVerification(context, broken_sectors, verified)
 
     def _configure_flashcart_for_write(
         self,
@@ -7435,18 +7477,7 @@ class LK_Device(ABC):
                 delta_path = Path(args["path"])
                 source_path = delta_path.with_name(delta_path.stem.removesuffix(".delta") + delta_path.suffix)
                 if delta_path.stem.endswith(".delta") and source_path.exists():
-                    delta_state_new = []
-                    with source_path.open("rb") as source_file:
-                        for s_from, s_size in sector_offsets:
-                            s_to = s_from + s_size
-                            if data_import[s_from:s_to] != source_file.read(s_size):
-                                sector_state = [
-                                    s_from,
-                                    s_size,
-                                    zlib.crc32(data_import[s_from:s_to]) & 0xFFFFFFFF,
-                                ]
-                                delta_state_new.append(sector_state)
-                                dprint("Sector differs:", sector_state)
+                    delta_state_new = self._FindChangedFlashSectors(data_import, sector_offsets, source_path)
                     write_sectors = copy.copy(delta_state_new)
                     json_file = delta_path.with_name(f"{delta_path.stem}_{sector_offsets_hash}.json")
                     if json_file.exists():
@@ -7490,6 +7521,23 @@ class LK_Device(ABC):
             state_path=json_file,
             has_sector_map=sector_map is not False,
         )
+
+    @staticmethod
+    def _FindChangedFlashSectors(
+        data_import: bytearray,
+        sector_offsets: list[list[int]],
+        source_path: Path,
+    ) -> list[list[int]]:
+        changed_sectors: list[list[int]] = []
+        with source_path.open("rb") as source_file:
+            for sector_from, sector_size in sector_offsets:
+                sector_to = sector_from + sector_size
+                sector_data = data_import[sector_from:sector_to]
+                if sector_data != source_file.read(sector_size):
+                    sector_state = [sector_from, sector_size, zlib.crc32(sector_data) & 0xFFFFFFFF]
+                    changed_sectors.append(sector_state)
+                    dprint("Sector differs:", sector_state)
+        return changed_sectors
 
     def _PrepareGBMemoryMap(
         self,
@@ -7717,10 +7765,7 @@ class LK_Device(ABC):
         data_import, flash_offset = self._prepare_flash_data(args, mode)
         supported_carts = list(self.SUPPORTED_CARTS[mode].values())
         cart_type = copy.deepcopy(supported_carts[args["cart_type"]])
-        try:
-            cart_name = cart_type["names"][0]
-        except IndexError, KeyError, TypeError:
-            cart_name = c__("Flashcart Profile", "Unknown")
+        cart_name = self._GetFlashcartDisplayName(cart_type)
 
         if not isinstance(cart_type, dict) or not self._check_flashcart_firmware(cart_type):
             return None
@@ -7847,6 +7892,13 @@ class LK_Device(ABC):
                 verify_sectors=verify_sectors,
             )
         return preparation
+
+    @staticmethod
+    def _GetFlashcartDisplayName(cart_type: dict[str, Any]) -> str:
+        try:
+            return cart_type["names"][0]
+        except IndexError, KeyError, TypeError:
+            return c__("Flashcart Profile", "Unknown")
 
     def _AbortFlashWriteIfCanceled(self) -> bool:
         if not self.CANCEL:
@@ -8924,7 +8976,7 @@ class LK_Device(ABC):
             if self.CanPowerCycleCart():
                 self.CartPowerOn()
 
-            ret = False
+                ret = False
             self.SIGNAL = signal
             try:
                 temp = copy.copy(args)
@@ -8933,16 +8985,7 @@ class LK_Device(ABC):
                 dprint("args:", temp)
                 del temp
                 self.NO_PROG_UPDATE = False
-                if args["mode"] == 1:
-                    ret: bool | int | None = self._BackupROM(args)
-                elif args["mode"] == 2 or args["mode"] == 3:
-                    ret = self._BackupRestoreRAM(args)
-                elif args["mode"] == 4:
-                    ret = self._FlashWithVoltageFallback(args)
-                elif args["mode"] == 5:
-                    ret = self._DetectCartridge(args)
-                elif args["mode"] == 0xFF:
-                    self.Debug()
+                ret = self._DispatchTransferMode(args)
                 self.USER_ANSWER = None
                 if self.FW is None:
                     return False
@@ -8959,6 +9002,20 @@ class LK_Device(ABC):
 
             return True
         return None
+
+    def _DispatchTransferMode(self, args: dict[str, Any]) -> bool | int | None:
+        mode = args["mode"]
+        if mode == 1:
+            return self._BackupROM(args)
+        if mode in (2, 3):
+            return self._BackupRestoreRAM(args)
+        if mode == 4:
+            return self._FlashWithVoltageFallback(args)
+        if mode == 5:
+            return self._DetectCartridge(args)
+        if mode == 0xFF:
+            self.Debug()
+        return False
 
     def _UpdateTransferCompletionLed(self, result: bool | int | None) -> None:
         if self.FW is None or self.FW["fw_ver"] < 2 or self.FW["pcb_name"] != "GBxCart RW":

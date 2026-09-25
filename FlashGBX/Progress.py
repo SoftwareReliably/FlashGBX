@@ -394,13 +394,21 @@ class Progress:
 
             if state is None:
                 return
+            self._handle_active_event(action, event, state, now)
 
-            if action in ("READ", "WRITE", "UPDATE_POS"):
-                self._handle_position_event(event, state, now)
-            elif action == "UPDATE_INFO":
-                self._handle_info_event(event, state)
-            elif action == "FINISHED":
-                self._finish(event, state, now)
+    def _handle_active_event(
+        self,
+        action: str,
+        event: ProgressEvent,
+        state: ProgressState,
+        now: float,
+    ) -> None:
+        if action in ("READ", "WRITE", "UPDATE_POS"):
+            self._handle_position_event(event, state, now)
+        elif action == "UPDATE_INFO":
+            self._handle_info_event(event, state)
+        elif action == "FINISHED":
+            self._finish(event, state, now)
 
     def _handle_info_event(self, event: ProgressEvent, state: ProgressState) -> None:
         text: str | None = event.get("text")

@@ -108,6 +108,19 @@ def _place_intel_hex_data(image: bytearray, address: int, data: bytes) -> None:
     image[address:end_address] = data
 
 
+def _intel_hex_address_base(record_type: int, byte_count: int, data: bytes, line_number: int) -> int:
+    """Decode one extended address record."""
+    if record_type == 0x02:
+        if byte_count != 2:
+            msg = f"Intel HEX line {line_number} has an invalid segment address"
+            raise ValueError(msg)
+        return int.from_bytes(data, byteorder="big") << 4
+    if byte_count != 2:
+        msg = f"Intel HEX line {line_number} has an invalid linear address"
+        raise ValueError(msg)
+    return int.from_bytes(data, byteorder="big") << 16
+
+
 def _parse_intel_hex(contents: str) -> bytearray:
     """Parse and validate an Intel HEX image for the legacy AVR updater."""
     image = bytearray()
@@ -136,16 +149,8 @@ def _parse_intel_hex(contents: str) -> bytearray:
                 raise ValueError(msg_0)
             found_eof = True
             break
-        elif record_type == 0x02:
-            if byte_count != 2:
-                msg_1 = f"Intel HEX line {line_number} has an invalid segment address"
-                raise ValueError(msg_1)
-            address_base = int.from_bytes(data, byteorder="big") << 4
-        elif record_type == 0x04:
-            if byte_count != 2:
-                msg_2 = f"Intel HEX line {line_number} has an invalid linear address"
-                raise ValueError(msg_2)
-            address_base = int.from_bytes(data, byteorder="big") << 16
+        elif record_type in (0x02, 0x04):
+            address_base = _intel_hex_address_base(record_type, byte_count, data, line_number)
         elif record_type not in (0x03, 0x05):
             msg_3 = f"Intel HEX line {line_number} has unsupported record type 0x{record_type:02X}"
             raise ValueError(msg_3)

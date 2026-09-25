@@ -498,7 +498,7 @@ def test_prepare_multibank_agb_bootleg_uses_sram_bank_select(
 class SaveWriteRecords:
     """Recorded low-level operations for save writes."""
 
-    def __init__(self, statuses: list[object] | None = None) -> None:
+    def __init__(self, statuses: list[object] | None = None, write_result: bool | None = None) -> None:
         self.events: list[str] = []
         self.ram_writes: list[dict[str, object]] = []
         self.rom_writes: list[dict[str, object]] = []
@@ -512,6 +512,81 @@ class SaveWriteRecords:
         self.statuses = list(statuses or [])
         self.sleeps: list[float] = []
         self.progress: list[dict[str, object]] = []
+        self.write_result = write_result
+
+    def write_ram(
+        self,
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        command: object,
+        max_length: int | None = None,
+    ) -> bool | None:
+        self.events.append("WriteRAM")
+        self.ram_writes.append(
+            {
+                "address": address,
+                "buffer": bytearray(buffer),
+                "command": command,
+                "max_length": max_length,
+            },
+        )
+        return self.write_result
+
+    def write_rom(self, *, address: int, buffer: bytes | bytearray | memoryview) -> None:
+        self.events.append("WriteROM")
+        self.rom_writes.append({"address": address, "buffer": bytearray(buffer)})
+
+    def write_mbc6(
+        self,
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        mapper: SaveIoMapper,
+    ) -> None:
+        self.events.append("WriteFlash_MBC6")
+        self.mbc6_writes.append(
+            {"address": address, "buffer": bytearray(buffer), "mapper": mapper.GetName()},
+        )
+
+    def write_mbc7(self, *, address: int, buffer: bytes | bytearray | memoryview) -> None:
+        self.events.append("WriteEEPROM_MBC7")
+        self.mbc7_writes.append({"address": address, "buffer": bytearray(buffer)})
+
+    def write_tama5(self, *, buffer: bytes | bytearray | memoryview) -> None:
+        self.events.append("WriteRAM_TAMA5")
+        self.tama5_writes.append(bytearray(buffer))
+
+    def write_xploder(
+        self,
+        *,
+        address: int,
+        buffer: bytes | bytearray | memoryview,
+        bank: int,
+    ) -> None:
+        self.events.append("WriteROM_DMG_EEPROM")
+        self.xploder_writes.append({"address": address, "buffer": bytearray(buffer), "bank": bank})
+
+    def cart_write(self, address: int, value: int) -> None:
+        self.events.append("cart_write")
+        self.cart_writes.append((address, value))
+
+    def cart_write_flash(self, commands: list[list[int]], flashcart: bool = False) -> None:
+        self.events.append("cart_write_flash")
+        self.flash_commands.append((commands, flashcart))
+
+    def cart_read(self, address: int, length: int, agb_save_flash: bool = False) -> object:
+        self.events.append("cart_read")
+        self.cart_reads.append((address, length, agb_save_flash))
+        assert self.statuses
+        return self.statuses.pop(0)
+
+    def record_sleep(self, seconds: float) -> None:
+        self.events.append("sleep")
+        self.sleeps.append(seconds)
+
+    def record_progress(self, event: dict[str, object]) -> None:
+        self.progress.append(dict(event))
 
 
 def install_write_boundaries(
@@ -522,92 +597,18 @@ def install_write_boundaries(
     write_result: bool | None = None,
 ) -> SaveWriteRecords:
     """Replace physical writes and status reads with finite recorders."""
-    records = SaveWriteRecords(statuses)
-
-    def write_ram(
-        *,
-        address: int,
-        buffer: bytes | bytearray | memoryview,
-        command: object,
-        max_length: int | None = None,
-    ) -> bool | None:
-        records.events.append("WriteRAM")
-        records.ram_writes.append(
-            {
-                "address": address,
-                "buffer": bytearray(buffer),
-                "command": command,
-                "max_length": max_length,
-            },
-        )
-        return write_result
-
-    def write_rom(*, address: int, buffer: bytes | bytearray | memoryview) -> None:
-        records.events.append("WriteROM")
-        records.rom_writes.append({"address": address, "buffer": bytearray(buffer)})
-
-    def write_mbc6(
-        *,
-        address: int,
-        buffer: bytes | bytearray | memoryview,
-        mapper: SaveIoMapper,
-    ) -> None:
-        records.events.append("WriteFlash_MBC6")
-        records.mbc6_writes.append(
-            {"address": address, "buffer": bytearray(buffer), "mapper": mapper.GetName()},
-        )
-
-    def write_mbc7(*, address: int, buffer: bytes | bytearray | memoryview) -> None:
-        records.events.append("WriteEEPROM_MBC7")
-        records.mbc7_writes.append({"address": address, "buffer": bytearray(buffer)})
-
-    def write_tama5(*, buffer: bytes | bytearray | memoryview) -> None:
-        records.events.append("WriteRAM_TAMA5")
-        records.tama5_writes.append(bytearray(buffer))
-
-    def write_xploder(
-        *,
-        address: int,
-        buffer: bytes | bytearray | memoryview,
-        bank: int,
-    ) -> None:
-        records.events.append("WriteROM_DMG_EEPROM")
-        records.xploder_writes.append(
-            {"address": address, "buffer": bytearray(buffer), "bank": bank},
-        )
-
-    def cart_write(address: int, value: int) -> None:
-        records.events.append("cart_write")
-        records.cart_writes.append((address, value))
-
-    def cart_write_flash(commands: list[list[int]], flashcart: bool = False) -> None:
-        records.events.append("cart_write_flash")
-        records.flash_commands.append((commands, flashcart))
-
-    def cart_read(address: int, length: int, agb_save_flash: bool = False) -> object:
-        records.events.append("cart_read")
-        records.cart_reads.append((address, length, agb_save_flash))
-        assert records.statuses
-        return records.statuses.pop(0)
-
-    def record_sleep(seconds: float) -> None:
-        records.events.append("sleep")
-        records.sleeps.append(seconds)
-
-    def record_progress(event: dict[str, object]) -> None:
-        records.progress.append(dict(event))
-
-    monkeypatch.setattr(device, "WriteRAM", write_ram)
-    monkeypatch.setattr(device, "WriteROM", write_rom)
-    monkeypatch.setattr(device, "WriteFlash_MBC6", write_mbc6)
-    monkeypatch.setattr(device, "WriteEEPROM_MBC7", write_mbc7)
-    monkeypatch.setattr(device, "WriteRAM_TAMA5", write_tama5)
-    monkeypatch.setattr(device, "WriteROM_DMG_EEPROM", write_xploder)
-    monkeypatch.setattr(device, "_cart_write", cart_write)
-    monkeypatch.setattr(device, "_cart_write_flash", cart_write_flash)
-    monkeypatch.setattr(device, "_cart_read", cart_read)
-    monkeypatch.setattr(device, "SetProgress", record_progress)
-    monkeypatch.setattr(lk_device_module.time, "sleep", record_sleep)
+    records = SaveWriteRecords(statuses, write_result)
+    monkeypatch.setattr(device, "WriteRAM", records.write_ram)
+    monkeypatch.setattr(device, "WriteROM", records.write_rom)
+    monkeypatch.setattr(device, "WriteFlash_MBC6", records.write_mbc6)
+    monkeypatch.setattr(device, "WriteEEPROM_MBC7", records.write_mbc7)
+    monkeypatch.setattr(device, "WriteRAM_TAMA5", records.write_tama5)
+    monkeypatch.setattr(device, "WriteROM_DMG_EEPROM", records.write_xploder)
+    monkeypatch.setattr(device, "_cart_write", records.cart_write)
+    monkeypatch.setattr(device, "_cart_write_flash", records.cart_write_flash)
+    monkeypatch.setattr(device, "_cart_read", records.cart_read)
+    monkeypatch.setattr(device, "SetProgress", records.record_progress)
+    monkeypatch.setattr(lk_device_module.time, "sleep", records.record_sleep)
     return records
 
 

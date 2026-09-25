@@ -343,24 +343,16 @@ class FlashGBX_CLI:
                 self.BackupRestoreRAM(args, header)
 
             elif args.action == "restore-save":
-                if args.path == "auto":
-                    args.path = input(__("Enter file path of save data file:") + " ").strip().replace('"', "")
-                    print()
-                    if args.path == "":
-                        print(__("Canceled."))
-                        return 0
+                if not self._PromptForAutomaticPath(args, "Enter file path of save data file:"):
+                    return 0
                 self.BackupRestoreRAM(args, header)
 
             elif args.action in {"erase-save", "debug-test-save"}:
                 self.BackupRestoreRAM(args, header)
 
             elif args.action == "flash-rom":
-                if args.path == "auto":
-                    args.path = input(__("Enter file path of ROM file:") + " ").strip().replace('"', "")
-                    print()
-                    if args.path == "":
-                        print(__("Canceled."))
-                        return 0
+                if not self._PromptForAutomaticPath(args, "Enter file path of ROM file:"):
+                    return 0
                 self.FlashROM(args, header)
 
             if args.action != "info":
@@ -369,6 +361,17 @@ class FlashGBX_CLI:
         except KeyboardInterrupt:
             print("\n\n" + __("Operation stopped."))
         return None
+
+    @staticmethod
+    def _PromptForAutomaticPath(args: argparse.Namespace, prompt: str) -> bool:
+        if args.path != "auto":
+            return True
+        args.path = input(__(prompt) + " ").strip().replace('"', "")
+        print()
+        if args.path == "":
+            print(__("Canceled."))
+            return False
+        return True
 
     @staticmethod
     def _PrintConfigMessages(config_messages: Sequence[Sequence[object]]) -> None:
@@ -709,50 +712,50 @@ class FlashGBX_CLI:
         elapsed = args.get("time_elapsed", 0)
         left = args.get("time_left", 0)
 
-        if "action" in args:
-            if args["action"] == "INITIALIZE":
-                self._PrintProgressInitialization(args["method"])
-            elif args["action"] == "ERASE":
-                print(
-                    ANSI.CLEAR_LINE
-                    + __(
-                        "Please wait while the flash chip is being erased... (Elapsed time: {elapsed_time})",
-                        elapsed_time=Formatter.progress_time(elapsed),
-                    ),
-                    end="\r",
-                )
-            elif args["action"] == "UNLOCK":
-                print(
-                    ANSI.CLEAR_LINE
-                    + __(
-                        "Please wait while the flash chip is being unlocked... (Elapsed time: {elapsed_time})",
-                        elapsed_time=Formatter.progress_time(elapsed),
-                    ),
-                    end="\r",
-                )
-            elif args["action"] == "SECTOR_ERASE":
-                print(
-                    ANSI.CLEAR_LINE
-                    + __(
-                        "Erasing flash sector at address {address}...",
-                        address="0x{:X}".format(args["sector_pos"]),
-                    ),
-                    end="\r",
-                )
-            elif args["action"] == "UPDATE_RTC":
-                print("\n" + __("Updating Real Time Clock..."))
-            elif args["action"] == "ERROR":
-                print(ANSI.CLEAR_LINE + ANSI.RED + args["text"] + ANSI.RESET)
-            elif args["action"] == "ABORTING":
-                print("\n" + __("Stopping..."))
-            elif args["action"] == "FINISHED":
-                print("\n")
-                self.FinishOperation()
-            elif args["action"] == "ABORT":
-                self._HandleProgressAbort(args)
-                return
-            elif args["action"] == "PROGRESS":
-                self._RenderProgressBar(pos, size, speed, elapsed, left)
+        action = args.get("action")
+        if action == "INITIALIZE":
+            self._PrintProgressInitialization(args["method"])
+        elif action == "ERASE":
+            print(
+                ANSI.CLEAR_LINE
+                + __(
+                    "Please wait while the flash chip is being erased... (Elapsed time: {elapsed_time})",
+                    elapsed_time=Formatter.progress_time(elapsed),
+                ),
+                end="\r",
+            )
+        elif action == "UNLOCK":
+            print(
+                ANSI.CLEAR_LINE
+                + __(
+                    "Please wait while the flash chip is being unlocked... (Elapsed time: {elapsed_time})",
+                    elapsed_time=Formatter.progress_time(elapsed),
+                ),
+                end="\r",
+            )
+        elif action == "SECTOR_ERASE":
+            print(
+                ANSI.CLEAR_LINE
+                + __(
+                    "Erasing flash sector at address {address}...",
+                    address="0x{:X}".format(args["sector_pos"]),
+                ),
+                end="\r",
+            )
+        elif action == "UPDATE_RTC":
+            print("\n" + __("Updating Real Time Clock..."))
+        elif action == "ERROR":
+            print(ANSI.CLEAR_LINE + ANSI.RED + args["text"] + ANSI.RESET)
+        elif action == "ABORTING":
+            print("\n" + __("Stopping..."))
+        elif action == "FINISHED":
+            print("\n")
+            self.FinishOperation()
+        elif action == "ABORT":
+            self._HandleProgressAbort(args)
+            return
+        elif action == "PROGRESS":
+            self._RenderProgressBar(pos, size, speed, elapsed, left)
 
     def _HandleProgressAbort(self, args: ProgressPayload) -> None:
         print("\n" + __("Operation stopped.") + "\n")
@@ -2496,6 +2499,11 @@ class FlashGBX_CLI:
             print(__("Real Time Clock register values will also be written if applicable/possible."))
 
     @staticmethod
+    def _PrintSaveMapperType(mode: str, mbc: int) -> None:
+        if mode == "DMG":
+            FlashGBX_CLI._PrintMapperType(mbc)
+
+    @staticmethod
     def _ResolveSavePath(path: str, generated_path: str) -> str:
         if path == "auto":
             return generated_path
@@ -2539,8 +2547,7 @@ class FlashGBX_CLI:
         if not self._ConfirmSaveAction(args, target_path):
             return
 
-        if self.CONN.GetMode() == "DMG":
-            self._PrintMapperType(mbc)
+        self._PrintSaveMapperType(self.CONN.GetMode(), mbc)
 
         mode = self.CONN.GetMode()
         continue_write, buffer = self._PrepareSaveCalibration(mode, args, path)

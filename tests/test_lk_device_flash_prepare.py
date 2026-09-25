@@ -51,6 +51,21 @@ class FlashCommandRecords:
         self.ack_count = 0
 
 
+def _rejected_stage_sector_plan(rejected_stage: str, calls: list[str]) -> _FlashSectorPlan | None:
+    calls.append("sector-plan")
+    if rejected_stage == "sector-plan":
+        return None
+    return _FlashSectorPlan(
+        data_import=bytearray(b"DATA"),
+        smallest_sector_size=4,
+        sector_offsets=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
+        write_sectors=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
+        delta_state=None,
+        state_path="",
+        has_sector_map=True,
+    )
+
+
 class EraseChoiceFlashcart:
     """Minimal flash-cart surface used to verify erase selection."""
 
@@ -1369,20 +1384,6 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
         calls.append("flash-id")
         return rejected_stage != "flash-id"
 
-    def plan_sectors(*_args: object) -> _FlashSectorPlan | None:
-        calls.append("sector-plan")
-        if rejected_stage == "sector-plan":
-            return None
-        return _FlashSectorPlan(
-            data_import=bytearray(b"DATA"),
-            smallest_sector_size=4,
-            sector_offsets=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
-            write_sectors=[] if rejected_stage == "empty-write-sectors" else [[0, 4]],
-            delta_state=None,
-            state_path="",
-            has_sector_map=True,
-        )
-
     def erase(*_args: object) -> bool | None:
         calls.append("erase")
         return None if rejected_stage == "erase" else False
@@ -1396,7 +1397,11 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
     monkeypatch.setattr(device, "_PrepareGBMemoryMap", prepare_map)
     monkeypatch.setattr(device, "_load_flash_commands", load_commands)
     monkeypatch.setattr(device, "_CheckFlashID", check_flash_id)
-    monkeypatch.setattr(device, "_plan_flash_sectors", plan_sectors)
+    monkeypatch.setattr(
+        device,
+        "_plan_flash_sectors",
+        lambda *_args: _rejected_stage_sector_plan(rejected_stage, calls),
+    )
     monkeypatch.setattr(device, "_EraseFlashForWrite", erase)
     monkeypatch.setattr(device, "_set_fw_variable", Mock())
     progress = Mock()

@@ -8,7 +8,7 @@ import platform
 import re
 import sys
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, Self, cast
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
@@ -23,7 +23,7 @@ class _WindowsVersion(Protocol):
 
 
 class _RegistryKey(Protocol):
-    def __enter__(self) -> object: ...
+    def __enter__(self) -> Self: ...
 
     def __exit__(
         self,
@@ -88,6 +88,17 @@ def _setting_text(settings: SettingsReader | None, key: str, default: str) -> st
         return default
     value = settings.value(key=key, default=default)
     return value if isinstance(value, str) else default
+
+
+def _registry_display_version(winreg: _RegistryModule, key: _RegistryKey) -> object | None:
+    try:
+        return winreg.QueryValueEx(key, "DisplayVersion")[0]
+    except Exception as exc:
+        try:
+            return winreg.QueryValueEx(key, "ReleaseId")[0]
+        except Exception:
+            logger.exception("Failed to read the Windows release ID: {}", exc)
+            return None
 
 
 def _dmg_filename_extension(header: FilenameHeader, auto_sgb_extension: str) -> str:
@@ -167,13 +178,7 @@ class AppInfo:
                                 name = " ".join(parts[:2])
                     except Exception:
                         logger.exception("Failed to read the Windows product name")
-                    try:
-                        display_version = winreg.QueryValueEx(key, "DisplayVersion")[0]
-                    except Exception as e:
-                        try:
-                            display_version = winreg.QueryValueEx(key, "ReleaseId")[0]
-                        except Exception:
-                            logger.exception("Failed to read the Windows release ID: {}", e)
+                    display_version = _registry_display_version(winreg, key)
                     try:
                         ubr = _registry_int(winreg.QueryValueEx(key, "UBR")[0])
                     except Exception:

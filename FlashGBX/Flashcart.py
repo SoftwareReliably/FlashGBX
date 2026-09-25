@@ -673,6 +673,12 @@ class CFI:
             n ^= 1 << q
         return n
 
+    @classmethod
+    def _apply_data_swaps(cls, buffer: bytearray, swaps: list[tuple[int, int]]) -> None:
+        for pair in swaps:
+            for index in range(len(buffer)):
+                buffer[index] = cls.swap_bits(buffer[index], pair)
+
     @staticmethod
     def _set_single_write_timing(info: CFIInfo, buffer: bytearray) -> None:
         if 0 < buffer[0x3E] < 0xFF:
@@ -842,9 +848,7 @@ class CFI:
             return False
 
         info = cast("CFIInfo", {"d_swap": d_swap})
-        for pair in d_swap:
-            for j in range(len(buffer)):
-                buffer[j] = CFI.swap_bits(buffer[j], pair)
+        self._apply_data_swaps(buffer, d_swap)
         try:
             info["flash_id"] = buffer[0:8]
             info["magic"] = f"{chr(buffer[0x20]):s}{chr(buffer[0x22]):s}{chr(buffer[0x24]):s}"
