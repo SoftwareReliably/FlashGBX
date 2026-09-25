@@ -121,8 +121,6 @@ reportUnknownMemberType=false
 
 reportUnknownLambdaType=false
 reportMissingTypeArgument=false
-reportUnknownParameterType=false
-reportUnnecessaryCast=false
 
 [tool.ruff]
 target-version = "py314"

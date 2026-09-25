@@ -26,6 +26,34 @@ except Exception:
     logger.exception("Pillow image support is unavailable for Game Boy ROMs")
 
 
+type DmgDatabaseEntry = dict[str, str | int]
+
+
+def _parse_dmg_database_entry(raw_entry: object) -> DmgDatabaseEntry | None:
+    if raw_entry is None:
+        return None
+    if not isinstance(raw_entry, dict):
+        raise TypeError
+    entry: DmgDatabaseEntry = {}
+    for key, value in raw_entry.items():
+        if not isinstance(key, str):
+            raise TypeError
+        if isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool)):
+            entry[key] = value
+        else:
+            raise TypeError
+    return entry
+
+
+def _lookup_dmg_database_entry(database: object, header_sha1: str) -> tuple[bool, DmgDatabaseEntry | None]:
+    if not isinstance(database, dict):
+        raise TypeError
+    if header_sha1 not in database:
+        return False, None
+    raw_entry: object = database[header_sha1]
+    return True, _parse_dmg_database_entry(raw_entry)
+
+
 SACHEN_OVERRIDES: dict[str, tuple[int, int, str, int, bool]] = {
     "739b4686971c0baeaf26f173acae4b2bbf007077": (0x03, 0x8793, "SACHEN 4B-001", 1, False),
     "228b404f1ccf4ddc4df235f37b6d615ebef1ef42": (0x01, 0xB180, "SACHEN 4B-002", 1, False),
@@ -317,8 +345,10 @@ class RomFileDMG:
         batteryless_sram = self.GetBatterylessSramConfig(data)
         if batteryless_sram is not None:
             data["batteryless_sram"] = batteryless_sram
-        if data["db"] is not None and data["game_code"] == "" and data["db"]["gc"] != "":
-            data["game_code"] = data["db"]["gc"][4:]
+        if data["db"] is not None and data["game_code"] == "":
+            game_code = data["db"].get("gc")
+            if isinstance(game_code, str) and game_code:
+                data["game_code"] = game_code[4:]
 
     def _ApplySpecialMapperOverrides(self, data: dict[str, Any], buffer: bytearray) -> None:
         # GB-Memory (DMG-MMSA-JPN)
@@ -655,35 +685,33 @@ class RomFileDMG:
         self._ApplyDatabaseMetadata(data)
         return data
 
-    def GetDatabaseEntry(self) -> dict | None:
+    def GetDatabaseEntry(self) -> DmgDatabaseEntry | None:
         data = self.DATA
-        db_entry = None
         database_path: Path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
         if database_path.exists():
             with database_path.open(encoding="UTF-8") as f:
                 db_raw: str = f.read()
                 try:
-                    db: dict = json.loads(db_raw)
-                except (json.JSONDecodeError, ValueError) as e:
+                    db: object = json.loads(db_raw)
+                    found, db_entry = _lookup_dmg_database_entry(db, data["header_sha1"])
+                except (TypeError, ValueError) as e:
                     print(__("Error: Database for Game Boy titles is corrupted.") + "\n" + str(e))
                     return None
-                if data["header_sha1"] in db:
-                    db_entry = db[data["header_sha1"]]
-                else:
+                if not found:
                     dprint(
                         __(
                             "No database entry found for this title (Header SHA1: {sha1})",
                             sha1=data["header_sha1"],
                         ),
                     )
-        else:
-            print(
-                __(
-                    "Error: Database for Game Boy titles not found at {path}",
-                    path=str(database_path),
-                ),
-            )
-        return db_entry
+                return db_entry
+        print(
+            __(
+                "Error: Database for Game Boy titles not found at {path}",
+                path=str(database_path),
+            ),
+        )
+        return None
 
     @classmethod
     def _load_batteryless_sram_database(cls) -> None:

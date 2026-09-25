@@ -278,6 +278,71 @@ def test_database_lookup_handles_match_corruption_and_missing_file(
     assert "not found" in capsys.readouterr().out
 
 
+def test_database_lookup_preserves_string_and_integer_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
+    rom = RomFileDMG()
+    rom.DATA = {"header_sha1": "header-id"}
+    entry = {"gn": "Test Game", "gc": "DMG-TEST", "rc": 0x12345678, "extra": 42}
+    (tmp_path / "db_DMG.json").write_text(json.dumps({"header-id": entry}), encoding="utf-8")
+
+    assert rom.GetDatabaseEntry() == entry
+
+
+def test_database_lookup_returns_none_for_missing_key_and_null_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
+    rom = RomFileDMG()
+    rom.DATA = {"header_sha1": "header-id"}
+    database_path = tmp_path / "db_DMG.json"
+
+    database_path.write_text(json.dumps({"other-id": {"gc": "DMG-OTHER"}}), encoding="utf-8")
+    assert rom.GetDatabaseEntry() is None
+
+    database_path.write_text(json.dumps({"header-id": None}), encoding="utf-8")
+    assert rom.GetDatabaseEntry() is None
+
+
+@pytest.mark.parametrize(
+    "database",
+    [
+        [],
+        {"header-id": []},
+        {"header-id": {"bad": []}},
+        {"header-id": {"bad": {"nested": "object"}}},
+        {"header-id": {"bad": 1.5}},
+        {"header-id": {"bad": True}},
+        {"header-id": {"bad": None}},
+    ],
+    ids=[
+        "non-object-root",
+        "non-object-entry",
+        "list-value",
+        "object-value",
+        "float-value",
+        "bool-value",
+        "null-value",
+    ],
+)
+def test_database_lookup_rejects_invalid_json_shapes_and_values(
+    database: object,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
+    rom = RomFileDMG()
+    rom.DATA = {"header_sha1": "header-id"}
+    (tmp_path / "db_DMG.json").write_text(json.dumps(database), encoding="utf-8")
+
+    assert rom.GetDatabaseEntry() is None
+    assert "corrupted" in capsys.readouterr().out
+
+
 def test_batteryless_sram_database_matches_raw_and_clean_titles(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

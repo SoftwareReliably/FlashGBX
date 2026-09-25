@@ -140,7 +140,7 @@ def _flashcart_profile(raw_profile: object) -> tuple[PlatformMode, list[str], Fl
     names = [name for name in raw_names if isinstance(name, str) and name]
     if not names:
         return None
-    return cast("PlatformMode", cart_type), names, copy.deepcopy(dict(raw_profile))
+    return cart_type, names, copy.deepcopy(dict(raw_profile))
 
 
 FWUPDATE_ACTIONS = _get_firmware_update_actions()

@@ -6029,7 +6029,7 @@ class FlashGBX_GUI(QtWidgets.QMainWindow):
                 + __("Please clean the cartridge pins, carefully realign the cartridge and then try again."),
                 QtWidgets.QMessageBox.StandardButton.Ok,
             )
-        return cast("dict[str, Any]", data)
+        return data
 
     def _PrepareAgbHeaderControls(self, data: Mapping[str, Any], *, reset_status: bool) -> None:
         if reset_status:
