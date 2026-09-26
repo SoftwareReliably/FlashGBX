@@ -163,42 +163,42 @@ def _diff_16_bit_unfilter_agb_logo(filtered_data: bytes) -> bytearray:
 
 class RomFileAGB:
     def __init__(self, file: RomSource = None) -> None:
-        self.ROMFILE_PATH: Path | None = None
-        self.ROMFILE: bytearray = bytearray()
-        self.DATA: AGBHeader | None = None
+        self.romfile_path: Path | None = None
+        self.romfile: bytearray = bytearray()
+        self.data: AGBHeader | None = None
 
         if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):
-            self.ROMFILE = file
+            self.romfile = file
         elif isinstance(file, bytes):
-            self.ROMFILE = bytearray(file)
+            self.romfile = bytearray(file)
 
     def Open(self, file: str | Path) -> None:
-        self.ROMFILE_PATH = Path(file)
+        self.romfile_path = Path(file)
         self.Load()
 
     def Load(self) -> None:
-        if self.ROMFILE_PATH is None:
+        if self.romfile_path is None:
             return
-        self.ROMFILE = bytearray(self.ROMFILE_PATH.read_bytes())
+        self.romfile = bytearray(self.romfile_path.read_bytes())
 
     def CalcChecksumHeader(self, fix: bool = False) -> int:
         checksum = 0
         for i in range(0xA0, 0xBD):
-            checksum: int = checksum - self.ROMFILE[i]
+            checksum: int = checksum - self.romfile[i]
         checksum = (checksum - 0x19) & 0xFF
 
         if fix:
-            self.ROMFILE[0xBD] = checksum
+            self.romfile[0xBD] = checksum
         return checksum
 
     def CalcChecksumGlobal(self) -> int:
-        return zlib.crc32(self.ROMFILE) & 0xFFFFFFFF
+        return zlib.crc32(self.romfile) & 0xFFFFFFFF
 
     def FixHeader(self) -> bytearray:
         self.CalcChecksumHeader(fix=True)
-        return self.ROMFILE[0:0x200]
+        return self.romfile[0:0x200]
 
     def LogoToImage(
         self,
@@ -226,7 +226,7 @@ class RomFileAGB:
         return img
 
     def GetHeader(self, unchanged: bool = False) -> AGBHeader:
-        buffer = bytearray(self.ROMFILE)
+        buffer = bytearray(self.romfile)
         data: AGBHeader = {}
         if len(buffer) < 0x180:
             return {}
@@ -290,7 +290,7 @@ class RomFileAGB:
         if unchanged:
             data["unchanged"] = data.copy()
 
-        self.DATA = data
+        self.data = data
         data["db"] = self.GetDatabaseEntry()
 
         # 3D Memory (GBA Video 64 MB)
@@ -300,7 +300,7 @@ class RomFileAGB:
         return data
 
     def GetDatabaseEntry(self) -> AGBDatabaseEntry | None:
-        data = self.DATA
+        data = self.data
         if data is None or not isinstance(data.get("header_sha1"), str):
             return None
 

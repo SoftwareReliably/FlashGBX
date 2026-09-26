@@ -40,9 +40,9 @@ def test_worker_without_config_finishes_without_invoking_a_port() -> None:
     assert worker.isRunning() is True
     worker.run()
 
-    assert worker.FINISHED is True
+    assert worker.transfer_finished is True
     assert worker.isRunning() is False
-    assert worker.CONFIG is None
+    assert worker.config is None
 
 
 def test_worker_forwards_config_and_progress_signal() -> None:
@@ -59,7 +59,7 @@ def test_worker_forwards_config_and_progress_signal() -> None:
     assert called_config is config
     assert called_signal is worker.updateProgress
     assert events == [{"action": "PORT_EVENT"}]
-    assert worker.FINISHED is True
+    assert worker.transfer_finished is True
     assert worker.isRunning() is False
 
 
@@ -74,8 +74,8 @@ def test_set_config_reuses_worker_and_resets_completion() -> None:
     assert worker.isRunning() is False
 
     worker.setConfig(second_config)
-    assert worker.CONFIG is second_config
-    assert worker.FINISHED is False
+    assert worker.config is second_config
+    assert worker.transfer_finished is False
     assert worker.isRunning() is True
 
     worker.run()
@@ -161,8 +161,8 @@ def test_workers_keep_configuration_and_completion_state_isolated() -> None:
     first_worker.setConfig(replacement_config)
     first_worker.run()
 
-    assert first_worker.CONFIG is replacement_config
-    assert second_worker.CONFIG is second_config
+    assert first_worker.config is replacement_config
+    assert second_worker.config is second_config
     assert first_worker.isRunning() is False
     assert second_worker.isRunning() is True
     assert second_port.calls == []

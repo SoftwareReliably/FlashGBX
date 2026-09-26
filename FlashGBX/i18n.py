@@ -22,9 +22,9 @@ from loguru import logger
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-OS_LANGUAGE: str = "en"
-CONFIGURED_LANGUAGE: str | None = None
-TRANSLATION_AUTHOR: str | None = None
+os_language: str = "en"
+configured_language: str | None = None
+translation_author: str | None = None
 
 
 class _TranslationApplication(Protocol):
@@ -228,7 +228,7 @@ LANGUAGES: dict[str, tuple[str, str]] = {
 
 
 def set_locale(language: str | None = None) -> bool:
-    target = language or OS_LANGUAGE or ""
+    target = language or os_language or ""
     if not target:
         return False
 
@@ -495,7 +495,7 @@ def loadQtTranslation(app: object | None = None, language: str | None = None) ->
         return False
 
     if language is None:
-        language = CONFIGURED_LANGUAGE or OS_LANGUAGE or ""
+        language = configured_language or os_language or ""
     if not language:
         return False
 
@@ -523,7 +523,7 @@ def loadQtTranslation(app: object | None = None, language: str | None = None) ->
 
 
 def init_language(config_path: str | os.PathLike[str], override: str | None = None) -> None:
-    global lang, CONFIGURED_LANGUAGE, TRANSLATION_AUTHOR  # noqa: PLW0603
+    global lang, configured_language, translation_author  # noqa: PLW0603
 
     app_path: Path = _application_path()
     available_langs: list[str] = ["en"]  # Always include English
@@ -544,19 +544,19 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
         configured_value: str | None = settings.GetValue("Language", default="auto")
         language_setting = configured_value if isinstance(configured_value, str) else "auto"
 
-    system_language: str = OS_LANGUAGE.split("_")[0].split("-")[0].lower()
+    system_language: str = os_language.split("_")[0].split("-")[0].lower()
 
     if language_setting.lower() != "auto":
-        CONFIGURED_LANGUAGE = language_setting
+        configured_language = language_setting
         lang_code: str = language_setting.split("_")[0].split("-")[0].lower()
     else:
-        CONFIGURED_LANGUAGE = system_language
+        configured_language = system_language
         lang_code = system_language if system_language and system_language != "C" else "en"
 
     if lang_code not in LANGUAGES:
-        CONFIGURED_LANGUAGE = lang_code = "en"
+        configured_language = lang_code = "en"
 
-    TRANSLATION_AUTHOR = None
+    translation_author = None
     if lang_code != "en":
         try:
             lang = loadTranslation(lang_code)
@@ -564,7 +564,7 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
             metadata: str = lang.gettext(empty)
             for line in metadata.splitlines():
                 if line.lower().startswith("last-translator:"):
-                    TRANSLATION_AUTHOR = line.split(":", 1)[1].strip()
+                    translation_author = line.split(":", 1)[1].strip()
                     break
         except Exception as exc:
             lang = gettext.NullTranslations()
@@ -572,7 +572,7 @@ def init_language(config_path: str | os.PathLike[str], override: str | None = No
     else:
         lang = gettext.NullTranslations()
 
-    set_locale(CONFIGURED_LANGUAGE)
+    set_locale(configured_language)
 
 
 ####
@@ -617,7 +617,7 @@ if not detected_language:
                 detected_language = candidate
                 break
 
-OS_LANGUAGE = detected_language or "en"
+os_language = detected_language or "en"
 
 _qt_translator: object | None = None
 lang: gettext.NullTranslations = gettext.NullTranslations()

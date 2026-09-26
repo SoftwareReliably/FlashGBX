@@ -17,7 +17,7 @@ from .fakes import MockSerial
 def device(monkeypatch: pytest.MonkeyPatch) -> GbxDevice:
     """Use a modern reader with deterministic time and firmware challenges."""
     reader = GbxDevice()
-    reader.FW = {"cfw_id": "L", "fw_ver": 18, "pcb_ver": 6, "pcb_name": "Test reader"}
+    reader.fw = {"cfw_id": "L", "fw_ver": 18, "pcb_ver": 6, "pcb_name": "Test reader"}
     monkeypatch.setattr(lk_device_module.time, "time", lambda: 100.0)
     monkeypatch.setattr(lk_device_module.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(lk_device_module.os, "urandom", Mock(return_value=b"\xff"))
@@ -26,15 +26,15 @@ def device(monkeypatch: pytest.MonkeyPatch) -> GbxDevice:
 
 def test_active_probe_accepts_zero_response_and_caches_success(device: GbxDevice) -> None:
     port = MockSerial(responses=[b"\x00", b"\x00"])
-    device.DEVICE = port  # type: ignore[assignment]
+    device.device = port  # type: ignore[assignment]
 
     assert device.CheckActive() is True
-    assert device.LAST_CHECK_ACTIVE == 100.0
+    assert device.last_check_active == 100.0
     assert device.CheckActive() is True
     assert port.writes == [bytes([device.DEVICE_CMD["PING"], 0xFF])]
 
     # The cached result expires at exactly one second.
-    device.LAST_CHECK_ACTIVE = 99.0
+    device.last_check_active = 99.0
     assert device.CheckActive() is True
     assert len(port.writes) == 2
     assert port.is_open is True
@@ -49,13 +49,13 @@ def test_active_probe_disconnects_on_timeout_or_wrong_response(
     reconnecting: bool,
 ) -> None:
     port = MockSerial(responses=[response])
-    device.DEVICE = port  # type: ignore[assignment]
-    device.USER_ANSWER = reconnecting
+    device.device = port  # type: ignore[assignment]
+    device.user_answer = reconnecting
 
     assert device.CheckActive() is False
-    assert device.DEVICE is None
+    assert device.device is None
     assert port.is_open is False
-    assert device.LAST_CHECK_ACTIVE == 0.0
+    assert device.last_check_active == 0.0
     assert port.writes == [bytes([device.DEVICE_CMD["PING"], 0xFF])]
     assert ("Invalid firmware response" in capsys.readouterr().out) is not reconnecting
 
@@ -66,10 +66,10 @@ def test_older_custom_firmware_validates_supported_mode(
     monkeypatch: pytest.MonkeyPatch,
     mode: int,
 ) -> None:
-    assert device.FW is not None
-    device.FW["fw_ver"] = 14
+    assert device.fw is not None
+    device.fw["fw_ver"] = 14
     port = MockSerial()
-    device.DEVICE = port  # type: ignore[assignment]
+    device.device = port  # type: ignore[assignment]
     query = Mock(return_value=mode)
     monkeypatch.setattr(device, "_get_fw_variable", query)
 
@@ -77,7 +77,7 @@ def test_older_custom_firmware_validates_supported_mode(
     query.assert_called_once_with("CART_MODE")
     assert port.is_open is (mode <= 2)
     expected_check_time = 100.0 if mode <= 2 else 0.0
-    assert expected_check_time == device.LAST_CHECK_ACTIVE
+    assert expected_check_time == device.last_check_active
 
 
 @pytest.mark.parametrize("loaded", [False, True])
@@ -86,15 +86,15 @@ def test_active_probe_reloads_unknown_firmware(
     monkeypatch: pytest.MonkeyPatch,
     loaded: bool,
 ) -> None:
-    device.FW = {"pcb_name": None}
-    device.DEVICE = MockSerial()  # type: ignore[assignment]
+    device.fw = {"pcb_name": None}
+    device.device = MockSerial()  # type: ignore[assignment]
     load = Mock(return_value=loaded)
     monkeypatch.setattr(device, "LoadFirmwareVersion", load)
 
     assert device.CheckActive() is loaded
     load.assert_called_once_with()
     expected_check_time = 100.0 if loaded else 0.0
-    assert expected_check_time == device.LAST_CHECK_ACTIVE
+    assert expected_check_time == device.last_check_active
 
 
 @pytest.mark.parametrize("loaded", [False, True])
@@ -108,7 +108,7 @@ def test_try_connect_closes_temporary_port_after_firmware_probe(
     monkeypatch.setattr(lk_device_module.serial, "Serial", open_port)
 
     def load_firmware() -> bool:
-        assert device.DEVICE is port
+        assert device.device is port
         assert port.is_open is True
         return loaded
 
@@ -116,7 +116,7 @@ def test_try_connect_closes_temporary_port_after_firmware_probe(
 
     assert device.TryConnect("test-port", 1_000_000) is loaded
     open_port.assert_called_once_with("test-port", 1_000_000, timeout=0.1, exclusive=True)
-    assert device.DEVICE is None
+    assert device.device is None
     assert port.is_open is False
 
 
@@ -131,7 +131,7 @@ def test_try_connect_closes_temporary_port_when_probe_raises(
     with pytest.raises(SerialException, match="probe failed"):
         device.TryConnect("test-port", 1_000_000)
 
-    assert device.DEVICE is None
+    assert device.device is None
     assert port.is_open is False
 
 
@@ -146,7 +146,7 @@ def test_try_connect_handles_port_open_failure(
     monkeypatch.setattr(device, "LoadFirmwareVersion", load)
 
     assert device.TryConnect("test-port", 1_000_000) is False
-    assert device.DEVICE is None
+    assert device.device is None
     load.assert_not_called()
 
 
@@ -159,7 +159,7 @@ def test_is_connected_skips_probe_without_open_port(
     if closed:
         port = MockSerial()
         port.close()
-        device.DEVICE = port  # type: ignore[assignment]
+        device.device = port  # type: ignore[assignment]
     check = Mock()
     monkeypatch.setattr(device, "CheckActive", check)
 
@@ -175,7 +175,7 @@ def test_is_connected_drains_stale_input_before_probing(
 ) -> None:
     port = MockSerial(responses=[b"stale reply"])
     port.write(b"previous command")
-    device.DEVICE = port  # type: ignore[assignment]
+    device.device = port  # type: ignore[assignment]
     operations = Mock()
     monkeypatch.setattr(port, "reset_output_buffer", operations.reset_output_buffer)
 
@@ -202,7 +202,7 @@ def test_is_connected_handles_serial_errors(
     closed: bool,
 ) -> None:
     port = MockSerial()
-    device.DEVICE = port  # type: ignore[assignment]
+    device.device = port  # type: ignore[assignment]
     monkeypatch.setattr(port, "reset_output_buffer", Mock(side_effect=SerialException(message)))
     check = Mock()
     monkeypatch.setattr(device, "CheckActive", check)
@@ -232,11 +232,11 @@ def test_close_selects_shutdown_command_and_releases_port(
     command: str,
     wait: bool,
 ) -> None:
-    assert device.FW is not None
-    device.FW.update(fw_ver=firmware_version, cart_power_ctrl=power_control)
-    device.MODE = "DMG"
+    assert device.fw is not None
+    device.fw.update(fw_ver=firmware_version, cart_power_ctrl=power_control)
+    device.mode = "DMG"
     port = MockSerial()
-    device.DEVICE = port  # type: ignore[assignment]
+    device.device = port  # type: ignore[assignment]
     operations = Mock()
     monkeypatch.setattr(device, "ResetLEDs", operations.reset_leds)
     monkeypatch.setattr(device, "IsConnected", Mock(return_value=True))
@@ -250,8 +250,8 @@ def test_close_selects_shutdown_command_and_releases_port(
         expected.append(call.set_variable("AUTO_POWEROFF_TIME", 0))
     expected.append(call.write(device.DEVICE_CMD[command], wait=wait))
     assert operations.mock_calls == expected
-    assert device.DEVICE is None
-    assert device.MODE is None
+    assert device.device is None
+    assert device.mode is None
     assert port.is_open is False
 
 
@@ -264,8 +264,8 @@ def test_close_releases_port_even_when_shutdown_fails(
     error_type: type[Exception],
 ) -> None:
     port = MockSerial()
-    device.DEVICE = port  # type: ignore[assignment]
-    device.MODE = "AGB"
+    device.device = port  # type: ignore[assignment]
+    device.mode = "AGB"
     monkeypatch.setattr(device, "ResetLEDs", Mock())
     monkeypatch.setattr(device, "IsConnected", Mock(return_value=True))
     monkeypatch.setattr(device, "_write", Mock())
@@ -273,8 +273,8 @@ def test_close_releases_port_even_when_shutdown_fails(
 
     device.Close()
 
-    assert device.DEVICE is None
-    assert device.MODE is None
+    assert device.device is None
+    assert device.mode is None
     assert port.is_open is False
 
 
@@ -285,8 +285,8 @@ def test_close_clears_connection_state_even_when_serial_close_fails(
     error_type: type[Exception],
 ) -> None:
     port = MockSerial()
-    device.DEVICE = port  # type: ignore[assignment]
-    device.MODE = "DMG"
+    device.device = port  # type: ignore[assignment]
+    device.mode = "DMG"
     close = Mock(side_effect=error_type("port vanished"))
     monkeypatch.setattr(port, "close", close)
     monkeypatch.setattr(device, "ResetLEDs", Mock())
@@ -295,15 +295,15 @@ def test_close_clears_connection_state_even_when_serial_close_fails(
     device.Close()
 
     close.assert_called_once_with()
-    assert device.DEVICE is None
-    assert device.MODE is None
+    assert device.device is None
+    assert device.mode is None
 
 
 def test_close_is_safe_to_repeat_without_connected_hardware(device: GbxDevice) -> None:
-    device.MODE = "DMG"
+    device.mode = "DMG"
 
     device.Close(cartPowerOff=True)
     device.Close()
 
-    assert device.DEVICE is None
-    assert device.MODE is None
+    assert device.device is None
+    assert device.mode is None

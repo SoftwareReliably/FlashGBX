@@ -77,10 +77,10 @@ def test_wait_for_ack_accepts_default_success_values(
     queue = install_read_script(monkeypatch, device, [acknowledgement])
 
     assert device.wait_for_ack() == acknowledgement
-    assert device.ERROR is False
-    assert device.CANCEL is False
-    assert device.WRITE_ERRORS == 0
-    assert device.CANCEL_ARGS == {}
+    assert device.error is False
+    assert device.cancel is False
+    assert device.write_errors == 0
+    assert device.cancel_args == {}
     assert not queue
 
 
@@ -89,15 +89,15 @@ def test_wait_for_ack_accepts_only_the_supplied_custom_values(monkeypatch: pytes
     queue = install_read_script(monkeypatch, device, [0x7E])
 
     assert device.wait_for_ack(values=(0x7E,)) == 0x7E
-    assert device.WRITE_ERRORS == 0
+    assert device.write_errors == 0
     assert not queue
 
 
 def test_real_write_waits_for_acknowledgement_from_serial() -> None:
     serial_device = RecoverySerial(responses=[b"\x01"])
     device = GbxDevice()
-    device.DEVICE = serial_device  # type: ignore[assignment]
-    device.FW = {"pcb_name": "Test device"}
+    device.device = serial_device  # type: ignore[assignment]
+    device.fw = {"pcb_name": "Test device"}
 
     assert device._write(b"\x12\x34", wait=True) == 1
     assert serial_device.writes == [b"\x12\x34"]
@@ -108,15 +108,15 @@ def test_real_write_waits_for_acknowledgement_from_serial() -> None:
 def test_real_write_propagates_device_error_acknowledgement() -> None:
     serial_device = RecoverySerial(responses=[b"\x02"])
     device = GbxDevice()
-    device.DEVICE = serial_device  # type: ignore[assignment]
-    device.FW = {"pcb_name": "Test device"}
+    device.device = serial_device  # type: ignore[assignment]
+    device.fw = {"pcb_name": "Test device"}
 
     assert device._write(b"\xab", wait=True) is False
     assert serial_device.writes == [b"\xab"]
-    assert device.ERROR is True
-    assert device.CANCEL is True
-    assert device.CANCEL_ARGS["info_type"] == "msgbox_critical"
-    assert "device reported an error" in str(device.CANCEL_ARGS["info_msg"]).lower()
+    assert device.error is True
+    assert device.cancel is True
+    assert device.cancel_args["info_type"] == "msgbox_critical"
+    assert "device reported an error" in str(device.cancel_args["info_msg"]).lower()
 
 
 @pytest.mark.parametrize(
@@ -133,43 +133,43 @@ def test_wait_for_ack_records_structured_failures(
     message_fragment: str,
 ) -> None:
     device = GbxDevice()
-    device.DEVICE = RecoverySerial(timeout=2.5)  # type: ignore[assignment]
+    device.device = RecoverySerial(timeout=2.5)  # type: ignore[assignment]
     queue = install_read_script(monkeypatch, device, [acknowledgement])
 
     assert device.wait_for_ack() is False
-    assert device.ERROR is True
-    assert device.CANCEL is True
-    assert device.WRITE_ERRORS == 1
-    assert device.WRITE_DELAY is False
-    assert device.CANCEL_ARGS["info_type"] == "msgbox_critical"
-    assert message_fragment in str(device.CANCEL_ARGS["info_msg"]).lower()
+    assert device.error is True
+    assert device.cancel is True
+    assert device.write_errors == 1
+    assert device.write_delay is False
+    assert device.cancel_args["info_type"] == "msgbox_critical"
+    assert message_fragment in str(device.cancel_args["info_msg"]).lower()
     assert not queue
 
 
 def test_wait_for_ack_enables_write_delay_on_the_fourth_error(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.WRITE_ERRORS = 3
+    device.write_errors = 3
     queue = install_read_script(monkeypatch, device, [2])
 
     assert device.wait_for_ack() is False
-    assert device.WRITE_ERRORS == 4
-    assert device.WRITE_DELAY is True
+    assert device.write_errors == 4
+    assert device.write_delay is True
     assert not queue
 
 
 def test_wait_for_ack_preserves_user_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
     cancellation = {"from_user": True, "reason": "stop now"}
-    device.CANCEL_ARGS = cancellation.copy()
-    device.CANCEL = True
+    device.cancel_args = cancellation.copy()
+    device.cancel = True
     queue = install_read_script(monkeypatch, device, [0x7F])
 
     assert device.wait_for_ack() is False
-    assert cancellation == device.CANCEL_ARGS
-    assert device.CANCEL is True
-    assert device.ERROR is False
-    assert device.WRITE_ERRORS == 0
-    assert device.WRITE_DELAY is False
+    assert cancellation == device.cancel_args
+    assert device.cancel is True
+    assert device.error is False
+    assert device.write_errors == 0
+    assert device.write_delay is False
     assert not queue
 
 
@@ -182,21 +182,21 @@ def test_try_write_first_attempt_success_clears_stale_error_state(monkeypatch: p
         return 3
 
     monkeypatch.setattr(device, "_write", write)
-    device.ERROR = True
-    device.CANCEL = True
-    device.CANCEL_ARGS = {"reason": "stale"}
+    device.error = True
+    device.cancel = True
+    device.cancel_args = {"reason": "stale"}
 
     assert device._try_write(memoryview(b"payload")) == 3
     assert writes == [(memoryview(b"payload"), True)]
-    assert device.ERROR is False
-    assert device.CANCEL is False
-    assert device.CANCEL_ARGS == {}
+    assert device.error is False
+    assert device.cancel is False
+    assert device.cancel_args == {}
 
 
 def test_try_write_retries_payload_after_successful_recovery_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
     serial_device = RecoverySerial()
-    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.device = serial_device  # type: ignore[assignment]
     writes: list[tuple[object, bool]] = []
     write_results: deque[int | bool] = deque([False, 1])
     reads = install_read_script(monkeypatch, device, [1])
@@ -207,9 +207,9 @@ def test_try_write_retries_payload_after_successful_recovery_probe(monkeypatch: 
         return write_results.popleft()
 
     monkeypatch.setattr(device, "_write", write)
-    device.ERROR = True
-    device.CANCEL = True
-    device.CANCEL_ARGS = {"reason": "recoverable"}
+    device.error = True
+    device.cancel = True
+    device.cancel_args = {"reason": "recoverable"}
 
     assert device._try_write(b"retry-me", retries=2) == 1
     assert writes == [(b"retry-me", True), (b"retry-me", True)]
@@ -219,15 +219,15 @@ def test_try_write_retries_payload_after_successful_recovery_probe(monkeypatch: 
     assert serial_device.reset_input_calls == 1
     assert serial_device.writes == [b"\x00"]
     assert serial_device.flush_calls == 1
-    assert device.ERROR is False
-    assert device.CANCEL is False
-    assert device.CANCEL_ARGS == {}
+    assert device.error is False
+    assert device.cancel is False
+    assert device.cancel_args == {}
 
 
 def test_try_write_exhausts_exact_attempt_count(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
     serial_device = RecoverySerial()
-    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.device = serial_device  # type: ignore[assignment]
     writes: list[tuple[object, bool]] = []
     reads = install_read_script(monkeypatch, device, [2, 2])
 
@@ -252,14 +252,14 @@ def test_try_write_stops_before_recovery_after_user_cancellation(monkeypatch: py
 
     def canceled_write(data: object, wait: bool = False) -> bool:
         writes.append((data, wait))
-        device.CANCEL_ARGS = {"from_user": True, "reason": "requested"}
+        device.cancel_args = {"from_user": True, "reason": "requested"}
         return False
 
     monkeypatch.setattr(device, "_write", canceled_write)
 
     assert device._try_write(0xA5, retries=5) is False
     assert writes == [(0xA5, True)]
-    assert device.CANCEL_ARGS == {"from_user": True, "reason": "requested"}
+    assert device.cancel_args == {"from_user": True, "reason": "requested"}
 
 
 def test_try_write_rejects_zero_retries_before_writing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -276,7 +276,7 @@ def test_try_write_rejects_zero_retries_before_writing(monkeypatch: pytest.Monke
 def test_try_write_bounds_recovery_probe_at_twenty_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
     serial_device = RecoverySerial()
-    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.device = serial_device  # type: ignore[assignment]
     reads = install_read_script(monkeypatch, device, [0] * 20)
     writes: list[tuple[object, bool]] = []
 

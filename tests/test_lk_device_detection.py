@@ -40,7 +40,7 @@ def test_recognize_cfi_buffer_handles_interleaved_and_swapped_signatures(
 
 def test_read_flash_cfi_uses_ordered_commands_and_parses_original_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     buffer = bytearray(0x400)
     buffer[0x20:0x25:2] = b"QRY"
     commands: list[tuple[list[list[int]], bool]] = []
@@ -66,7 +66,7 @@ def test_read_flash_cfi_rejects_failed_short_and_unrecognized_data(
     data: bytearray | bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     writes: list[list[list[int]]] = []
     monkeypatch.setattr(device, "_cart_write_flash", lambda command, **_kwargs: writes.append(command))
     monkeypatch.setattr(device, "_cart_read", lambda _address, _length: data)
@@ -90,7 +90,7 @@ def test_batteryless_goomba_probe_stops_at_first_matching_state(
     match_index: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     header = bytearray(0x180)
     header[0xAC:0xB0] = game_code.encode("ascii")
     reads: list[tuple[int, int]] = []
@@ -116,7 +116,7 @@ def test_batteryless_goomba_probe_returns_false_after_all_misses(
     game_code: str,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     header = bytearray(0x180)
     header[0xAC:0xB0] = game_code.encode("ascii")
     reads: list[tuple[int, int]] = []
@@ -133,7 +133,7 @@ def test_batteryless_goomba_probe_returns_false_after_all_misses(
 
 def test_batteryless_probe_skips_rom_reads_outside_agb_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     monkeypatch.setattr(device, "ReadROM", lambda *_args, **_kwargs: pytest.fail("unexpected ROM read"))
 
     assert device.CheckBatterylessSRAM() is False
@@ -141,7 +141,7 @@ def test_batteryless_probe_skips_rom_reads_outside_agb_mode(monkeypatch: pytest.
 
 def test_batteryless_goomba_probe_propagates_short_state_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     header = bytearray(0x180)
     header[0xAC:0xB0] = b"GMBC"
 
@@ -168,7 +168,7 @@ def test_batteryless_chinese_loader_decodes_rom_offset_and_ram_size(
     expected_size: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     header = bytearray(0x180)
     header[0xAC:0xB0] = b"TEST"
     loader = bytearray(0x2000)
@@ -205,7 +205,7 @@ def test_agb_flash_header_size_probe_stops_at_first_matching_address(monkeypatch
 
 def test_detect_flash_size_prefers_cfi_size_without_rom_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     profiles = [{"flash_size": 0x10000}, {"flash_size": 0x20000}]
     monkeypatch.setattr(device, "GetSupportedCartridgesAGB", lambda: (["first", "second"], profiles))
     monkeypatch.setattr(device, "ReadROM", lambda *_args: pytest.fail("CFI data should avoid ROM probing"))
@@ -249,7 +249,7 @@ def test_find_flash_type_by_size_preserves_candidate_order_and_missing_sizes() -
 
 def test_collect_flash_detection_commands_keeps_order_filters_and_identifier_deduplication() -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     read_identifier = [[0x5555, 0xAA]]
     first_reset = [[0, 0xF0]]
     second_reset = [[0, 0xFF]]
@@ -314,12 +314,12 @@ def test_detect_dmg_save_type_small_and_supported_sizes(
     device = GbxDevice()
     data = bytearray(0x20000)
     original = bytes(data)
-    device.INFO["data"] = data
+    device.info["data"] = data
 
     result = device._DetectDmgSaveType(save_size, mbc)
 
     assert result == expected
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 @pytest.mark.parametrize(
@@ -333,10 +333,10 @@ def test_detect_dmg_mbc7_size_overrides_and_generic_mapping(
     device = GbxDevice()
     data = bytearray(0x20000)
     original = bytes(data)
-    device.INFO["data"] = data
+    device.info["data"] = data
 
     assert device._DetectDmgSaveType(save_size, 0x22) == (save_size, expected_type)
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 def make_dmg_128k_candidate(
@@ -380,12 +380,12 @@ def test_detect_dmg_large_save_classification_preserves_probe_data(
     )
     original = bytes(data)
     device = GbxDevice()
-    device.INFO["data"] = data
+    device.info["data"] = data
 
     result = device._DetectDmgSaveType(0x20000, 0x13)
 
     assert result == expected
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 @pytest.mark.parametrize("mismatch", [0x1A000, 0x1FFC0], ids=["early", "late"])
@@ -396,12 +396,12 @@ def test_detect_dmg_upper_region_mismatch_retains_128k(
     data[mismatch : mismatch + 3] = b"\x71\x72\x73"
     original = bytes(data)
     device = GbxDevice()
-    device.INFO["data"] = data
+    device.info["data"] = data
 
     result = device._DetectDmgSaveType(0x20000, 0x13)
 
     assert result == (0x20000, DmgSaveTypes(size=0x20000).GetMbc())
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 @pytest.mark.parametrize("flash_result", [False, (0, 0)], ids=["read-failure", "zero-id"])
@@ -453,13 +453,13 @@ def test_detect_agb_flash_known_chip_uses_real_chip_table(
     device = GbxDevice()
     data = bytearray([0x31] * 0x20000)
     original = bytes(data)
-    device.INFO["data"] = data
+    device.info["data"] = data
     monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (flash_id, 0))
 
     result = device._DetectAgbFlashSaveType(0)
 
     assert result == (expected_type, expected_size, AgbSaveTypes().GetFlashChipName(flash_id))
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 @pytest.mark.parametrize(
@@ -482,7 +482,7 @@ def test_detect_agb_bootleg_flash_bank_patterns(
     data = data_factory()
     original = bytes(data)
     device = GbxDevice()
-    device.INFO["data"] = data
+    device.info["data"] = data
     flash_id = 0xBF4B
     monkeypatch.setattr(device, "ReadFlashSaveID", lambda: (flash_id, 0))
 
@@ -493,7 +493,7 @@ def test_detect_agb_bootleg_flash_bank_patterns(
         AgbSaveTypes().GetFlashChipSize(flash_id),
         AgbSaveTypes().GetFlashChipName(flash_id),
     )
-    assert bytes(device.INFO["data"]) == original
+    assert bytes(device.info["data"]) == original
 
 
 def test_detect_agb_resolved_flash_type_skips_non_flash_detection(
@@ -562,7 +562,7 @@ def test_detect_agb_batteryless_override_updates_both_metadata_locations(
 
     assert result == (9, expected_size)
     assert info["batteryless_sram"] == batteryless
-    assert device.INFO["dump_info"]["batteryless_sram"] == batteryless
+    assert device.info["dump_info"]["batteryless_sram"] == batteryless
 
 
 @pytest.mark.parametrize(
@@ -589,7 +589,7 @@ def test_detect_agb_eeprom_uses_two_exact_reads_and_skips_batteryless_probe(
 
     def backup_restore(*, args: dict[str, object]) -> None:
         backup_calls.append(args.copy())
-        device.INFO["data"] = bytearray(next(reads))
+        device.info["data"] = bytearray(next(reads))
 
     def fail_if_batteryless_probe() -> bool:
         pytest.fail("EEPROM detection must not run the batteryless SRAM probe")
@@ -608,7 +608,7 @@ def test_detect_agb_eeprom_uses_two_exact_reads_and_skips_batteryless_probe(
 
 def test_match_detected_flash_types_skips_empty_and_non_dictionary_profiles() -> None:
     device = GbxDevice()
-    device.MODE = "DMG"  # type: ignore[assignment]
+    device.mode = "DMG"  # type: ignore[assignment]
     read_identifier = [[0x5555, 0x00F0]]
     matching = make_identifier_profile("Matched", [[0x12, 0x34]], read_identifier)
     missing_flash_ids = make_identifier_profile("No IDs", [[0x12, 0x34]], read_identifier)
@@ -672,7 +672,7 @@ def test_match_detected_flash_types_requires_matching_identifier_command() -> No
 
 def test_match_detected_flash_types_rejects_dmg_write_pin_mismatch() -> None:
     device = GbxDevice()
-    device.MODE = "DMG"  # type: ignore[assignment]
+    device.mode = "DMG"  # type: ignore[assignment]
     read_identifier = [[0x5555, 0x00F0]]
     profile = make_identifier_profile(
         "Audio pin only",
@@ -696,7 +696,7 @@ def test_match_detected_flash_types_rejects_dmg_write_pin_mismatch() -> None:
 
 def test_match_detected_flash_types_agb_ignores_dmg_write_pin() -> None:
     device = GbxDevice()
-    device.MODE = "AGB"  # type: ignore[assignment]
+    device.mode = "AGB"  # type: ignore[assignment]
     read_identifier = [[0x5555, 0x00F0]]
     profile = make_identifier_profile(
         "AGB ignores DMG pin",
@@ -729,7 +729,7 @@ def test_match_detected_flash_types_matches_id_prefix(
     expected: list[int],
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"  # type: ignore[assignment]
+    device.mode = "DMG"  # type: ignore[assignment]
     read_identifier = [[0x5555, 0x00F0]]
     profile = make_identifier_profile("Prefix profile", [[0x12, 0x34]], read_identifier)
     methods = [(0, 0, observed_id, None, read_identifier)]
@@ -748,7 +748,7 @@ def test_match_detected_flash_types_matches_id_prefix(
 
 def test_match_detected_flash_types_keeps_unique_profile_order_and_resets_only_as_defined() -> None:
     device = GbxDevice()
-    device.MODE = "DMG"  # type: ignore[assignment]
+    device.mode = "DMG"  # type: ignore[assignment]
     read_identifier = [[0x5555, 0x00F0]]
     reset_first = [[0x5555, 0x00F0], [0x2AAA, 0x00F0]]
     reset_last = [[0x1234, 0x00F0]]

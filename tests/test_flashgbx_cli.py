@@ -80,8 +80,8 @@ def configure_interactive_run(
     monkeypatch.setattr(cli_module, "Logger", lambda: original_stdout)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
     monkeypatch.setattr(cli, "_connect_for_action", lambda _args, _actions: True)
-    cli.CONN = conn
-    cli.DEVICE = ("Mock Reader", conn)
+    cli.conn = conn
+    cli.device = ("Mock Reader", conn)
     console = SimpleNamespace(call_count=0)
 
     def run_console() -> None:
@@ -95,14 +95,14 @@ class FakeConnection:
     """Device protocol fake shared by CLI operation tests."""
 
     DEVICE_ID = "gbxcartrw"
-    DEVICE_NAME = "GBxCart RW"
+    device_name = "GBxCart RW"
 
     def __init__(self, mode: str = "DMG") -> None:
         self.mode = mode
-        self.FW: dict[str, object] = {}
-        self.FW_UPDATE_REQ = False
-        self.USER_ANSWER: bool | None = None
-        self.INFO: dict[str, Any] = {}
+        self.fw: dict[str, object] = {}
+        self.fw_update_req = False
+        self.user_answer: bool | None = None
+        self.info: dict[str, Any] = {}
         self.calls: list[tuple[str, object]] = []
         self.transfer_calls: list[dict[str, Any]] = []
         self.header: dict[str, Any] = {}
@@ -121,7 +121,7 @@ class FakeConnection:
         return self.supported_modes
 
     def GetCartModeSwitchState(self) -> int | bool:
-        return cast("int | bool", self.INFO.get("switch_state", False))
+        return cast("int | bool", self.info.get("switch_state", False))
 
     def SetAutoPowerOff(self, value: int) -> None:
         self.calls.append(("auto_power_off", value))
@@ -138,10 +138,10 @@ class FakeConnection:
 
     def IsSupportedMbc(self, mapper: int) -> bool:
         self.calls.append(("supported_mbc", mapper))
-        return bool(self.INFO.get("supported_mbc", True))
+        return bool(self.info.get("supported_mbc", True))
 
     def IsSupported3dMemory(self) -> bool:
-        return bool(self.INFO.get("supported_3d", True))
+        return bool(self.info.get("supported_3d", True))
 
     def GetFullName(self) -> str:
         return "Mock Reader"
@@ -150,48 +150,48 @@ class FakeConnection:
         return "Mock Reader (details)" if more else "Mock Reader"
 
     def GetFWBuildDate(self) -> str:
-        return cast("str", self.INFO.get("build_date", ""))
+        return cast("str", self.info.get("build_date", ""))
 
     def FirmwareUpdateAvailable(self) -> bool:
-        return bool(self.INFO.get("firmware_update", False))
+        return bool(self.info.get("firmware_update", False))
 
     def TransferData(self, *, args: dict[str, Any], signal: object) -> bool:
         del signal
         self.transfer_calls.append(args)
-        return bool(self.INFO.get("transfer_result", True))
+        return bool(self.info.get("transfer_result", True))
 
     def GetSupportedCartridgesDMG(self) -> tuple[list[str], list[dict[str, Any]]]:
         return cast(
             "tuple[list[str], list[dict[str, Any]]]",
-            self.INFO.get("dmg_carts", (["Generic", "Mock Profile"], [{}, {}])),
+            self.info.get("dmg_carts", (["Generic", "Mock Profile"], [{}, {}])),
         )
 
     def GetSupportedCartridgesAGB(self) -> tuple[list[str], list[dict[str, Any]]]:
         return cast(
             "tuple[list[str], list[dict[str, Any]]]",
-            self.INFO.get("agb_carts", (["Generic", "Mock Profile"], [{}, {}])),
+            self.info.get("agb_carts", (["Generic", "Mock Profile"], [{}, {}])),
         )
 
     def CheckROMStable(self) -> bool:
-        return bool(self.INFO.get("stable", True))
+        return bool(self.info.get("stable", True))
 
     def _DetectCartridge(self, *, args: dict[str, object]) -> None:
         self.calls.append(("detect", args))
 
     def CanSetVoltageByAutoswitch(self) -> bool:
-        return bool(self.INFO.get("voltage_autoswitch", False))
+        return bool(self.info.get("voltage_autoswitch", False))
 
     def CanSetVoltageByCode(self) -> bool:
-        return bool(self.INFO.get("voltage_code", True))
+        return bool(self.info.get("voltage_code", True))
 
     def CanPowerCycleCart(self) -> bool:
-        return bool(self.INFO.get("power_cycle", False))
+        return bool(self.info.get("power_cycle", False))
 
     def CartPowerCycle(self) -> None:
         self.calls.append(("power", "cycle"))
 
     def GetDumpReport(self) -> str | bool:
-        return cast("str | bool", self.INFO.get("dump_report", False))
+        return cast("str | bool", self.info.get("dump_report", False))
 
     def Initialize(
         self,
@@ -221,7 +221,7 @@ def configure_batteryless_profile(
 ) -> str:
     profile_name = "Batteryless Profile"
     profile = {"type": mode, "names": [profile_name], **profile_values}
-    conn.INFO[f"{mode.lower()}_carts"] = (["Generic", profile_name], [{}, profile])
+    conn.info[f"{mode.lower()}_carts"] = (["Generic", profile_name], [{}, profile])
     return profile_name
 
 
@@ -318,10 +318,10 @@ def test_cli_platform_autodetection_and_required_header_values() -> None:
     assert FlashGBX_CLI._GetAutoPlatformMode(conn, ["DMG"]) == "DMG"
 
     conn.supported_modes = ["DMG", "AGB"]
-    conn.FW["cart_mode_switch"] = True
-    conn.INFO["switch_state"] = 1
+    conn.fw["cart_mode_switch"] = True
+    conn.info["switch_state"] = 1
     assert FlashGBX_CLI._GetAutoPlatformMode(conn) == "AGB"
-    conn.INFO["switch_state"] = False
+    conn.info["switch_state"] = False
     conn.mode = "DMG"
     assert FlashGBX_CLI._GetAutoPlatformMode(conn) == "DMG"
     conn.mode = "unsupported"
@@ -405,12 +405,12 @@ def test_wait_progress_records_mock_user_decisions(
     expected: bool,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection()
+    cli.conn = FakeConnection()
     monkeypatch.setattr("builtins.input", lambda _prompt: answer)
 
     cli.WaitProgress(payload)
 
-    assert cli.CONN.USER_ANSWER is expected
+    assert cli.conn.user_answer is expected
 
 
 @pytest.mark.parametrize(
@@ -450,10 +450,10 @@ def test_update_progress_handles_errors_abort_and_finish(
     cli.UpdateProgress(
         {"action": "ABORT", "info_type": "msgbox_critical", "info_msg": "critical"},
     )
-    assert cli.RETVAL == 1
+    assert cli.retval == 1
     cli.UpdateProgress({"action": "ABORT", "info_type": "label", "info_msg": "stopped"})
 
-    assert cli.RETVAL == 0
+    assert cli.retval == 0
     assert finished == [True]
     assert "mock failure" in capsys.readouterr().out
 
@@ -471,16 +471,16 @@ def test_finish_operation_reports_rom_write_results(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO = {"last_action": 4, "transferred": 1024}
+    conn.info = {"last_action": 4, "transferred": 1024}
     if broken is not None:
-        conn.INFO["broken_sectors"] = broken
-    cli.CONN = conn
-    cli.PROGRESS.PROGRESS["verified"] = verified
+        conn.info["broken_sectors"] = broken
+    cli.conn = conn
+    cli.progress.progress["verified"] = verified
 
     cli.FinishOperation()
 
-    assert conn.INFO["last_action"] == 0
-    assert retval == cli.RETVAL
+    assert conn.info["last_action"] == 0
+    assert retval == cli.retval
     output = capsys.readouterr().out
     if verified:
         assert "written and verified successfully" in output
@@ -512,7 +512,7 @@ def test_finish_operation_reports_rom_backup_results(
     mode, database, file_crc, rom_checksum, calculated, loop, mapper_raw, expected_message, expect_loop = case
     cli = make_cli(tmp_path)
     conn = FakeConnection(mode)
-    conn.INFO = {
+    conn.info = {
         "last_action": 1,
         "transferred": 1024,
         "last_path": str(tmp_path / "backup.gb"),
@@ -524,12 +524,12 @@ def test_finish_operation_reports_rom_backup_results(
         "db": database,
     }
     if mapper_raw is not None:
-        conn.INFO["mapper_raw"] = mapper_raw
-    cli.CONN = conn
+        conn.info["mapper_raw"] = mapper_raw
+    cli.conn = conn
 
     cli.FinishOperation()
 
-    assert conn.INFO["last_action"] == 0
+    assert conn.info["last_action"] == 0
     output = capsys.readouterr().out
     assert "CRC32: 00000001" in output
     assert "SHA-1: sha1" in output
@@ -542,7 +542,7 @@ def test_finish_operation_writes_dump_report_and_save_results(tmp_path: Path) ->
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
     backup_path = tmp_path / "backup.gb"
-    conn.INFO = {
+    conn.info = {
         "last_action": 1,
         "transferred": 2048,
         "last_path": str(backup_path),
@@ -553,20 +553,20 @@ def test_finish_operation_writes_dump_report_and_save_results(tmp_path: Path) ->
         "loop_detected": False,
         "dump_report": "%TRANSFER_RATE% %TIME_ELAPSED%",
     }
-    cli.CONN = conn
+    cli.conn = conn
     cli.FinishOperation()
     assert (tmp_path / "backup.txt").read_bytes().startswith(bytes.fromhex("EFBBBF"))
 
-    conn.INFO = {"last_action": 2, "transferred": 1, "mapper_raw": 0, "dump_info": {"header": {}}}
+    conn.info = {"last_action": 2, "transferred": 1, "mapper_raw": 0, "dump_info": {"header": {}}}
     cli.FinishOperation()
-    conn.INFO = {"last_action": 3, "transferred": 1, "save_erase": True}
+    conn.info = {"last_action": 3, "transferred": 1, "save_erase": True}
     cli.FinishOperation()
-    assert "save_erase" not in conn.INFO
-    conn.INFO = {"last_action": 3, "transferred": 1}
+    assert "save_erase" not in conn.info
+    conn.info = {"last_action": 3, "transferred": 1}
     cli.FinishOperation()
-    conn.INFO = {"last_action": 99, "transferred": 1}
+    conn.info = {"last_action": 99, "transferred": 1}
     cli.FinishOperation()
-    assert conn.INFO["last_action"] == 0
+    assert conn.info["last_action"] == 0
 
 
 def test_find_and_connect_device_use_mock_backend(
@@ -587,19 +587,19 @@ def test_find_and_connect_device_use_mock_backend(
     monkeypatch.setattr(cli_module, "HW_DEVICES", modules)
 
     assert cli.FindDevices(port="requested") is True
-    assert ("Mock Reader", connected) == cli.DEVICE
+    assert ("Mock Reader", connected) == cli.device
     assert ("initialize", ("requested", 1_000_000)) in connected.calls
     assert cli.ConnectDevice() is True
-    assert cli.CONN is connected
+    assert cli.conn is connected
 
 
 def test_gbxcartrw_baudrate_only_changes_gbxcartrw_connections(tmp_path: Path) -> None:
     cli = make_cli(tmp_path, make_args(gbxcartrw_baudrate=1_700_000))
     gbxcartrw = FakeConnection()
-    gbxcartrw.DEVICE_NAME = "Custom reader name"
+    gbxcartrw.device_name = "Custom reader name"
     other_device = FakeConnection()
     other_device.DEVICE_ID = "other"
-    other_device.DEVICE_NAME = "Other Reader"
+    other_device.device_name = "Other Reader"
 
     assert cli._GetDeviceMaxBaudRate(gbxcartrw) == 1_700_000
     assert cli._GetDeviceMaxBaudRate(other_device) == 2_000_000
@@ -618,11 +618,11 @@ def test_connect_device_rejects_backend_failures(
     assert cli.ConnectDevice() is False
     device = FakeConnection()
     device.initialize_results = [result]
-    cli.DEVICE = ("Mock", device)
+    cli.device = ("Mock", device)
     monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
 
     assert cli.ConnectDevice() is False
-    assert cli.CONN is None
+    assert cli.conn is None
 
 
 def test_interactive_console_and_disconnect_are_fully_mocked(
@@ -631,7 +631,7 @@ def test_interactive_console_and_disconnect_are_fully_mocked(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     executed: list[str] = []
 
     class FakeInteractiveConsole:
@@ -653,7 +653,7 @@ def test_interactive_console_and_disconnect_are_fully_mocked(
     cli.DisconnectDevice()
 
     assert executed == ["help", "read 0 1", "quit"]
-    assert cli.CONN is None
+    assert cli.conn is None
     assert ("close", True) in conn.calls
 
 
@@ -663,8 +663,8 @@ def test_read_cartridge_formats_valid_and_invalid_dmg_headers(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO = dmg_header()
-    cli.CONN = conn
+    conn.info = dmg_header()
+    cli.conn = conn
 
     bad, text, header = cli.ReadCartridge(dmg_header(bytearray(range(256)) + bytearray(128)))
 
@@ -681,7 +681,7 @@ def test_read_cartridge_formats_valid_and_invalid_dmg_headers(
     assert bad is True
     assert "Not detected" in text
 
-    conn.INFO["supported_mbc"] = False
+    conn.info["supported_mbc"] = False
     cli.ReadCartridge(dmg_header())
     assert "Warning" in capsys.readouterr().out
 
@@ -689,9 +689,9 @@ def test_read_cartridge_formats_valid_and_invalid_dmg_headers(
 def test_read_cartridge_formats_agb_database_and_invalid_metadata(tmp_path: Path) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO = agb_header()
-    conn.INFO["supported_3d"] = False
-    cli.CONN = conn
+    conn.info = agb_header()
+    conn.info["supported_3d"] = False
+    cli.conn = conn
     header = agb_header(bytearray(range(256)) + bytearray(256))
     header["db"] = {"gc": "DB-CODE", "rc": 0x123456, "rs": 0x4000000, "st": 2}
     header["3d_memory"] = True
@@ -806,10 +806,10 @@ def test_detect_cartridge_rejects_unstable_or_missing_profiles(
     expected: int,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.FLASHCARTS["DMG"] = cast("Any", profiles)
+    cli.flashcarts["DMG"] = cast("Any", profiles)
     conn = FakeConnection()
-    conn.INFO["stable"] = stable
-    cli.CONN = conn
+    conn.info["stable"] = stable
+    cli.conn = conn
 
     assert cli.DetectCartridge() == expected
 
@@ -821,11 +821,11 @@ def test_detect_cartridge_formats_successful_mock_detection(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     conn.header = dmg_header()
-    conn.INFO["dmg_carts"] = (
+    conn.info["dmg_carts"] = (
         ["Generic", "Selected", "Compatible"],
         [{}, {"mbc": "manual", "flash_size": 0x200000}, {}],
     )
-    conn.INFO["detect_cart"] = (
+    conn.info["detect_cart"] = (
         dmg_header(),
         None,
         1,
@@ -838,7 +838,7 @@ def test_detect_cartridge_formats_successful_mock_detection(
         "[   AAA/AA]\nflash id\n",
         0,
     )
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
 
     assert cli.DetectCartridge(limitVoltage=True) == 1
@@ -864,9 +864,9 @@ def test_detect_cartridge_formats_dmg_mapper_profile(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     conn.header = dmg_header()
-    conn.INFO["dmg_carts"] = (["Generic", "Selected"], [{}, {**mapper_profile}])
-    conn.INFO["detect_cart"] = (dmg_header(), None, 1, None, False, [1], 1, "", None, "id\n", 0)
-    cli.CONN = conn
+    conn.info["dmg_carts"] = (["Generic", "Selected"], [{}, {**mapper_profile}])
+    conn.info["detect_cart"] = (dmg_header(), None, 1, None, False, [1], 1, "", None, "id\n", 0)
+    cli.conn = conn
     monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
 
     assert cli.DetectCartridge() == 1
@@ -898,9 +898,9 @@ def test_detect_cartridge_formats_unknown_flashcart_suggestions(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     header = dmg_header()
-    conn.INFO["dmg_carts"] = (["Generic"], [{}])
-    conn.INFO["detect_cart"] = (header, None, 0, None, False, [], 0, "", None, flash_id, 0)
-    cli.CONN = conn
+    conn.info["dmg_carts"] = (["Generic"], [{}])
+    conn.info["detect_cart"] = (header, None, 0, None, False, [], 0, "", None, flash_id, 0)
+    cli.conn = conn
     monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
 
     assert cli.DetectCartridge() is None
@@ -918,11 +918,11 @@ def test_detect_cartridge_handles_failed_and_unknown_modes(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     conn.header = dmg_header()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli, "ReadCartridge", lambda _header: (False, "header", _header))
     assert cli.DetectCartridge() == -1
 
-    conn.INFO["detect_cart"] = (dmg_header(), None, 0, None, False, [], 0, "", None, "id\n", 0)
+    conn.info["detect_cart"] = (dmg_header(), None, 0, None, False, [], 0, "", None, "id\n", 0)
     conn.mode = "other"
     with pytest.raises(NotImplementedError):
         cli.DetectCartridge()
@@ -935,11 +935,11 @@ def test_backup_rom_transfers_generated_dmg_path(
     args = make_args(action="backup-rom", path=str(tmp_path / "backup.gb"), flashcart_type="Mock Profile")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO["dmg_carts"] = (
+    conn.info["dmg_carts"] = (
         ["Generic", "Mock Profile"],
         [{}, {"type": "DMG", "names": ["Mock Profile"], "flash_size": 0x200000}],
     )
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
 
     cli.BackupROM(args, dmg_header())
@@ -966,7 +966,7 @@ def test_backup_rom_falls_back_when_auto_size_lookup_returns_none(
     args = make_args(action="backup-rom", path=str(tmp_path / "backup.gb"))
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
     monkeypatch.setattr(cli_module.RomSizes, "GetSize", lambda _self, _index: None)
 
@@ -983,7 +983,7 @@ def test_backup_rom_uses_explicit_dmg_size(
     args = make_args(action="backup-rom", path=str(tmp_path / "backup.gb"), dmg_romsize="2mb")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
 
     cli.BackupROM(args, dmg_header())
@@ -1014,7 +1014,7 @@ def test_backup_rom_handles_invalid_header_and_overwrite_cancel(
     args = make_args(action="backup-rom", path=str(output), overwrite=False)
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
     monkeypatch.setattr("builtins.input", lambda _prompt: "n")
 
@@ -1031,8 +1031,8 @@ def test_backup_rom_selects_agb_autodetected_profile(
     args = make_args(action="backup-rom", mode="agb", path=str(path))
     cli = make_cli(tmp_path, args)
     conn = FakeConnection("AGB")
-    conn.INFO["agb_carts"] = (["Generic", "3D"], [{}, {"3d_memory": True}])
-    cli.CONN = conn
+    conn.info["agb_carts"] = (["Generic", "3D"], [{}, {"3d_memory": True}])
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gba")
     header = agb_header()
     header["3d_memory"] = True
@@ -1051,7 +1051,7 @@ def test_flash_rom_writes_through_selected_mock_profile(
     args = make_args(action="flash-rom", path=str(rom_path), flashcart_type="Mock Profile", dmg_mbc="5")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO["dmg_carts"] = (
+    conn.info["dmg_carts"] = (
         ["Generic", "Mock Profile"],
         [
             {},
@@ -1065,7 +1065,7 @@ def test_flash_rom_writes_through_selected_mock_profile(
             },
         ],
     )
-    cli.CONN = conn
+    cli.conn = conn
     parsed_header = {"logo_correct": True, "header_checksum_correct": True}
     monkeypatch.setattr(cli_module, "RomFileDMG", lambda _buffer: SimpleNamespace(GetHeader=lambda: parsed_header))
 
@@ -1106,7 +1106,7 @@ def test_flash_rom_rejects_invalid_inputs(
     args = make_args(path="auto" if path_kind == "auto" else str(path), flashcart_type=flashcart_type)
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO["dmg_carts"] = (
+    conn.info["dmg_carts"] = (
         ["Generic", "Mock Profile"],
         [
             {},
@@ -1118,7 +1118,7 @@ def test_flash_rom_rejects_invalid_inputs(
             },
         ],
     )
-    cli.CONN = conn
+    cli.conn = conn
 
     cli.FlashROM(args, dmg_header())
 
@@ -1132,8 +1132,8 @@ def test_flash_rom_autodetection_failure_does_not_transfer(
     args = make_args(path=str(tmp_path / "input.gb"))
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO["dmg_carts"] = (["Generic"], [{}])
-    cli.CONN = conn
+    conn.info["dmg_carts"] = (["Generic"], [{}])
+    cli.conn = conn
     monkeypatch.setattr(cli, "DetectCartridge", lambda: 0)
 
     cli.FlashROM(args, dmg_header())
@@ -1158,7 +1158,7 @@ def test_prompt_boot_logo_fix_bypasses_valid_and_exempt_headers(
     mbc: int,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection(mode)
+    cli.conn = FakeConnection(mode)
 
     def fail_if_prompted(_prompt: str) -> str:
         pytest.fail("valid and exempt headers must not prompt for a boot-logo fix")
@@ -1175,7 +1175,7 @@ def test_prompt_boot_logo_fix_missing_file_returns_false_without_prompt(
     mode: str,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection(mode)
+    cli.conn = FakeConnection(mode)
     monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
 
     def fail_if_prompted(_prompt: str) -> str:
@@ -1207,7 +1207,7 @@ def test_prompt_boot_logo_fix_reads_exact_platform_length_and_honors_answer(
     source = bytes(range(256)) * 2
     (tmp_path / file_name).write_bytes(source)
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection(mode)
+    cli.conn = FakeConnection(mode)
     monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
     monkeypatch.setattr("builtins.input", lambda _prompt: answer)
 
@@ -1257,7 +1257,7 @@ def test_resolve_save_configuration_special_and_explicit_types(
 ) -> None:
     del case
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection(mode)
+    cli.conn = FakeConnection(mode)
     header = dmg_header() if mode == "DMG" else agb_header()
     header.update(header_updates)
 
@@ -1269,7 +1269,7 @@ def test_resolve_save_configuration_detects_photo_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection()
+    cli.conn = FakeConnection()
     detected: list[bool] = []
 
     def detect_cartridge() -> int:
@@ -1288,7 +1288,7 @@ def test_resolve_save_configuration_rejects_malformed_auto_save_metadata(
     malformed_ram_size: str,
 ) -> None:
     cli = make_cli(tmp_path)
-    cli.CONN = FakeConnection()
+    cli.conn = FakeConnection()
     header = dmg_header()
     if malformed_ram_size == "missing":
         del header["ram_size_raw"]
@@ -1311,7 +1311,7 @@ def test_backup_restore_ram_forwards_resolved_explicit_configuration(
     )
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
 
     assert cli._ResolveSaveConfiguration(args, dmg_header()) == (0x13, 0x02, 0)
@@ -1340,7 +1340,7 @@ def test_unknown_save_mode_refuses_through_real_backup_restore_caller(
     args = make_args(action="restore-save", path=str(path))
     cli = make_cli(tmp_path, args)
     conn = FakeConnection(mode)
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
 
     assert cli._ResolveSaveConfiguration(args, dmg_header()) is None
@@ -1359,7 +1359,7 @@ def test_backup_restore_ram_covers_backup_restore_and_erase(
 
     backup_args = make_args(action="backup-save", path=str(tmp_path / "backup.sav"))
     cli = make_cli(tmp_path, backup_args)
-    cli.CONN = conn
+    cli.conn = conn
     cli.BackupRestoreRAM(backup_args, dmg_header())
 
     restore_path = tmp_path / "restore.sav"
@@ -1406,8 +1406,8 @@ def test_prepare_ereader_calibration_rejects_legacy_firmware(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO["build_date"] = ""
-    cli.CONN = conn
+    conn.info["build_date"] = ""
+    cli.conn = conn
 
     result = cli._PrepareEReaderCalibration(
         make_args(action="restore-save"),
@@ -1425,8 +1425,8 @@ def test_prepare_ereader_calibration_allows_absent_device_data(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO["build_date"] = "2026-01-01"
-    cli.CONN = conn
+    conn.info["build_date"] = "2026-01-01"
+    cli.conn = conn
 
     result = cli._PrepareEReaderCalibration(
         make_args(action="restore-save"),
@@ -1448,8 +1448,8 @@ def test_prepare_ereader_calibration_preserves_identical_save(
     path.write_bytes(original)
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
-    cli.CONN = conn
+    conn.info.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.conn = conn
 
     continue_write, buffer = cli._PrepareEReaderCalibration(
         make_args(action="restore-save", keep_calibration=True),
@@ -1475,8 +1475,8 @@ def test_prepare_ereader_calibration_overwrites_or_keeps_exact_range(
     path.write_bytes(original)
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
-    cli.CONN = conn
+    conn.info.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.conn = conn
     args = make_args(action="restore-save", keep_calibration=keep_calibration)
 
     continue_write, buffer = cli._PrepareEReaderCalibration(args, str(path))
@@ -1496,8 +1496,8 @@ def test_prepare_ereader_erase_converts_to_buffered_restore_when_preserving(
     calibration = bytes([0xA5] * 0x2000)
     cli = make_cli(tmp_path)
     conn = FakeConnection("AGB")
-    conn.INFO.update(build_date="2026-01-01", ereader_calibration=calibration)
-    cli.CONN = conn
+    conn.info.update(build_date="2026-01-01", ereader_calibration=calibration)
+    cli.conn = conn
     args = make_args(action="erase-save", keep_calibration=True)
 
     continue_write, buffer = cli._PrepareEReaderCalibration(
@@ -1524,12 +1524,12 @@ def test_backup_restore_ram_preserves_ereader_calibration_in_erase_transfer(
     )
     cli = make_cli(tmp_path, args)
     conn = FakeConnection("AGB")
-    conn.INFO.update(
+    conn.info.update(
         build_date="2026-01-01",
         ereader=True,
         ereader_calibration=calibration,
     )
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.sav")
 
     cli.BackupRestoreRAM(args, agb_header())
@@ -1562,8 +1562,8 @@ def test_backup_restore_ram_legacy_ereader_stops_before_transfer(
     args = make_args(action="restore-save", path=str(path), keep_calibration=True)
     cli = make_cli(tmp_path, args)
     conn = FakeConnection("AGB")
-    conn.INFO.update(build_date="", ereader=True)
-    cli.CONN = conn
+    conn.info.update(build_date="", ereader=True)
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.sav")
 
     cli.BackupRestoreRAM(args, agb_header())
@@ -1583,7 +1583,7 @@ def test_backup_restore_ram_requires_detectable_save_type(
     args = make_args(action="backup-save")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection(mode)
-    cli.CONN = conn
+    cli.conn = conn
     header = dmg_header() if mode == "DMG" else agb_header()
     header.update(save_field)
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.sav")
@@ -1599,7 +1599,7 @@ def test_backup_restore_routes_batteryless_sram_to_special_handler(
 ) -> None:
     args = make_args(action="backup-save", dmg_savetype="batteryless")
     cli = make_cli(tmp_path, args)
-    cli.CONN = FakeConnection()
+    cli.conn = FakeConnection()
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
     monkeypatch.setattr(cli, "_BatterylessSRAM", lambda **kwargs: calls.append(kwargs))
@@ -1615,16 +1615,16 @@ def test_resolve_batteryless_arguments_from_flags_detection_and_header(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
 
     explicit = make_args(bl_offset="0x100", bl_size="512", bl_layout="2")
     assert cli._ResolveBLArgs(explicit, {}) == {"bl_offset": 0x100, "bl_size": 512, "bl_layout": 2}
 
     detected = make_args()
-    conn.INFO["dump_info"] = {"batteryless_sram": {"bl_offset": 3, "bl_size": 4, "bl_layout": 1}}
+    conn.info["dump_info"] = {"batteryless_sram": {"bl_offset": 3, "bl_size": 4, "bl_layout": 1}}
     assert cli._ResolveBLArgs(detected, {}) == {"bl_offset": 3, "bl_size": 4, "bl_layout": 1}
 
-    conn.INFO = {}
+    conn.info = {}
     monkeypatch.setattr(
         cli_module.RomFileDMG,
         "GetBatterylessSramConfig",
@@ -1642,7 +1642,7 @@ def test_batteryless_backup_and_erase_use_mock_transfers(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(
         cli, "_ResolveBLArgs", lambda _args, _header: {"bl_offset": 0x1000, "bl_size": 16, "bl_layout": 0}
     )
@@ -1677,7 +1677,7 @@ def test_batteryless_restore_uses_real_region_and_profile_resolution(
     cli = make_cli(tmp_path)
     conn = FakeConnection(mode)
     profile = configure_batteryless_profile(conn, mode)
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1718,7 +1718,7 @@ def test_batteryless_restore_overwrite_prompt_controls_transfer(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     profile = configure_batteryless_profile(conn, "DMG")
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1753,7 +1753,7 @@ def test_batteryless_restore_missing_input_stops_before_transfer(tmp_path: Path)
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     profile = configure_batteryless_profile(conn, "DMG")
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1779,7 +1779,7 @@ def test_batteryless_restore_permission_failure_preserves_input(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     profile = configure_batteryless_profile(conn, "DMG")
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1813,7 +1813,7 @@ def test_batteryless_rejections_stop_before_transfer_and_preserve_input(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     profile = configure_batteryless_profile(conn, "DMG")
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="erase-save" if failure == "erase-refusal" else "restore-save",
         path=str(path),
@@ -1846,7 +1846,7 @@ def test_batteryless_erase_uses_exact_region_and_erased_buffer(
     cli = make_cli(tmp_path)
     conn = FakeConnection()
     profile = configure_batteryless_profile(conn, "DMG")
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="erase-save",
         path=str(tmp_path / "unused.sav"),
@@ -1890,9 +1890,9 @@ def test_batteryless_fixed_voltage_warning_controls_transfer(
     path.write_bytes(original)
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    conn.info.update(voltage_autoswitch=True, voltage_code=False)
     profile = configure_batteryless_profile(conn, "DMG", **profile_values)
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1931,9 +1931,9 @@ def test_batteryless_voltage_capable_device_skips_warning(
     path.write_bytes(original)
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO.update(voltage_autoswitch=True, voltage_code=True)
+    conn.info.update(voltage_autoswitch=True, voltage_code=True)
     profile = configure_batteryless_profile(conn, "DMG", voltage=3.3)
-    cli.CONN = conn
+    cli.conn = conn
     args = make_args(
         action="restore-save",
         path=str(path),
@@ -1970,11 +1970,11 @@ def test_resolve_flashcart_type_manual_and_autodetect(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO["dmg_carts"] = (
+    conn.info["dmg_carts"] = (
         ["Generic", "Mock"],
         [{}, {"type": "DMG", "names": ["Mock"]}],
     )
-    cli.CONN = conn
+    cli.conn = conn
 
     assert cli._ResolveFlashcartType(make_args(flashcart_type="Mock")) == 1
     assert cli._ResolveFlashcartType(make_args(flashcart_type="Missing")) is None
@@ -2207,7 +2207,7 @@ def test_run_standalone_firmware_action_selects_matching_fake_updater(
     args = make_args(action="update-matching", device_port="requested-port")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     updater_calls: list[dict[str, object]] = []
 
     class UnmatchedDevice:
@@ -2356,8 +2356,8 @@ def test_run_uses_switch_or_device_platform_autodetection(
     conn.supported_modes = ["DMG", "AGB"]
     conn.mode = detected_mode
     if use_switch:
-        conn.FW["cart_mode_switch"] = True
-        conn.INFO["switch_state"] = 1
+        conn.fw["cart_mode_switch"] = True
+        conn.info["switch_state"] = 1
     console = configure_interactive_run(cli, conn, monkeypatch)
     monkeypatch.setattr(
         "builtins.input",
@@ -2438,8 +2438,8 @@ def test_run_info_flow_uses_only_mock_connection(
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
     conn.header = dmg_header()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
@@ -2472,8 +2472,8 @@ def test_run_dispatches_mocked_backup_and_disconnects(
     cli = make_cli(tmp_path, args)
     conn = FakeConnection("AGB")
     conn.header = agb_header()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     calls: list[tuple[Namespace, dict[str, Any]]] = []
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
@@ -2530,8 +2530,8 @@ def test_run_canceled_file_prompt_disconnects_without_transfer(
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
     conn.header = dmg_header()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
@@ -2553,8 +2553,8 @@ def test_run_connection_failure_does_not_read_or_dispatch(
 ) -> None:
     cli = make_cli(tmp_path, make_args(action="flash-rom"))
     conn = FakeConnection()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
@@ -2574,8 +2574,8 @@ def test_run_invalid_cartridge_header_stops_before_backup(
     cli = make_cli(tmp_path, make_args(action="backup-rom"))
     conn = FakeConnection()
     conn.header = dmg_header()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
@@ -2597,9 +2597,9 @@ def test_run_transfer_abort_returns_failure_and_disconnects(
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
     conn.header = dmg_header()
-    conn.INFO = dmg_header()
-    cli.DEVICE = ("Mock Reader", conn)
-    cli.CONN = conn
+    conn.info = dmg_header()
+    cli.device = ("Mock Reader", conn)
+    cli.conn = conn
     output = sys.stdout
     monkeypatch.setattr(cli_module, "Logger", lambda: output)
     monkeypatch.setattr(cli_module, "HW_DEVICES", [])
@@ -2630,7 +2630,7 @@ def test_backup_rom_overwrite_refusal_preserves_existing_file(
     args = make_args(action="backup-rom", path=str(output_path), overwrite=False)
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
     monkeypatch.setattr("builtins.input", lambda _prompt: "n")
 
@@ -2649,13 +2649,13 @@ def test_flash_rom_unsafe_voltage_refusal_does_not_transfer(
     args = make_args(action="flash-rom", path=str(rom_path), flashcart_type="3V Profile")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO["voltage_autoswitch"] = True
-    conn.INFO["voltage_code"] = False
-    conn.INFO["dmg_carts"] = (
+    conn.info["voltage_autoswitch"] = True
+    conn.info["voltage_code"] = False
+    conn.info["dmg_carts"] = (
         ["Generic", "3V Profile"],
         [{}, {"type": "DMG", "names": ["3V Profile"], "voltage": 3.3, "commands": {}}],
     )
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(
         cli_module,
         "RomFileDMG",
@@ -2680,7 +2680,7 @@ def test_save_overwrite_refusal_does_not_transfer(
     args = make_args(action=action, path=str(save_path), overwrite=False)
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
     monkeypatch.setattr("builtins.input", lambda _prompt: "n")
 
@@ -2699,7 +2699,7 @@ def test_restore_save_invalid_type_stops_before_transfer(
     args = make_args(action="restore-save", path=str(save_path), dmg_savetype="unknown")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module, "generate_filename", lambda **_kwargs: "generated.gb")
 
     cli.BackupRestoreRAM(args, dmg_header())
@@ -2714,14 +2714,14 @@ def test_flash_verification_failure_reports_broken_sectors(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection()
-    conn.INFO = {"last_action": 4, "transferred": 0x2000, "broken_sectors": [[0x1000, 0x1000]]}
-    cli.CONN = conn
-    cli.PROGRESS.PROGRESS["verified"] = False
+    conn.info = {"last_action": 4, "transferred": 0x2000, "broken_sectors": [[0x1000, 0x1000]]}
+    cli.conn = conn
+    cli.progress.progress["verified"] = False
 
     cli.FinishOperation()
 
-    assert cli.RETVAL == 1
-    assert conn.INFO["last_action"] == 0
+    assert cli.retval == 1
+    assert conn.info["last_action"] == 0
     output = capsys.readouterr().out
     assert "verification" in output.lower()
     assert "0x1000" in output.lower()
@@ -2740,14 +2740,14 @@ def test_finish_backup_ram_exports_camera_rolls_to_expected_paths(
     args = make_args(action="backup-save", gbcamera_extract=True, gbcamera_outfile_format="bmp")
     cli = make_cli(tmp_path, args)
     conn = FakeConnection()
-    conn.INFO = {
+    conn.info = {
         "last_action": 2,
         "mapper_raw": 252,
         "transferred": 0x20000 * rolls,
         "last_path": str(save_path),
         "dump_info": {"header": {"ram_size_raw": 0x204 if rolls == 8 else 3}},
     }
-    cli.CONN = conn
+    cli.conn = conn
     loaded: list[object] = []
     exported: list[tuple[int, Path, int]] = []
     palettes: list[int] = []
@@ -2769,8 +2769,8 @@ def test_finish_backup_ram_exports_camera_rolls_to_expected_paths(
 
     cli._FinishBackupRAM()
 
-    assert cli.RETVAL == 0
-    assert conn.INFO["last_action"] == 0
+    assert cli.retval == 0
+    assert conn.info["last_action"] == 0
     assert len(loaded) == rolls
     if rolls == 1:
         assert loaded == [str(save_path)]
@@ -2793,14 +2793,14 @@ def test_finish_backup_ram_does_not_extract_when_disabled(
 ) -> None:
     cli = make_cli(tmp_path, make_args(gbcamera_extract=False))
     conn = FakeConnection()
-    conn.INFO = {
+    conn.info = {
         "last_action": 2,
         "mapper_raw": 252,
         "transferred": 0x20000,
         "last_path": str(tmp_path / "camera.sav"),
         "dump_info": {"header": {}},
     }
-    cli.CONN = conn
+    cli.conn = conn
 
     def unexpected_camera() -> None:
         msg = "Camera extraction was disabled"
@@ -2810,8 +2810,8 @@ def test_finish_backup_ram_does_not_extract_when_disabled(
 
     cli._FinishBackupRAM()
 
-    assert cli.RETVAL == 0
-    assert conn.INFO["last_action"] == 0
+    assert cli.retval == 0
+    assert conn.info["last_action"] == 0
     assert not (tmp_path / "camera").exists()
 
 
@@ -2827,14 +2827,14 @@ def test_finish_backup_ram_destination_collision_stops_exports(
     destination.write_bytes(b"existing destination")
     cli = make_cli(tmp_path, make_args(gbcamera_extract=True))
     conn = FakeConnection()
-    conn.INFO = {
+    conn.info = {
         "last_action": 2,
         "mapper_raw": 252,
         "transferred": 0x20000 * rolls,
         "last_path": str(save_path),
         "dump_info": {"header": {"ram_size_raw": 0x204 if rolls == 8 else 3}},
     }
-    cli.CONN = conn
+    cli.conn = conn
     exports: list[Path] = []
 
     class FakeCamera:
@@ -2854,8 +2854,8 @@ def test_finish_backup_ram_destination_collision_stops_exports(
 
     cli._FinishBackupRAM()
 
-    assert cli.RETVAL == 1
-    assert conn.INFO["last_action"] == 0
+    assert cli.retval == 1
+    assert conn.info["last_action"] == 0
     assert destination.read_bytes() == b"existing destination"
     assert exports == []
 
@@ -2890,7 +2890,7 @@ def test_debug_save_test_restores_data_and_orders_optional_power_cycle(
 ) -> None:
     cli = make_cli(tmp_path)
     conn = FakeConnection(mode)
-    cli.CONN = conn
+    cli.conn = conn
     monkeypatch.setattr(cli_module.AppContext, "CONFIG_PATH", str(tmp_path))
     monkeypatch.setattr(cli_module.os, "urandom", lambda size: b"\xa5" * size)
     monkeypatch.setattr("builtins.input", lambda _prompt: "")

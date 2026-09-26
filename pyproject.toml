@@ -112,7 +112,6 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 reportPrivateUsage=false
-reportConstantRedefinition=false
 reportUnnecessaryComparison=false
 reportUnnecessaryIsInstance=false
 reportUnknownVariableType=false

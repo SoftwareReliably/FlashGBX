@@ -200,8 +200,8 @@ def test_incomplete_read_adjusts_buffer_and_preserves_retry_floor(
 ) -> None:
     device = GbxDevice()
     serial_device = Mock()
-    device.DEVICE = serial_device
-    device.MAX_BUFFER_READ = 512
+    device.device = serial_device
+    device.max_buffer_read = 512
     progress = Mock()
     monkeypatch.setattr(device, "SetProgress", progress)
     context = lk_device_module._IncompleteROMReadContext({}, 0x100, position, max_length, lives)
@@ -209,16 +209,16 @@ def test_incomplete_read_adjusts_buffer_and_preserves_retry_floor(
     result = device._HandleIncompleteROMRead(context)
 
     assert result == (expected_length, expected_lives, False)
-    assert device.INFO["dump_info"]["transfer_size"] == expected_length
-    assert device.CANCEL is False
-    assert device.ERROR is False
+    assert device.info["dump_info"]["transfer_size"] == expected_length
+    assert device.cancel is False
+    assert device.error is False
     progress.assert_called_once_with({"action": "UPDATE_POS", "pos": position})
     serial_device.reset_input_buffer.assert_called_once_with()
     serial_device.reset_output_buffer.assert_called_once_with()
     if max_length == 256 and position == 0:
-        assert device.MAX_BUFFER_READ == 128
+        assert device.max_buffer_read == 128
     else:
-        assert device.MAX_BUFFER_READ == 512
+        assert device.max_buffer_read == 512
 
 
 @pytest.mark.parametrize("verification", [False, True])
@@ -228,7 +228,7 @@ def test_incomplete_read_exhaustion_sets_cancel_and_verification_result(
 ) -> None:
     device = GbxDevice()
     serial_device = Mock()
-    device.DEVICE = serial_device
+    device.device = serial_device
     progress = Mock()
     monkeypatch.setattr(device, "SetProgress", progress)
     args: dict[str, Any] = {}
@@ -241,10 +241,10 @@ def test_incomplete_read_exhaustion_sets_cancel_and_verification_result(
     result = device._HandleIncompleteROMRead(context)
 
     assert result == (64, 0, verification)
-    assert device.CANCEL is True
-    assert device.ERROR is True
-    assert device.CANCEL_ARGS["info_type"] == "msgbox_critical"
-    assert "error occured while reading" in device.CANCEL_ARGS["info_msg"]
+    assert device.cancel is True
+    assert device.error is True
+    assert device.cancel_args["info_type"] == "msgbox_critical"
+    assert "error occured while reading" in device.cancel_args["info_msg"]
     progress.assert_called_once_with({"action": "UPDATE_POS", "pos": expected_position})
     serial_device.reset_input_buffer.assert_called_once_with()
     serial_device.reset_output_buffer.assert_called_once_with()
@@ -275,9 +275,9 @@ def test_abort_rom_read_closes_output_clears_metadata_and_optionally_cycles_powe
     output = io.BytesIO()
     progress = Mock()
     power_cycle = Mock()
-    device.CANCEL = True
-    device.CANCEL_ARGS = {"from_user": True, "reason": "stop"}
-    device.ERROR_ARGS = {"iteration": 2}
+    device.cancel = True
+    device.cancel_args = {"from_user": True, "reason": "stop"}
+    device.error_args = {"iteration": 2}
     monkeypatch.setattr(device, "SetProgress", progress)
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=can_power_cycle))
     monkeypatch.setattr(device, "CartPowerCycle", power_cycle)
@@ -285,8 +285,8 @@ def test_abort_rom_read_closes_output_clears_metadata_and_optionally_cycles_powe
     assert device._AbortROMReadIfCanceled(output) is True
 
     assert output.closed is True
-    assert device.CANCEL_ARGS == {}
-    assert device.ERROR_ARGS == {}
+    assert device.cancel_args == {}
+    assert device.error_args == {}
     progress.assert_called_once_with(
         {"action": "ABORT", "abortable": False, "from_user": True, "reason": "stop"},
     )
@@ -297,7 +297,7 @@ def test_abort_rom_read_logs_close_failure_and_still_cycles_power(monkeypatch: p
     device = GbxDevice()
     log_exception = Mock()
     power_cycle = Mock()
-    device.CANCEL = True
+    device.cancel = True
     monkeypatch.setattr(device, "SetProgress", Mock())
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=True))
     monkeypatch.setattr(device, "CartPowerCycle", power_cycle)
@@ -366,8 +366,8 @@ def test_dmg_checksums_use_generated_header_and_independent_hashes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["dump_info"] = {}
+    device.mode = "DMG"
+    device.info["dump_info"] = {}
     progress = Mock()
     mapper = ChecksumMapper(checksum=0xBEEF)
     monkeypatch.setattr(device, "SetProgress", progress)
@@ -377,8 +377,8 @@ def test_dmg_checksums_use_generated_header_and_independent_hashes(
     device._CalculateROMChecksums(buffer, None, mapper)
 
     assert mapper.checksum_inputs == [bytes(buffer)]
-    assert device.INFO["rom_checksum_calc"] == 0xBEEF
-    assert device.INFO["dump_info"]["header"]["game_title"] == "POKEMON RED"
+    assert device.info["rom_checksum_calc"] == 0xBEEF
+    assert device.info["dump_info"]["header"]["game_title"] == "POKEMON RED"
     assert_hash_metadata(device, buffer)
     assert [item.args[0]["type"] for item in progress.call_args_list[1:]] == [
         "ROM checksum",
@@ -404,8 +404,8 @@ def test_agb_checksum_save_library_detection(
     expected_flash_id: tuple[int, str] | None,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.INFO["dump_info"] = {}
+    device.mode = "AGB"
+    device.info["dump_info"] = {}
     mapper = ChecksumMapper()
     read_flash_id = Mock(return_value=(0x1234, "Mock flash"))
     monkeypatch.setattr(device, "SetProgress", Mock())
@@ -420,8 +420,8 @@ def test_agb_checksum_save_library_detection(
 
     device._CalculateROMChecksums(buffer, None, mapper)
 
-    assert device.INFO["dump_info"]["agb_savelib"] == expected_library
-    assert device.INFO["dump_info"]["agb_save_flash_id"] == expected_flash_id
+    assert device.info["dump_info"]["agb_savelib"] == expected_library
+    assert device.info["dump_info"]["agb_save_flash_id"] == expected_flash_id
     assert read_flash_id.call_count == int(expected_flash_id is not None)
     assert_hash_metadata(device, buffer)
 
@@ -445,11 +445,11 @@ def assert_hash_metadata(device: GbxDevice, buffer: bytearray) -> None:
         "file_sha256": hashlib.sha256(buffer).hexdigest(),
         "file_crc32": zlib.crc32(buffer) & 0xFFFFFFFF,
     }
-    assert {key: device.INFO[key] for key in expected} == expected
-    assert device.INFO["dump_info"]["hash_md5"] == expected["file_md5"]
-    assert device.INFO["dump_info"]["hash_sha1"] == expected["file_sha1"]
-    assert device.INFO["dump_info"]["hash_sha256"] == expected["file_sha256"]
-    assert device.INFO["dump_info"]["hash_crc32"] == expected["file_crc32"]
+    assert {key: device.info[key] for key in expected} == expected
+    assert device.info["dump_info"]["hash_md5"] == expected["file_md5"]
+    assert device.info["dump_info"]["hash_sha1"] == expected["file_sha1"]
+    assert device.info["dump_info"]["hash_sha256"] == expected["file_sha256"]
+    assert device.info["dump_info"]["hash_crc32"] == expected["file_crc32"]
 
 
 def configure_small_backup(
@@ -463,10 +463,10 @@ def configure_small_backup(
     progress: list[dict[str, Any]] = []
     process_result = Mock(return_value=True)
     reset_state = Mock()
-    device.MODE = "DMG"
-    device.FW = {"fw_ver": 9, "pcb_name": "Test", "pcb_ver": 1}  # type: ignore[typeddict-item]
-    device.INFO["dump_info"] = {}
-    device.MAX_BUFFER_READ = 128
+    device.mode = "DMG"
+    device.fw = {"fw_ver": 9, "pcb_name": "Test", "pcb_ver": 1}  # type: ignore[typeddict-item]
+    device.info["dump_info"] = {}
+    device.max_buffer_read = 128
     monkeypatch.setattr(device, "_PrepareBackupFlashcart", Mock(return_value=({}, False)))
     monkeypatch.setattr(device, "_apply_legacy_flashcart_compatibility", Mock())
     monkeypatch.setattr(
@@ -517,9 +517,9 @@ def test_backup_rom_worker_reads_bounded_chunks_and_cleans_up(
     process_result.assert_called_once()
     assert process_result.call_args.args[1] == bytearray(b"ABCDEFGH")
     reset_state.assert_called_once_with(mapper, {}, False, 1, 0)
-    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] == str(path)
+    assert device.info["last_action"] == device.ACTIONS["ROM_READ"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] == str(path)
 
 
 def test_backup_rom_worker_short_read_then_cancel_closes_empty_output(
@@ -530,12 +530,12 @@ def test_backup_rom_worker_short_read_then_cancel_closes_empty_output(
     mapper = ReadLoopMapper(bank_size=8)
     progress, process_result, reset_state = configure_small_backup(device, monkeypatch, mapper, 8, 4)
     serial_device = Mock()
-    device.DEVICE = serial_device
+    device.device = serial_device
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=False))
 
     def short_read(**_kwargs: object) -> bytearray:
-        device.CANCEL = True
-        device.CANCEL_ARGS = {"from_user": True}
+        device.cancel = True
+        device.cancel_args = {"from_user": True}
         return bytearray(b"AB")
 
     read_rom = Mock(side_effect=short_read)
@@ -560,9 +560,9 @@ def test_process_rom_backup_result_batteryless_read_returns_before_metadata_work
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["hidden_sector"] = bytearray(b"stale")
-    device.INFO["dump_info"] = {
+    device.mode = "DMG"
+    device.info["hidden_sector"] = bytearray(b"stale")
+    device.info["dump_info"] = {
         "gbmem": bytearray(b"stale"),
         "gbmem_parsed": ["stale"],
     }
@@ -582,8 +582,8 @@ def test_process_rom_backup_result_batteryless_read_returns_before_metadata_work
     assert output.closed is False
     assert mapper.hidden_sector_reads == 0
     calculate_checksums.assert_not_called()
-    assert device.INFO["hidden_sector"] == bytearray(b"stale")
-    assert device.INFO["dump_info"]["gbmem"] == bytearray(b"stale")
+    assert device.info["hidden_sector"] == bytearray(b"stale")
+    assert device.info["dump_info"]["gbmem"] == bytearray(b"stale")
 
 
 @pytest.mark.parametrize("repeated", [False, True], ids=["distinct-halves", "repeated-halves"])
@@ -592,9 +592,9 @@ def test_process_rom_backup_result_clears_stale_map_and_detects_repeated_rom(
     repeated: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["hidden_sector"] = bytearray(b"stale")
-    device.INFO["dump_info"] = {
+    device.mode = "DMG"
+    device.info["hidden_sector"] = bytearray(b"stale")
+    device.info["dump_info"] = {
         "gbmem": bytearray(b"stale"),
         "gbmem_parsed": ["stale"],
     }
@@ -607,11 +607,11 @@ def test_process_rom_backup_result_clears_stale_map_and_detects_repeated_rom(
     result = device._process_rom_backup_result({"path": ""}, buffer, None, mapper)
 
     assert result is True
-    assert "hidden_sector" not in device.INFO
-    assert "gbmem" not in device.INFO["dump_info"]
-    assert "gbmem_parsed" not in device.INFO["dump_info"]
-    assert device.INFO["loop_detected"] == (0x4000 if repeated else False)
-    assert device.INFO["rom_checksum_calc"] == 0xCAFE
+    assert "hidden_sector" not in device.info
+    assert "gbmem" not in device.info["dump_info"]
+    assert "gbmem_parsed" not in device.info["dump_info"]
+    assert device.info["loop_detected"] == (0x4000 if repeated else False)
+    assert device.info["rom_checksum_calc"] == 0xCAFE
     assert mapper.checksum_inputs == [bytes(buffer)]
     assert_hash_metadata(device, buffer)
 
@@ -621,8 +621,8 @@ def test_process_rom_backup_result_hidden_sector_failure_closes_output_and_abort
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["dump_info"] = {}
+    device.mode = "DMG"
+    device.info["dump_info"] = {}
     mapper = ChecksumMapper(has_hidden_sector=True, hidden_sector=False)
     progress = Mock()
     monkeypatch.setattr(device, "SetProgress", progress)
@@ -639,8 +639,8 @@ def test_process_rom_backup_result_hidden_sector_failure_closes_output_and_abort
     assert result is False
     assert output.closed is True
     assert mapper.hidden_sector_reads == 1
-    assert device.CANCEL is True
-    assert device.ERROR is True
+    assert device.cancel is True
+    assert device.error is True
     progress.assert_called_once()
     assert progress.call_args.args[0]["action"] == "ABORT"
     assert progress.call_args.args[0]["info_type"] == "msgbox_critical"
@@ -654,8 +654,8 @@ def test_process_rom_backup_result_writes_map_and_only_valid_child_roms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["dump_info"] = {}
+    device.mode = "DMG"
+    device.info["dump_info"] = {}
     hidden_sector = bytearray(range(0x80))
     mapper = ChecksumMapper(has_hidden_sector=True, hidden_sector=hidden_sector)
     buffer = bytearray(index % 251 for index in range(0x8000))
@@ -697,9 +697,9 @@ def test_process_rom_backup_result_writes_map_and_only_valid_child_roms(
     parser_factory.assert_called_once_with()
     parser.ParseMapData.assert_called_once_with(buffer_map=hidden_sector, buffer_rom=buffer)
     generate_filename.assert_called_once_with(mode="DMG", header=valid_header, settings=settings)
-    assert device.INFO["hidden_sector"] == hidden_sector
-    assert device.INFO["dump_info"]["gbmem"] == hidden_sector
-    assert device.INFO["dump_info"]["gbmem_parsed"] == parsed_map
+    assert device.info["hidden_sector"] == hidden_sector
+    assert device.info["dump_info"]["gbmem"] == hidden_sector
+    assert device.info["dump_info"]["gbmem_parsed"] == parsed_map
     assert mapper.checksum_inputs == [bytes(buffer)]
     assert_hash_metadata(device, buffer)
 
@@ -716,10 +716,10 @@ def _assert_dmg_rom_bank_reads(mapper: IntegratedROMMapper, read_rom: Mock) -> N
 
 
 def _assert_rom_backup_completion(device: GbxDevice, path: Path, progress: list[dict[str, Any]]) -> None:
-    assert device.INFO["loop_detected"] is False
-    assert device.INFO["last_action"] == device.ACTIONS["ROM_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] == str(path)
+    assert device.info["loop_detected"] is False
+    assert device.info["last_action"] == device.ACTIONS["ROM_READ"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] == str(path)
     assert progress[-1] == {"action": "FINISHED"}
 
 
@@ -729,10 +729,10 @@ def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.FW = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
-    device.INFO["dump_info"] = {}
-    device.MAX_BUFFER_READ = 0x2000
+    device.mode = "DMG"
+    device.fw = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
+    device.info["dump_info"] = {}
+    device.max_buffer_read = 0x2000
     mapper = IntegratedROMMapper(bank_size=0x4000, rom_size=0x8000)
     first_bank = bytearray([0x11] * 0x4000)
     first_bank[: len(pokemon_red_header)] = pokemon_red_header
@@ -764,7 +764,7 @@ def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     monkeypatch.setattr(RomFileDMG, "GetDatabaseEntry", lambda _self: None)
     path = tmp_path / "two-bank.gb"
     args = {"path": str(path), "rom_size": 0x8000, "cart_type": 0, "mbc": 1}
-    original_read_method = device.DMG_READ_METHOD
+    original_read_method = device.dmg_read_method
 
     result = device._BackupROM_Worker(args)
 
@@ -773,7 +773,7 @@ def test_backup_rom_worker_integrates_dmg_preparation_result_and_reset(
     prepare.assert_called_once_with("DMG", args, {}, False)
     process.assert_called_once()
     assert process.call_args.args[1] == expected
-    reset.assert_called_once_with(mapper, {}, False, original_read_method, device.AGB_READ_METHOD)
+    reset.assert_called_once_with(mapper, {}, False, original_read_method, device.agb_read_method)
     _assert_dmg_rom_bank_reads(mapper, read_rom)
     set_read_method.assert_called_once_with(original_read_method)
     auto_poweroff_finish.assert_called_once_with()
@@ -786,10 +786,10 @@ def test_backup_rom_worker_integrates_agb_preparation_result_and_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
-    device.INFO["dump_info"] = {}
-    device.MAX_BUFFER_READ = 0x2000
+    device.mode = "AGB"
+    device.fw = {"fw_ver": 12, "pcb_name": "Test device", "pcb_ver": 1}
+    device.info["dump_info"] = {}
+    device.max_buffer_read = 0x2000
     flashcart = IntegratedFlashcart()
     cart_type = {
         "command_set": "AMD",
@@ -828,7 +828,7 @@ def test_backup_rom_worker_integrates_agb_preparation_result_and_reset(
         "cart_type": 0,
         "mbc": 0,
     }
-    original_read_method = device.AGB_READ_METHOD
+    original_read_method = device.agb_read_method
 
     result = device._BackupROM_Worker(args)
 
@@ -838,7 +838,7 @@ def test_backup_rom_worker_integrates_agb_preparation_result_and_reset(
     process.assert_called_once()
     assert process.call_args.args[1] == expected
     assert process.call_args.args[3] is None
-    reset.assert_called_once_with(None, cart_type, flashcart, device.DMG_READ_METHOD, original_read_method)
+    reset.assert_called_once_with(None, cart_type, flashcart, device.dmg_read_method, original_read_method)
     assert flashcart.selected_banks == [0, 1, 0]
     assert read_rom.call_args_list == [
         call(address=0, length=0x10000, skip_init=False, max_length=0x2000),

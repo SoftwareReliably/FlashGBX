@@ -213,7 +213,7 @@ def dialog_module() -> ModuleType:
 def test_default_dialog_connects_accept_and_reject_actions(dialog_module: ModuleType) -> None:
     dialog = dialog_module.UserInputDialog(None)
 
-    assert dialog.APP is None
+    assert dialog.app is None
     assert dialog.title.endswith(" - ")
     assert dialog.paramWidgets == {}
     assert dialog.lblIntro.text == ""
@@ -244,7 +244,7 @@ def test_dialog_builds_all_supported_parameter_widgets(dialog_module: ModuleType
     dialog = dialog_module.UserInputDialog(app, icon=icon_source, args=args)
     result = dialog.GetResult()
 
-    assert dialog.APP is app
+    assert dialog.app is app
     assert dialog.title.endswith(" - Backup options")
     assert isinstance(dialog.window_icon, FakeIcon)
     assert dialog.window_icon.source is icon_source
@@ -272,6 +272,6 @@ def test_hide_event_reactivates_parent_when_present(dialog_module: ModuleType) -
     dialog.hideEvent(object())
     assert activations == [True]
 
-    dialog.APP = None
+    dialog.app = None
     dialog.hideEvent(object())
     assert activations == [True]

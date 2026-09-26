@@ -256,7 +256,7 @@ def test_read_save_chunk_routes_to_the_expected_physical_read(
     expected_arguments: dict[str, object],
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode
+    device.mode = mode
     mapper = SaveIoMapper(mapper_name)
     calls = install_read_boundaries(device, monkeypatch, source)
     parameters = _SaveReadParameters(
@@ -315,7 +315,7 @@ def test_prepare_dmg_ram_bank_limits_range_and_configures_cs_pulse(
     cs_pulse: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveIoMapper(ram_range=(0x200, 0x1000), cs_pulse=cs_pulse)
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
@@ -341,7 +341,7 @@ def test_prepare_dmg_ram_bank_limits_range_and_configures_cs_pulse(
 
 def test_prepare_xploder_bank_selects_rom_window(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveIoMapper("Xploder GB", ram_range=(0, 0x2000))
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
@@ -378,7 +378,7 @@ def test_prepare_mbc6_flash_bank_erases_only_restore_sector_boundaries(
     expected_erases: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveIoMapper("MBC6", flash_range=(0x4000, 0x4000))
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
@@ -417,7 +417,7 @@ def test_prepare_single_agb_bank_does_not_issue_bank_switch(
     expected_buffer_length: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     mapper = SaveIoMapper()
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
@@ -442,7 +442,7 @@ def test_prepare_multibank_agb_flash_uses_standard_bank_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
         args={"mode": 2, "save_type": 5},
@@ -475,7 +475,7 @@ def test_prepare_multibank_agb_bootleg_uses_sram_bank_select(
     flash_chip: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_bank_boundaries(device, monkeypatch)
     context = _SaveBankContext(
         args={"mode": 2, "save_type": save_type},
@@ -701,8 +701,8 @@ def test_write_save_chunk_routes_nonzero_buffer_slice(
     expected: tuple[str, dict[str, object]],
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode
-    device.FW = {"fw_ver": firmware}
+    device.mode = mode
+    device.fw = {"fw_ver": firmware}
     mapper = SaveIoMapper(mapper_name)
     records = install_write_boundaries(device, monkeypatch)
     buffer = bytearray(b"__CHUNK__")
@@ -756,9 +756,9 @@ def test_write_save_chunk_propagates_ram_write_failure(
     statuses: list[object] | None,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     if ereader:
-        device.INFO["ereader"] = True
+        device.info["ereader"] = True
     records = install_write_boundaries(
         device,
         monkeypatch,
@@ -835,7 +835,7 @@ def test_agb_flash_waits_for_erase_before_programming(
     expected_reads: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_write_boundaries(device, monkeypatch, statuses=statuses)
     buffer = bytearray(b"__FLASH__")
 
@@ -862,7 +862,7 @@ def test_agb_flash_waits_for_erase_before_programming(
 
 def test_agb_flash_all_ff_chunk_erases_without_programming(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_write_boundaries(device, monkeypatch, statuses=[0xFFFF])
 
     assert (
@@ -885,7 +885,7 @@ def test_agb_flash_erase_exhaustion_stops_before_programming(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_write_boundaries(device, monkeypatch, statuses=[0] * 50)
 
     assert (
@@ -909,8 +909,8 @@ def test_ereader_final_flash_sector_preserves_protected_tail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.INFO["ereader"] = True
+    device.mode = "AGB"
+    device.info["ereader"] = True
     records = install_write_boundaries(device, monkeypatch, statuses=[0xFFFF])
     payload = bytearray(index % 251 for index in range(0x1000))
     buffer = bytearray(b"HEAD") + payload
@@ -945,7 +945,7 @@ def test_dacs_write_result_propagates_from_write_save_chunk(
     write_result: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     calls: list[tuple[int, int, bytearray]] = []
 
     def record_dacs_write(sector_address: int, position: int, data: bytearray) -> bool:
@@ -1019,9 +1019,9 @@ def test_save_worker_dacs_write_failure_prevents_finished(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"pcb_name": "Test", "fw_ver": 12}
-    device.INFO["action"] = "RESTORE_RAM"
+    device.mode = "AGB"
+    device.fw = {"pcb_name": "Test", "fw_ver": 12}
+    device.info["action"] = "RESTORE_RAM"
     progress: list[dict[str, object]] = []
     dacs_calls: list[tuple[int, int, bytearray]] = []
 
@@ -1053,8 +1053,8 @@ def test_save_worker_dacs_write_failure_prevents_finished(
 
     assert dacs_calls == [(0x1F00000, 0, bytearray(b"FAIL"))]
     assert all(event.get("action") != "FINISHED" for event in progress)
-    assert device.INFO["last_action"] == "RESTORE_RAM"
-    assert device.INFO["action"] is None
+    assert device.info["last_action"] == "RESTORE_RAM"
+    assert device.info["action"] is None
 
 
 class CompletionMapper:
@@ -1120,7 +1120,7 @@ def test_finish_save_backup_writes_final_disk_bytes_and_hashes(
     expected: bytearray,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = CompletionMapper(mapper_name)
     destination = tmp_path / f"{mapper_name}.sav"
     args = {"rtc": False, "save_type": 1, "path": destination}
@@ -1130,15 +1130,15 @@ def test_finish_save_backup_writes_final_disk_bytes_and_hashes(
     assert result == (False, True)
     assert destination.read_bytes() == expected
     assert source == expected
-    assert device.INFO["transferred"] == len(expected)
-    assert device.INFO["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
-    assert device.INFO["file_sha1"] == hashlib.sha1(expected).hexdigest()
-    assert "data" not in device.INFO
+    assert device.info["transferred"] == len(expected)
+    assert device.info["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
+    assert device.info["file_sha1"] == hashlib.sha1(expected).hexdigest()
+    assert "data" not in device.info
 
 
 def test_finish_save_backup_memory_restores_agb_bank_byte_and_hashes() -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     buffer = bytearray(b"BANK-X-DATA")
     expected = bytearray(buffer)
     expected[5] = 0xA5
@@ -1154,9 +1154,9 @@ def test_finish_save_backup_memory_restores_agb_bank_byte_and_hashes() -> None:
 
     assert result == (False, True)
     assert buffer == expected
-    assert device.INFO["data"] is buffer
-    assert device.INFO["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
-    assert device.INFO["file_sha1"] == hashlib.sha1(expected).hexdigest()
+    assert device.info["data"] is buffer
+    assert device.info["file_crc32"] == zlib.crc32(expected) & 0xFFFFFFFF
+    assert device.info["file_sha1"] == hashlib.sha1(expected).hexdigest()
 
 
 @pytest.mark.parametrize(
@@ -1182,7 +1182,7 @@ def test_finish_dmg_backup_appends_only_valid_rtc_bytes(
     expected_events: list[tuple[object, ...]],
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = CompletionMapper(has_rtc=has_rtc, rtc_read=rtc_read)
     progress: list[dict[str, object]] = []
     monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
@@ -1195,9 +1195,9 @@ def test_finish_dmg_backup_appends_only_valid_rtc_bytes(
     assert destination.read_bytes() == buffer + expected_rtc
     assert mapper.events == expected_events
     assert progress == [{"action": "UPDATE_POS", "pos": len(buffer) + len(expected_rtc)}]
-    assert device.NO_PROG_UPDATE is False
-    assert device.INFO["file_crc32"] == zlib.crc32(buffer) & 0xFFFFFFFF
-    assert device.INFO["file_sha1"] == hashlib.sha1(buffer).hexdigest()
+    assert device.no_prog_update is False
+    assert device.info["file_crc32"] == zlib.crc32(buffer) & 0xFFFFFFFF
+    assert device.info["file_sha1"] == hashlib.sha1(buffer).hexdigest()
 
 
 def test_finish_agb_backup_uses_firmware_rtc_bytes_and_frozen_timestamp(
@@ -1205,8 +1205,8 @@ def test_finish_agb_backup_uses_firmware_rtc_bytes_and_frozen_timestamp(
     tmp_path: Path,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"fw_ver": 12}
+    device.mode = "AGB"
+    device.fw = {"fw_ver": 12}
     raw_rtc = bytearray([0xAA, 1, 2, 3, 4, 5, 6, 7])
     frozen_time = 1_700_000_123
     gpio_calls: list[tuple[str, object]] = []
@@ -1244,14 +1244,14 @@ def test_finish_agb_backup_uses_firmware_rtc_bytes_and_frozen_timestamp(
     assert writes == [device.DEVICE_CMD["AGB_READ_GPIO_RTC"]]
     assert gpio_calls == [("init", None), ("has_rtc", raw_rtc), ("status", None)]
     assert progress == [{"action": "UPDATE_POS", "pos": len(buffer) + 16}]
-    assert device.NO_PROG_UPDATE is False
+    assert device.no_prog_update is False
 
 
 def test_finish_dmg_restore_forwards_rtc_tail_and_advance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = CompletionMapper(rtc_size=4)
     progress: list[dict[str, object]] = []
     monkeypatch.setattr(device, "SetProgress", lambda event: progress.append(dict(event)))
@@ -1271,14 +1271,14 @@ def test_finish_dmg_restore_forwards_rtc_tail_and_advance(
         {"action": "UPDATE_RTC", "method": "write"},
         {"action": "UPDATE_POS", "pos": 8, "force_update": True},
     ]
-    assert device.INFO["transferred"] == 8
+    assert device.info["transferred"] == 8
 
 
 def test_finish_agb_restore_forwards_rtc_tail_to_explicit_gpio_fake(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     gpio_calls: list[tuple[bytearray, bool]] = []
     progress: list[dict[str, object]] = []
 
@@ -1330,7 +1330,7 @@ def test_finish_restore_preserves_verification_result(
     expected_calls: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = CompletionMapper()
     verification_calls: list[tuple[dict[str, object], CompletionMapper, bytearray, int]] = []
     progress: list[dict[str, object]] = []
@@ -1373,8 +1373,8 @@ def test_reset_dmg_save_hardware_orders_mapper_pin_and_firmware_operations(
     audio_low: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.FW = {"fw_ver": firmware}
+    device.mode = "DMG"
+    device.fw = {"fw_ver": firmware}
     events: list[tuple[object, ...]] = []
     mapper = CompletionMapper(events=events)
 
@@ -1413,7 +1413,7 @@ def test_reset_agb_bank_select_restores_captured_byte_in_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     writes: list[tuple[int, int, bool]] = []
 
     def cart_write(*, address: int, value: int, sram: bool) -> None:

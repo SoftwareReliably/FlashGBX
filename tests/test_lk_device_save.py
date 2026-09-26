@@ -38,7 +38,7 @@ def configure_readback(
 
     def backup(args: dict[str, Any]) -> bool:
         backup_calls.append(args)
-        device.INFO["data"] = readback
+        device.info["data"] = readback
         return backup_result
 
     monkeypatch.setattr(device, "SetProgress", progress)
@@ -53,7 +53,7 @@ def test_matching_save_readback_returns_true_and_preserves_request(
     readback_type: type,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper()
     buffer = bytearray(b"SAVE DATA")
     readback = readback_type(buffer)
@@ -81,7 +81,7 @@ def test_failed_readback_transfer_returns_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper()
     buffer = bytearray(b"SAVE")
     progress, read_rom, backup_calls = configure_readback(
@@ -109,7 +109,7 @@ def test_missing_or_invalid_readback_returns_false(
     readback: object,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper()
     buffer = bytearray(b"SAVE")
     progress, _, _ = configure_readback(device, monkeypatch, readback)
@@ -127,7 +127,7 @@ def test_mbc2_verification_compares_only_low_nibbles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper("MBC2")
     buffer = bytearray([0xF1, 0xA2, 0x73, 0x44])
     readback = bytearray([0x01, 0x12, 0xE3, 0x94])
@@ -145,7 +145,7 @@ def test_dacs_verification_ignores_read_only_tail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     mapper = SaveMapper()
     buffer = bytearray(0xFE100)
     readback = bytearray(buffer)
@@ -165,8 +165,8 @@ def test_ereader_calibration_blocks_are_preserved_from_readback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.INFO["ereader"] = True
+    device.mode = "AGB"
+    device.info["ereader"] = True
     mapper = SaveMapper()
     buffer = bytearray(0x20000)
     readback = bytearray(buffer)
@@ -186,7 +186,7 @@ def test_mismatch_report_caps_details_and_counts_all_differences(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper()
     buffer = bytearray(12)
     readback = bytearray(range(1, 13))
@@ -225,7 +225,7 @@ def test_short_readback_counts_missing_bytes_without_crashing(
     first_missing: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveMapper()
     buffer = bytearray(b"\x10\x20\x30\x40")
     progress, _, _ = configure_readback(device, monkeypatch, readback)

@@ -169,7 +169,7 @@ def test_huc3_read_rtc_serializes_registers_and_timestamp(monkeypatch: pytest.Mo
 
     assert buffer[:4] == struct.pack("<I", 0xAAAAAA)
     assert buffer[4:] == struct.pack("<Q", 123456)
-    assert buffer is mapper.RTC_BUFFER
+    assert buffer is mapper.rtc_buffer
     assert mapper.HasRTC() is True
     assert mapper.GetRTCBufferSize() == 0x0C
     assert mapper.GetMaxROMSize() == 2 * 1024 * 1024
@@ -190,7 +190,7 @@ def test_huc3_write_and_decode_rtc_data(monkeypatch: pytest.MonkeyPatch) -> None
     assert (0xA000, 0x61, False) in cartridge.writes
 
     packed = (2 * 60 + 34) | (5 << 12)
-    mapper.RTC_BUFFER = bytearray(struct.pack("<I", packed) + bytes(8))
+    mapper.rtc_buffer = bytearray(struct.pack("<I", packed) + bytes(8))
     rtc = mapper.GetRTCDict()
     assert rtc.items() >= {"rtc_h": 2, "rtc_m": 34, "rtc_d": 5, "rtc_valid": True}.items()
     assert mapper.GetRTCString() == rtc["string"]
@@ -306,7 +306,7 @@ def test_tama5_advance_and_decode_paths(monkeypatch: pytest.MonkeyPatch) -> None
     rtc_buffer = bytearray(40)
     rtc_buffer[:7] = bytearray([0x56, 0x45, 0x13, 0x96, 0x82, 0x40, 0x02])
     rtc_buffer[0x0D] = 0x01
-    mapper.RTC_BUFFER = rtc_buffer
+    mapper.rtc_buffer = rtc_buffer
     rtc = mapper.GetRTCDict()
     assert (
         rtc.items()
@@ -435,7 +435,7 @@ def test_agb_gpio_has_rtc_offline_and_live_detection(monkeypatch: pytest.MonkeyP
     )
     assert gpio.HasRTC(bytearray([0x80]) + same_rom) == 1
     assert gpio.HasRTC(bytearray([0x40]) + same_rom) == 3
-    assert same_rom == gpio.RTC_BUFFER
+    assert same_rom == gpio.rtc_buffer
 
     different_cartridge = AGBCartridge(blocks=iter([bytearray(6), bytearray([1] * 6)]))
     live = AGB_GPIO(
@@ -517,16 +517,16 @@ def test_agb_gpio_rtc_dict_availability_validity_and_read_failure(monkeypatch: p
     assert gpio.GetRTCDict(has_rtc=3)["string"] == "Not available"
     assert "Battery dry" in gpio.GetRTCDict(has_rtc=1)["string"]
 
-    gpio.RTC_BUFFER = bytearray(16)
+    gpio.rtc_buffer = bytearray(16)
     invalid = gpio.GetRTCDict(has_rtc=True)
     assert invalid["rtc_valid"] is False
 
-    gpio.RTC_BUFFER = bytearray([0x24, 0x08, 0x29, 0x04, 0x93, 0x45, 0x56, 0x40])
+    gpio.rtc_buffer = bytearray([0x24, 0x08, 0x29, 0x04, 0x93, 0x45, 0x56, 0x40])
     valid = gpio.GetRTCDict(has_rtc=True)
     assert valid.items() >= {"rtc_y": 24, "rtc_m": 8, "rtc_d": 29, "rtc_h": 13, "rtc_valid": True}.items()
     assert gpio.GetRTCString(has_rtc=True) == valid["string"]
 
-    gpio.RTC_BUFFER = None
+    gpio.rtc_buffer = None
     monkeypatch.setattr(gpio, "ReadRTC", lambda: False)
     with pytest.raises(RuntimeError, match="Could not read AGB RTC data"):
         gpio.GetRTCDict(has_rtc=True)

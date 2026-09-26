@@ -72,7 +72,7 @@ def install_worker_boundaries(
 ) -> WorkerRecords:
     """Install recording hardware boundaries while retaining worker helpers."""
     records = WorkerRecords(read_responses)
-    device.FW = {"fw_ver": 12, "pcb_name": "Test device"}
+    device.fw = {"fw_ver": 12, "pcb_name": "Test device"}
 
     def read_ram(*, address: int, length: int, command: object, max_length: int) -> bytearray:
         records.ram_reads.append(
@@ -173,7 +173,7 @@ def test_dmg_worker_backs_up_two_banks_and_resets_mapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper()
     responses = [bytearray(b"A0"), bytearray(b"A1"), bytearray(b"B0"), bytearray(b"B1")]
     records = install_worker_boundaries(device, monkeypatch, mapper=mapper, read_responses=responses)
@@ -182,11 +182,11 @@ def test_dmg_worker_backs_up_two_banks_and_resets_mapper(
 
     assert device._BackupRestoreRAM_Worker(args) is True
 
-    assert device.INFO["data"] == bytearray(b"A0A1B0B1")
-    assert device.INFO["transferred"] == 8
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] is None
+    assert device.info["data"] == bytearray(b"A0A1B0B1")
+    assert device.info["transferred"] == 8
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] is None
     assert records.ram_reads == [
         {"bank": 0, "address": 0, "length": 2, "command": None, "max_length": 0x1000},
         {"bank": 0, "address": 2, "length": 2, "command": None, "max_length": 0x1000},
@@ -219,7 +219,7 @@ def test_dmg_worker_restores_exact_slices_across_two_banks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper()
     records = install_worker_boundaries(device, monkeypatch, mapper=mapper)
     install_dmg_configuration(device, monkeypatch, mapper)
@@ -243,10 +243,10 @@ def test_dmg_worker_restores_exact_slices_across_two_banks(
     ]
     assert mapper.selected_banks == [0, 1, 0]
     assert mapper.ram_enabled == [False]
-    assert device.INFO["transferred"] == len(source)
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_WRITE"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] is None
+    assert device.info["transferred"] == len(source)
+    assert device.info["last_action"] == device.ACTIONS["SAVE_WRITE"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] is None
     assert records.progress == [
         {"action": "INITIALIZE", "method": "SAVE_WRITE", "size": 8},
         {"action": "UPDATE_POS", "pos": 2},
@@ -264,7 +264,7 @@ def test_agb_worker_backs_up_paired_reads_to_disk(
     tmp_path: Path,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     responses = [bytearray(b"A0"), bytearray(b"A0"), bytearray(b"A1"), bytearray(b"A1")]
     records = install_worker_boundaries(device, monkeypatch, read_responses=responses)
     install_agb_configuration(device, monkeypatch)
@@ -277,10 +277,10 @@ def test_agb_worker_backs_up_paired_reads_to_disk(
     assert [read["address"] for read in records.ram_reads] == [0, 0, 2, 2]
     assert all(read["command"] == device.DEVICE_CMD["AGB_CART_READ_SRAM"] for read in records.ram_reads)
     assert records.read_responses == []
-    assert device.INFO["transferred"] == 4
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] == destination
+    assert device.info["transferred"] == 4
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] == destination
     assert records.progress == [
         {"action": "INITIALIZE", "method": "SAVE_READ", "size": 4},
         {"action": "UPDATE_POS", "pos": 2},
@@ -294,7 +294,7 @@ def test_agb_worker_restores_memory_and_uses_controlled_verification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_worker_boundaries(device, monkeypatch)
     install_agb_configuration(device, monkeypatch)
     source = bytearray(b"A0A1")
@@ -339,10 +339,10 @@ def test_agb_worker_restores_memory_and_uses_controlled_verification(
         },
     ]
     assert verification_calls == [(source, len(source))]
-    assert device.INFO["transferred"] == 4
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_WRITE"]
-    assert device.INFO["action"] is None
-    assert device.INFO["last_path"] is None
+    assert device.info["transferred"] == 4
+    assert device.info["last_action"] == device.ACTIONS["SAVE_WRITE"]
+    assert device.info["action"] is None
+    assert device.info["last_path"] is None
     assert records.progress == [
         {"action": "INITIALIZE", "method": "SAVE_WRITE", "size": 4},
         {"action": "UPDATE_POS", "pos": 2},
@@ -357,7 +357,7 @@ def test_agb_worker_keeps_real_normal_sram_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     payload = bytearray(index % 251 for index in range(0x2000))
     records = install_worker_boundaries(device, monkeypatch, read_responses=[payload])
     args = {
@@ -370,8 +370,8 @@ def test_agb_worker_keeps_real_normal_sram_configuration(
 
     assert device._BackupRestoreRAM_Worker(args) is True
 
-    assert device.INFO["data"] == payload
-    assert device.INFO["transferred"] == len(payload)
+    assert device.info["data"] == payload
+    assert device.info["transferred"] == len(payload)
     assert records.ram_reads == [
         {
             "bank": None,
@@ -394,8 +394,8 @@ def test_agb_worker_keeps_real_normal_sram_configuration(
         {"action": "UPDATE_POS", "pos": len(payload)},
         {"action": "FINISHED", "verified": True},
     ]
-    assert device.INFO["last_path"] is None
-    assert device.INFO["action"] is None
+    assert device.info["last_path"] is None
+    assert device.info["action"] is None
     assert finished_events(records) == [{"action": "FINISHED", "verified": True}]
 
 
@@ -403,7 +403,7 @@ def test_short_read_retries_same_position_with_smaller_transfer_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper(bank_size=4)
     records = install_worker_boundaries(
         device,
@@ -418,7 +418,7 @@ def test_short_read_retries_same_position_with_smaller_transfer_limit(
 
     assert device._BackupRestoreRAM_Worker(args) is True
 
-    assert device.INFO["data"] == bytearray(b"A0A1")
+    assert device.info["data"] == bytearray(b"A0A1")
     assert [(read["address"], read["max_length"]) for read in records.ram_reads] == [
         (0, 0x1000),
         (0, 0x800),
@@ -433,7 +433,7 @@ def test_short_read_at_minimum_transfer_limit_fails_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper(bank_size=2)
     records = install_worker_boundaries(
         device,
@@ -441,7 +441,7 @@ def test_short_read_at_minimum_transfer_limit_fails_and_cleans_up(
         mapper=mapper,
         read_responses=[bytearray(b"X")],
     )
-    device.FW["pcb_name"] = "GBxCart RW"
+    device.fw["pcb_name"] = "GBxCart RW"
     install_dmg_configuration(device, monkeypatch, mapper, save_size=2, ram_banks=1)
     serial = SerialResetRecorder()
     monkeypatch.setattr(device, "_serial_device", lambda: serial)
@@ -452,12 +452,12 @@ def test_short_read_at_minimum_transfer_limit_fails_and_cleans_up(
     assert [(read["address"], read["max_length"]) for read in records.ram_reads] == [(0, 64)]
     assert serial.input_resets == 1
     assert serial.output_resets == 1
-    assert "data" not in device.INFO
+    assert "data" not in device.info
     assert finished_events(records) == []
     assert mapper.selected_banks == [0, 0]
     assert mapper.ram_enabled == [False]
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
 
 
 @pytest.mark.parametrize("detect", [False, True], ids=["ordinary", "detection"])
@@ -467,7 +467,7 @@ def test_paired_read_mismatch_stops_before_later_chunks_and_cleans_up(
     detect: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper(bank_size=4)
     records = install_worker_boundaries(
         device,
@@ -500,9 +500,9 @@ def test_paired_read_mismatch_stops_before_later_chunks_and_cleans_up(
     assert len(aborts) == (0 if detect else 1)
     assert mapper.selected_banks == [0, 0]
     assert mapper.ram_enabled == [False]
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
-    assert "last_path" not in device.INFO
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
+    assert "last_path" not in device.info
 
 
 @pytest.mark.parametrize("cancel_after_reads", [0, 1], ids=["before-first-chunk", "after-one-chunk"])
@@ -511,7 +511,7 @@ def test_worker_cancellation_stops_reads_and_cleans_up(
     cancel_after_reads: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper(bank_size=4)
     records = install_worker_boundaries(
         device,
@@ -521,17 +521,17 @@ def test_worker_cancellation_stops_reads_and_cleans_up(
     )
     install_dmg_configuration(device, monkeypatch, mapper, save_size=4, ram_banks=1)
     if cancel_after_reads == 0:
-        device.CANCEL = True
+        device.cancel = True
     else:
         read_ram = device.ReadRAM
 
         def read_then_cancel(*, address: int, length: int, command: object, max_length: int) -> bytearray:
             result = read_ram(address=address, length=length, command=command, max_length=max_length)
-            device.CANCEL = True
+            device.cancel = True
             return result
 
         monkeypatch.setattr(device, "ReadRAM", read_then_cancel)
-    device.CANCEL_ARGS = {"from_user": True}
+    device.cancel_args = {"from_user": True}
     args = {"mode": 2, "save_type": 3, "path": None, "verify_read": False}
 
     assert device._BackupRestoreRAM_Worker(args) is None
@@ -541,19 +541,19 @@ def test_worker_cancellation_stops_reads_and_cleans_up(
     aborts = [event for event in records.progress if event.get("action") == "ABORT"]
     assert len(aborts) == 1
     assert aborts[0]["from_user"] is True
-    assert device.CANCEL_ARGS == {}
+    assert device.cancel_args == {}
     assert mapper.selected_banks == [0, 0]
     assert mapper.ram_enabled == [False]
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
-    assert "last_path" not in device.INFO
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
+    assert "last_path" not in device.info
 
 
 def test_low_level_write_failure_stops_later_chunks_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_worker_boundaries(device, monkeypatch)
     dacs_calls: list[tuple[int, int, bytearray]] = []
 
@@ -583,9 +583,9 @@ def test_low_level_write_failure_stops_later_chunks_and_cleans_up(
     assert dacs_calls == [(0x1F00000, 0, bytearray(b"A0A1"))]
     assert records.ram_writes == []
     assert finished_events(records) == []
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_WRITE"]
-    assert device.INFO["action"] is None
-    assert "last_path" not in device.INFO
+    assert device.info["last_action"] == device.ACTIONS["SAVE_WRITE"]
+    assert device.info["action"] is None
+    assert "last_path" not in device.info
 
 
 @pytest.mark.parametrize("verification_result", [False, None], ids=["failure", "canceled"])
@@ -594,7 +594,7 @@ def test_verification_failure_or_cancellation_cleans_up_without_finished(
     verification_result: bool | None,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_worker_boundaries(device, monkeypatch)
     install_agb_configuration(device, monkeypatch)
     verification_calls: list[tuple[bytearray, int]] = []
@@ -624,16 +624,16 @@ def test_verification_failure_or_cancellation_cleans_up_without_finished(
     assert verification_calls == [(source, len(source))]
     assert len(records.ram_writes) == 2
     assert finished_events(records) == []
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_WRITE"]
-    assert device.INFO["action"] is None
-    assert "last_path" not in device.INFO
+    assert device.info["last_action"] == device.ACTIONS["SAVE_WRITE"]
+    assert device.info["action"] is None
+    assert "last_path" not in device.info
 
 
 def test_wrapper_restores_auto_poweroff_and_worker_cleans_mapper_after_io_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = WorkerMapper(bank_size=2)
     records = install_worker_boundaries(device, monkeypatch, mapper=mapper)
     install_dmg_configuration(device, monkeypatch, mapper, save_size=2, ram_banks=1)
@@ -654,11 +654,11 @@ def test_wrapper_restores_auto_poweroff_and_worker_cleans_mapper_after_io_error(
     with pytest.raises(OSError, match="read failed"):
         device._BackupRestoreRAM(args)
 
-    assert device.THREAD_AUTO_POWEROFF_TIME is None
+    assert device.thread_auto_poweroff_time is None
     assert records.firmware_variables[0] == ("AUTO_POWEROFF_TIME", 5000)
     assert records.firmware_variables[-1] == ("AUTO_POWEROFF_TIME", 30_000)
     assert mapper.selected_banks == [0, 0]
     assert mapper.ram_enabled == [False]
-    assert device.INFO["last_action"] == device.ACTIONS["SAVE_READ"]
-    assert device.INFO["action"] is None
+    assert device.info["last_action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] is None
     assert finished_events(records) == []

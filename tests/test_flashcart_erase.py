@@ -353,5 +353,5 @@ def test_skipped_sector_erase_advances_mixed_map_at_region_boundary() -> None:
     assert cart._sector_pos == 1
     assert cart.SectorErase(skip=True) == 0x2000
     assert cart._sector_pos == 1
-    assert cart.CONFIG["sector_size"] == [[0x1000, 0], [0x2000, 0]]
+    assert cart.config["sector_size"] == [[0x1000, 0], [0x2000, 0]]
     assert harness.events == []

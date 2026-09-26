@@ -174,7 +174,7 @@ def install_flash_configuration_boundaries(
 ) -> tuple[FlashConfigurationRecords, RecordingMapperFactory]:
     """Record setup boundaries while retaining real profile accessors."""
     records = FlashConfigurationRecords()
-    device.FW = {"fw_ver": firmware}
+    device.fw = {"fw_ver": firmware}
     mapper = RecordingFlashMapper(
         records.events,
         bank_size=mapper_bank_size,
@@ -218,8 +218,8 @@ def install_flash_command_boundaries(
 ) -> FlashCommandRecords:
     """Record the device protocol around real flash-command loading."""
     records = FlashCommandRecords()
-    device.MODE = mode  # type: ignore[assignment]
-    device.FW = {"fw_ver": firmware}
+    device.mode = mode  # type: ignore[assignment]
+    device.fw = {"fw_ver": firmware}
 
     def write(value: int | bytes | bytearray, wait: bool = False) -> None:
         recorded = bytearray(value) if isinstance(value, (bytes, bytearray)) else value
@@ -558,8 +558,8 @@ def test_send_flash_commands_encodes_six_big_endian_records_and_modern_ack(
     address_divisor: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode  # type: ignore[assignment]
-    device.FW = {"fw_ver": firmware}
+    device.mode = mode  # type: ignore[assignment]
+    device.fw = {"fw_ver": firmware}
     writes: list[bytearray] = []
     wait_for_ack = Mock()
 
@@ -947,7 +947,7 @@ def test_configure_flashcart_for_write_honors_agb_firmware_boundaries(
 
     result = device._configure_flashcart_for_write(
         {},
-        flashcart.CONFIG,
+        flashcart.config,
         flashcart,
         bytearray(0x4000),
         "AGB",
@@ -1007,7 +1007,7 @@ def test_configure_flashcart_for_write_honors_dmg_wr_pullup_boundaries(
 
     result = device._configure_flashcart_for_write(
         args,
-        flashcart.CONFIG,
+        flashcart.config,
         flashcart,
         bytearray(0x4000),
         "DMG",
@@ -1064,7 +1064,7 @@ def test_configure_flashcart_for_write_selects_dmg_mapper_and_geometry(
 
     result = device._configure_flashcart_for_write(
         args,
-        flashcart.CONFIG,
+        flashcart.config,
         flashcart,
         bytearray(data_length),
         "DMG",
@@ -1101,7 +1101,7 @@ def test_configure_flashcart_for_write_rejects_unsupported_mapper_before_enable(
 
     result = device._configure_flashcart_for_write(
         args,
-        flashcart.CONFIG,
+        flashcart.config,
         flashcart,
         bytearray(0x4000),
         "DMG",
@@ -1143,7 +1143,7 @@ def test_configure_flashcart_for_write_calculates_agb_bank_geometry(
 
     result = device._configure_flashcart_for_write(
         {},
-        flashcart.CONFIG,
+        flashcart.config,
         flashcart,
         bytearray(data_length),
         "AGB",
@@ -1244,11 +1244,11 @@ def test_prepare_flash_write_builds_complete_copied_preparation(
     expected_verify_sectors: list[list[int]],
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode  # type: ignore[assignment]
-    device.FW = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
+    device.mode = mode  # type: ignore[assignment]
+    device.fw = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
     profile_name = f"Prepared {mode}"
     profile = flashcart_profile(type=mode, names=[profile_name])
-    device.SUPPORTED_CARTS = {"DMG": {}, "AGB": {}, mode: {profile_name: profile}}
+    device.supported_carts = {"DMG": {}, "AGB": {}, mode: {profile_name: profile}}
     _cart_profile, flashcart = make_command_flashcart(type=mode, names=[profile_name])
     mapper = object()
     state_path = tmp_path / "flash-state.json"
@@ -1338,18 +1338,18 @@ def test_prepare_flash_write_builds_complete_copied_preparation(
         {"action": "UPDATE_POS", "pos": 0},
     ]
     assert firmware_variables == [("FLASH_WE_PIN", 1)]
-    assert device.INFO["action"] == device.ACTIONS["ROM_WRITE"]
+    assert device.info["action"] == device.ACTIONS["ROM_WRITE"]
 
 
 def _make_rejected_flash_device(rejected_stage: str) -> tuple[GbxDevice, Flashcart]:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.FW = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
+    device.mode = "DMG"
+    device.fw = {"fw_ver": 12, "pcb_name": "GBxCart RW"}
     profile_name = "Rejected preparation"
     profile = flashcart_profile(type="DMG", names=[profile_name])
     if rejected_stage == "firmware":
         profile["set_audio_high"] = True
-    device.SUPPORTED_CARTS = {"DMG": {profile_name: profile}, "AGB": {}}
+    device.supported_carts = {"DMG": {profile_name: profile}, "AGB": {}}
     _cart_profile, flashcart = make_command_flashcart(type="DMG", names=[profile_name])
     return device, flashcart
 
@@ -1438,7 +1438,7 @@ def test_flash_rom_worker_stops_at_each_preparation_rejection(
         rejected_index = expected_order.index(rejected_stage)
         assert calls == expected_order[: rejected_index + 1]
     writer.assert_not_called()
-    assert device.FAST_READ is True
+    assert device.fast_read is True
 
 
 @pytest.mark.parametrize("writer_result", [True, False, None])
@@ -1481,7 +1481,7 @@ def test_prepare_flash_write_integrates_real_input_commands_and_sector_planner(
         },
     )
     del profile["flash_ids"]
-    device.SUPPORTED_CARTS = {"DMG": {}, "AGB": {profile_name: profile}}
+    device.supported_carts = {"DMG": {}, "AGB": {profile_name: profile}}
     rom_reads: list[tuple[int, int]] = []
 
     def read_rom(address: int, length: int, *_args: object, **_kwargs: object) -> bytearray:
@@ -1507,7 +1507,7 @@ def test_prepare_flash_write_integrates_real_input_commands_and_sector_planner(
     assert preparation.cart_type["_command_set"] == "AMD"
     assert "_index" not in profile
     assert "_command_set" not in profile
-    assert preparation.flashcart.CONFIG is preparation.cart_type
+    assert preparation.flashcart.config is preparation.cart_type
     assert preparation.data_import[:3] == b"ROM"
     assert preparation.data_import[3:] == bytearray([0xFF]) * (0x4000 - 3)
     assert preparation.data_map_import == bytearray()

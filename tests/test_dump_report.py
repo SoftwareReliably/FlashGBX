@@ -11,14 +11,14 @@ from FlashGBX.DumpReport import DumpReport
 
 
 class ReportDevice:
-    SUPPORTED_CARTS: ClassVar[dict[str, dict[str, dict[str, object]]]] = {
+    supported_carts: ClassVar[dict[str, dict[str, dict[str, object]]]] = {
         "DMG": {"Profile": {}},
         "AGB": {"Vast Fame": {}},
     }
 
     def __init__(self, name: str = "GBxCart RW") -> None:
         self.name = name
-        self.INFO = {"rom_checksum_calc": 0x1234}
+        self.info = {"rom_checksum_calc": 0x1234}
 
     def GetFullName(self) -> str:
         return self.name
@@ -270,7 +270,7 @@ def test_generate_dmg_report_uses_unchanged_header_and_sgb_metadata() -> None:
         },
     )
     device = ReportDevice()
-    device.INFO = {}
+    device.info = {}
 
     report = DumpReport.generate(report_data, device)
 
@@ -312,7 +312,7 @@ def test_generate_agb_report_omits_optional_fields_for_standard_cartridge() -> N
         "db": None,
     }
     device = ReportDevice("GBFlash")
-    device.SUPPORTED_CARTS = {"DMG": {"Profile": {}}, "AGB": {"Standard": {}}}
+    device.supported_carts = {"DMG": {"Profile": {}}, "AGB": {"Standard": {}}}
 
     report = DumpReport.generate(base_report("AGB", header), device)
 

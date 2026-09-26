@@ -499,18 +499,18 @@ class FakeDevice:
     """Mock the shared cartridge-reader protocol used by the GUI."""
 
     DEVICE_ID = "gbxcartrw"
-    DEVICE_NAME: str = "GBxCart RW"
+    device_name: str = "GBxCart RW"
 
     def __init__(self, mode: str = "DMG") -> None:
         self.mode = mode
-        self.INFO: dict[str, Any] = {}
-        self.FW: dict[str, Any] = {"fw_ver": 12}
-        self.FW_UPDATE_REQ: bool | int = False
-        self.DEVICE: object | None = object()
-        self.CANCEL = False
-        self.ERROR = False
-        self.USER_ANSWER: bool | None = None
-        self.WORKER = SimpleNamespace(isRunning=lambda: False)
+        self.info: dict[str, Any] = {}
+        self.fw: dict[str, Any] = {"fw_ver": 12}
+        self.fw_update_req: bool | int = False
+        self.device: object | None = object()
+        self.cancel = False
+        self.error = False
+        self.user_answer: bool | None = None
+        self.worker = SimpleNamespace(isRunning=lambda: False)
         self.calls: list[tuple[str, object]] = []
         self.header: dict[str, Any] = {}
         self.initialize_result: object = True
@@ -529,16 +529,16 @@ class FakeDevice:
         return self.supported_modes
 
     def GetCartModeSwitchState(self) -> int | bool:
-        return cast("int | bool", self.INFO.get("switch_state", False))
+        return cast("int | bool", self.info.get("switch_state", False))
 
     def CanSetVoltageByAutoswitch(self) -> bool:
-        return bool(self.INFO.get("voltage_autoswitch", False))
+        return bool(self.info.get("voltage_autoswitch", False))
 
     def CanSetVoltageByCode(self) -> bool:
-        return bool(self.INFO.get("voltage_code", True))
+        return bool(self.info.get("voltage_code", True))
 
     def CanSetVoltageBySwitch(self) -> bool:
-        return bool(self.INFO.get("voltage_switch", False))
+        return bool(self.info.get("voltage_switch", False))
 
     def CanPowerCycleCart(self) -> bool:
         return True
@@ -580,7 +580,7 @@ class FakeDevice:
         self.calls.append(("close", cartPowerOff))
 
     def GetName(self) -> str:
-        return self.DEVICE_NAME
+        return self.device_name
 
     def GetFullName(self) -> str:
         return "Mock Reader"
@@ -598,16 +598,16 @@ class FakeDevice:
         return "2026-01-01"
 
     def SupportsFirmwareUpdates(self) -> bool:
-        return bool(self.INFO.get("supports_updates", False))
+        return bool(self.info.get("supports_updates", False))
 
     def FirmwareUpdateAvailable(self) -> bool:
-        return bool(self.INFO.get("update_available", False))
+        return bool(self.info.get("update_available", False))
 
     def IsUnregistered(self) -> bool:
         return False
 
     def GetSupportMessage(self) -> str | None:
-        return cast("str | None", self.INFO.get("support_message"))
+        return cast("str | None", self.info.get("support_message"))
 
     def ReadHeader(self) -> dict[str, Any]:
         if isinstance(self.header, Exception):
@@ -615,15 +615,15 @@ class FakeDevice:
         return self.header
 
     def CheckROMStable(self) -> bool:
-        return bool(self.INFO.get("stable", True))
+        return bool(self.info.get("stable", True))
 
     def IsSupported3dMemory(self) -> bool:
-        return bool(self.INFO.get("supported_3d", True))
+        return bool(self.info.get("supported_3d", True))
 
     def GetSupportedCartridgesDMG(self) -> tuple[list[str], list[dict[str, Any]]]:
         return cast(
             "tuple[list[str], list[dict[str, Any]]]",
-            self.INFO.get(
+            self.info.get(
                 "dmg_carts",
                 (["Generic", "Mock Profile"], [{}, {"type": "DMG", "names": ["Mock Profile"]}]),
             ),
@@ -632,14 +632,14 @@ class FakeDevice:
     def GetSupportedCartridgesAGB(self) -> tuple[list[str], list[dict[str, Any]]]:
         return cast(
             "tuple[list[str], list[dict[str, Any]]]",
-            self.INFO.get(
+            self.info.get(
                 "agb_carts",
                 (["Generic", "Mock Profile"], [{}, {"type": "AGB", "names": ["Mock Profile"]}]),
             ),
         )
 
     def GetDumpReport(self) -> str | bool:
-        return cast("str | bool", self.INFO.get("dump_report", False))
+        return cast("str | bool", self.info.get("dump_report", False))
 
     def AbortOperation(self) -> None:
         self.calls.append(("abort", True))
@@ -827,11 +827,11 @@ def build_rom_gui(
     """Prepare the existing GUI and device fakes for ROM operation tests."""
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice(mode)
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
-    gui.SETTINGS.values.update(LastDirRomDMG=str(tmp_path), LastDirRomAGB=str(tmp_path))
+    gui.settings.values.update(LastDirRomDMG=str(tmp_path), LastDirRomAGB=str(tmp_path))
     profile = {"type": mode, "names": ["Mock Profile"], "voltage": 5, "mbc": 0x13}
-    device.INFO[f"{mode.lower()}_carts"] = (["Generic", "Mock Profile"], [{}, profile])
+    device.info[f"{mode.lower()}_carts"] = (["Generic", "Mock Profile"], [{}, profile])
     gui.cmbDMGCartridgeTypeResult.setCurrentIndex(1)
     gui.cmbAGBCartridgeTypeResult.setCurrentIndex(1)
     gui.cmbDMGHeaderMapperResult.setCurrentIndex(gui_module.ConvertMapperToMapperType(0x13)[2])
@@ -848,8 +848,8 @@ def build_save_gui(
     mode: str,
 ) -> tuple[Any, FakeDevice]:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
-    device.INFO["has_rtc"] = False
-    gui.SETTINGS.values.update(LastDirSaveDataDMG=str(tmp_path), LastDirSaveDataAGB=str(tmp_path))
+    device.info["has_rtc"] = False
+    gui.settings.values.update(LastDirSaveDataDMG=str(tmp_path), LastDirSaveDataAGB=str(tmp_path))
     gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(4)  # 32 KiB SRAM
     gui.cmbAGBSaveTypeResult.setCurrentIndex(3)  # 32 KiB SRAM/FRAM
     return gui, device
@@ -885,7 +885,7 @@ def prepare_save_cartridge(
 def configure_camera_calibration(device: FakeDevice) -> tuple[bytes, bytes]:
     calibration1 = bytes(range(0x10, 0x1E))
     calibration2 = bytes(range(0x80, 0x8E))
-    device.INFO.update(
+    device.info.update(
         db=None,
         dump_info={
             "header": {
@@ -903,7 +903,7 @@ def configure_camera_calibration(device: FakeDevice) -> tuple[bytes, bytes]:
 
 def configure_ereader_calibration(device: FakeDevice) -> bytes:
     calibration = bytes([0xA5] * 0x2000)
-    device.INFO.update(db=None, ereader=True, ereader_calibration=calibration)
+    device.info.update(db=None, ereader=True, ereader_calibration=calibration)
     return calibration
 
 
@@ -1001,7 +1001,7 @@ def prepare_rtc_gui(
 ) -> tuple[Any, FakeDevice, list[dict[str, Any]]]:
     """Use a real EditRTC branch with typed, recording dialog controls."""
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    device.INFO.update(rtc_info())
+    device.info.update(rtc_info())
     gui.cmbDMGHeaderMapperResult.setCurrentIndex(gui_module.ConvertMapperToMapperType(mapper)[2])
     gui.CheckDeviceAlive = Mock(return_value=True)
     gui.CheckHeader = Mock(return_value=True)
@@ -1166,15 +1166,15 @@ def test_edit_rtc_skips_absent_or_empty_rtc_data(
 ) -> None:
     gui, device, dialog_calls = prepare_rtc_gui(gui_module, tmp_path, monkeypatch)
     if rtc_state == "missing-dump-info":
-        device.INFO.pop("dump_info")
+        device.info.pop("dump_info")
     elif rtc_state == "missing-has-rtc":
-        device.INFO.pop("has_rtc")
+        device.info.pop("has_rtc")
     elif rtc_state == "no-rtc":
-        device.INFO["has_rtc"] = False
+        device.info["has_rtc"] = False
     elif rtc_state == "missing-dict":
-        device.INFO.pop("rtc_dict")
+        device.info.pop("rtc_dict")
     else:
-        device.INFO["rtc_dict"] = {}
+        device.info["rtc_dict"] = {}
 
     assert gui.EditRTC(None) is None
 
@@ -1304,8 +1304,8 @@ def test_edit_rtc_tama5_manual_year_offset_and_buffer_preservation(
         mapper=0xFD,
         values=chosen,
     )
-    device.INFO["rtc_dict"]["rtc_y"] = 40
-    rtc_buffer = device.INFO["rtc_dict"]["rtc_buffer"]
+    device.info["rtc_dict"]["rtc_y"] = 40
+    rtc_buffer = device.info["rtc_dict"]["rtc_buffer"]
 
     assert gui.EditRTC(None) is True
 
@@ -1482,7 +1482,7 @@ def test_edit_rtc_tama5_system_time_uses_two_second_adjustment_and_gregorian_lea
         values={"current": True},
     )
     freeze_gui_clock(monkeypatch, gui_module, instant)
-    rtc_buffer = device.INFO["rtc_dict"]["rtc_buffer"]
+    rtc_buffer = device.info["rtc_dict"]["rtc_buffer"]
     month, day, hour, minute, second = expected_date
 
     assert gui.EditRTC(None) is True
@@ -1575,7 +1575,7 @@ def test_batteryless_defaults_follow_platform(
 ) -> None:
     dialogs = install_batteryless_dialog(monkeypatch, gui_module)
     settings = FakeSettings()
-    gui = make_gui(gui_module, CONN=FakeDevice(mode), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice(mode), settings=settings)
 
     assert gui.GetBLArgs(rom_size) == expected
 
@@ -1590,7 +1590,7 @@ def test_batteryless_detected_values_override_remembered_location(
 ) -> None:
     dialogs = install_batteryless_dialog(monkeypatch, gui_module)
     settings = FakeSettings({"BatterylessSramLastLocationAGB": str(0x3C0000)})
-    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice("AGB"), settings=settings)
 
     result = gui.GetBLArgs(0x400000, detected={"bl_offset": 0x500000, "bl_size": 0x20000})
 
@@ -1605,7 +1605,7 @@ def test_batteryless_invalid_detected_size_uses_platform_fallback(
 ) -> None:
     dialogs = install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
     settings = FakeSettings({"BatterylessSramLastLocationAGB": "unavailable"})
-    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice("AGB"), settings=settings)
 
     assert (
         gui.GetBLArgs(
@@ -1627,13 +1627,13 @@ def test_batteryless_dmg_header_preselects_all_parameters(
     dialogs = install_batteryless_dialog(monkeypatch, gui_module)
     settings = FakeSettings({"BatterylessSramLastLocationDMG": str(0xD0000)})
     device = FakeDevice("DMG")
-    device.INFO["dump_info"] = {
+    device.info["dump_info"] = {
         "header": {
             "game_title_raw": "PATCHED GAME\x00",
             "batteryless_sram": {"bl_offset": 0x110000, "bl_size": 0x20000, "bl_layout": 1},
         },
     }
-    gui = make_gui(gui_module, CONN=device, SETTINGS=settings)
+    gui = make_gui(gui_module, conn=device, settings=settings)
 
     assert gui.GetBLArgs(0x200000) == {
         "bl_offset": 0x110000,
@@ -1657,7 +1657,7 @@ def test_batteryless_saved_locations_keep_sorted_unique_integers(
             "BatterylessSramLastLocationAGB": str(0x500000),
         },
     )
-    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice("AGB"), settings=settings)
 
     assert gui.GetBLArgs(0x400000) is False
 
@@ -1678,7 +1678,7 @@ def test_batteryless_malformed_locations_and_unavailable_last_use_default(
             "BatterylessSramLastLocationAGB": "1234",
         },
     )
-    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice("AGB"), settings=settings)
 
     assert gui.GetBLArgs(0x800001) is False
 
@@ -1699,7 +1699,7 @@ def test_batteryless_location_extension_survives_detected_offset_error(
             return super().__getitem__(key)
 
     settings = FakeSettings({"BatterylessSramLocationsAGB": json.dumps([0x500000])})
-    gui = make_gui(gui_module, SETTINGS=settings)
+    gui = make_gui(gui_module, settings=settings)
 
     locations = gui._GetBatterylessDialogLocations("AGB", [0x3C0000], BrokenDetected(bl_size=0x8000))
 
@@ -1733,7 +1733,7 @@ def test_batteryless_accepts_preset_and_custom_hex_and_persists_exactly(
 ) -> None:
     install_batteryless_dialog(monkeypatch, gui_module, selections=selections)
     settings = FakeSettings()
-    gui = make_gui(gui_module, CONN=FakeDevice(mode), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice(mode), settings=settings)
 
     assert gui.GetBLArgs(0x400000) == expected
     assert settings.writes == [
@@ -1747,7 +1747,7 @@ def test_batteryless_cancel_and_invalid_custom_text_do_not_write_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = FakeSettings()
-    gui = make_gui(gui_module, CONN=FakeDevice("AGB"), SETTINGS=settings)
+    gui = make_gui(gui_module, conn=FakeDevice("AGB"), settings=settings)
     install_batteryless_dialog(monkeypatch, gui_module, accepted=False)
     assert gui.GetBLArgs(0x400000) is False
     assert settings.writes == []
@@ -1769,7 +1769,7 @@ def test_batteryless_parameters_require_a_platform_mode(
     settings = FakeSettings()
     device = FakeDevice()
     device.mode = None  # type: ignore[assignment]
-    gui = make_gui(gui_module, CONN=device, SETTINGS=settings)
+    gui = make_gui(gui_module, conn=device, settings=settings)
 
     with pytest.raises(RuntimeError, match="require a platform mode"):
         gui.GetBLArgs(0x400000)
@@ -1788,16 +1788,16 @@ def test_batteryless_write_clears_pending_cart_detection_before_parameter_prompt
     gui._PrepareSaveWrite = lambda **_kwargs: ("AGB", "save.sav", 0, 0, 1, 0, None)
     gui._PrepareSaveWriteRtc = lambda **_kwargs: (False, False)
     gui.cmbAGBSaveTypeResult.setCurrentIndex(9)
-    device.INFO["dump_info"] = {"batteryless_sram": {"bl_offset": 0x500000, "bl_size": 0x10000}}
+    device.info["dump_info"] = {"batteryless_sram": {"bl_offset": 0x500000, "bl_size": 0x10000}}
     if has_detected_cart:
-        gui.STATUS["detected_cart_type"] = 1
+        gui.status["detected_cart_type"] = 1
     get_bl_args = Mock(return_value=False)
     gui.GetBLArgs = get_bl_args
 
     gui.WriteRAM()
 
-    assert "detected_cart_type" not in gui.STATUS
-    get_bl_args.assert_called_once_with(rom_size=0x200000, detected=device.INFO["dump_info"]["batteryless_sram"])
+    assert "detected_cart_type" not in gui.status
+    get_bl_args.assert_called_once_with(rom_size=0x200000, detected=device.info["dump_info"]["batteryless_sram"])
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -1811,15 +1811,15 @@ def test_batteryless_fixed_voltage_cancel_stops_write_before_status_changes(
     gui._PrepareSaveWriteRtc = lambda **_kwargs: (False, False)
     gui.cmbDMGHeaderSaveTypeResult.setCurrentIndex(14)
     gui.GetBLArgs = Mock(return_value={"bl_offset": 0x100000, "bl_size": 0x8000})
-    device.INFO["dmg_carts"][1][1]["voltage"] = 3.3
-    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
-    gui.STATUS["detected_cart_type"] = 1
+    device.info["dmg_carts"][1][1]["voltage"] = 3.3
+    device.info.update(voltage_autoswitch=True, voltage_code=False)
+    gui.status["detected_cart_type"] = 1
     monkeypatch.setattr(FakeMessageBox, "warning", Mock(return_value=FakeMessageBox.StandardButton.Cancel))
 
     gui.WriteRAM()
 
-    assert "detected_cart_type" not in gui.STATUS
-    assert "args" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
+    assert "args" not in gui.status
     assert gui.GetBLArgs.called is True
     assert not any(name == "flash" for name, _args in device.calls)
 
@@ -1841,7 +1841,7 @@ def test_gui_constructor_builds_complete_inert_widget_tree(
 
     gui = gui_module.FlashGBX_GUI(cast("Any", args))
 
-    assert gui.CONN is None
+    assert gui.conn is None
     assert len(gui.mnuConfig.actions()) == 16
     assert len(gui.mnuRestoreRAM.actions()) == 4
     assert gui.btnConnect.isEnabled() is False
@@ -1854,23 +1854,23 @@ def test_gui_constructor_builds_complete_inert_widget_tree(
 
 
 def test_device_property_and_platform_autodetection(gui_module: ModuleType) -> None:
-    gui = make_gui(gui_module, CONN=None)
+    gui = make_gui(gui_module, conn=None)
     with pytest.raises(ConnectionError):
         _ = gui._device
 
     conn = SimpleNamespace(
-        FW={"cart_mode_switch": True},
+        fw={"cart_mode_switch": True},
         GetSupprtedModes=lambda: ["DMG", "AGB"],
         GetCartModeSwitchState=lambda: 1,
         GetMode=lambda: "DMG",
     )
-    gui.CONN = conn
+    gui.conn = conn
     assert gui._device is conn
     assert gui._GetAutoPlatformMode() == "AGB"
-    conn.FW = {}
+    conn.fw = {}
     assert gui._GetAutoPlatformMode() == "DMG"
     assert gui._GetAutoPlatformMode(supported_modes=["AGB"]) == "AGB"
-    gui.CONN = None
+    gui.conn = None
     assert gui._GetAutoPlatformMode() is None
 
 
@@ -1907,10 +1907,10 @@ def test_message_queue_and_progress_bar_helpers(gui_module: ModuleType) -> None:
     message_queue.put(box)
     gui = make_gui(
         gui_module,
-        MSGBOX_DISPLAYING=False,
-        MSGBOX_QUEUE=message_queue,
+        msgbox_displaying=False,
+        msgbox_queue=message_queue,
         prgStatus=FakeQtObject(),
-        TBPROG=FakeQtObject(),
+        tbprog=FakeQtObject(),
         lblStatus4a=FakeQtObject(),
         lblStatus4aResult=FakeQtObject(),
     )
@@ -1920,7 +1920,7 @@ def test_message_queue_and_progress_bar_helpers(gui_module: ModuleType) -> None:
     gui.SetStatus4aResult("working")
 
     assert message_queue.empty()
-    assert gui.MSGBOX_DISPLAYING is False
+    assert gui.msgbox_displaying is False
     assert gui.prgStatus.value() == 4
     assert gui.lblStatus4aResult.text() == "working"
 
@@ -1931,14 +1931,14 @@ def test_device_settings_and_platform_firmware_switch(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
 
-    gui.SETTINGS.values.update(AutoPowerOff="invalid", DMGReadMethod="invalid", AGBReadMethod="invalid")
+    gui.settings.values.update(AutoPowerOff="invalid", DMGReadMethod="invalid", AGBReadMethod="invalid")
     gui.SetAutoPowerOff()
     gui.SetDMGReadMethod()
     gui.SetAGBReadMethod()
-    gui.SETTINGS.values.update(AutoPowerOff="350", DMGReadMethod="2", AGBReadMethod="0")
+    gui.settings.values.update(AutoPowerOff="350", DMGReadMethod="2", AGBReadMethod="0")
     gui.SetAutoPowerOff()
     gui.SetDMGReadMethod()
     gui.SetAGBReadMethod()
@@ -1950,8 +1950,8 @@ def test_device_settings_and_platform_firmware_switch(
 
     mode_calls: list[str] = []
     gui.SetMode = lambda: mode_calls.append("set")
-    device.INFO.update(voltage_autoswitch=True, voltage_code=False, switch_state=1)
-    device.FW["cart_mode_switch"] = True
+    device.info.update(voltage_autoswitch=True, voltage_code=False, switch_state=1)
+    device.fw["cart_mode_switch"] = True
     gui._UpdatePlatformModeFromFirmware()
     assert gui.optAGB.isChecked() is True
     assert mode_calls == ["set"]
@@ -1963,7 +1963,7 @@ def test_unsupported_required_firmware_disconnects_and_shows_warning(
 ) -> None:
     gui = make_gui(gui_module)
     device = FakeDevice()
-    device.FW_UPDATE_REQ = True
+    device.fw_update_req = True
     disconnect = Mock()
     warning = Mock()
     gui.DisconnectDevice = disconnect
@@ -1981,10 +1981,10 @@ def test_supported_required_firmware_update_runs_updater_and_disconnects(
     gui_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    gui = make_gui(gui_module, SETTINGS=FakeSettings())
+    gui = make_gui(gui_module, settings=FakeSettings())
     device = FakeDevice()
-    device.INFO["update_available"] = True
-    device.FW_UPDATE_REQ = True
+    device.info["update_available"] = True
+    device.fw_update_req = True
     box = FakeMessageBox()
     box.setResult(gui_module.QtWidgets.QMessageBox.StandardButton.Yes)
     monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: box)
@@ -2005,9 +2005,9 @@ def test_supported_optional_firmware_update_persists_ignore_choice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = FakeSettings()
-    gui = make_gui(gui_module, SETTINGS=settings)
+    gui = make_gui(gui_module, settings=settings)
     device = FakeDevice()
-    device.INFO["update_available"] = True
+    device.info["update_available"] = True
     box = FakeMessageBox()
     box.setResult(gui_module.QtWidgets.QMessageBox.StandardButton.Yes)
     check_box = FakeQtObject()
@@ -2031,8 +2031,8 @@ def test_gbxcartrw_baudrate_update_preferences_and_language(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    device.DEVICE_NAME = "Custom reader name"
-    gui.CONN = device
+    device.device_name = "Custom reader name"
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
     disconnects: list[bool] = []
     scans: list[dict[str, object]] = []
@@ -2045,20 +2045,20 @@ def test_gbxcartrw_baudrate_update_preferences_and_language(
     assert ("baud", 1_000_000) in device.calls
     assert ("baud", 1_500_000) in device.calls
     assert ("baud", 1_700_000) in device.calls
-    assert gui.SETTINGS.values["GBxCartRWBaudRate"] == "1700000"
+    assert gui.settings.values["GBxCartRWBaudRate"] == "1700000"
     assert gui.mnuConfigBaudRateActions[1_700_000].isChecked() is True
     assert gui.mnuConfigBaudRateActions[1_000_000].isChecked() is False
     assert scans[-1] == {"connectToFirst": True, "mode": "DMG"}
 
     updates: list[bool] = []
     gui.UpdateCheck = lambda: updates.append(True)
-    gui.SETTINGS.values["UpdateCheck"] = None
+    gui.settings.values["UpdateCheck"] = None
     gui.EnableUpdateCheck()
-    gui.SETTINGS.values["UpdateCheck"] = "disabled"
+    gui.settings.values["UpdateCheck"] = "disabled"
     gui.mnuConfig.actions()[0].setChecked(True)
     FakeMessageBox.next_answer = FakeMessageBox.StandardButton.Yes
     gui.EnableUpdateCheck()
-    assert gui.SETTINGS.values["UpdateCheck"] == "enabled"
+    assert gui.settings.values["UpdateCheck"] == "enabled"
     assert len(updates) == 2
 
     languages: list[str] = []
@@ -2072,7 +2072,7 @@ def test_gbxcartrw_baudrate_update_preferences_and_language(
 
 def test_gbxcartrw_baudrate_setting_migrates_and_validates(gui_module: ModuleType) -> None:
     settings = FakeSettings({"LimitBaudRate": "enabled"})
-    gui = make_gui(gui_module, SETTINGS=settings)
+    gui = make_gui(gui_module, settings=settings)
 
     assert gui._GetGBxCartRWBaudRate() == 1_000_000
     assert settings.values["GBxCartRWBaudRate"] == "1000000"
@@ -2087,7 +2087,7 @@ def test_gbxcartrw_baudrate_setting_migrates_and_validates(gui_module: ModuleTyp
     assert settings.values["GBxCartRWBaudRate"] == "1500000"
     with pytest.raises(ValueError, match="Unsupported"):
         gui.SetGBxCartRWBaudRate(2_000_000)
-    assert gui._GetDeviceMaxBaudRate(SimpleNamespace(DEVICE_NAME="Other Reader")) == 2_000_000
+    assert gui._GetDeviceMaxBaudRate(SimpleNamespace(device_name="Other Reader")) == 2_000_000
 
 
 @pytest.mark.parametrize(
@@ -2107,7 +2107,7 @@ def test_update_check_handles_mock_http_responses(
     response: object,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.settings.values["UpdateCheck"] = "enabled"
     opened: list[str] = []
     gui.OpenWebURL = opened.append
     monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
@@ -2124,7 +2124,7 @@ def test_update_check_opens_release_notes_only_when_selected(
     expected_open: bool,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.settings.values["UpdateCheck"] = "enabled"
     gui.OpenWebURL = Mock()
     response = SimpleNamespace(status_code=200, content=b'{"tag_name":"99.0"}', headers={})
     monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
@@ -2153,7 +2153,7 @@ def test_update_check_does_not_announce_the_current_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.settings.values["UpdateCheck"] = "enabled"
     response = SimpleNamespace(
         status_code=200,
         content=f'{{"tag_name":"{gui_module.AppInfo.VERSION_PEP440}"}}'.encode(),
@@ -2187,7 +2187,7 @@ def test_update_check_reports_http_error_variants(
     expected_message: str,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.settings.values["UpdateCheck"] = "enabled"
     response = SimpleNamespace(status_code=status_code, content=b"", headers=headers)
     monkeypatch.setattr(gui_module.requests, "get", lambda *_args, **_kwargs: response)
 
@@ -2211,10 +2211,10 @@ def test_update_check_handles_errors_and_disabled_setting(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     if error is None:
-        gui.SETTINGS.values["UpdateCheck"] = "disabled"
+        gui.settings.values["UpdateCheck"] = "disabled"
         monkeypatch.setattr(gui_module.requests, "get", Mock(side_effect=AssertionError("network used")))
     else:
-        gui.SETTINGS.values["UpdateCheck"] = "enabled"
+        gui.settings.values["UpdateCheck"] = "enabled"
         monkeypatch.setattr(gui_module.requests, "get", Mock(side_effect=error))
     gui.UpdateCheck()
 
@@ -2235,7 +2235,7 @@ def test_update_check_reports_request_connection_errors(
     expected_message: str,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.SETTINGS.values["UpdateCheck"] = "enabled"
+    gui.settings.values["UpdateCheck"] = "enabled"
     error_type = getattr(gui_module.requests.exceptions, exception_name)
     request = Mock(side_effect=error_type("network failure"))
     monkeypatch.setattr(gui_module.requests, "get", request)
@@ -2275,7 +2275,7 @@ def test_update_check_first_run_choice_controls_network_request(
 
     gui.UpdateCheck()
 
-    assert gui.SETTINGS.value("UpdateCheck") == setting
+    assert gui.settings.value("UpdateCheck") == setting
     assert request.call_count == request_count
 
 
@@ -2320,9 +2320,9 @@ def test_disconnect_and_about_helpers_reset_gui_state(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    device.INFO["support_message"] = "Support at https://example.invalid/help"
-    gui.CONN = device
-    gui.DEVICES = {"Mock": device}
+    device.info["support_message"] = "Support at https://example.invalid/help"
+    gui.conn = device
+    gui.devices = {"Mock": device}
 
     assert gui._GetDeviceSupportData() == ("GBxCart RW", "Support at https://example.invalid/help")
     gui.UpdateThirdPartySupportAction()
@@ -2332,11 +2332,11 @@ def test_disconnect_and_about_helpers_reset_gui_state(
     gui.AboutFlashGBX()
     gui.AboutGameDB()
     gui.ReEnableMessages()
-    assert gui.SETTINGS.values["SkipFinishMessage"] == "disabled"
+    assert gui.settings.values["SkipFinishMessage"] == "disabled"
 
     gui.DisconnectDevice()
-    assert gui.CONN is None
-    assert gui.DEVICES == {}
+    assert gui.conn is None
+    assert gui.devices == {}
     assert ("close", True) in device.calls
 
 
@@ -2346,11 +2346,11 @@ def test_connect_device_success_and_backend_failures(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.DEVICES = {"Mock Reader": device}
+    gui.devices = {"Mock Reader": device}
     gui.lblDevice.setText("Mock Reader")
 
     assert gui.ConnectDevice() is True
-    assert gui.CONN is device
+    assert gui.conn is device
     assert ("initialize", ("mock-port", 1_500_000)) in device.calls
     assert gui.btnConnect.text().replace("&", "") == "Disconnect"
     assert gui.optDMG.isEnabled() is True
@@ -2360,12 +2360,12 @@ def test_connect_device_success_and_backend_failures(
 
     gui.DisconnectDevice()
     device.initialize_result = False
-    gui.DEVICES = {"Mock Reader": device}
+    gui.devices = {"Mock Reader": device}
     gui.lblDevice.setText("Mock Reader")
     assert gui.ConnectDevice() is False
 
     device.initialize_result = RuntimeError("driver unavailable")
-    gui.DEVICES = {"Mock Reader": device}
+    gui.devices = {"Mock Reader": device}
     gui.lblDevice.setText("Mock Reader")
     assert gui.ConnectDevice() is False
 
@@ -2376,8 +2376,8 @@ def test_connected_platform_controls_disable_voltage_code_for_autoswitch_only_de
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
-    gui.CONN = device
+    device.info.update(voltage_autoswitch=True, voltage_code=False)
+    gui.conn = device
     gui.optDMG.setChecked(True)
     gui.optAGB.setChecked(True)
 
@@ -2402,7 +2402,7 @@ def test_find_devices_discovers_mock_and_handles_scan_exception(
     gui.ConnectDevice = lambda: connections.append(True)
 
     assert gui.FindDevices() is True
-    assert "Mock Reader" in gui.DEVICES
+    assert "Mock Reader" in gui.devices
     assert connections == [True]
 
     broken = FakeDevice()
@@ -2417,13 +2417,13 @@ def test_abort_and_header_validation_use_mock_device(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
-    gui.STATUS["stresstest_running"] = True
+    gui.conn = device
+    gui.status["stresstest_running"] = True
     gui.AbortOperation()
-    assert "stresstest_running" not in gui.STATUS
+    assert "stresstest_running" not in gui.status
     assert ("abort", True) in device.calls
 
-    device.INFO = {
+    device.info = {
         "dump_info": {
             "header": {"mapper_raw": 1, "logo_correct": False, "header_checksum_correct": False, "empty": False}
         }
@@ -2432,7 +2432,7 @@ def test_abort_and_header_validation_use_mock_device(
     assert gui.CheckHeader() is False
     FakeMessageBox.next_answer = FakeMessageBox.StandardButton.Yes
     assert gui.CheckHeader() is True
-    device.INFO = {}
+    device.info = {}
     assert gui.CheckHeader() is True
 
 
@@ -2450,8 +2450,8 @@ def test_save_stress_test_power_cycle_keeps_countdown_cancellable(
     event_calls: list[None] = []
     gui = make_gui(
         gui_module,
-        CONN=device,
-        STATUS={"stresstest_running": True},
+        conn=device,
+        status={"stresstest_running": True},
         lblStatus4a=SimpleNamespace(setText=countdown_labels.append),
     )
     gui.SetProgressBars = Mock()
@@ -2459,7 +2459,7 @@ def test_save_stress_test_power_cycle_keeps_countdown_cancellable(
     def process_events() -> None:
         event_calls.append(None)
         if cancel_after is not None and len(event_calls) == cancel_after:
-            gui.STATUS.pop("stresstest_running")
+            gui.status.pop("stresstest_running")
 
     monkeypatch.setattr(gui_module.qt_app, "processEvents", process_events)
     monkeypatch.setattr(gui_module.time, "sleep", sleep_calls.append)
@@ -2480,7 +2480,7 @@ def test_save_stress_test_waits_without_power_cycle_support(
 ) -> None:
     device = Mock()
     device.CanPowerCycleCart.return_value = False
-    gui = make_gui(gui_module, CONN=device)
+    gui = make_gui(gui_module, conn=device)
     sleep_calls: list[float] = []
     monkeypatch.setattr(gui_module.time, "sleep", sleep_calls.append)
 
@@ -2536,8 +2536,8 @@ def test_save_stress_test_diagnostic_files_follow_initial_read_result(
     device = FakeDevice()
     gui = make_gui(
         gui_module,
-        CONN=device,
-        STATUS={"stresstest_running": True},
+        conn=device,
+        status={"stresstest_running": True},
         lblStatus4a=FakeQtObject(),
         SetProgressBars=Mock(),
         SetStatus4aResult=Mock(),
@@ -2549,9 +2549,9 @@ def test_save_stress_test_diagnostic_files_follow_initial_read_result(
 
     def transfer(args: dict[str, object]) -> None:
         transfer_modes.append(int(args["mode"]))
-        device.INFO["data"] = next(reads)
+        device.info["data"] = next(reads)
         if saves_match:
-            gui.STATUS.pop("stresstest_running", None)
+            gui.status.pop("stresstest_running", None)
 
     gui._RunSaveStressTestTransfer = transfer
     gui._WaitForSaveStressTestPowerCycle = Mock()
@@ -2596,8 +2596,8 @@ def test_save_stress_test_pattern_transfer_preserves_requests_and_power_cycle(
     device = FakeDevice()
     gui = make_gui(
         gui_module,
-        CONN=device,
-        STATUS={"stresstest_running": True},
+        conn=device,
+        status={"stresstest_running": True},
         lblStatus4a=FakeQtObject(),
         SetProgressBars=Mock(),
     )
@@ -2616,7 +2616,7 @@ def test_save_stress_test_pattern_transfer_preserves_requests_and_power_cycle(
         transfer_calls.append(dict(args))
         events.append(f"transfer:{args['mode']}")
         if args["mode"] == 2:
-            device.INFO["data"] = next(read_data)
+            device.info["data"] = next(read_data)
 
     gui._RunSaveStressTestTransfer = transfer
     monkeypatch.setattr(device, "CartPowerOff", lambda: events.append("power_off"), raising=False)
@@ -2681,7 +2681,7 @@ def test_save_stress_test_completion_handles_cancellation_during_events(
     status = SimpleNamespace(setText=lambda _text: events.append("status"))
     gui = make_gui(
         gui_module,
-        STATUS={"stresstest_running": True},
+        status={"stresstest_running": True},
         lblStatus4a=status,
         SetProgressBars=Mock(side_effect=lambda **_kwargs: events.append("progress")),
     )
@@ -2696,7 +2696,7 @@ def test_save_stress_test_completion_handles_cancellation_during_events(
     def process_events() -> None:
         events.append("events")
         if cancel_during_events:
-            gui.STATUS.pop("stresstest_running")
+            gui.status.pop("stresstest_running")
 
     def create_message_box(**_kwargs: object) -> SimpleNamespace:
         events.append("dialog")
@@ -2714,7 +2714,7 @@ def test_save_stress_test_completion_handles_cancellation_during_events(
 
     if cancel_during_events:
         assert events == ["progress", "status", "events", "dialog", "exec", "finish"]
-        assert "stresstest_running" not in gui.STATUS
+        assert "stresstest_running" not in gui.status
         result_dialog.assert_not_called()
     else:
         assert events == ["progress", "status", "events", "result", "finish"]
@@ -2748,7 +2748,7 @@ def test_read_cartridge_populates_dmg_widgets_without_hardware(
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("DMG")
     device.header = dmg_header()
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
     gui._UpdatePlatformModeFromFirmware = lambda: None
     gui.FinishOperation = lambda: None
@@ -2771,7 +2771,7 @@ def test_read_cartridge_populates_agb_widgets_without_hardware(
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("AGB")
     device.header = agb_header()
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
     gui._UpdatePlatformModeFromFirmware = lambda: None
     gui.FinishOperation = lambda: None
@@ -2806,7 +2806,7 @@ def test_read_cartridge_populates_agb_widgets_without_hardware(
     database_header["rom_size_calc"] = 0x200000
     database_header["3d_memory"] = True
     device.header = database_header
-    device.INFO["supported_3d"] = False
+    device.info["supported_3d"] = False
     gui.ReadCartridge(resetStatus=False)
     assert gui.lblAGBGameNameResult.text() == "Database Game"
 
@@ -2817,7 +2817,7 @@ def test_read_cartridge_handles_empty_and_serial_failures(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
     gui._UpdatePlatformModeFromFirmware = lambda: None
     limited: list[bool] = []
@@ -2855,7 +2855,7 @@ def test_update_progress_handles_transfer_actions(
     payload: dict[str, object],
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.CONN = FakeDevice()
+    gui.conn = FakeDevice()
     gui.UpdateProgress(payload)
 
     expected_labels = {
@@ -2888,7 +2888,7 @@ def test_update_progress_sets_transfer_method_titles(
     method: str,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.CONN = FakeDevice()
+    gui.conn = FakeDevice()
     gui.UpdateProgress({"method": method, "voltage": 3.3})
 
 
@@ -2898,7 +2898,7 @@ def test_update_progress_handles_error_finish_and_abort(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
+    gui.conn = device
     limited: list[bool] = []
     finishes: list[bool] = []
     gui.LimitBaudRateGBxCartRW = lambda: limited.append(True)
@@ -2914,7 +2914,7 @@ def test_update_progress_handles_error_finish_and_abort(
 
     assert limited == [True, True]
     assert finishes == [True]
-    assert gui.MSGBOX_QUEUE.qsize() == 2
+    assert gui.msgbox_queue.qsize() == 2
 
 
 @pytest.mark.parametrize(
@@ -2935,10 +2935,10 @@ def test_wait_progress_records_dialog_answers(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
+    gui.conn = device
     FakeMessageBox.next_answer = answer
     gui.WaitProgress({"user_action": user_action, "title": "Mock", "msg": "Continue?"})
-    assert expected is device.USER_ANSWER
+    assert expected is device.user_answer
 
 
 @pytest.mark.parametrize(
@@ -2962,15 +2962,15 @@ def test_finish_operation_handles_primary_results(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice(mode)
-    device.INFO = {"transferred": 1, **info}
-    gui.CONN = device
-    gui.STATUS["last_path"] = str(tmp_path / "backup.gb")
-    gui.PROGRESS.PROGRESS["verified"] = verified
+    device.info = {"transferred": 1, **info}
+    gui.conn = device
+    gui.status["last_path"] = str(tmp_path / "backup.gb")
+    gui.progress.progress["verified"] = verified
     gui.ReadCartridge = ignore_cartridge_refresh
 
     gui.FinishOperation()
 
-    assert device.INFO["last_action"] == 0
+    assert device.info["last_action"] == 0
 
 
 @pytest.mark.parametrize(
@@ -2995,9 +2995,9 @@ def test_finish_agb_rom_backup_formats_checksums_and_warnings(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("AGB")
-    device.INFO = {"db": database, "file_crc32": file_crc, "loop_detected": loop}
-    gui.CONN = device
-    gui.DEFAULT_STYLESHEET = "original"
+    device.info = {"db": database, "file_crc32": file_crc, "loop_detected": loop}
+    gui.conn = device
+    gui.default_stylesheet = "original"
     msgbox = FakeMessageBox()
 
     gui._FinishAGBROMBackup(msgbox, "\nElapsed")
@@ -3015,12 +3015,12 @@ def test_finish_detect_cartridge_handles_success_and_failure(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("DMG")
-    device.INFO["dmg_carts"] = (
+    device.info["dmg_carts"] = (
         ["Generic", "Mock Profile", "Compatible"],
         [{}, {"mbc": "manual", "flash_size": 0x200000}, {}],
     )
-    gui.CONN = device
-    gui.STATUS["can_skip_message"] = False
+    gui.conn = device
+    gui.status["can_skip_message"] = False
     result = (
         dmg_header(),
         0x2000,
@@ -3036,7 +3036,7 @@ def test_finish_detect_cartridge_handles_success_and_failure(
     )
 
     gui.FinishDetectCartridge(result)
-    assert gui.STATUS["cart_type"] == {"mbc": "manual", "flash_size": 0x200000}
+    assert gui.status["cart_type"] == {"mbc": "manual", "flash_size": 0x200000}
     assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 1
 
     disconnected: list[bool] = []
@@ -3051,7 +3051,7 @@ def test_detection_firmware_footer_adds_clipboard_action_only_for_specific_profi
     tmp_path: Path,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.CONN = FakeDevice()
+    gui.conn = FakeDevice()
     dialog = FakeChoiceMessageBox()
 
     footer, button = gui._DetectionFirmwareFooter(dialog, False)
@@ -3070,9 +3070,9 @@ def test_detect_cartridge_and_baud_fallback_are_mocked(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice()
-    gui.CONN = device
+    gui.conn = device
     gui.CheckDeviceAlive = always_device_alive
-    gui.SETTINGS.values.update(
+    gui.settings.values.update(
         AutoDetectLimitVoltage="enabled",
         AutoLimitBaudRate="enabled",
         GBxCartRWBaudRate="1500000",
@@ -3083,25 +3083,25 @@ def test_detect_cartridge_and_baud_fallback_are_mocked(
 
     assert ("detect", {"limitVoltage": True, "checkSaveType": False}) in device.calls
     assert ("baud", 1_000_000) in device.calls
-    assert gui.SETTINGS.values["GBxCartRWBaudRate"] == "1000000"
+    assert gui.settings.values["GBxCartRWBaudRate"] == "1000000"
 
 
 def test_check_device_alive_covers_connection_states(
     gui_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    gui = make_gui(gui_module, CONN=None)
+    gui = make_gui(gui_module, conn=None)
     assert gui.CheckDeviceAlive() is False
 
     device = FakeDevice()
     disconnects: list[bool] = []
-    gui.CONN = device
+    gui.conn = device
     gui.DisconnectDevice = lambda: disconnects.append(True)
-    device.DEVICE = None
+    device.device = None
     assert gui.CheckDeviceAlive() is False
     assert disconnects == [True]
 
-    device.DEVICE = object()
+    device.device = object()
     device.connected = True
     assert gui.CheckDeviceAlive() is True
 
@@ -3109,7 +3109,7 @@ def test_check_device_alive_covers_connection_states(
     no_box = FakeMessageBox()
     no_box.setResult(FakeMessageBox.StandardButton.No)
     monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: no_box)
-    gui.CONN = device
+    gui.conn = device
     assert gui.CheckDeviceAlive() is False
     assert len(disconnects) == 3
 
@@ -3122,8 +3122,8 @@ def test_check_device_alive_covers_connection_states(
         "singleShot",
         lambda milliseconds, callback: scheduled.append((milliseconds, callback)),
     )
-    gui.CONN = device
-    gui.DEVICES = {"mock": device}
+    gui.conn = device
+    gui.devices = {"mock": device}
     assert gui.CheckDeviceAlive() is False
     assert scheduled[0][0] == 500
 
@@ -3135,10 +3135,10 @@ def test_set_mode_switches_or_restores_platform_choice(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("DMG")
-    gui.CONN = device
+    gui.conn = device
     gui.optDMG.setChecked(False)
     gui.optAGB.setChecked(True)
-    gui.SETTINGS.values["SkipModeChangeWarning"] = "enabled"
+    gui.settings.values["SkipModeChangeWarning"] = "enabled"
     gui.CheckDeviceAlive = always_device_alive
     gui.ReadCartridge = lambda: True
 
@@ -3150,7 +3150,7 @@ def test_set_mode_switches_or_restores_platform_choice(
     device.mode = "DMG"
     gui.optDMG.setChecked(False)
     gui.optAGB.setChecked(True)
-    gui.SETTINGS.values["SkipModeChangeWarning"] = "disabled"
+    gui.settings.values["SkipModeChangeWarning"] = "disabled"
     cancel_box = FakeMessageBox()
     cancel_box.setResult(FakeMessageBox.StandardButton.Cancel)
     monkeypatch.setattr(gui_module, "_create_message_box", lambda **_kwargs: cancel_box)
@@ -3177,30 +3177,30 @@ def test_auxiliary_windows_run_with_mocked_dependencies(
 
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("DMG")
-    gui.CONN = device
+    gui.conn = device
 
     assert gui.ShowFirmwareUpdateWindow() is False
-    device.INFO["supports_updates"] = True
+    device.info["supports_updates"] = True
     monkeypatch.setattr(device, "GetFirmwareUpdaterClass", lambda: (None, StubWindow), raising=False)
     assert gui.ShowFirmwareUpdateWindow() is None
-    assert gui.FWUPWIN.kwargs["device"] is device
+    assert gui.fwupwin.kwargs["device"] is device
 
     monkeypatch.setattr(gui_module, "PocketCameraWindow", StubWindow)
     device.header = {"mapper_raw": 252, "ram_size_raw": 3}
-    device.INFO["data"] = b"camera-save"
+    device.info["data"] = b"camera-save"
     gui.ShowPocketCameraWindow()
-    assert gui.CAMWIN.kwargs["file"] == b"camera-save"
+    assert gui.camwin.kwargs["file"] == b"camera-save"
     assert any(call[0] == "backup_ram" for call in device.calls)
 
     monkeypatch.setattr(gui_module, "InteractiveConsoleWindow", StubWindow)
-    gui.CONN = None
+    gui.conn = None
     assert gui.ShowInteractiveConsoleWindow() is False
-    gui.CONN = device
+    gui.conn = device
     device.mode = cast("Any", None)
     assert gui.ShowInteractiveConsoleWindow() is False
     device.mode = "AGB"
     assert gui.ShowInteractiveConsoleWindow() is None
-    assert gui.INTWIN is not None
+    assert gui.intwin is not None
 
 
 def test_drag_drop_routes_roms_and_saves_without_file_io(
@@ -3208,7 +3208,7 @@ def test_drag_drop_routes_roms_and_saves_without_file_io(
     tmp_path: Path,
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
-    gui.CONN = FakeDevice("DMG")
+    gui.conn = FakeDevice("DMG")
     gui.btnHeaderRefresh.setEnabled(True)
     gui.grpActions.setEnabled(True)
     flashed: list[str] = []
@@ -3238,18 +3238,18 @@ def test_close_event_clears_pending_messages(gui_module: ModuleType) -> None:
     event = FakeDropEvent([])
     gui = make_gui(
         gui_module,
-        CONN=None,
+        conn=None,
         DisconnectDevice=lambda: disconnects.append(True),
         MSGBOX_TIMER=FakeQtObject(),
-        MSGBOX_DISPLAYING=False,
-        MSGBOX_QUEUE=pending,
+        msgbox_displaying=False,
+        msgbox_queue=pending,
     )
 
     gui.closeEvent(cast("Any", event))
 
     assert disconnects == [True]
     assert pending.empty()
-    assert gui.MSGBOX_DISPLAYING is True
+    assert gui.msgbox_displaying is True
     assert event.accepted is True
 
 
@@ -3307,12 +3307,12 @@ def test_backup_rom_uses_selected_platform_and_exact_transfer_request(
             "agb_rom_size": rom_size,
             "fast_read_mode": True,
             "cart_type": 1,
-            "settings": gui.SETTINGS,
+            "settings": gui.settings,
         },
     ]
-    assert gui.STATUS["last_path"] == str(path)
-    assert gui.STATUS["args"] is transfers[0]
-    assert gui.SETTINGS.values[f"LastDirRom{mode}"] == str(tmp_path)
+    assert gui.status["last_path"] == str(path)
+    assert gui.status["args"] is transfers[0]
+    assert gui.settings.values[f"LastDirRom{mode}"] == str(tmp_path)
     assert gui.grpActions.isEnabled() is False
 
 
@@ -3329,7 +3329,7 @@ def test_backup_rom_cancelled_file_dialog_never_starts_transfer(
     gui.BackupROM()
 
     assert not any(name == "backup_rom" for name, _args in device.calls)
-    assert "last_path" not in gui.STATUS
+    assert "last_path" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -3339,7 +3339,7 @@ def test_backup_rom_rejected_header_check_never_opens_file_dialog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    device.INFO["dump_info"] = {
+    device.info["dump_info"] = {
         "header": {"mapper_raw": 0x13, "logo_correct": False, "header_checksum_correct": False, "empty": False},
     }
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.No)
@@ -3365,12 +3365,12 @@ def test_cartridge_type_change_clears_cached_profile_for_sentinel_indices(
     gui, _device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
     mapper_update = Mock()
     gui.SetDMGMapperResult = mapper_update
-    gui.STATUS["cart_type"] = {"stale": True}
+    gui.status["cart_type"] = {"stale": True}
     original_size = gui.cmbDMGHeaderROMSizeResult.currentIndex()
 
     gui.CartridgeTypeChanged(index)
 
-    assert gui.STATUS["cart_type"] == {}
+    assert gui.status["cart_type"] == {}
     assert gui.cmbDMGHeaderROMSizeResult.currentIndex() == original_size
     mapper_update.assert_not_called()
 
@@ -3383,12 +3383,12 @@ def test_cartridge_type_change_ignores_profile_during_detection(
     gui, _device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
     mapper_update = Mock()
     gui.SetDMGMapperResult = mapper_update
-    gui.STATUS["detect_cartridge_args"] = {"dpath": "detected.gb"}
+    gui.status["detect_cartridge_args"] = {"dpath": "detected.gb"}
     gui.cmbDMGHeaderROMSizeResult.setCurrentIndex(0)
 
     gui.CartridgeTypeChanged(1)
 
-    assert gui.STATUS["cart_type"] == {}
+    assert gui.status["cart_type"] == {}
     assert gui.cmbDMGHeaderROMSizeResult.currentIndex() == 0
     mapper_update.assert_not_called()
 
@@ -3412,13 +3412,13 @@ def test_cartridge_type_change_caches_profile_and_updates_available_fields(
     expected_size: int | None,
 ) -> None:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
-    device.INFO[f"{mode.lower()}_carts"] = (["Generic", "Selected"], [{}, profile])
+    device.info[f"{mode.lower()}_carts"] = (["Generic", "Selected"], [{}, profile])
     size_combo = gui.cmbDMGHeaderROMSizeResult if mode == "DMG" else gui.cmbAGBHeaderROMSizeResult
     size_combo.setCurrentIndex(0)
 
     gui.CartridgeTypeChanged(1)
 
-    assert gui.STATUS["cart_type"] is profile
+    assert gui.status["cart_type"] is profile
     expected_index = 0 if expected_size is None else gui_module.RomSizes().GetIndex(expected_size)
     assert size_combo.currentIndex() == expected_index
     if mode == "DMG":
@@ -3643,7 +3643,7 @@ def test_flash_rom_declined_mapper_choice_never_transfers(
     gui.FlashROM(dpath=str(path))
 
     assert not any(name == "flash" for name, _args in device.calls)
-    assert "args" not in gui.STATUS
+    assert "args" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -3667,7 +3667,7 @@ def test_flash_rom_declined_boot_logo_choice_never_transfers(
     gui.FlashROM(dpath=str(path))
 
     assert not any(name == "flash" for name, _args in device.calls)
-    assert "args" not in gui.STATUS
+    assert "args" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -3688,7 +3688,7 @@ def test_prepare_flash_cart_selection_uses_selected_profile(
     assert path == ""
     assert setting_name == f"LastDirRom{mode}"
     assert last_dir == str(tmp_path)
-    assert carts is device.INFO[f"{mode.lower()}_carts"][1]
+    assert carts is device.info[f"{mode.lower()}_carts"][1]
     assert index == 1
     assert profile is carts[1]
     assert not any(name == "flash" for name, _args in device.calls)
@@ -3704,16 +3704,16 @@ def test_prepare_flash_cart_selection_resumes_detected_profile(
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, mode)
     combo = gui.cmbDMGCartridgeTypeResult if mode == "DMG" else gui.cmbAGBCartridgeTypeResult
     combo.setCurrentIndex(0)
-    gui.STATUS["detected_cart_type"] = 1
+    gui.status["detected_cart_type"] = 1
 
     selection = gui._PrepareFlashCartSelection("")
 
     assert selection is not None
     assert selection[0] == mode
     assert selection[5] == 1
-    assert selection[6] is device.INFO[f"{mode.lower()}_carts"][1][1]
+    assert selection[6] is device.info[f"{mode.lower()}_carts"][1][1]
     assert combo.currentIndex() == 1
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -3723,12 +3723,12 @@ def test_prepare_flash_cart_selection_canceled_drop_clears_detected_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    gui.STATUS["detected_cart_type"] = 1
+    gui.status["detected_cart_type"] = 1
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
 
     assert gui._PrepareFlashCartSelection(str(tmp_path / "drop.gb")) is None
 
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -3741,11 +3741,11 @@ def test_prepare_flash_cart_selection_rejects_canceled_or_missing_detection(
 ) -> None:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
     gui.cmbDMGCartridgeTypeResult.setCurrentIndex(0)
-    gui.STATUS["detected_cart_type"] = detected
+    gui.status["detected_cart_type"] = detected
 
     assert gui._PrepareFlashCartSelection("") is None
 
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -3762,9 +3762,9 @@ def test_prepare_flash_cart_selection_starts_profile_detection(
     assert gui._PrepareFlashCartSelection("") is None
 
     assert detection_calls == [False]
-    assert gui.STATUS["detected_cart_type"] == "WAITING_FLASH"
-    assert gui.STATUS["detect_cartridge_args"] == {"dpath": ""}
-    assert gui.STATUS["can_skip_message"] is True
+    assert gui.status["detected_cart_type"] == "WAITING_FLASH"
+    assert gui.status["detect_cartridge_args"] == {"dpath": ""}
+    assert gui.status["can_skip_message"] is True
     assert not any(name == "flash" for name, _args in device.calls)
 
 
@@ -3774,7 +3774,7 @@ def test_prepare_flash_cart_selection_rejects_invalid_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    device.INFO["dmg_carts"] = (["Generic", "Broken"], [{}, "not a profile"])
+    device.info["dmg_carts"] = (["Generic", "Broken"], [{}, "not a profile"])
     critical = Mock(return_value=FakeMessageBox.StandardButton.Ok)
     monkeypatch.setattr(FakeMessageBox, "critical", critical)
 
@@ -3801,7 +3801,7 @@ def test_flash_rom_dispatches_exact_platform_request(
     rom_header = {"mapper_raw": 0x0F, "logo_correct": True, "header_checksum_correct": True}
     rom_parser = "RomFileDMG" if mode == "DMG" else "RomFileAGB"
     monkeypatch.setattr(gui_module, rom_parser, lambda _buffer: SimpleNamespace(GetHeader=lambda: rom_header))
-    gui.SETTINGS.values.update(PreferChipErase="enabled", VerifyData="enabled", CompareSectors="enabled")
+    gui.settings.values.update(PreferChipErase="enabled", VerifyData="enabled", CompareSectors="enabled")
 
     gui.FlashROM()
 
@@ -3824,8 +3824,8 @@ def test_flash_rom_dispatches_exact_platform_request(
             "compare_sectors": True,
         },
     ]
-    assert gui.STATUS["last_path"] == str(path)
-    assert gui.STATUS["args"] is transfers[0]
+    assert gui.status["last_path"] == str(path)
+    assert gui.status["args"] is transfers[0]
     assert gui.grpActions.isEnabled() is False
 
 
@@ -3878,7 +3878,7 @@ def test_flash_rom_converted_isx_uses_in_memory_buffer_request(
             "compare_sectors": False,
         },
     ]
-    assert gui.STATUS["last_path"] == str(path)
+    assert gui.status["last_path"] == str(path)
 
 
 @pytest.mark.parametrize("mode", ["DMG", "AGB"])
@@ -3895,7 +3895,7 @@ def test_flash_rom_cancelled_file_dialog_and_wipe_refusal_do_not_transfer(
     gui.FlashROM()
 
     assert not any(name == "flash" for name, _args in device.calls)
-    assert "last_path" not in gui.STATUS
+    assert "last_path" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -3932,7 +3932,7 @@ def test_flash_rom_rejects_unsuitable_input_before_transfer(
     path = tmp_path / "unsuitable.gb"
     path.write_bytes(b"" if reason == "empty" else bytes(0x1000))
     if reason == "larger_than_profile":
-        device.INFO["dmg_carts"][1][1]["flash_size"] = 0x800
+        device.info["dmg_carts"][1][1]["flash_size"] = 0x800
         monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
     monkeypatch.setattr(
         gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: (str(path), ""))
@@ -3952,8 +3952,8 @@ def test_flash_rom_rejected_voltage_warning_does_not_transfer(
     gui, device = build_rom_gui(gui_module, tmp_path, monkeypatch, "DMG")
     path = tmp_path / "flash.gb"
     path.write_bytes(bytes(0x1000))
-    device.INFO["dmg_carts"][1][1]["voltage"] = 3.3
-    device.INFO.update(voltage_autoswitch=True, voltage_code=False)
+    device.info["dmg_carts"][1][1]["voltage"] = 3.3
+    device.info.update(voltage_autoswitch=True, voltage_code=False)
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
     monkeypatch.setattr(
         gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getOpenFileName=lambda *_args: (str(path), ""))
@@ -3988,7 +3988,7 @@ def test_ordinary_save_preparation_bypasses_profile_detection(
     assert prepare_save_cartridge(gui, operation, mode, str(tmp_path / "ordinary.sav")) is True
 
     detection.assert_not_called()
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert device.calls == []
 
 
@@ -4022,12 +4022,12 @@ def test_special_save_preparation_starts_profile_detection_with_resume_arguments
 
     assert prepare_save_cartridge(gui, operation, mode, path, erase=erase) is False
 
-    assert gui.STATUS["detected_cart_type"] == ("WAITING_SAVE_READ" if operation == "backup" else "WAITING_SAVE_WRITE")
+    assert gui.status["detected_cart_type"] == ("WAITING_SAVE_READ" if operation == "backup" else "WAITING_SAVE_WRITE")
     expected_args: dict[str, object] = {"dpath": path}
     if operation == "write":
         expected_args["erase"] = erase
-    assert gui.STATUS["detect_cartridge_args"] == expected_args
-    assert gui.STATUS["can_skip_message"] is True
+    assert gui.status["detect_cartridge_args"] == expected_args
+    assert gui.status["can_skip_message"] is True
     detection.assert_called_once_with(checkSaveType=True)
     assert device.calls == []
 
@@ -4046,7 +4046,7 @@ def test_save_write_test_mode_bypasses_special_profile_detection(
     assert gui._prepare_save_write_cartridge("AGB", "", erase=False, test=True) is True
 
     detection.assert_not_called()
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert device.calls == []
 
 
@@ -4069,7 +4069,7 @@ def test_special_save_preparation_rejects_legacy_firmware_before_detection(
 
     dialog.exec.assert_called_once()
     detection.assert_not_called()
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert device.calls == []
 
 
@@ -4084,7 +4084,7 @@ def test_selected_profile_and_batteryless_metadata_skip_detection(
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
     select_detection_save(gui, mode, "batteryless")
-    device.INFO["dump_info"] = {
+    device.info["dump_info"] = {
         "batteryless_sram": {"bl_offset": 0x100000, "bl_size": 0x8000},
     }
     detection = Mock()
@@ -4093,7 +4093,7 @@ def test_selected_profile_and_batteryless_metadata_skip_detection(
     assert prepare_save_cartridge(gui, operation, mode, "selected.sav") is True
 
     detection.assert_not_called()
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert device.calls == []
 
 
@@ -4121,15 +4121,15 @@ def test_save_profile_resumption_rejects_invalid_detection_without_transfer(
     else:
         gui.WriteRAM(erase=True)
         expected_args = {"dpath": "", "erase": True}
-    assert gui.STATUS["detect_cartridge_args"] == expected_args
+    assert gui.status["detect_cartridge_args"] == expected_args
 
     gui._ResumeDetectedCartridgeAction(cast("Any", detected))
 
     detection.assert_called_once_with(checkSaveType=True)
     assert critical.call_count == (0 if detected is False else 1)
-    assert "detected_cart_type" not in gui.STATUS
-    assert "detect_cartridge_args" not in gui.STATUS
-    assert gui.STATUS["can_skip_message"] is False
+    assert "detected_cart_type" not in gui.status
+    assert "detect_cartridge_args" not in gui.status
+    assert gui.status["can_skip_message"] is False
     assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 0
     assert device.calls == []
 
@@ -4147,11 +4147,11 @@ def test_save_profile_preparation_accepts_valid_detection_for_each_platform(
     select_detection_save(gui, mode, "batteryless")
     profile_combo = gui.cmbAGBCartridgeTypeResult if mode == "AGB" else gui.cmbDMGCartridgeTypeResult
     profile_combo.setCurrentIndex(0)
-    gui.STATUS["detected_cart_type"] = 1
+    gui.status["detected_cart_type"] = 1
 
     assert prepare_save_cartridge(gui, operation, mode, "detected.sav") is True
 
-    assert "detected_cart_type" not in gui.STATUS
+    assert "detected_cart_type" not in gui.status
     assert profile_combo.currentIndex() == 1
     assert device.calls == []
 
@@ -4169,7 +4169,7 @@ def test_backup_save_resumes_once_with_original_destination(
     path = str(tmp_path / "detected-backup.sav")
 
     gui.BackupRAM(dpath=path)
-    assert gui.STATUS["detect_cartridge_args"] == {"dpath": path}
+    assert gui.status["detect_cartridge_args"] == {"dpath": path}
 
     gui._ResumeDetectedCartridgeAction(1)
 
@@ -4187,10 +4187,10 @@ def test_backup_save_resumes_once_with_original_destination(
             },
         ),
     ]
-    assert gui.STATUS["args"] is device.calls[0][1]
-    assert gui.STATUS["last_path"] == path
-    assert "detected_cart_type" not in gui.STATUS
-    assert "detect_cartridge_args" not in gui.STATUS
+    assert gui.status["args"] is device.calls[0][1]
+    assert gui.status["last_path"] == path
+    assert "detected_cart_type" not in gui.status
+    assert "detect_cartridge_args" not in gui.status
     assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 1
 
 
@@ -4206,7 +4206,7 @@ def test_erase_save_resumes_once_with_original_operation(
     gui.DetectCartridge = detection
 
     gui.WriteRAM(erase=True)
-    assert gui.STATUS["detect_cartridge_args"] == {"dpath": "", "erase": True}
+    assert gui.status["detect_cartridge_args"] == {"dpath": "", "erase": True}
 
     gui._ResumeDetectedCartridgeAction(1)
 
@@ -4226,10 +4226,10 @@ def test_erase_save_resumes_once_with_original_operation(
             },
         ),
     ]
-    assert gui.STATUS["args"] is device.calls[0][1]
-    assert gui.STATUS["last_path"] == ""
-    assert "detected_cart_type" not in gui.STATUS
-    assert "detect_cartridge_args" not in gui.STATUS
+    assert gui.status["args"] is device.calls[0][1]
+    assert gui.status["last_path"] == ""
+    assert "detected_cart_type" not in gui.status
+    assert "detect_cartridge_args" not in gui.status
     assert gui.cmbDMGCartridgeTypeResult.currentIndex() == 1
 
 
@@ -4242,7 +4242,7 @@ def test_backup_ram_dispatches_selected_save_request(
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
     path = tmp_path / f"{mode.lower()}.sav"
-    gui.SETTINGS.values["VerifyData"] = "enabled"
+    gui.settings.values["VerifyData"] = "enabled"
     monkeypatch.setattr(
         gui_module.QtWidgets, "QFileDialog", SimpleNamespace(getSaveFileName=lambda *_args: (str(path), ""))
     )
@@ -4258,8 +4258,8 @@ def test_backup_ram_dispatches_selected_save_request(
         "cart_type": 1,
     }
     assert device.calls == [("backup_ram", request)]
-    assert gui.STATUS["args"] is device.calls[0][1]
-    assert gui.STATUS["last_path"] == str(path)
+    assert gui.status["args"] is device.calls[0][1]
+    assert gui.status["last_path"] == str(path)
     assert gui.grpActions.isEnabled() is False
 
 
@@ -4287,7 +4287,7 @@ def test_backup_ram_unknown_size_and_cancelled_selection_do_not_transfer(
 
     dialog.assert_called_once()
     assert device.calls == []
-    assert "args" not in gui.STATUS
+    assert "args" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -4301,7 +4301,7 @@ def test_prepare_save_write_accepts_valid_file_and_write_ram_dispatches_exact_re
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
     path = tmp_path / f"restore-{mode.lower()}.sav"
     path.write_bytes(bytes(0x8000))
-    gui.SETTINGS.values["VerifyData"] = "disabled"
+    gui.settings.values["VerifyData"] = "disabled"
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Ok)
 
     preparation = gui._PrepareSaveWrite(dpath=str(path))
@@ -4322,8 +4322,8 @@ def test_prepare_save_write_accepts_valid_file_and_write_ram_dispatches_exact_re
         "cart_type": 1,
     }
     assert device.calls == [("restore_ram", request)]
-    assert gui.STATUS["args"] is device.calls[0][1]
-    assert gui.STATUS["last_path"] == str(path)
+    assert gui.status["args"] is device.calls[0][1]
+    assert gui.status["last_path"] == str(path)
     assert gui.grpActions.isEnabled() is False
 
 
@@ -4372,7 +4372,7 @@ def test_write_ram_cancelled_selection_and_destructive_refusal_do_not_transfer(
     gui.WriteRAM(erase=True)
 
     assert device.calls == []
-    assert "args" not in gui.STATUS
+    assert "args" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -4610,7 +4610,7 @@ def test_absent_calibration_warning_can_be_accepted_or_declined(
 ) -> None:
     mode = "DMG" if save_kind == "camera" else "AGB"
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, mode)
-    device.INFO["db"] = None
+    device.info["db"] = None
     warning = Mock(return_value=answer)
     monkeypatch.setattr(FakeMessageBox, "warning", warning)
     dialog = FakeDecisionMessageBox()
@@ -4632,7 +4632,7 @@ def test_camera_calibration_test_mode_bypasses_data_and_decision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    device.INFO["db"] = None
+    device.info["db"] = None
     read_header = Mock(return_value={})
     monkeypatch.setattr(device, "ReadHeader", read_header)
     dialog = FakeDecisionMessageBox()
@@ -4668,7 +4668,7 @@ def test_write_ram_calibration_refusal_stops_before_transfer(
 
     assert dialog.exec_count == 1
     assert device.calls == []
-    assert "args" not in gui.STATUS
+    assert "args" not in gui.status
     assert gui.grpActions.isEnabled() is True
 
 
@@ -4680,8 +4680,8 @@ def test_finish_flash_rom_shows_result_and_restores_controls(
     verified: bool,
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
-    device.INFO["last_action"] = 4
-    gui.PROGRESS.PROGRESS["verified"] = verified
+    device.info["last_action"] = 4
+    gui.progress.progress["verified"] = verified
     gui.grpActions.setEnabled(False)
     gui.btnCancel.setEnabled(True)
     refresh = Mock()
@@ -4701,7 +4701,7 @@ def test_finish_flash_rom_shows_result_and_restores_controls(
     expected = "written and verified successfully" if verified else "ROM writing complete"
     assert expected in boxes[0].text()
     assert gui.lblStatus4a.text() == "Done!"
-    assert device.INFO["last_action"] == 0
+    assert device.info["last_action"] == 0
     refresh.assert_called_once_with(resetStatus=False)
     assert gui.grpActions.isEnabled() is True
     assert gui.btnCancel.isEnabled() is False
@@ -4729,7 +4729,7 @@ def test_finish_flash_rom_verification_failure_retry_or_decline(
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
     sectors = [[0x2000, 0x1000]]
-    device.INFO.update(
+    device.info.update(
         last_action=4,
         broken_sectors=sectors,
         dump_info={"cart_type": 1},
@@ -4740,7 +4740,7 @@ def test_finish_flash_rom_verification_failure_retry_or_decline(
             "mapper_max_size": mapper_max_size,
         },
     )
-    gui.STATUS["args"] = {"path": "rom.gb", "verify_write": True}
+    gui.status["args"] = {"path": "rom.gb", "verify_write": True}
     gui.grpActions.setEnabled(False)
     gui.btnCancel.setEnabled(True)
     gui.ReadCartridge = Mock()
@@ -4772,12 +4772,12 @@ def test_finish_flash_rom_verification_failure_retry_or_decline(
     assert ("Check mapper type ROM size limit" in warnings[0]) is size_warning
     if answer == FakeMessageBox.StandardButton.Yes:
         assert device.calls == [("flash", {"path": "rom.gb", "verify_write": True, "flash_sectors": sectors})]
-        assert device.INFO["last_action"] == 4
+        assert device.info["last_action"] == 4
         assert gui.grpActions.isEnabled() is True
         gui.ReadCartridge.assert_not_called()
     else:
         assert device.calls == []
-        assert device.INFO["last_action"] == 0
+        assert device.info["last_action"] == 0
         assert "ROM writing complete" in boxes[0].text()
         assert gui.lblStatus4a.text() == "Done!"
         assert gui.grpActions.isEnabled() is True
@@ -4794,7 +4794,7 @@ def test_finish_flash_rom_formats_broken_sector_warning_limit(
 ) -> None:
     gui, device = build_save_gui(gui_module, tmp_path, monkeypatch, "DMG")
     sectors = [[index * 0x1000, 0x1000] for index in range(sector_count)]
-    device.INFO.update(last_action=4, broken_sectors=sectors)
+    device.info.update(last_action=4, broken_sectors=sectors)
     gui.ReadCartridge = Mock()
     warnings: list[str] = []
 
@@ -4813,7 +4813,7 @@ def test_finish_flash_rom_formats_broken_sector_warning_limit(
     assert ("and others" in warnings[0]) is (sector_count > 10)
     assert "0xA000~0xAFFF" not in warnings[0]
     assert device.calls == []
-    assert device.INFO["last_action"] == 0
+    assert device.info["last_action"] == 0
     gui.ReadCartridge.assert_called_once_with(resetStatus=False)
 
 
@@ -4823,9 +4823,9 @@ def test_cancelled_flash_rom_shows_abort_result_and_restores_controls(
 ) -> None:
     gui = build_gui(gui_module, tmp_path)
     device = FakeDevice("DMG")
-    device.INFO["last_action"] = 4
-    device.CANCEL = True
-    gui.CONN = device
+    device.info["last_action"] = 4
+    device.cancel = True
+    gui.conn = device
     gui.grpActions.setEnabled(False)
     gui.btnCancel.setEnabled(True)
     gui.ReadCartridge = Mock()
@@ -4835,6 +4835,6 @@ def test_cancelled_flash_rom_shows_abort_result_and_restores_controls(
     assert gui.lblStatus4a.text() == "ROM write cancelled"
     assert gui.grpActions.isEnabled() is True
     assert gui.btnCancel.isEnabled() is False
-    assert device.CANCEL is False
+    assert device.cancel is False
     assert not any(name == "flash" for name, _args in device.calls)
     gui.ReadCartridge.assert_not_called()

@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 @pytest.fixture
 def device() -> GbxDevice:
     result = GbxDevice()
-    result.FW = {"fw_ver": 12, "pcb_name": "Test device"}
-    result.MAX_BUFFER_READ = 32
+    result.fw = {"fw_ver": 12, "pcb_name": "Test device"}
+    result.max_buffer_read = 32
     return result
 
 
@@ -50,7 +50,7 @@ def test_cart_read_routes_addresses_and_decodes_scalar_values(
     reply: bytes,
     expected: int | bytearray,
 ) -> None:
-    device.MODE = mode
+    device.mode = mode
     rom = Mock(return_value=bytearray(reply))
     ram = Mock(return_value=bytearray(reply))
     monkeypatch.setattr(device, "ReadROM", rom)
@@ -86,7 +86,7 @@ def test_scalar_cart_read_rejects_missing_or_short_data(
     save_flash: bool,
     reply: bool | bytearray,
 ) -> None:
-    device.MODE = mode
+    device.mode = mode
     monkeypatch.setattr(device, "ReadROM", Mock(return_value=reply))
     monkeypatch.setattr(device, "ReadRAM", Mock(return_value=reply))
 
@@ -118,8 +118,8 @@ def test_cart_write_encodes_address_value_width_and_firmware_transport(
     flashcart: bool,
     expected: bytes,
 ) -> None:
-    device.MODE = mode
-    device.FW["fw_ver"] = firmware
+    device.mode = mode
+    device.fw["fw_ver"] = firmware
     write, try_write = Mock(), Mock()
     monkeypatch.setattr(device, "_write", write)
     monkeypatch.setattr(device, "_try_write", try_write)
@@ -161,7 +161,7 @@ def test_cart_sram_write_configures_transfer_before_sending_payload(
     mode: DeviceMode,
     expected: list[object],
 ) -> None:
-    device.MODE = mode
+    device.mode = mode
     transport = Mock()
     monkeypatch.setattr(device, "_set_fw_variable", transport.variable)
     monkeypatch.setattr(device, "_write", transport.write)
@@ -190,8 +190,8 @@ def test_flash_command_batch_preserves_order_and_firmware_wire_format(
     flashcart: bool,
     expected: str,
 ) -> None:
-    device.MODE = mode
-    device.FW["fw_ver"] = firmware
+    device.mode = mode
+    device.fw["fw_ver"] = firmware
     write = Mock()
     read = Mock(side_effect=[1])
     monkeypatch.setattr(device, "_write", write)
@@ -210,8 +210,8 @@ def test_old_firmware_falls_back_to_individual_flash_commands(
     mode: DeviceMode,
     flashcart: bool,
 ) -> None:
-    device.MODE = mode
-    device.FW["fw_ver"] = 5
+    device.mode = mode
+    device.fw["fw_ver"] = 5
     write = Mock()
     monkeypatch.setattr(device, "_cart_write", write)
 
@@ -235,9 +235,9 @@ def test_flash_command_batch_rejects_bad_acknowledgements_and_clears_timeouts(
     message: str,
     resets: int,
 ) -> None:
-    device.MODE = "DMG"
+    device.mode = "DMG"
     serial_device = RecoverySerial()
-    device.DEVICE = serial_device  # type: ignore[assignment]
+    device.device = serial_device  # type: ignore[assignment]
     write = Mock()
     read = Mock(side_effect=[response])
     monkeypatch.setattr(device, "_write", write)
@@ -277,7 +277,7 @@ def test_get_firmware_variable_encodes_width_and_decodes_big_endian_reply(
 
 
 def test_old_firmware_variable_read_returns_zero_without_io(device: GbxDevice) -> None:
-    device.FW["fw_ver"] = 9
+    device.fw["fw_ver"] = 9
     assert device._get_fw_variable("ADDRESS") == 0
 
 
@@ -309,7 +309,7 @@ def test_set_firmware_variable_encodes_value_and_selects_transport(
     value: int,
     expected_packet: str,
 ) -> None:
-    device.FW["fw_ver"] = firmware
+    device.fw["fw_ver"] = firmware
     write, try_write = Mock(return_value=None), Mock(return_value=3)
     monkeypatch.setattr(device, "_write", write)
     monkeypatch.setattr(device, "_try_write", try_write)
@@ -320,7 +320,7 @@ def test_set_firmware_variable_encodes_value_and_selects_transport(
     selected, unused = (try_write, write) if firmware >= 12 else (write, try_write)
     selected.assert_called_once_with(bytes.fromhex(expected_packet))
     unused.assert_not_called()
-    assert {key: value} == device.FW_VAR
+    assert {key: value} == device.fw_var
 
 
 @pytest.mark.parametrize("value", [-1, 0x100000000])
@@ -328,9 +328,9 @@ def test_set_firmware_variable_rejects_overflow_without_changing_cache(
     device: GbxDevice,
     value: int,
 ) -> None:
-    device.FW_VAR["ADDRESS"] = 0x1234
+    device.fw_var["ADDRESS"] = 0x1234
 
     with pytest.raises(ValueError, match="must fit in 32 bits"):
         device._set_fw_variable("ADDRESS", value)
 
-    assert device.FW_VAR == {"ADDRESS": 0x1234}
+    assert device.fw_var == {"ADDRESS": 0x1234}

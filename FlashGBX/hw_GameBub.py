@@ -8,9 +8,9 @@ from .Logging import logger
 
 
 class GbxDevice(LK_Device):
-    DEVICE_NAME = "Game Bub"
-    MAX_BUFFER_READ = 1024
-    MAX_BUFFER_WRITE = 512
+    device_name = "Game Bub"
+    max_buffer_read = 1024
+    max_buffer_write = 512
     DEVICE_LABEL_LONG = "Game Bub"
     DEVICE_LABEL_SHORT = "Game Bub"
     FWUPDATE_ACTION = None
@@ -32,7 +32,7 @@ class GbxDevice(LK_Device):
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected():
-            self.DEVICE.close()
+            self.device.close()
         conn_msg = []
         ports = []
         if port is not None:
@@ -47,39 +47,39 @@ class GbxDevice(LK_Device):
 
         for i in range(len(ports)):
             if self.TryConnect(ports[i], max_baud):
-                self.BAUDRATE = max_baud
+                self.baudrate = max_baud
                 try:
-                    dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1, exclusive=True)
+                    dev = serial.Serial(ports[i], self.baudrate, timeout=0.1, exclusive=True)
                 except (SerialException, OSError) as e:
                     dprint(f"Couldn’t reopen port {ports[i]:s}:", e)
                     continue
-                self.DEVICE = dev
+                self.device = dev
             else:
                 continue
 
-            if self.FW is None or self.FW == {}:
+            if self.fw is None or self.fw == {}:
                 continue
 
-            dprint(f"Found a {self.DEVICE_NAME}")
-            dprint("Firmware information:", self.FW)
+            dprint(f"Found a {self.device_name}")
+            dprint("Firmware information:", self.fw)
 
-            if self.DEVICE is None or not self.IsConnected():
-                self.DEVICE = None
-                if self.FW is not None:
+            if self.device is None or not self.IsConnected():
+                self.device = None
+                if self.fw is not None:
                     conn_msg.append(
                         [
                             0,
                             __(
                                 "Couldn’t communicate with the {device_name} on port {port}. Please disconnect and reconnect the device, then try again.",
-                                device_name=self.DEVICE_NAME,
+                                device_name=self.device_name,
                                 port=ports[i],
                             ),
                         ],
                     )
                 continue
 
-            self.PORT = ports[i]
-            self.DEVICE.timeout = self.DEVICE_TIMEOUT
+            self.port = ports[i]
+            self.device.timeout = self.device_timeout
 
             # Load Flash Cartridge Handlers
             self.UpdateFlashCarts(flashcarts)
@@ -92,9 +92,9 @@ class GbxDevice(LK_Device):
     def LoadFirmwareVersion(self):
         dprint("Querying firmware version")
         try:
-            self.DEVICE.timeout = 0.075
-            self.DEVICE.reset_input_buffer()
-            self.DEVICE.reset_output_buffer()
+            self.device.timeout = 0.075
+            self.device.reset_input_buffer()
+            self.device.reset_output_buffer()
 
             self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
             size = self._read(1)
@@ -104,44 +104,44 @@ class GbxDevice(LK_Device):
             info = data[:8]
             keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
             values = struct.unpack(">cHBI", bytearray(info))
-            self.FW = dict(zip(keys, values))
-            self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
-            self.FW["fw_dt"] = (
-                datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
+            self.fw = dict(zip(keys, values))
+            self.fw["cfw_id"] = self.fw["cfw_id"].decode("ascii")
+            self.fw["fw_dt"] = (
+                datetime.datetime.fromtimestamp(self.fw["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
             )
-            self.FW["ofw_ver"] = None
-            self.FW["pcb_name"] = ""
-            self.FW["cart_power_ctrl"] = False
-            self.FW["bootloader_reset"] = False
-            if self.FW["cfw_id"] in ["L", "E"] and self.FW["fw_ver"] >= 12:
+            self.fw["ofw_ver"] = None
+            self.fw["pcb_name"] = ""
+            self.fw["cart_power_ctrl"] = False
+            self.fw["bootloader_reset"] = False
+            if self.fw["cfw_id"] in ["L", "E"] and self.fw["fw_ver"] >= 12:
                 size = self._read(1)
                 name = self._read(size)
                 if len(name) > 0:
                     try:
-                        self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
+                        self.fw["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
                     except:
-                        self.FW["pcb_name"] = "Unnamed Device"
-                    self.DEVICE_NAME = self.FW["pcb_name"]
+                        self.fw["pcb_name"] = "Unnamed Device"
+                    self.device_name = self.fw["pcb_name"]
 
                 # Cartridge Power Control support, Switch Power support, and Switch Mode support
                 temp = self._read(1)
-                self.FW["cart_power_ctrl"] = temp & 1 == 1
-                self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
-                self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
+                self.fw["cart_power_ctrl"] = temp & 1 == 1
+                self.fw["cart_presence_switch"] = (temp >> 1) & 1 == 1
+                self.fw["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
                 # Reset to bootloader support
-                self.FW["bootloader_reset"] = self._read(1) == 1
+                self.fw["bootloader_reset"] = self._read(1) == 1
 
             return True
 
         except Exception as e:
             dprint("Disconnecting due to an error", e, sep="\n")
             try:
-                if self.DEVICE.isOpen():
-                    self.DEVICE.reset_input_buffer()
-                    self.DEVICE.reset_output_buffer()
-                    self.DEVICE.close()
-                self.DEVICE = None
+                if self.device.isOpen():
+                    self.device.reset_input_buffer()
+                    self.device.reset_output_buffer()
+                    self.device.close()
+                self.device = None
             except Exception:
                 logger.exception("Failed to close Game Bub after an initialization error")
             return False
@@ -150,9 +150,9 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        s = "{:s}{:d}".format(self.FW["cfw_id"], self.FW["fw_ver"])
+        s = "{:s}{:d}".format(self.fw["cfw_id"], self.fw["fw_ver"])
         if more:
-            s += " ({:s})".format(self.FW["fw_dt"])
+            s += " ({:s})".format(self.fw["fw_dt"])
         return s
 
     def GetFullNameExtended(self, more=False):
@@ -161,7 +161,7 @@ class GbxDevice(LK_Device):
                 "{device_name} – Firmware {fw_version} ({timestamp}) on {port}",
                 device_name=self.GetFullName(),
                 fw_version=self.GetFirmwareVersion(),
-                timestamp=self.FW["fw_dt"],
+                timestamp=self.fw["fw_dt"],
                 port=self.GetPort(),
             )
         return __(
@@ -214,4 +214,4 @@ class GbxDevice(LK_Device):
         return True
 
     def GetFullName(self):
-        return self.DEVICE_NAME
+        return self.device_name

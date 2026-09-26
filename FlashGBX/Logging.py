@@ -65,7 +65,7 @@ class ANSI:
 
 class Logger:
     def __init__(self) -> None:
-        self.LOG_ERROR: bool = False
+        self.log_error: bool = False
         _append_capped(
             AppContext.PRINT_LOG,
             "FlashGBX {version}\n© 2020-{year} Lesserkuma".format(
@@ -79,7 +79,7 @@ class Logger:
         msg: str = _format_message(args, kwargs)
         if msg.strip():
             if ANSI.RED in msg:
-                self.LOG_ERROR = True
+                self.log_error = True
             _append_capped(AppContext.PRINT_LOG, _ANSI_ESCAPE_RE.sub("", msg.strip()), _PRINT_LOG_LIMIT)
         output_stream: TextIOWrapper | None = sys.__stdout__
         if output_stream is not None and output_stream is not self:
@@ -114,8 +114,8 @@ class Logger:
         cls.dprint("Now writing debug log file")
         msg = "\n\n\n---- Debug Log ----\n"
         msg += f"{AppInfo.NAME:s} version: {AppInfo.VERSION_PEP440:s} ({AppInfo.VERSION_TIMESTAMP:d})\n"
-        msg += f"Language: {i18n.CONFIGURED_LANGUAGE or 'unknown'}\n"
-        msg += "Platform: {:s}\n".format(AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.OS_LANGUAGE)
+        msg += f"Language: {i18n.configured_language or 'unknown'}\n"
+        msg += "Platform: {:s}\n".format(AppInfo.os_string() + ", " + platform.machine() + ", " + i18n.os_language)
         if device is not False:
             if device is not None:
                 msg += f"Connected device: {device!s}\n"
@@ -168,7 +168,7 @@ class Logger:
         print(exception_text)
         cls.write_debug_log()
         if isinstance(sys.stdout, Logger):
-            sys.stdout.LOG_ERROR = True
+            sys.stdout.log_error = True
 
 
 # Top-level alias kept because dprint is the most-used helper in the codebase.

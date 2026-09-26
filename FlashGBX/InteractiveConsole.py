@@ -23,8 +23,8 @@ class InteractiveConsole:
         on_output: Callable[[str], object],
         on_error: Callable[[str], object] | None = None,
     ) -> None:
-        self.CONN: LK_Device = conn
-        self.MODE: Literal["DMG", "AGB"] | None = conn.GetMode()
+        self.conn: LK_Device = conn
+        self.mode: Literal["DMG", "AGB"] | None = conn.GetMode()
         self.on_output: Callable[[str], object] = on_output
         self.on_error: Callable[[str], object] = on_error if on_error is not None else on_output
         self.last_read_data = None
@@ -35,13 +35,13 @@ class InteractiveConsole:
         lines.append("  r <addr> <size>               " + __("Read from ROM region"))
         lines.append("  s <filepath>                  " + __("Save last read data to file"))
         lines.append("  w <addr> <value>              " + __("Write to ROM region (e.g. mapper registers)"))
-        if self.MODE == "AGB":
+        if self.mode == "AGB":
             lines.append("  rs <addr> <size>              " + __("Read from SRAM or FLASH save region"))
             lines.append("  ws <addr> <value>             " + __("Write to SRAM or FLASH save region"))
             lines.append("  wf <addr> <value>             " + __("Send commands to FLASH save chip"))
             lines.append("  re <4|64> <addr> <size>       " + __("Read from EEPROM save region"))
             lines.append("  we <4|64> <addr> <data>       " + __("Write to EEPROM save region"))
-        if self.CONN.CanPowerCycleCart():
+        if self.conn.CanPowerCycleCart():
             lines.append("  on                            " + __("Cartridge Power On"))
             lines.append("  off                           " + __("Cartridge Power Off"))
         lines.append("  h                             " + __("Show this help"))
@@ -99,7 +99,7 @@ class InteractiveConsole:
             "on": self._execute_power_on,
             "off": self._execute_power_off,
         }
-        if self.MODE == "AGB":
+        if self.mode == "AGB":
             handlers.update(
                 {
                     "rs": self._execute_save_read,
@@ -126,10 +126,10 @@ class InteractiveConsole:
         except ValueError:
             self.on_output(__("Invalid input. Use hexadecimal or 8/16-bit binary for the value."))
             return True
-        self.CONN._cart_write(
+        self.conn._cart_write(
             address,
             value,
-            sram=bool(self.MODE == "DMG" and 40960 <= address < 49152),
+            sram=bool(self.mode == "DMG" and 40960 <= address < 49152),
         )
         self.on_output(__("OK"))
         return True
@@ -145,7 +145,7 @@ class InteractiveConsole:
             return True
         if size == 0:
             return True
-        raw: int | bytearray | Literal[False] = self.CONN._cart_read(address, size)
+        raw: int | bytearray | Literal[False] = self.conn._cart_read(address, size)
         self._show_read_result(address, size, raw)
         return True
 
@@ -186,7 +186,7 @@ class InteractiveConsole:
             return True
         if size == 0:
             return True
-        raw: int | bytearray | Literal[False] = self.CONN._cart_read(address, size, agb_save_flash=True)
+        raw: int | bytearray | Literal[False] = self.conn._cart_read(address, size, agb_save_flash=True)
         self._show_read_result(address, size, raw)
         return True
 
@@ -207,7 +207,7 @@ class InteractiveConsole:
         except ValueError:
             self.on_output(__("Invalid input. Use hexadecimal or 8-bit binary for the value."))
             return True
-        self.CONN._cart_write(address, value, sram=True)
+        self.conn._cart_write(address, value, sram=True)
         self.on_output(__("OK"))
         return True
 
@@ -220,7 +220,7 @@ class InteractiveConsole:
         except ValueError:
             self.on_output(__("Invalid hexadecimal input."))
             return True
-        self.CONN._cart_write_flash([[address, value]])
+        self.conn._cart_write_flash([[address, value]])
         self.on_output(__("OK"))
         return True
 
@@ -240,11 +240,11 @@ class InteractiveConsole:
         if size % 8 != 0 or size == 0:
             self.on_output(__("EEPROM read requires size to be a multiple of 8 bytes."))
             return True
-        self.CONN._set_fw_variable("TRANSFER_SIZE", size)
-        self.CONN._set_fw_variable("ADDRESS", address)
-        cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type])
-        self.CONN._write(cmd)
-        eeprom_data: int | bytearray | Literal[False] = self.CONN._read(size)
+        self.conn._set_fw_variable("TRANSFER_SIZE", size)
+        self.conn._set_fw_variable("ADDRESS", address)
+        cmd = bytearray([self.conn.DEVICE_CMD["AGB_CART_READ_EEPROM"], eeprom_type])
+        self.conn._write(cmd)
+        eeprom_data: int | bytearray | Literal[False] = self.conn._read(size)
         if not isinstance(eeprom_data, bytearray) or len(eeprom_data) == 0:
             self.on_error(__("ERROR"))
         else:
@@ -268,11 +268,11 @@ class InteractiveConsole:
         if len(data) == 0 or len(data) % 8 != 0:
             self.on_output(__("EEPROM write requires data length to be a multiple of 8 bytes."))
             return True
-        self.CONN._set_fw_variable("TRANSFER_SIZE", len(data))
-        self.CONN._set_fw_variable("ADDRESS", address)
-        cmd = bytearray([self.CONN.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], eeprom_type])
-        self.CONN._write(cmd)
-        ack: int | Literal[False] | None = self.CONN._write(data, wait=True)
+        self.conn._set_fw_variable("TRANSFER_SIZE", len(data))
+        self.conn._set_fw_variable("ADDRESS", address)
+        cmd = bytearray([self.conn.DEVICE_CMD["AGB_CART_WRITE_EEPROM"], eeprom_type])
+        self.conn._write(cmd)
+        ack: int | Literal[False] | None = self.conn._write(data, wait=True)
         if ack is False:
             self.on_error(__("ERROR"))
         else:
@@ -280,13 +280,13 @@ class InteractiveConsole:
         return True
 
     def _execute_power_on(self, _parts: list[str]) -> bool:
-        return self._execute_power_command(self.CONN.CartPowerOn)
+        return self._execute_power_command(self.conn.CartPowerOn)
 
     def _execute_power_off(self, _parts: list[str]) -> bool:
-        return self._execute_power_command(self.CONN.CartPowerOff)
+        return self._execute_power_command(self.conn.CartPowerOff)
 
     def _execute_power_command(self, command: Callable[[], object]) -> bool:
-        if not self.CONN.CanPowerCycleCart():
+        if not self.conn.CanPowerCycleCart():
             self.on_output(__("This device does not support cartridge power control."))
             return True
         try:

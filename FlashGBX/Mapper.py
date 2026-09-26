@@ -113,18 +113,18 @@ def save_size_includes_rtc(
 
 
 class DMG_Mapper:
-    MBC_ID: int
-    CART_WRITE_FNCPTR: CartWriteCallback | None
-    CART_READ_FNCPTR: CartReadCallback | None
-    CART_POWERCYCLE_FNCPTR: Callable[[], object] | None
-    CLK_TOGGLE_FNCPTR: Callable[[int], object] | None
+    mbc_id: int
+    cart_write_fncptr: CartWriteCallback | None
+    cart_read_fncptr: CartReadCallback | None
+    cart_powercycle_fncptr: Callable[[], object] | None
+    clk_toggle_fncptr: Callable[[int], object] | None
     ROM_BANK_SIZE: int = 0x4000
     RAM_BANK_SIZE: int = 0x2000
-    ROM_BANK_NUM: int
-    CURRENT_ROM_BANK: int
-    CURRENT_FLASH_BANK: int
-    START_BANK: int
-    RTC_BUFFER: bytearray | None
+    rom_bank_num: int
+    current_rom_bank: int
+    current_flash_bank: int
+    start_bank: int
+    rtc_buffer: bytearray | None
 
     # Mapper type definitions (class-level constants)
     MAPPER_TYPES: ClassVar[dict[int, str]] = {
@@ -207,22 +207,22 @@ class DMG_Mapper:
     ) -> None:
         if args is None:
             args = {}
-        self.MBC_ID = 0
-        self.ROM_BANK_NUM = 0
-        self.CURRENT_ROM_BANK = 0
-        self.CURRENT_FLASH_BANK = -1
-        self.START_BANK = 0
-        self.RTC_BUFFER = None
+        self.mbc_id = 0
+        self.rom_bank_num = 0
+        self.current_rom_bank = 0
+        self.current_flash_bank = -1
+        self.start_bank = 0
+        self.rtc_buffer = None
         if "mbc" in args:
-            self.MBC_ID = int(args["mbc"])
+            self.mbc_id = int(args["mbc"])
         if "rom_banks" in args:
-            self.ROM_BANK_NUM = int(args["rom_banks"])
+            self.rom_bank_num = int(args["rom_banks"])
         elif "rom_size" in args:
-            self.ROM_BANK_NUM = math.ceil(int(args["rom_size"]) / self.ROM_BANK_SIZE)
-        self.CART_WRITE_FNCPTR = cart_write_fncptr
-        self.CART_READ_FNCPTR = cart_read_fncptr
-        self.CART_POWERCYCLE_FNCPTR = cart_powercycle_fncptr
-        self.CLK_TOGGLE_FNCPTR = clk_toggle_fncptr
+            self.rom_bank_num = math.ceil(int(args["rom_size"]) / self.ROM_BANK_SIZE)
+        self.cart_write_fncptr = cart_write_fncptr
+        self.cart_read_fncptr = cart_read_fncptr
+        self.cart_powercycle_fncptr = cart_powercycle_fncptr
+        self.clk_toggle_fncptr = clk_toggle_fncptr
 
     def GetInstance(
         self,
@@ -304,7 +304,7 @@ class DMG_Mapper:
     def CartRead(self, address: int, length: int) -> bytearray: ...
 
     def CartRead(self, address: int, length: int = 0) -> int | bytearray:
-        read = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
+        read = _require_callback(self.cart_read_fncptr, "cartridge read")
         if length == 0:  # auto size:
             result: int | bytearray | bool | None = read(address)
             if isinstance(result, int):
@@ -322,7 +322,7 @@ class DMG_Mapper:
         delay: float | bool = False,
         sram: bool = False,
     ) -> None:
-        write: CartWriteCallback = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
+        write: CartWriteCallback = _require_callback(self.cart_write_fncptr, "cartridge write")
         for command in commands:
             address: int = command[0]
             value: int = command[1]
@@ -331,15 +331,15 @@ class DMG_Mapper:
                 time.sleep(delay)
 
     def _toggle_clock(self, cycles: int) -> None:
-        toggle: Callable[[int], object] = _require_callback(self.CLK_TOGGLE_FNCPTR, "clock toggle")
+        toggle: Callable[[int], object] = _require_callback(self.clk_toggle_fncptr, "clock toggle")
         toggle(cycles)
 
     def _power_cycle(self) -> None:
-        power_cycle: Callable[[], object] = _require_callback(self.CART_POWERCYCLE_FNCPTR, "cartridge power-cycle")
+        power_cycle: Callable[[], object] = _require_callback(self.cart_powercycle_fncptr, "cartridge power-cycle")
         power_cycle()
 
     def _get_rtc_buffer(self) -> bytearray:
-        rtc_buffer: bytearray | None = self.RTC_BUFFER
+        rtc_buffer: bytearray | None = self.rtc_buffer
         if rtc_buffer is None:
             result: bytearray | bool = self.ReadRTC()
             if not isinstance(result, bytearray):
@@ -349,27 +349,27 @@ class DMG_Mapper:
         return rtc_buffer
 
     def GetID(self) -> int:
-        return self.MBC_ID
+        return self.mbc_id
 
     def GetName(self) -> str:
         # Get the base mapper type name (e.g. "MBC1", "MBC5")
-        mapper_type: str = self.GetMapperType(self.MBC_ID)
+        mapper_type: str = self.GetMapperType(self.mbc_id)
         if mapper_type != "Unknown":
             return mapper_type
-        return f"Unknown MBC {self.MBC_ID:d}"
+        return f"Unknown MBC {self.mbc_id:d}"
 
     def GetFullName(self) -> str:
         # Get the full mapper name with all features (e.g. "MBC1+SRAM+BATTERY")
-        full_name: str = self.GetMapperName(self.MBC_ID)
+        full_name: str = self.GetMapperName(self.mbc_id)
         if full_name != "Unknown":
             return full_name
-        return f"Unknown MBC {self.MBC_ID:d}"
+        return f"Unknown MBC {self.mbc_id:d}"
 
     def GetROMBank(self) -> int:
-        return self.CURRENT_ROM_BANK
+        return self.current_rom_bank
 
     def GetFlashBank(self) -> int:
-        return self.CURRENT_FLASH_BANK
+        return self.current_flash_bank
 
     def GetROMBanks(self, rom_size: int) -> int:
         return math.ceil(rom_size / self.ROM_BANK_SIZE)
@@ -384,7 +384,7 @@ class DMG_Mapper:
         return self.RAM_BANK_SIZE
 
     def GetROMSize(self) -> int:
-        return self.ROM_BANK_SIZE * self.ROM_BANK_NUM
+        return self.ROM_BANK_SIZE * self.rom_bank_num
 
     def GetMaxROMSize(self) -> int:
         return 32 * 1024
@@ -424,7 +424,7 @@ class DMG_Mapper:
         return (start_address, self.RAM_BANK_SIZE)
 
     def SetStartBank(self, index: int) -> None:
-        self.START_BANK = index
+        self.start_bank = index
 
     def SelectBankFlash(self, index: int) -> tuple[int, int] | None:
         del index
@@ -440,7 +440,7 @@ class DMG_Mapper:
         return False
 
     def HasRTC(self) -> bool:
-        return self.HasFeature("RTC", self.MBC_ID)
+        return self.HasFeature("RTC", self.mbc_id)
 
     def GetRTCBufferSize(self) -> int:
         return 0
@@ -529,8 +529,8 @@ class DMG_MBC3(DMG_Mapper):
 
     def HasRTC(self) -> bool:
         dprint("Checking for RTC")
-        if self.MBC_ID not in (0x0F, 0x10, 0x110, 0x206):
-            dprint("No RTC because mapper value is not used for RTC:", self.MBC_ID)
+        if self.mbc_id not in (0x0F, 0x10, 0x110, 0x206):
+            dprint("No RTC because mapper value is not used for RTC:", self.mbc_id)
             return False
         self.EnableRAM(enable=False)
         self.EnableRAM(enable=True)
@@ -584,7 +584,7 @@ class DMG_MBC3(DMG_Mapper):
 
         self.EnableRAM(enable=False)
         self.CartWrite([[0x4000, 0]])
-        self.RTC_BUFFER = buffer
+        self.rtc_buffer = buffer
         return buffer
 
     def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
@@ -762,7 +762,7 @@ class DMG_MBC5(DMG_Mapper):
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), "|", index)
 
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         commands: list[list[int]] = [
             [0x3000, ((index >> 8) & 0xFF)],
             [0x2100, index & 0xFF],
@@ -798,14 +798,14 @@ class DMG_MBC6(DMG_Mapper):
         )
         self.ROM_BANK_SIZE = 0x2000
         self.RAM_BANK_SIZE = 0x1000
-        self.ROM_BANK_NUM = 128
+        self.rom_bank_num = 128
 
     def GetName(self) -> Literal["MBC6"]:
         return "MBC6"
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 0x4000], int]:
         dprint(self.GetName(), "|", index)
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         commands: list[list[int]] = [
             [0x2800, 0],
             [0x3800, 0],
@@ -821,7 +821,7 @@ class DMG_MBC6(DMG_Mapper):
 
     def SelectBankFlash(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         commands: list[list[int]] = [
             [0x2800, 8],
             [0x3800, 8],
@@ -908,7 +908,7 @@ class DMG_MBC6(DMG_Mapper):
                 [0x4000, 0xF0],
             ],
         )
-        self.SelectBankROM(self.CURRENT_ROM_BANK)
+        self.SelectBankROM(self.current_rom_bank)
         return flash_id
 
     def GetMaxROMSize(self) -> int:
@@ -1257,7 +1257,7 @@ class DMG_HuC3(DMG_Mapper):
         dstr: str = " ".join(format(x, "02X") for x in buffer)
         dprint(f"RTC: [{int(len(dstr) / 3) + 1:02X}] {dstr:s}")
 
-        self.RTC_BUFFER = buffer
+        self.rtc_buffer = buffer
         return buffer
 
     def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
@@ -1471,7 +1471,7 @@ class DMG_TAMA5(DMG_Mapper):
         self.CartWrite(commands, sram=True)
         self.SelectBankROM(0)
 
-        self.RTC_BUFFER = buffer
+        self.rtc_buffer = buffer
         return buffer
 
     def WriteRTCDict(self, rtc_dict: Mapping[str, Any]) -> Literal[True]:
@@ -1716,21 +1716,21 @@ class DMG_Unlicensed_256M(DMG_MBC5):
         flash_bank = math.floor(index / 512)
         dprint(self.GetName(), "|SelectBankFlash()|", index, "->", flash_bank)
 
-        if flash_bank != self.CURRENT_FLASH_BANK:
+        if flash_bank != self.current_flash_bank:
             dprint("Power cycling now")
             self._power_cycle()
-            self.CURRENT_FLASH_BANK = flash_bank
+            self.current_flash_bank = flash_bank
 
         commands: list[list[int]] = [[0x7000, 0x00], [0x7001, 0x00], [0x7002, 0x80 + flash_bank]]
-        self.CURRENT_FLASH_BANK = flash_bank
+        self.current_flash_bank = flash_bank
         self.CartWrite(commands, delay=0.1)
 
     def SelectBankROM(self, index: int) -> tuple[Literal[0, 16384], int]:
         dprint(self.GetName(), index)
 
-        if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
+        if (index % 512 == 0) or (math.floor(index / 512) != self.current_flash_bank):
             self.SelectBankFlash(index)
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         index = index % 512
 
         commands: list[list[int]] = [
@@ -1750,7 +1750,7 @@ class DMG_Unlicensed_256M(DMG_MBC5):
 
         if index % 4 == 0:
             self.EnableRAM(enable=False)
-            self.CURRENT_FLASH_BANK = flash_bank
+            self.current_flash_bank = flash_bank
 
             commands: list[list[int]] = [
                 [0x7000, (0x40 * math.floor(index / 4)) & 0xFF],
@@ -1840,7 +1840,7 @@ class DMG_Unlicensed_XploderGB(DMG_Mapper):
             self._power_cycle()
             self.CartRead(0x0102, 1)
         self.CartWrite([[0x0006, index & 0xFF]])
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
 
@@ -1862,7 +1862,7 @@ class DMG_Unlicensed_Sachen(DMG_Mapper):
 
     def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), "|", index)
-        commands: list[list[int]] = [[0x2000, index + self.START_BANK]]
+        commands: list[list[int]] = [[0x2000, index + self.start_bank]]
         self.CartWrite(commands)
         start_address = 0x4000
         return (start_address, self.ROM_BANK_SIZE)
@@ -1920,15 +1920,15 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
         dprint(self.GetName(), "|SelectBankFlash()|", index)
 
         commands: list[list[int]] = [[0x0000, 0x05], [0x4000, 0x82], [0xA000, index], [0x0000, 0x00]]
-        self.CURRENT_FLASH_BANK = index
+        self.current_flash_bank = index
         self.CartWrite(commands, delay=0.1)
 
     def SelectBankROM(self, index: int) -> tuple[Literal[16384], int]:
         dprint(self.GetName(), index)
 
-        if (index % 512 == 0) or (math.floor(index / 512) != self.CURRENT_FLASH_BANK):
+        if (index % 512 == 0) or (math.floor(index / 512) != self.current_flash_bank):
             self.SelectBankFlash(math.floor(index / 512))
-        self.CURRENT_ROM_BANK = index
+        self.current_rom_bank = index
         index = index % 512
 
         commands: list[list[int]] = [
@@ -1944,12 +1944,12 @@ class DMG_Unlicensed_MBCX(DMG_MBC3):
 
 
 class AGB_GPIO:
-    CART_WRITE_FNCPTR: CartWriteCallback | None
-    CART_READ_FNCPTR: CartReadCallback | None
-    CART_POWERCYCLE_FNCPTR: Callable[[], object] | None
-    CLK_TOGGLE_FNCPTR: Callable[[int], object] | None
-    RTC: bool
-    RTC_BUFFER: bytearray | None
+    cart_write_fncptr: CartWriteCallback | None
+    cart_read_fncptr: CartReadCallback | None
+    cart_powercycle_fncptr: Callable[[], object] | None
+    clk_toggle_fncptr: Callable[[int], object] | None
+    rtc: bool
+    rtc_buffer: bytearray | None
 
     # Addresses
     GPIO_REG_DAT: ClassVar[int] = 0xC4  # Data
@@ -1977,14 +1977,14 @@ class AGB_GPIO:
     ) -> None:
         if args is None:
             args = {}
-        self.RTC = False
-        self.RTC_BUFFER = None
-        self.CART_WRITE_FNCPTR = cart_write_fncptr
-        self.CART_READ_FNCPTR = cart_read_fncptr
-        self.CART_POWERCYCLE_FNCPTR = cart_powercycle_fncptr
-        self.CLK_TOGGLE_FNCPTR = clk_toggle_fncptr
+        self.rtc = False
+        self.rtc_buffer = None
+        self.cart_write_fncptr = cart_write_fncptr
+        self.cart_read_fncptr = cart_read_fncptr
+        self.cart_powercycle_fncptr = cart_powercycle_fncptr
+        self.clk_toggle_fncptr = clk_toggle_fncptr
         if "rtc" in args:
-            self.RTC = bool(args["rtc"])
+            self.rtc = bool(args["rtc"])
 
     @overload
     def CartRead(self, address: int) -> int: ...
@@ -1993,7 +1993,7 @@ class AGB_GPIO:
     def CartRead(self, address: int, length: int) -> bytearray: ...
 
     def CartRead(self, address: int, length: int = 0) -> int | bytearray:
-        read: CartReadCallback = _require_callback(self.CART_READ_FNCPTR, "cartridge read")
+        read: CartReadCallback = _require_callback(self.cart_read_fncptr, "cartridge read")
         if length == 0:  # auto size:
             address = address * 2
             result: int | bytearray | bool | None = read(address)
@@ -2014,7 +2014,7 @@ class AGB_GPIO:
         return data
 
     def CartWrite(self, commands: CartCommands, delay: float | bool = False) -> None:
-        write = _require_callback(self.CART_WRITE_FNCPTR, "cartridge write")
+        write = _require_callback(self.cart_write_fncptr, "cartridge write")
         for command in commands:
             address: int = command[0]
             value: int = command[1]
@@ -2112,10 +2112,10 @@ class AGB_GPIO:
         )
 
     def HasRTC(self, buffer: bytearray | None = None) -> bool | Literal[1, 2, 3]:
-        if not self.RTC:
+        if not self.rtc:
             return False
         if buffer is not None:
-            self.RTC_BUFFER = buffer[1:]
+            self.rtc_buffer = buffer[1:]
 
         status: int = self.RTCReadStatus() if buffer is None else buffer[0]
 
@@ -2156,7 +2156,7 @@ class AGB_GPIO:
         return True
 
     def ReadRTC(self, buffer: bytearray | None = None) -> bytearray | bool:
-        if not self.RTC:
+        if not self.rtc:
             return False
         if buffer is None:
             self.CartWrite(
@@ -2197,7 +2197,7 @@ class AGB_GPIO:
         # "27 days, 06:51:55"
         # [07] 00 01 27 05 06 52 18
         #     YY MM DD WW HH MM SS
-        self.RTC_BUFFER = buffer
+        self.rtc_buffer = buffer
         return buffer
 
     def WriteRTCDict(self, rtc_dict: Mapping[str, int]) -> bool:
@@ -2324,7 +2324,7 @@ class AGB_GPIO:
             if has_rtc == 1:
                 return {"string": __("Not available / Battery dry")}
 
-        rtc_buffer: bytearray | None = self.RTC_BUFFER
+        rtc_buffer: bytearray | None = self.rtc_buffer
         if rtc_buffer is None:
             result: bytearray | bool = self.ReadRTC()
             if not isinstance(result, bytearray):

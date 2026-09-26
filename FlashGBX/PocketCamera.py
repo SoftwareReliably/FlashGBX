@@ -45,25 +45,25 @@ class PocketCamera:
     DEFAULT_PALETTE: ClassVar[Palette] = PALETTES[3]
     _EMPTY_IMAGE_SHA1: ClassVar[bytes] = bytes.fromhex("ef58a812a81ab14549d8f4fb86e9ecb54a5fb723")
 
-    DATA: bytes | None
-    PALETTE: Palette
-    IMAGES: list[Image.Image]
-    IMAGES_DELETED: list[int]
-    ORDER: list[int]
+    data: bytes | None
+    palette: Palette
+    images: list[Image.Image]
+    images_deleted: list[int]
+    order: list[int]
 
     def __init__(self) -> None:
-        self.DATA = None
-        self.PALETTE = self.DEFAULT_PALETTE
-        self.IMAGES = []
-        self.IMAGES_DELETED = []
-        self.ORDER = []
+        self.data = None
+        self.palette = self.DEFAULT_PALETTE
+        self.images = []
+        self.images_deleted = []
+        self.order = []
 
     def LoadFile(self, savefile: CameraSource) -> bool:
         """Load and decode one 128 KiB Game Boy Camera save."""
-        self.DATA = None
-        self.IMAGES = []
-        self.IMAGES_DELETED = []
-        self.ORDER = []
+        self.data = None
+        self.images = []
+        self.images_deleted = []
+        self.order = []
 
         data: bytes = (
             bytes(savefile) if isinstance(savefile, (bytes, bytearray, memoryview)) else Path(savefile).read_bytes()
@@ -72,7 +72,7 @@ class PocketCamera:
         if len(data) != self.SAVE_SIZE:
             return False
 
-        self.DATA = data
+        self.data = data
 
         # The album table maps physical slots to display positions. Deleted,
         # duplicate, and malformed entries are kept at the end of the album.
@@ -87,10 +87,10 @@ class PocketCamera:
             ordered_slots[position] = slot
             seen_positions.add(position)
 
-        self.ORDER = [slot for slot in ordered_slots if slot is not None]
-        self.ORDER.extend(deleted_slots)
-        self.IMAGES_DELETED = deleted_slots
-        self.IMAGES = [self.ExtractPicture(index) for index in range(self.IMAGE_COUNT)]
+        self.order = [slot for slot in ordered_slots if slot is not None]
+        self.order.extend(deleted_slots)
+        self.images_deleted = deleted_slots
+        self.images = [self.ExtractPicture(index) for index in range(self.IMAGE_COUNT)]
         return True
 
     def SetPalette(self, palette: int | Sequence[int]) -> None:
@@ -101,18 +101,18 @@ class PocketCamera:
             msg = "A Game Boy Camera palette must contain 12 integer channels in the range 0-255"
             raise ValueError(msg)
 
-        for image in self.IMAGES:
+        for image in self.images:
             image.putpalette(selected)
-        self.PALETTE = selected
+        self.palette = selected
 
     def GetPicture(self, index: int) -> Image.Image:
-        return self.IMAGES[index]
+        return self.images[index]
 
     def IsEmpty(self, index: int) -> bool:
         return hashlib.sha1(self.GetPicture(index).tobytes()).digest() == self._EMPTY_IMAGE_SHA1
 
     def IsDeleted(self, index: int) -> bool:
-        return self.ORDER[index] in self.IMAGES_DELETED
+        return self.order[index] in self.images_deleted
 
     def ConvertPicture(self, buffer: bytes | bytearray | memoryview, lastseen: bool = False) -> Image.Image:
         tile_width = 16
@@ -124,7 +124,7 @@ class PocketCamera:
 
         image_height: Literal[128, 112] = 128 if lastseen else 112
         image = Image.new(mode="P", size=(128, image_height))
-        image.putpalette(self.PALETTE)
+        image.putpalette(self.palette)
         pixels = image.load()
         if pixels is None:
             msg = "Pillow could not allocate the camera image buffer"
@@ -159,7 +159,7 @@ class PocketCamera:
             return self.ExtractLastSeen()
 
         data: bytes = self._loaded_data()
-        slot: int = self.ORDER[index]
+        slot: int = self.order[index]
         offset: int = 0x2000 + (slot * 0x1000)
         return self.ConvertPicture(data[offset : offset + 0x1000])
 
@@ -213,7 +213,7 @@ class PocketCamera:
             picture.convert("RGB").save(output_path)
 
     def _loaded_data(self) -> bytes:
-        if self.DATA is None:
+        if self.data is None:
             msg = "No Game Boy Camera save data is loaded"
             raise RuntimeError(msg)
-        return self.DATA
+        return self.data

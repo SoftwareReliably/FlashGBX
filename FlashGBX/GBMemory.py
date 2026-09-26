@@ -173,8 +173,8 @@ _MENU_LAYOUTS: dict[str, _MenuLayout] = {
 
 
 class GBMemoryMap:
-    MAP_DATA: bytearray = bytearray([0xFF] * 0x80)
-    IS_MENU: bool = False
+    map_data: bytearray = bytearray([0xFF] * 0x80)
+    is_menu: bool = False
 
     def __init__(
         self,
@@ -183,8 +183,8 @@ class GBMemoryMap:
     ) -> None:
         # Keep these as instance state. The class attributes above are retained
         # for backwards compatibility, but must never be mutated by an instance.
-        self.MAP_DATA = bytearray([0xFF] * 0x80)
-        self.IS_MENU = False
+        self.map_data = bytearray([0xFF] * 0x80)
+        self.is_menu = False
         if rom is None or not self.ImportROM(rom):
             return
         if oldmap is None or oldmap is False:
@@ -193,10 +193,10 @@ class GBMemoryMap:
         oldmap_data = bytes(oldmap)
         if len(oldmap_data) < _MAP_DATA_SIZE:
             return
-        self.MAP_DATA[0x70:0x78] = oldmap_data[0x70:0x78]  # keep existing cart id
+        self.map_data[0x70:0x78] = oldmap_data[0x70:0x78]  # keep existing cart id
         write_count = struct.unpack("=H", oldmap_data[0x6E:0x70])[0]
         write_count = min(write_count + 1, 0xFFFF)
-        self.MAP_DATA[0x6E:0x70] = struct.pack("=H", write_count)
+        self.map_data[0x6E:0x70] = struct.pack("=H", write_count)
 
     @staticmethod
     def _read_header(data: ByteBuffer) -> HeaderData:
@@ -292,9 +292,9 @@ class GBMemoryMap:
         return cast("_RawMenuItem", dict(zip(_MENU_ITEM_KEYS, values, strict=False)))
 
     def _reset_map_data(self) -> None:
-        self.MAP_DATA[:] = b"\xff" * 0x80
-        self.MAP_DATA[0x6E:0x70] = b"\x00" * 2
-        self.MAP_DATA[0x7E:0x80] = b"\x00" * 2
+        self.map_data[:] = b"\xff" * 0x80
+        self.map_data[0x6E:0x70] = b"\x00" * 2
+        self.map_data[0x7E:0x80] = b"\x00" * 2
 
     @overload
     def ParseMapData(
@@ -450,7 +450,7 @@ class GBMemoryMap:
     def ImportROM(self, data: ByteBuffer) -> bool:
         """Generate hidden-sector map data for a ROM or GB-Memory menu ROM."""
         self._reset_map_data()
-        self.IS_MENU = False
+        self.is_menu = False
         if len(data) < 0x180:
             return False
 
@@ -459,12 +459,12 @@ class GBMemoryMap:
         game_title = rom_header.get("game_title")
         if not isinstance(game_title, str):
             return False
-        self.IS_MENU = game_title in _MENU_TITLES
+        self.is_menu = game_title in _MENU_TITLES
 
         if len(rom_data) < 0x20000:
             rom_data.extend(b"\xff" * (0x20000 - len(rom_data)))
 
-        if not self.IS_MENU:
+        if not self.is_menu:
             return self._import_single_game(rom_data, rom_header, game_title)
 
         layout = self._menu_layout(game_title)
@@ -512,9 +512,9 @@ class GBMemoryMap:
 
         for index, map_raw in enumerate(menu_items):
             pos = index * 3
-            self.MAP_DATA[pos : pos + 3] = struct.pack(">I", map_raw)[:3]
-        self.MAP_DATA[0x54:0x66] = self._timestamp()
-        self.MAP_DATA[0x66:0x6E] = self._fixed_ascii(AppInfo.NAME, 8)
+            self.map_data[pos : pos + 3] = struct.pack(">I", map_raw)[:3]
+        self.map_data[0x54:0x66] = self._timestamp()
+        self.map_data[0x66:0x6E] = self._fixed_ascii(AppInfo.NAME, 8)
         return True
 
     def _import_single_game(self, rom_data: bytearray, rom_header: HeaderData, game_title: str) -> bool:
@@ -561,8 +561,8 @@ class GBMemoryMap:
             rom_start_block=0,
             ram_start_block=0,
         )
-        self.MAP_DATA[0:3] = struct.pack(">I", map_raw)[:3]
-        self.MAP_DATA[0x18 : 0x18 + len(menu_data)] = menu_data
+        self.map_data[0:3] = struct.pack(">I", map_raw)[:3]
+        self.map_data[0x18 : 0x18 + len(menu_data)] = menu_data
         return True
 
     def MapperToMBCType(self, mbc: int) -> int:
@@ -594,9 +594,9 @@ class GBMemoryMap:
         return {0: 0, 1: 1, 64: 1, 256: 4, 1024: 16}.get(b_size, 4)
 
     def IsMenu(self) -> bool:
-        return self.IS_MENU
+        return self.is_menu
 
     def GetMapData(self) -> bytearray:
         # if self.MAP_DATA == bytearray([0xFF] * 0x80):
         # 	return False
-        return self.MAP_DATA
+        return self.map_data

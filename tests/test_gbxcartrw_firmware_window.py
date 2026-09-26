@@ -249,11 +249,11 @@ def reset_message_boxes(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def make_window(module: ModuleType) -> object:
     window = object.__new__(module.FirmwareUpdaterWindowV13)
-    window.APP = SimpleNamespace(QT_APP=SimpleNamespace(processEvents=Mock()))
-    window.PCB_VER = "v1.3"
-    window.FW_VER = "R26"
-    window.PORT = "mock-port"
-    window.DEVICE = object()
+    window.app = SimpleNamespace(QT_APP=SimpleNamespace(processEvents=Mock()))
+    window.pcb_ver = "v1.3"
+    window.fw_ver = "R26"
+    window.port = "mock-port"
+    window.device = object()
     window.lblStatus = FakeWidget()
     window.prgStatus = FakeWidget()
     window.btnUpdate = FakeWidget()
@@ -322,11 +322,11 @@ def make_modern_window(
     """Build the modern controller without constructing a Qt dialog."""
     events: list[str] = []
     window = object.__new__(module.FirmwareUpdaterWindow)
-    window.APP = SimpleNamespace(
+    window.app = SimpleNamespace(
         DisconnectDevice=Mock(side_effect=lambda: events.append("disconnect")),
         QT_APP=SimpleNamespace(processEvents=Mock()),
     )
-    window.DEVICE = object()
+    window.device = object()
     window.lblDeviceFWVer2Result = FakeWidget()
     window.lblStatus = FakeWidget()
     window.prgStatus = FakeWidget()
@@ -341,7 +341,7 @@ def make_modern_window(
         window.optDevicePCBVer14a,
     )
     writer = ScriptedFirmwareUpdater(tmp_path, results, events, controls)
-    window.FWUPD = writer
+    window.fwupd = writer
     window.reject = Mock(side_effect=lambda: events.append("reject"))
     return window, writer, events
 
@@ -356,16 +356,16 @@ def make_v13_update_window(
     events: list[str] = []
     settings = FakeSettings({"LastDirFirmwareUpdate": str(tmp_path / "remembered")})
     window = object.__new__(module.FirmwareUpdaterWindowV13)
-    window.APP = SimpleNamespace(
-        SETTINGS=settings,
+    window.app = SimpleNamespace(
+        settings=settings,
         DisconnectDevice=Mock(side_effect=lambda: events.append("disconnect")),
         QT_APP=SimpleNamespace(processEvents=Mock()),
     )
     window.APP_PATH = tmp_path
-    window.PCB_VER = "v1.3"
+    window.pcb_ver = "v1.3"
     window.CFW_VER = "CFW test"
     window.OFW_VER = "OFW test"
-    window.DEVICE = object()
+    window.device = object()
     window.lblStatus = FakeWidget()
     window.prgStatus = FakeWidget()
     window.btnUpdate = FakeWidget()
@@ -506,7 +506,7 @@ def test_modern_status_updates_text_progress_and_controls(
             window.optDevicePCBVer14a,
         )
     )
-    window.APP.QT_APP.processEvents.assert_called_once_with()
+    window.app.QT_APP.processEvents.assert_called_once_with()
 
 
 @pytest.mark.parametrize(
@@ -530,7 +530,7 @@ def test_v13_status_updates_text_progress_and_controls(
     assert window.btnUpdate.enabled is enable_ui
     assert window.btnClose.enabled is enable_ui
     assert window.grpAvailableFwUpdates.enabled is enable_ui
-    window.APP.QT_APP.processEvents.assert_not_called()
+    window.app.QT_APP.processEvents.assert_not_called()
 
 
 @pytest.mark.parametrize("window_kind", ["modern", "v13"])
@@ -573,7 +573,7 @@ def test_firmware_window_close_safeguards(
 @pytest.mark.parametrize("pcb_version", [5, 6])
 def test_firmware_updater_class_routes_modern_pcb_versions(pcb_version: int) -> None:
     device = gbxcartrw.GbxDevice()
-    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+    device.fw = {"pcb_ver": pcb_version}  # type: ignore[assignment]
 
     assert device.GetFirmwareUpdaterClass() == (gbxcartrw.FirmwareUpdater, gbxcartrw.FirmwareUpdaterWindow)
 
@@ -581,7 +581,7 @@ def test_firmware_updater_class_routes_modern_pcb_versions(pcb_version: int) -> 
 @pytest.mark.parametrize("pcb_version", [2, 4, 90, 100, 101])
 def test_firmware_updater_class_routes_legacy_pcb_versions(pcb_version: int) -> None:
     device = gbxcartrw.GbxDevice()
-    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+    device.fw = {"pcb_ver": pcb_version}  # type: ignore[assignment]
 
     assert device.GetFirmwareUpdaterClass() == (None, gbxcartrw.FirmwareUpdaterWindowV13)
 
@@ -595,7 +595,7 @@ def test_firmware_updater_class_routes_missing_device_to_modern_updater() -> Non
 
 def test_firmware_updater_class_rejects_unsupported_pcb_version() -> None:
     device = gbxcartrw.GbxDevice()
-    device.FW = {"pcb_ver": 255}  # type: ignore[assignment]
+    device.fw = {"pcb_ver": 255}  # type: ignore[assignment]
 
     assert device.GetFirmwareUpdaterClass() is None
 
@@ -610,7 +610,7 @@ def test_firmware_updater_class_handles_unavailable_optional_qt_window(
     missing_name: str,
 ) -> None:
     device = gbxcartrw.GbxDevice()
-    device.FW = {"pcb_ver": pcb_version}  # type: ignore[assignment]
+    device.fw = {"pcb_ver": pcb_version}  # type: ignore[assignment]
     monkeypatch.delattr(gbxcartrw, missing_name)
 
     assert device.GetFirmwareUpdaterClass() is None
@@ -621,7 +621,7 @@ def test_modern_update_rejects_missing_pcb_selection_before_disconnect(
     tmp_path: Path,
 ) -> None:
     window, writer, events = make_modern_window(firmware_module, tmp_path, results=[])
-    original_device = window.DEVICE
+    original_device = window.device
 
     result = window.UpdateFirmware()
 
@@ -629,8 +629,8 @@ def test_modern_update_rejects_missing_pcb_selection_before_disconnect(
     assert events == []
     assert writer.calls == []
     writer.assert_finished()
-    window.APP.DisconnectDevice.assert_not_called()
-    assert window.DEVICE is original_device
+    window.app.DisconnectDevice.assert_not_called()
+    assert window.device is original_device
     window.reject.assert_not_called()
     assert all(
         control.enabled
@@ -656,7 +656,7 @@ def test_modern_update_cancellation_stops_before_firmware_write(
     window, writer, events = make_modern_window(firmware_module, tmp_path, results=[])
     window.optDevicePCBVer14.setChecked(pcb_version == "v1.4")
     window.optDevicePCBVer14a.setChecked(pcb_version == "v1.4a/b/c")
-    original_device = window.DEVICE
+    original_device = window.device
     monkeypatch.setattr(FakeMessageBox, "next_answer", FakeMessageBox.StandardButton.Cancel)
 
     result = window.UpdateFirmware()
@@ -665,8 +665,8 @@ def test_modern_update_cancellation_stops_before_firmware_write(
     assert events == ["disconnect"]
     writer.assert_finished()
     assert writer.calls == []
-    window.APP.DisconnectDevice.assert_called_once_with()
-    assert window.DEVICE is original_device
+    window.app.DisconnectDevice.assert_called_once_with()
+    assert window.device is original_device
     window.reject.assert_not_called()
     assert all(
         control.enabled
@@ -704,7 +704,7 @@ def test_modern_update_handles_terminal_writer_results_once(
     window, writer, events = make_modern_window(firmware_module, tmp_path, results=[writer_result])
     window.optDevicePCBVer14.setChecked(pcb_version == "v1.4")
     window.optDevicePCBVer14a.setChecked(pcb_version == "v1.4a/b/c")
-    original_device = window.DEVICE
+    original_device = window.device
 
     result = window.UpdateFirmware()
 
@@ -716,7 +716,7 @@ def test_modern_update_handles_terminal_writer_results_once(
     assert status_callback.__self__ is window
     assert status_callback.__func__ is firmware_module.FirmwareUpdaterWindow.SetStatus
     writer.assert_finished()
-    window.APP.DisconnectDevice.assert_called_once_with()
+    window.app.DisconnectDevice.assert_called_once_with()
     assert events == (["disconnect", "write", "reject"] if writer_result == 1 else ["disconnect", "write"])
     assert all(
         control.enabled
@@ -731,10 +731,10 @@ def test_modern_update_handles_terminal_writer_results_once(
     assert FakeMessageBox.shown[1].icon == terminal_icon
     assert terminal_text in FakeMessageBox.shown[1].text
     if writer_result == 1:
-        assert window.DEVICE is None
+        assert window.device is None
         window.reject.assert_called_once_with()
     else:
-        assert window.DEVICE is original_device
+        assert window.device is original_device
         window.reject.assert_not_called()
         assert all("update is complete" not in message.text for message in FakeMessageBox.shown)
 
@@ -784,7 +784,7 @@ def test_v13_update_loads_selected_hex_and_honors_writer_script(
         callback.__func__ is firmware_module.FirmwareUpdaterWindowV13.SetStatus for callback in transport.callbacks
     )
     transport.assert_finished()
-    window.APP.DisconnectDevice.assert_called_once_with()
+    window.app.DisconnectDevice.assert_called_once_with()
     assert events == ["disconnect", *(["write"] * len(writer_results))]
     assert len(FakeMessageBox.shown) == 1
     assert FakeMessageBox.shown[0].icon == FakeMessageBox.Icon.Question
@@ -823,7 +823,7 @@ def test_v13_update_stops_before_disconnect_at_selection_boundaries(
     assert events == []
     assert transport.payloads == []
     transport.assert_finished()
-    window.APP.DisconnectDevice.assert_not_called()
+    window.app.DisconnectDevice.assert_not_called()
     assert settings.writes == []
     assert all(control.enabled for control in (window.btnUpdate, window.btnClose, window.grpAvailableFwUpdates))
     assert len(FakeMessageBox.shown) == expected_messages
@@ -879,7 +879,7 @@ def test_v13_update_rejects_invalid_input_and_restores_controls(
     assert events == []
     assert transport.payloads == []
     transport.assert_finished()
-    window.APP.DisconnectDevice.assert_not_called()
+    window.app.DisconnectDevice.assert_not_called()
     assert window.lblStatus.text == f"Status: {expected_status}"
     assert window.prgStatus.value == 0
     assert all(control.enabled for control in (window.btnUpdate, window.btnClose, window.grpAvailableFwUpdates))
@@ -897,7 +897,7 @@ def test_v13_image_loader_rejects_missing_bundled_member(
 ) -> None:
     window = object.__new__(firmware_module.FirmwareUpdaterWindowV13)
     window.APP_PATH = tmp_path
-    window.PCB_VER = "v1.3"
+    window.pcb_ver = "v1.3"
 
     with pytest.raises(ValueError, match="No bundled firmware file was selected"):
         window._LoadFirmwareImage("", None)
@@ -1150,7 +1150,7 @@ def test_write_firmware_pads_last_page_and_finishes_after_matching_readback(
     assert window.lblStatus.text == "Status: Done!"
     assert "Status: Verification OK." in window.lblStatus.text_history
     assert window.prgStatus.value == 100
-    assert window.DEVICE is None
+    assert window.device is None
     window.reject.assert_called_once()
     assert len(FakeMessageBox.shown) == 1
     assert "firmware update is complete" in FakeMessageBox.shown[0].text

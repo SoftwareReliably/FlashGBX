@@ -43,18 +43,18 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.setWindowFlags(flags)
         self.resize(700, 400)
 
-        self.APP: FlashGBX_GUI = app
-        connection: LK_Device | None = app.CONN
+        self.app: FlashGBX_GUI = app
+        connection: LK_Device | None = app.conn
         if connection is None:
             msg = "The interactive console requires an active device connection"
             raise RuntimeError(msg)
-        self.CONN: LK_Device = connection
-        mode: Literal["DMG", "AGB"] | None = self.CONN.GetMode()
+        self.conn: LK_Device = connection
+        mode: Literal["DMG", "AGB"] | None = self.conn.GetMode()
         if mode is None:
             msg = "The interactive console requires an active cartridge mode"
             raise RuntimeError(msg)
-        self.MODE: DeviceMode = mode
-        self.IM = InteractiveConsole(self.CONN, on_output=self.AppendOutput, on_error=self.AppendOutput)
+        self.mode: DeviceMode = mode
+        self.IM = InteractiveConsole(self.conn, on_output=self.AppendOutput, on_error=self.AppendOutput)
 
         self.main_layout = QtWidgets.QVBoxLayout()
         self.main_layout.setContentsMargins(8, 8, 8, 8)
@@ -87,9 +87,9 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
         self.txtInput.installEventFilter(self)
 
     def run(self) -> None:
-        self.CONN.SetAutoPowerOff(value=0)
+        self.conn.SetAutoPowerOff(value=0)
         try:
-            self.CONN.CartPowerOn()
+            self.conn.CartPowerOn()
             self.IM.print_help()
             self.txtInput.setFocus()
             self.main_layout.update()
@@ -107,14 +107,14 @@ class InteractiveConsoleWindow(QtWidgets.QDialog):
 
     def _restore_auto_power_off(self) -> None:
         try:
-            self.APP.SetAutoPowerOff()
+            self.app.SetAutoPowerOff()
         except Exception:
             logger.exception("Failed to restore automatic power-off settings")
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         self._restore_auto_power_off()
         try:
-            self.APP.activateWindow()
+            self.app.activateWindow()
         except Exception:
             logger.exception("Failed to reactivate the main application window")
         super().hideEvent(event)

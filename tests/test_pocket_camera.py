@@ -31,7 +31,7 @@ def test_load_file_accepts_byte_buffers_and_decodes_all_images(buffer_type: type
     camera = PocketCamera()
 
     assert camera.LoadFile(buffer_type(camera_save()))
-    assert len(camera.IMAGES) == PocketCamera.IMAGE_COUNT
+    assert len(camera.images) == PocketCamera.IMAGE_COUNT
     assert camera.GetPicture(0).size == (128, 112)
     assert camera.GetPicture(PocketCamera.GAME_FACE_INDEX).size == (128, 112)
     assert camera.GetPicture(PocketCamera.LAST_SEEN_INDEX).size == (128, 123)
@@ -46,9 +46,9 @@ def test_load_file_accepts_paths_and_clears_state_after_invalid_input(tmp_path: 
 
     assert camera.LoadFile(save_path)
     assert not camera.LoadFile(b"too short")
-    assert camera.DATA is None
-    assert camera.IMAGES == []
-    assert camera.ORDER == []
+    assert camera.data is None
+    assert camera.images == []
+    assert camera.order == []
 
 
 def test_malformed_album_order_is_recovered_as_deleted_photos() -> None:
@@ -56,8 +56,8 @@ def test_malformed_album_order_is_recovered_as_deleted_photos() -> None:
     camera = PocketCamera()
 
     assert camera.LoadFile(camera_save(order))
-    assert camera.ORDER[:3] == [1, 2, 0]
-    assert camera.ORDER[-3:] == [3, 4, 5]
+    assert camera.order[:3] == [1, 2, 0]
+    assert camera.order[-3:] == [3, 4, 5]
     assert not any(camera.IsDeleted(index) for index in range(3))
     assert all(camera.IsDeleted(index) for index in range(27, 30))
 
@@ -110,8 +110,8 @@ def test_palette_state_is_validated_and_isolated_per_camera() -> None:
 
     first.SetPalette(0)
 
-    assert PocketCamera.PALETTES[0] == first.PALETTE
-    assert PocketCamera.DEFAULT_PALETTE == second.PALETTE
+    assert PocketCamera.PALETTES[0] == first.palette
+    assert second.palette == PocketCamera.DEFAULT_PALETTE
     assert first.GetPicture(0).getpalette()[:12] == list(PocketCamera.PALETTES[0])
     with pytest.raises(ValueError, match="12 integer channels"):
         first.SetPalette([0] * 11)

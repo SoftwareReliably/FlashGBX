@@ -16,7 +16,7 @@ from .Logging import logger
 
 
 class GbxDevice(LK_Device):
-    DEVICE_NAME = "GBFlash"
+    device_name = "GBFlash"
     DEVICE_MIN_FW = 1
     DEVICE_MAX_FW = 12
     DEVICE_LATEST_FW_TS = {
@@ -40,7 +40,7 @@ class GbxDevice(LK_Device):
 
     def Initialize(self, flashcarts, port=None, max_baud=2000000):
         if self.IsConnected():
-            self.DEVICE.close()
+            self.device.close()
         conn_msg = []
         ports = []
         if port is not None:
@@ -55,61 +55,61 @@ class GbxDevice(LK_Device):
 
         for i in range(len(ports)):
             if self.TryConnect(ports[i], max_baud):
-                self.BAUDRATE = max_baud
-                dev = serial.Serial(ports[i], self.BAUDRATE, timeout=0.1)
-                self.DEVICE = dev
+                self.baudrate = max_baud
+                dev = serial.Serial(ports[i], self.baudrate, timeout=0.1)
+                self.device = dev
             else:
                 continue
 
-            if self.FW is None or self.FW == {}:
+            if self.fw is None or self.fw == {}:
                 continue
 
-            dprint(f"Found a {self.DEVICE_NAME}")
-            dprint("Firmware information:", self.FW)
+            dprint(f"Found a {self.device_name}")
+            dprint("Firmware information:", self.fw)
             # dprint("Baud rate:", self.BAUDRATE)
 
-            if self.DEVICE is None or not self.IsConnected():
-                self.DEVICE = None
-                if self.FW is not None:
+            if self.device is None or not self.IsConnected():
+                self.device = None
+                if self.fw is not None:
                     conn_msg.append(
                         [
                             0,
                             __(
                                 "Couldn’t communicate with the {device_name} on port {port}. Please disconnect and reconnect the device, then try again.",
-                                device_name=self.DEVICE_NAME,
+                                device_name=self.device_name,
                                 port=ports[i],
                             ),
                         ],
                     )
                 continue
             if (
-                self.FW is None
-                or self.FW["pcb_ver"] not in self.PCB_VERSIONS
-                or "cfw_id" not in self.FW
-                or self.FW["cfw_id"] != "L"
-                or self.FW["fw_ver"] < self.DEVICE_MIN_FW
+                self.fw is None
+                or self.fw["pcb_ver"] not in self.PCB_VERSIONS
+                or "cfw_id" not in self.fw
+                or self.fw["cfw_id"] != "L"
+                or self.fw["fw_ver"] < self.DEVICE_MIN_FW
             ):  # Not a CFW by Lesserkuma
-                dprint("Incompatible firmware:", self.FW)
+                dprint("Incompatible firmware:", self.fw)
                 dev.close()
-                self.DEVICE = None
+                self.device = None
                 continue
-            if self.FW["fw_ts"] > self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
+            if self.fw["fw_ts"] > self.DEVICE_LATEST_FW_TS[self.fw["pcb_ver"]]:
                 conn_msg.append(
                     [
                         1,
                         __(
                             "Note: The {device_name} on port {port} is running a firmware version that is newer than what this version of FlashGBX was developed to work with, so errors may occur.",
-                            device_name=self.DEVICE_NAME,
+                            device_name=self.device_name,
                             port=ports[i],
                         ),
                     ],
                 )
 
-            self.MAX_BUFFER_READ = 0x1000
-            self.MAX_BUFFER_WRITE = 0x800
+            self.max_buffer_read = 0x1000
+            self.max_buffer_write = 0x800
 
-            self.PORT = ports[i]
-            self.DEVICE.timeout = self.DEVICE_TIMEOUT
+            self.port = ports[i]
+            self.device.timeout = self.device_timeout
 
             # Load Flash Cartridge Handlers
             self.UpdateFlashCarts(flashcarts)
@@ -122,15 +122,15 @@ class GbxDevice(LK_Device):
     def LoadFirmwareVersion(self):
         dprint("Querying firmware version")
         try:
-            self.DEVICE.timeout = 0.075
-            self.DEVICE.reset_input_buffer()
-            self.DEVICE.reset_output_buffer()
+            self.device.timeout = 0.075
+            self.device.reset_input_buffer()
+            self.device.reset_output_buffer()
             self._write(self.DEVICE_CMD["QUERY_FW_INFO"])
-            size = self.DEVICE.read(1)
-            self.DEVICE.timeout = self.DEVICE_TIMEOUT
+            size = self.device.read(1)
+            self.device.timeout = self.device_timeout
             if len(size) == 0:
                 dprint("No response")
-                self.FW = None
+                self.fw = None
                 return False
             size = struct.unpack("B", size)[0]
             if size != 8:
@@ -139,46 +139,46 @@ class GbxDevice(LK_Device):
             info = data[:8]
             keys = ["cfw_id", "fw_ver", "pcb_ver", "fw_ts"]
             values = struct.unpack(">cHBI", bytearray(info))
-            self.FW = dict(zip(keys, values))
-            self.FW["cfw_id"] = self.FW["cfw_id"].decode("ascii")
-            self.FW["fw_dt"] = (
-                datetime.datetime.fromtimestamp(self.FW["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
+            self.fw = dict(zip(keys, values))
+            self.fw["cfw_id"] = self.fw["cfw_id"].decode("ascii")
+            self.fw["fw_dt"] = (
+                datetime.datetime.fromtimestamp(self.fw["fw_ts"]).astimezone().replace(microsecond=0).isoformat()
             )
-            self.FW["ofw_ver"] = None
-            self.FW["pcb_name"] = None
-            self.FW["cart_power_ctrl"] = False
-            self.FW["bootloader_reset"] = False
-            if self.FW["cfw_id"] == "L" and self.FW["fw_ver"] >= 12:
+            self.fw["ofw_ver"] = None
+            self.fw["pcb_name"] = None
+            self.fw["cart_power_ctrl"] = False
+            self.fw["bootloader_reset"] = False
+            if self.fw["cfw_id"] == "L" and self.fw["fw_ver"] >= 12:
                 size = self._read(1)
                 name = self._read(size)
                 if len(name) > 0:
                     try:
-                        self.FW["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
+                        self.fw["pcb_name"] = name.decode("UTF-8").replace("\x00", "").strip()
                     except:
-                        self.FW["pcb_name"] = "Unnamed Device"
-                    self.DEVICE_NAME = self.FW["pcb_name"]
+                        self.fw["pcb_name"] = "Unnamed Device"
+                    self.device_name = self.fw["pcb_name"]
 
                 # Cartridge Power Control support, Switch Power support, and Switch Mode support
                 temp = self._read(1)
-                self.FW["cart_power_ctrl"] = temp & 1 == 1
-                self.FW["cart_presence_switch"] = (temp >> 1) & 1 == 1
-                self.FW["cart_mode_switch"] = (temp >> 2) & 1 == 1
+                self.fw["cart_power_ctrl"] = temp & 1 == 1
+                self.fw["cart_presence_switch"] = (temp >> 1) & 1 == 1
+                self.fw["cart_mode_switch"] = (temp >> 2) & 1 == 1
 
                 # Reset to bootloader support
                 temp = self._read(1)
-                self.FW["bootloader_reset"] = temp & 1 == 1
-                self.FW["unregistered"] = temp >> 7 == 1
+                self.fw["bootloader_reset"] = temp & 1 == 1
+                self.fw["unregistered"] = temp >> 7 == 1
 
             return True
 
         except Exception as e:
             dprint("Disconnecting due to an error", e, sep="\n")
             try:
-                if self.DEVICE.isOpen():
-                    self.DEVICE.reset_input_buffer()
-                    self.DEVICE.reset_output_buffer()
-                    self.DEVICE.close()
-                self.DEVICE = None
+                if self.device.isOpen():
+                    self.device.reset_input_buffer()
+                    self.device.reset_output_buffer()
+                    self.device.close()
+                self.device = None
             except Exception:
                 logger.exception("Failed to close GBFlash after an initialization error")
             return False
@@ -187,11 +187,11 @@ class GbxDevice(LK_Device):
         dprint("Baudrate change is not supported.")
 
     def GetFirmwareVersion(self, more=False):
-        s = "{:s}{:d}".format(self.FW["cfw_id"], self.FW["fw_ver"])
-        if self.FW["pcb_name"] is None:
+        s = "{:s}{:d}".format(self.fw["cfw_id"], self.fw["fw_ver"])
+        if self.fw["pcb_name"] is None:
             s = s + " <" + __("unverified") + ">"
         if more:
-            return "{base} ({timestamp})".format(base=s, timestamp=self.FW["fw_dt"])
+            return "{base} ({timestamp})".format(base=s, timestamp=self.fw["fw_dt"])
         return s
 
     def GetFullNameExtended(self, more=False):
@@ -200,7 +200,7 @@ class GbxDevice(LK_Device):
                 "{device_name} – Firmware {fw_version} ({timestamp}) on {port}",
                 device_name=self.GetFullName(),
                 fw_version=self.GetFirmwareVersion(),
-                timestamp=self.FW["fw_dt"],
+                timestamp=self.fw["fw_dt"],
                 port=self.GetPort(),
             )
         return __(
@@ -220,7 +220,7 @@ class GbxDevice(LK_Device):
         return False
 
     def CanPowerCycleCart(self):
-        return self.FW["cart_power_ctrl"]
+        return self.fw["cart_power_ctrl"]
 
     def GetSupprtedModes(self):
         return ["DMG", "AGB"]
@@ -235,12 +235,12 @@ class GbxDevice(LK_Device):
         return True
 
     def FirmwareUpdateAvailable(self):
-        if self.FW["pcb_ver"] == 5 or self.FW["fw_ts"] < 1730592000:  # unofficial firmware
-            self.FW_UPDATE_REQ = True
+        if self.fw["pcb_ver"] == 5 or self.fw["fw_ts"] < 1730592000:  # unofficial firmware
+            self.fw_update_req = True
             return True
-        if self.FW["fw_ts"] != self.DEVICE_LATEST_FW_TS[self.FW["pcb_ver"]]:
+        if self.fw["fw_ts"] != self.DEVICE_LATEST_FW_TS[self.fw["pcb_ver"]]:
             return True
-        self.FW_UPDATE_REQ = False
+        self.fw_update_req = False
         return False
 
     def GetFirmwareUpdaterClass(self):
@@ -253,7 +253,7 @@ class GbxDevice(LK_Device):
         pass
 
     def SupportsBootloaderReset(self):
-        return self.FW["bootloader_reset"]
+        return self.fw["bootloader_reset"]
 
     def BootloaderReset(self):
         if not self.SupportsBootloaderReset():
@@ -262,18 +262,18 @@ class GbxDevice(LK_Device):
         try:
             self._write(self.DEVICE_CMD["BOOTLOADER_RESET"], wait=True)
             self._write(1)
-            self.DEVICE.close()
+            self.device.close()
             return True
         except Exception as e:
             print(__("Disconnecting..."), e)
             return False
 
     def SupportsAudioAsWe(self):
-        return not (self.FW["pcb_ver"] < 13 and self.CanPowerCycleCart())
+        return not (self.fw["pcb_ver"] < 13 and self.CanPowerCycleCart())
 
     def GetMode(self):
-        if self.FW["fw_ts"] == 1681900614:
-            return self.MODE
+        if self.fw["fw_ts"] == 1681900614:
+            return self.mode
         return super().GetMode()
 
     def SetAutoPowerOff(self, value):
@@ -281,7 +281,7 @@ class GbxDevice(LK_Device):
         return super().SetAutoPowerOff(value)
 
     def GetFullName(self):
-        if self.FW["pcb_ver"] < 13 and self.CanPowerCycleCart():
+        if self.fw["pcb_ver"] < 13 and self.CanPowerCycleCart():
             s = f"{self.GetName()} {self.GetPCBVersion()} + PLUGIN 01"
         else:
             s = f"{self.GetName():s} {self.GetPCBVersion():s}"
@@ -301,12 +301,12 @@ class GbxDevice(LK_Device):
 
 
 class FirmwareUpdater:
-    PORT = None
-    DEVICE = None
+    port = None
+    device = None
 
     def __init__(self, app_path=".", port=None):
         self.APP_PATH = app_path
-        self.PORT = port
+        self.port = port
 
     def PackPacket(self, packet):
         values = list(packet.values())[:-2]
@@ -320,14 +320,14 @@ class FirmwareUpdater:
 
     def GetPacket(self):
         hp = 100
-        while self.DEVICE.in_waiting == 0:
+        while self.device.in_waiting == 0:
             time.sleep(0.001)
             hp -= 1
             if hp <= 0:
                 return None
         keys = ["intro", "sender", "seq_no", "command", "payload_len"]
         try:
-            temp = self.DEVICE.read(11)
+            temp = self.device.read(11)
             if temp is False:
                 temp = b""
             values = struct.unpack(">IBHHH", temp)
@@ -338,8 +338,8 @@ class FirmwareUpdater:
             }
         try:
             data = dict(zip(keys, values))
-            data["payload"] = self.DEVICE.read(data["payload_len"])
-            data["outro"] = self.DEVICE.read(4)
+            data["payload"] = self.device.read(data["payload_len"])
+            data["outro"] = self.device.read(4)
             if data["outro"] is False:
                 data["outro"] = b""
             data["outro"] = struct.unpack(">I", data["outro"])[0]
@@ -391,38 +391,38 @@ class FirmwareUpdater:
         }
         data = self.PackPacket(packet)
 
-        self.DEVICE = None
+        self.device = None
         try:
-            self.DEVICE = serial.Serial(port, 2000000, timeout=0.5)
-            self.DEVICE.write(b"\xf1")
-            self.DEVICE.read(1)
-            self.DEVICE.write(b"\x01")
-            self.DEVICE.close()
+            self.device = serial.Serial(port, 2000000, timeout=0.5)
+            self.device.write(b"\xf1")
+            self.device.read(1)
+            self.device.write(b"\x01")
+            self.device.close()
             time.sleep(3)
-            self.DEVICE = serial.Serial(port, 2000000, timeout=0.5)
+            self.device = serial.Serial(port, 2000000, timeout=0.5)
 
         except serial.serialutil.SerialException:
             return False
 
-        self.DEVICE.write(data)
+        self.device.write(data)
         time.sleep(0.1)
-        self.DEVICE.read(self.DEVICE.in_waiting)
-        self.DEVICE.write(data)
+        self.device.read(self.device.in_waiting)
+        self.device.write(data)
         data = self.GetPacket()
         if data is None:
-            self.DEVICE = None
+            self.device = None
             return False
         if "error" in data:
-            self.DEVICE = None
+            self.device = None
             return data
         if data["seq_no"] != seq_no:
-            self.DEVICE = None
+            self.device = None
             return False
         if data["command"] != 0x21:
-            self.DEVICE = None
+            self.device = None
             return False
         if struct.unpack(">H", data["payload"][1:3])[0] != 0x03:
-            self.DEVICE = None
+            self.device = None
             return False
         return data
 
@@ -436,7 +436,7 @@ class FirmwareUpdater:
 
         fncSetStatus(__("Connecting..."))
         data = False
-        if self.PORT is None:
+        if self.port is None:
             ports = []
             comports = serial.tools.list_ports.comports()
             for i in range(len(comports)):
@@ -451,12 +451,12 @@ class FirmwareUpdater:
                 if data is not False:
                     break
         else:
-            data = self.TryConnect(self.PORT)
+            data = self.TryConnect(self.port)
 
         if isinstance(data, dict) and "error" in data:
             fncSetStatus(text=data["error"], cloneError="clone" in data and data["clone"] is True)
             return 2
-        if not isinstance(data, dict) or self.DEVICE is None:
+        if not isinstance(data, dict) or self.device is None:
             fncSetStatus(__("No device found."))
             return 2
 
@@ -489,7 +489,7 @@ class FirmwareUpdater:
             }
             data = self.PackPacket(packet)
 
-            self.DEVICE.write(data)
+            self.device.write(data)
             data = self.GetPacket()
             if data is None:
                 fncSetStatus(__("No response from device."))
@@ -534,7 +534,7 @@ class FirmwareUpdater:
                 "outro": 0x4A4A4848,
             }
             data = self.PackPacket(packet)
-            self.DEVICE.write(data)
+            self.device.write(data)
             data = self.GetPacket()
             if data is None:
                 fncSetStatus(__("No response from device."))
@@ -542,7 +542,7 @@ class FirmwareUpdater:
             if data["payload"][0] != 1:
                 fncSetStatus(text=__("Update failed!"), enableUI=True)
 
-            self.DEVICE.close()
+            self.device.close()
             time.sleep(0.8)
             fncSetStatus(__("Done!"))
             time.sleep(0.2)
@@ -553,12 +553,12 @@ try:
     from PySide6 import QtCore, QtGui, QtWidgets
 
     class FirmwareUpdaterWindow(QtWidgets.QDialog):
-        APP = None
-        DEVICE = None
-        FWUPD = None
-        DEV_NAME = "GBFlash"
-        FW_VER = ""
-        PCB_VER = ""
+        app = None
+        device = None
+        fwupd = None
+        dev_name = "GBFlash"
+        fw_ver = ""
+        pcb_ver = ""
 
         def __init__(self, app, app_path, file=None, icon=None, device=None):
             QtWidgets.QDialog.__init__(self, app)
@@ -570,16 +570,16 @@ try:
                 (self.windowFlags() | QtCore.Qt.MSWindowsFixedSizeDialogHint) & ~QtCore.Qt.WindowContextHelpButtonHint,
             )
 
-            self.APP = app
+            self.app = app
             if device is not None:
-                self.FWUPD = FirmwareUpdater(app_path, device.GetPort())
-                self.DEV_NAME = device.GetName()
-                self.FW_VER = device.GetFirmwareVersion(more=True)
-                self.PCB_VER = device.GetPCBVersion()
-                self.DEVICE = device
+                self.fwupd = FirmwareUpdater(app_path, device.GetPort())
+                self.dev_name = device.GetName()
+                self.fw_ver = device.GetFirmwareVersion(more=True)
+                self.pcb_ver = device.GetPCBVersion()
+                self.device = device
             else:
-                self.APP.QT_APP.processEvents()
-                self.FWUPD = FirmwareUpdater(app_path, None)
+                self.app.QT_APP.processEvents()
+                self.fwupd = FirmwareUpdater(app_path, None)
 
             self.layout = QtWidgets.QGridLayout()
             self.layout.setContentsMargins(-1, 8, -1, 8)
@@ -665,21 +665,21 @@ try:
             self.layout.addLayout(self.layout_device, 0, 0)
             self.setLayout(self.layout)
 
-            self.lblDeviceNameResult.setText(self.DEV_NAME + " " + self.PCB_VER)
-            self.lblDeviceFWVerResult.setText(self.FW_VER)
+            self.lblDeviceNameResult.setText(self.dev_name + " " + self.pcb_ver)
+            self.lblDeviceFWVerResult.setText(self.fw_ver)
             self.SetPCBVersion()
 
         def SetPCBVersion(self):
-            file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBFlash.zip"
+            file_name = Path(self.fwupd.APP_PATH) / "res" / "fw_GBFlash.zip"
 
             with zipfile.ZipFile(file_name) as zip:
                 with zip.open("fw.ini") as f:
                     ini_file = f.read()
                 ini_file = ini_file.decode(encoding="utf-8")
-                self.INI = IniSettings(ini=ini_file, main_section="Firmware")
-                self.OFW_VER = self.INI.GetValue("fw_ver")
-                self.OFW_BUILDTS = self.INI.GetValue("fw_buildts")
-                self.OFW_TEXT = self.INI.GetValue("fw_text")
+                self.ini = IniSettings(ini=ini_file, main_section="Firmware")
+                self.OFW_VER = self.ini.GetValue("fw_ver")
+                self.OFW_BUILDTS = self.ini.GetValue("fw_buildts")
+                self.OFW_TEXT = self.ini.GetValue("fw_text")
 
             self.lblDeviceFWVer2Result.setText(
                 f"{self.OFW_VER:s} ({datetime.datetime.fromtimestamp(int(self.OFW_BUILDTS)).astimezone().replace(microsecond=0).isoformat():s})",
@@ -698,9 +698,9 @@ try:
                 return
 
         def hideEvent(self, event):
-            if self.DEVICE is None:
-                self.APP.ConnectDevice()
-            self.APP.activateWindow()
+            if self.device is None:
+                self.app.ConnectDevice()
+            self.app.activateWindow()
 
         def reject(self):
             if self.CloseDialog():
@@ -731,10 +731,10 @@ try:
             return True
 
         def UpdateFirmware(self):
-            file_name = Path(self.FWUPD.APP_PATH) / "res" / "fw_GBFlash.zip"
+            file_name = Path(self.fwupd.APP_PATH) / "res" / "fw_GBFlash.zip"
 
-            if self.APP.CONN is None or self.APP.CONN.BootloaderReset() is False:
-                self.APP.DisconnectDevice()
+            if self.app.conn is None or self.app.conn.BootloaderReset() is False:
+                self.app.DisconnectDevice()
                 text = __("Please follow these steps to proceed with the firmware update:")
                 text += "\n\n" + __(
                     "- Unplug your GBFlash device.\n"
@@ -757,17 +757,17 @@ try:
                 if answer == QtWidgets.QMessageBox.Cancel:
                     return None
             else:
-                self.APP.DisconnectDevice()
+                self.app.DisconnectDevice()
                 time.sleep(1)
 
             self.btnUpdate.setEnabled(False)
             self.btnClose.setEnabled(False)
 
             while True:
-                ret = self.FWUPD.WriteFirmware(file_name, self.SetStatus)
+                ret = self.fwupd.WriteFirmware(file_name, self.SetStatus)
                 if ret == 1:
                     text = __("The firmware update is complete!")
-                    if self.PCB_VER != "v1.3":
+                    if self.pcb_ver != "v1.3":
                         text += "\n\n" + __("Please re-connect the USB cable now.")
                     self.btnUpdate.setEnabled(True)
                     self.btnClose.setEnabled(True)
@@ -779,7 +779,7 @@ try:
                         standardButtons=QtWidgets.QMessageBox.Ok,
                     )
                     answer = msgbox.exec()
-                    self.DEVICE = None
+                    self.device = None
                     self.reject()
                     return True
                 if ret == 2:
@@ -835,6 +835,6 @@ try:
             if enableUI:
                 self.btnUpdate.setEnabled(True)
                 self.btnClose.setEnabled(True)
-            self.APP.QT_APP.processEvents()
+            self.app.QT_APP.processEvents()
 except ImportError:
     pass

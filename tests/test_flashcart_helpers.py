@@ -29,7 +29,7 @@ def test_flashcart_accessors_and_write_routing() -> None:
     calls, functions = callbacks()
     cart = Flashcart(profile(), functions)
 
-    assert cart.CONFIG["_command_set"] == "AMD"
+    assert cart.config["_command_set"] == "AMD"
     assert cart.GetCommandSetType() == "AMD"
     assert cart.GetName() == "Test cart"
     assert cart.GetFlashID() == [0x12, 0x34]
@@ -154,11 +154,11 @@ def test_flashcart_reset_erase_and_bank_selection_paths(
     assert cart.HasBanks() is True
     assert calls["write"]
 
-    cart.CONFIG["flash_bank_select_type"] = 2
+    cart.config["flash_bank_select_type"] = 2
     calls["write"].clear()
     assert cart.SelectBankROM(5) is True
     assert len(calls["write"]) > 0
-    cart.CONFIG.pop("flash_bank_select_type")
+    cart.config.pop("flash_bank_select_type")
     assert cart.SelectBankROM(0) is False
 
 
@@ -169,10 +169,10 @@ def test_flashcart_cfi_and_flash_id_failure_paths(monkeypatch: MonkeyPatch) -> N
         profile(commands={"buffer_write": [], "single_write": [], "read_identifier": [[0, 0x90]]}),
         functions,
     )
-    cart.CONFIG.pop("buffer_size")
+    cart.config.pop("buffer_size")
     cart.ReadCFI = lambda: False  # type: ignore[method-assign]
     assert cart.GetBufferSize() is False
-    assert "buffer_write" not in cart.CONFIG["commands"]
+    assert "buffer_write" not in cart.config["commands"]
     assert cart.VerifyFlashID() == (False, [0, 0])
 
     responses = iter([bytearray(b"AB"), bytearray(b"AB"), bytearray([0x12, 0x34])])
@@ -214,15 +214,15 @@ def test_flashcart_agb_widths_features_and_cfi_cache(
     assert cart.WEisWR() is False
     assert cart.GetFlashSize(default=123) == 0x10000
 
-    cart.CONFIG.pop("flash_size")
+    cart.config.pop("flash_size")
     cart.SetFlashSize(0x20000)
     assert cart.GetFlashSize(default=123) == 123
 
-    cart.CONFIG.pop("buffer_size")
+    cart.config.pop("buffer_size")
     cfi_info = {"buffer_size": 16}
     cart.ReadCFI = lambda: cfi_info  # type: ignore[method-assign]
     assert cart.GetBufferSize() == 16
-    assert cart.CONFIG["buffer_size"] == 16
+    assert cart.config["buffer_size"] == 16
 
 
 def test_flashcart_sector_map_cfi_and_banked_verification() -> None:

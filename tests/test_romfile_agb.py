@@ -51,8 +51,8 @@ def test_agb_file_loading_checksums_and_header_fields(
     rom = RomFileAGB(path)
     monkeypatch.setattr(rom, "GetDatabaseEntry", lambda: None)
 
-    assert len(rom.ROMFILE) == 0x207
-    assert rom.CalcChecksumGlobal() == zlib.crc32(rom.ROMFILE) & 0xFFFFFFFF
+    assert len(rom.romfile) == 0x207
+    assert rom.CalcChecksumGlobal() == zlib.crc32(rom.romfile) & 0xFFFFFFFF
     rom.LogoToImage = lambda _data, _valid=True: False  # type: ignore[method-assign]
     data = rom.GetHeader(unchanged=True)
 
@@ -106,10 +106,10 @@ def test_agb_logo_decoder_renders_valid_and_invalid_palettes(monkeypatch: pytest
 def test_agb_instances_have_independent_buffers_and_accept_immutable_bytes() -> None:
     first = RomFileAGB()
     second = RomFileAGB()
-    first.ROMFILE.extend(b"first")
+    first.romfile.extend(b"first")
 
-    assert bytearray() == second.ROMFILE
-    assert bytearray(b"immutable") == RomFileAGB(b"immutable").ROMFILE
+    assert bytearray() == second.romfile
+    assert bytearray(b"immutable") == RomFileAGB(b"immutable").romfile
 
 
 def test_agb_header_text_fields_are_sanitized_consistently(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,7 +143,7 @@ def test_agb_special_cartridge_flags(
     expected: str,
 ) -> None:
     rom = RomFileAGB(make_agb_header(title=title, code=code))
-    rom.ROMFILE[0xBD] = checksum
+    rom.romfile[0xBD] = checksum
     monkeypatch.setattr(rom, "GetDatabaseEntry", lambda: None)
 
     data = rom.GetHeader()
@@ -197,7 +197,7 @@ def test_agb_database_code_aliases(
         encoding="utf-8",
     )
     rom = RomFileAGB(bytearray(0x200))
-    rom.DATA = {"header_sha1": "header"}
+    rom.data = {"header_sha1": "header"}
 
     entry = rom.GetDatabaseEntry()
 
@@ -215,7 +215,7 @@ def test_agb_load_open_and_parser_error_paths(
     path = tmp_path / "input.gba"
     path.write_bytes(b"payload")
     rom.Open(path)
-    assert bytearray(b"payload") == rom.ROMFILE
+    assert bytearray(b"payload") == rom.romfile
     assert RomFileAGB(bytearray(0x100)).GetHeader() == {}
 
     monkeypatch.setattr(agb_module, "Image", None)
@@ -226,7 +226,7 @@ def test_agb_load_open_and_parser_error_paths(
     assert full_rom.LogoToImage(bytearray(b"not-empty")) is False
 
     (tmp_path / "db_AGB.json").write_text("{invalid", encoding="utf-8")
-    full_rom.DATA = {"header_sha1": "header"}
+    full_rom.data = {"header_sha1": "header"}
     assert full_rom.GetDatabaseEntry() is None
 
 
@@ -246,7 +246,7 @@ def test_agb_database_rejects_invalid_structures(
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     (tmp_path / "db_AGB.json").write_text(json.dumps(database), encoding="utf-8")
     rom = RomFileAGB(bytearray(0x200))
-    rom.DATA = {"header_sha1": "header"}
+    rom.data = {"header_sha1": "header"}
 
     assert rom.GetDatabaseEntry() is None
     assert RomFileAGB().GetDatabaseEntry() is None

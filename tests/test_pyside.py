@@ -356,7 +356,7 @@ def test_windows_progress_binding_and_state_updates(monkeypatch: pytest.MonkeyPa
     module = load_pyside(monkeypatch, "Windows")
     ole32 = FakeOle32()
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(ole32=ole32), raising=False)
-    module._WINFUNCTYPE = lambda *_args: object()
+    module._winfunctype = lambda *_args: object()
     progress = module._WindowsTaskbarProgress()
     progress._call = Mock(return_value=0)
 
@@ -373,7 +373,7 @@ def test_windows_progress_binding_and_state_updates(monkeypatch: pytest.MonkeyPa
 
     progress._taskbar = None
     assert progress._call(3, object()) == 0
-    module._WINFUNCTYPE = None
+    module._winfunctype = None
     progress._apply()
 
 
@@ -392,7 +392,7 @@ def test_windows_binding_rejects_missing_interface_or_prototypes(
         progress._bind(1)
 
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(ole32=FakeOle32()), raising=False)
-    module._WINFUNCTYPE = None
+    module._winfunctype = None
     with pytest.raises(RuntimeError, match="prototypes are unavailable"):
         module._WindowsTaskbarProgress()._bind(1)
 
@@ -406,14 +406,14 @@ def test_windows_vtable_call_dispatches_through_supplied_prototype(
     function = Mock(return_value=17)
     prototype.return_value = function
 
-    module._WINFUNCTYPE = object()
+    module._winfunctype = object()
     assert progress._call(1, prototype) is None
     progress._taskbar = object()
-    module._WINFUNCTYPE = None
+    module._winfunctype = None
     assert progress._call(1, prototype) is None
     progress._apply()
 
-    module._WINFUNCTYPE = object()
+    module._winfunctype = object()
     monkeypatch.setattr(module.ctypes, "cast", lambda *_args: [[100, 200, 300]])
     assert progress._call(1, prototype, "argument") == 17
     prototype.assert_called_once_with(200)

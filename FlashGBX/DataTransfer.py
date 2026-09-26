@@ -12,34 +12,30 @@ from .Logging import dprint
 
 
 class DataTransfer(QtCore.QThread):
-    CONFIG: dict[str, Any] | None = None
-    FINISHED = False
-
     updateProgress = QtCore.Signal(object)  # noqa: N815
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         QtCore.QThread.__init__(self)
-        if config is not None:
-            self.CONFIG = config
-        self.FINISHED = False
+        self.config = config
+        self.transfer_finished = False
 
     def setConfig(self, config: dict[str, Any]) -> None:
-        self.CONFIG = config
-        self.FINISHED = False
+        self.config = config
+        self.transfer_finished = False
 
     def isRunning(self) -> bool:
-        return not self.FINISHED
+        return not self.transfer_finished
 
     def run(self) -> None:
         tb = ""
         error = None
         try:
-            if self.CONFIG is None:
-                self.FINISHED = True
+            if self.config is None:
+                self.transfer_finished = True
                 return
-            self.FINISHED = False
-            self.CONFIG["port"].TransferData(self.CONFIG, self.updateProgress)
-            self.FINISHED = True
+            self.transfer_finished = False
+            self.config["port"].TransferData(self.config, self.updateProgress)
+            self.transfer_finished = True
 
         except SerialException as e:
             if e.args and isinstance(e.args[0], str) and "GetOverlappedResult failed" in e.args[0]:
@@ -53,7 +49,7 @@ class DataTransfer(QtCore.QThread):
                         "abortable": False,
                     },
                 )
-                self.FINISHED = True
+                self.transfer_finished = True
                 return
             tb: str = traceback.format_exc()
             error = e
@@ -77,4 +73,4 @@ class DataTransfer(QtCore.QThread):
                     "abortable": False,
                 },
             )
-            self.FINISHED = True
+            self.transfer_finished = True

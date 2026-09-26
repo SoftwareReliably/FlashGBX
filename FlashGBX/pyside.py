@@ -177,14 +177,14 @@ def _log_exception(message: str) -> None:
         exception(message)
 
 
-_WINFUNCTYPE: Callable[..., Any] | None = None
+_winfunctype: Callable[..., Any] | None = None
 _taskbar_button_class: type[_TaskbarButton] = _NoopTaskbarButton
 _qt_win_class: type[_QtWin] = _NoopQtWin
 
 if _IS_WINDOWS:
     from ctypes import wintypes
 
-    _WINFUNCTYPE: Callable[..., Any] | None = cast(
+    _winfunctype: Callable[..., Any] | None = cast(
         "Callable[..., Any]",
         getattr(ctypes, "WINFUNCTYPE"),  # noqa: B009
     )
@@ -237,7 +237,7 @@ if _IS_WINDOWS:
                 raise RuntimeError(msg)
 
             self._taskbar = taskbar
-            winfunctype = _WINFUNCTYPE
+            winfunctype = _winfunctype
             if winfunctype is None:
                 msg_0 = "Windows function prototypes are unavailable"
                 raise RuntimeError(msg_0)
@@ -254,7 +254,7 @@ if _IS_WINDOWS:
             *args: object,
         ) -> object:
             taskbar = self._taskbar
-            winfunctype = _WINFUNCTYPE
+            winfunctype = _winfunctype
             if taskbar is None or winfunctype is None:
                 return None
             vtable = cast(
@@ -278,7 +278,7 @@ if _IS_WINDOWS:
             else:
                 state = self._TBPF_PAUSED if self._paused else self._TBPF_NORMAL
 
-            winfunctype = _WINFUNCTYPE
+            winfunctype = _winfunctype
             if winfunctype is None:
                 return
             _check_hresult(
@@ -344,10 +344,10 @@ if _IS_WINDOWS:
     _qt_win_class = _WindowsQtWin
 
 
-_QT_DBUS: Any = None
+_qt_dbus: Any = None
 if _IS_LINUX:
     with contextlib.suppress(ImportError):
-        from PySide6 import QtDBus as _QT_DBUS  # noqa: N814  # pyright: ignore[reportMissingImports]
+        from PySide6 import QtDBus as _qt_dbus  # noqa: N813  # pyright: ignore[reportMissingImports]
 
 
 def _application_desktop_file() -> str:
@@ -386,11 +386,11 @@ class _LinuxTaskbarProgress(_TaskbarProgressBase):
         self._available = False
         self._last_payload: tuple[bool, float] | None = None
 
-        if _QT_DBUS is None:
+        if _qt_dbus is None:
             _debug_print("Unity Launcher progress disabled: QtDBus is unavailable.")
             return
         try:
-            self._bus = _QT_DBUS.QDBusConnection.sessionBus()
+            self._bus = _qt_dbus.QDBusConnection.sessionBus()
             self._available = bool(self._bus.isConnected())
         except Exception as err:
             _debug_print(f"Unity Launcher progress disabled: {err!s:s}")
@@ -414,7 +414,7 @@ class _LinuxTaskbarProgress(_TaskbarProgressBase):
             "progress": state[1],
         }
         try:
-            message = _QT_DBUS.QDBusMessage.createSignal(
+            message = _qt_dbus.QDBusMessage.createSignal(
                 self._SIGNAL_PATH,
                 self._SIGNAL_INTERFACE,
                 self._SIGNAL_NAME,

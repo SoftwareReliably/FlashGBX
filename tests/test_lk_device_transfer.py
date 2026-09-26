@@ -17,7 +17,7 @@ from FlashGBX.hw_GBxCartRW import GbxDevice
 def connected_device(monkeypatch: pytest.MonkeyPatch) -> GbxDevice:
     """Return a device whose connection boundary is fully mocked."""
     device = GbxDevice()
-    device.FW = {"fw_ver": 1, "pcb_name": "Test device"}  # type: ignore[typeddict-item]
+    device.fw = {"fw_ver": 1, "pcb_name": "Test device"}  # type: ignore[typeddict-item]
     monkeypatch.setattr(device, "IsConnected", Mock(return_value=True))
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=False))
     return device
@@ -47,12 +47,12 @@ def test_transfer_data_dispatches_each_mode_and_resets_state(
     for name, handler in handlers.items():
         monkeypatch.setattr(connected_device, name, handler)
 
-    connected_device.ERROR = True
-    connected_device.CANCEL = True
-    connected_device.CANCEL_ARGS = {"reason": "old cancellation"}
-    connected_device.READ_ERRORS = 3
-    connected_device.WRITE_ERRORS = 4
-    connected_device.NO_PROG_UPDATE = True
+    connected_device.error = True
+    connected_device.cancel = True
+    connected_device.cancel_args = {"reason": "old cancellation"}
+    connected_device.read_errors = 3
+    connected_device.write_errors = 4
+    connected_device.no_prog_update = True
 
     def signal(_event: dict[str, object]) -> None:
         pass
@@ -62,13 +62,13 @@ def test_transfer_data_dispatches_each_mode_and_resets_state(
     result = connected_device.TransferData(args, signal)
 
     assert result is True
-    assert connected_device.ERROR is False
-    assert connected_device.CANCEL is False
-    assert connected_device.CANCEL_ARGS == {}
-    assert connected_device.READ_ERRORS == 0
-    assert connected_device.WRITE_ERRORS == 0
-    assert connected_device.NO_PROG_UPDATE is False
-    assert connected_device.SIGNAL is signal
+    assert connected_device.error is False
+    assert connected_device.cancel is False
+    assert connected_device.cancel_args == {}
+    assert connected_device.read_errors == 0
+    assert connected_device.write_errors == 0
+    assert connected_device.no_prog_update is False
+    assert connected_device.signal is signal
     for name, handler in handlers.items():
         if name != selected_handler:
             handler.assert_not_called()
@@ -111,14 +111,14 @@ def test_transfer_data_updates_supported_completion_led(
     commands: dict[str, int],
     expected_command: int | None,
 ) -> None:
-    connected_device.FW["fw_ver"] = 2
-    connected_device.FW["pcb_name"] = "GBxCart RW"
+    connected_device.fw["fw_ver"] = 2
+    connected_device.fw["pcb_name"] = "GBxCart RW"
     connected_device.DEVICE_CMD = commands
     write = Mock()
     monkeypatch.setattr(connected_device, "_write", write)
 
     def backup_rom(_args: dict[str, Any]) -> bool:
-        connected_device.ERROR = error
+        connected_device.error = error
         return result
 
     monkeypatch.setattr(connected_device, "_BackupROM", backup_rom)
@@ -135,9 +135,9 @@ def test_cart_power_on_gbxcartrw_retries_unexpected_ack(
     connected_device: GbxDevice,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connected_device.FW["fw_ver"] = 12
-    connected_device.FW["pcb_name"] = "GBxCart RW"
-    connected_device.MODE = "DMG"
+    connected_device.fw["fw_ver"] = 12
+    connected_device.fw["pcb_name"] = "GBxCart RW"
+    connected_device.mode = "DMG"
     connected_device.DEVICE_CMD = {
         "QUERY_CART_PWR": "query",
         "SET_MODE_DMG": "dmg_mode",
@@ -166,16 +166,16 @@ def test_cart_power_on_gbxcartrw_retries_unexpected_ack(
         call("reset_mbc", wait=True),
     ]
     cart_write.assert_called_once_with(0, 0xFF)
-    assert serial_device.timeout == connected_device.DEVICE_TIMEOUT
+    assert serial_device.timeout == connected_device.device_timeout
 
 
 def test_cart_power_on_gbxcartrw_closes_device_after_ack_timeouts(
     connected_device: GbxDevice,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connected_device.FW["fw_ver"] = 12
-    connected_device.FW["pcb_name"] = "GBxCart RW"
-    connected_device.MODE = "DMG"
+    connected_device.fw["fw_ver"] = 12
+    connected_device.fw["pcb_name"] = "GBxCart RW"
+    connected_device.mode = "DMG"
     connected_device.DEVICE_CMD = {
         "QUERY_CART_PWR": "query",
         "SET_MODE_DMG": "dmg_mode",
@@ -195,8 +195,8 @@ def test_cart_power_on_gbxcartrw_closes_device_after_ack_timeouts(
         connected_device.CartPowerOn()
 
     serial_device.close.assert_called_once_with()
-    assert connected_device.DEVICE is None
-    assert connected_device.ERROR is True
+    assert connected_device.device is None
+    assert connected_device.error is True
     assert write.call_args_list.count(call("query")) == 11
 
 
@@ -212,19 +212,19 @@ def test_disconnected_transfer_resets_counters_without_dispatching(
     ):
         monkeypatch.setattr(device, name, handler)
     monkeypatch.setattr(device, "IsConnected", Mock(return_value=False))
-    device.ERROR = True
-    device.CANCEL = True
-    device.CANCEL_ARGS = {"stale": True}
-    device.READ_ERRORS = 8
-    device.WRITE_ERRORS = 9
+    device.error = True
+    device.cancel = True
+    device.cancel_args = {"stale": True}
+    device.read_errors = 8
+    device.write_errors = 9
 
     assert device.TransferData({"mode": 1}, lambda _event: None) is None
 
-    assert device.ERROR is False
-    assert device.CANCEL is False
-    assert device.CANCEL_ARGS == {}
-    assert device.READ_ERRORS == 0
-    assert device.WRITE_ERRORS == 0
+    assert device.error is False
+    assert device.cancel is False
+    assert device.cancel_args == {}
+    assert device.read_errors == 0
+    assert device.write_errors == 0
     assert all(handler.call_count == 0 for handler in handlers)
 
 
@@ -243,12 +243,12 @@ def test_serial_failures_clear_voltage_fallback_state(
     message: str,
 ) -> None:
     monkeypatch.setattr(connected_device, "_BackupROM", Mock(side_effect=error))
-    connected_device.VOLTAGE_FALLBACK_PENDING = True
+    connected_device.voltage_fallback_pending = True
 
     result = connected_device.TransferData({"mode": 1}, lambda _event: None)
 
     assert result is False
-    assert connected_device.VOLTAGE_FALLBACK_PENDING is False
+    assert connected_device.voltage_fallback_pending is False
     assert message in capsys.readouterr().out
 
 
@@ -270,8 +270,8 @@ def test_flash_without_fallback_does_not_retry_after_abort(
 
     flash_handler.assert_called_once_with(args)
     assert events == [{"action": "ABORT", "abortable": False}]
-    assert connected_device.VOLTAGE_FALLBACK_PENDING is False
-    assert connected_device.VOLTAGE_FALLBACK_TRIGGERED is False
+    assert connected_device.voltage_fallback_pending is False
+    assert connected_device.voltage_fallback_triggered is False
     assert "override_voltage" not in args
 
 
@@ -285,10 +285,10 @@ def test_flash_automatically_retries_with_fallback_voltage(
     def flash(args: dict[str, Any]) -> bool:
         calls.append(dict(args))
         if len(calls) == 1:
-            connected_device.ERROR = True
-            connected_device.CANCEL = True
-            connected_device.CANCEL_ARGS = {"old": True}
-            connected_device.ERROR_ARGS = {"old": True}
+            connected_device.error = True
+            connected_device.cancel = True
+            connected_device.cancel_args = {"old": True}
+            connected_device.error_args = {"old": True}
             connected_device.SetProgress({"action": "ABORT", "abortable": False})
             return False
         return True
@@ -304,12 +304,12 @@ def test_flash_automatically_retries_with_fallback_voltage(
     assert calls[1]["voltage_fallback"] is False
     assert calls[1]["override_voltage"] == 5
     assert [event["action"] for event in events] == ["UPDATE_INFO"]
-    assert connected_device.ERROR is False
-    assert connected_device.CANCEL is False
-    assert connected_device.CANCEL_ARGS == {}
-    assert connected_device.ERROR_ARGS == {}
-    assert connected_device.VOLTAGE_FALLBACK_PENDING is False
-    assert connected_device.VOLTAGE_FALLBACK_TRIGGERED is False
+    assert connected_device.error is False
+    assert connected_device.cancel is False
+    assert connected_device.cancel_args == {}
+    assert connected_device.error_args == {}
+    assert connected_device.voltage_fallback_pending is False
+    assert connected_device.voltage_fallback_triggered is False
 
 
 @pytest.mark.parametrize(("answer", "expected_calls"), [(True, 2), (False, 1)])
@@ -332,7 +332,7 @@ def test_flash_prompt_accepts_or_declines_fallback_voltage(
     def answer_prompt(event: dict[str, object]) -> None:
         events.append(dict(event))
         if event.get("user_action") == "RETRY_5V":
-            connected_device.USER_ANSWER = answer
+            connected_device.user_answer = answer
 
     monkeypatch.setattr(connected_device, "_FlashROM", flash)
     args: dict[str, Any] = {"mode": 4, "voltage_fallback": 5, "ask_voltage_fallback": True}
@@ -350,9 +350,9 @@ def test_flash_prompt_accepts_or_declines_fallback_voltage(
         assert events[-1] == {"action": "ABORT", "abortable": False}
         assert "override_voltage" not in args
         assert args["voltage_fallback"] == 5
-    assert connected_device.USER_ANSWER is None
-    assert connected_device.VOLTAGE_FALLBACK_PENDING is False
-    assert connected_device.VOLTAGE_FALLBACK_TRIGGERED is False
+    assert connected_device.user_answer is None
+    assert connected_device.voltage_fallback_pending is False
+    assert connected_device.voltage_fallback_triggered is False
 
 
 def test_transfer_wrappers_create_connect_and_reuse_worker(
@@ -401,7 +401,7 @@ def test_transfer_wrappers_create_connect_and_reuse_worker(
     assert [config["requested_mode"] for config in worker.configs] == [1, 2, 3, 4, 5]
     assert worker.updateProgress.callbacks == [progress]
     assert worker.starts == 5
-    assert device.WORKER is worker
+    assert device.worker is worker
 
 
 def test_backup_ram_false_progress_runs_synchronously(
@@ -409,7 +409,7 @@ def test_backup_ram_false_progress_runs_synchronously(
 ) -> None:
     device = GbxDevice()
     existing_worker = object()
-    device.WORKER = existing_worker
+    device.worker = existing_worker
     backup_restore = Mock(return_value=True)
     monkeypatch.setattr(device, "_BackupRestoreRAM", backup_restore)
     args: dict[str, Any] = {"path": "save.sav"}
@@ -418,7 +418,7 @@ def test_backup_ram_false_progress_runs_synchronously(
 
     backup_restore.assert_called_once_with(args=args)
     assert args == {"path": "save.sav", "mode": 2, "port": device}
-    assert device.WORKER is existing_worker
+    assert device.worker is existing_worker
 
 
 @pytest.mark.parametrize(
@@ -437,7 +437,7 @@ def test_transfer_wrappers_restore_auto_poweroff_on_every_exit(
     raises: bool,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 18}  # type: ignore[typeddict-item]
+    device.fw = {"fw_ver": 18}  # type: ignore[typeddict-item]
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=True))
 
     def get_variable(key: str) -> int:
@@ -467,7 +467,7 @@ def test_transfer_wrappers_restore_auto_poweroff_on_every_exit(
         call("AUTO_POWEROFF_TIME", 5000),
         call("AUTO_POWEROFF_TIME", 30_000),
     ]
-    assert device.THREAD_AUTO_POWEROFF_TIME is None
+    assert device.thread_auto_poweroff_time is None
 
 
 @pytest.mark.parametrize("firmware", [None, {"fw_ver": 11}], ids=["missing", "old"])
@@ -476,7 +476,7 @@ def test_auto_poweroff_is_unchanged_for_unsupported_firmware(
     firmware: dict[str, int] | None,
 ) -> None:
     device = GbxDevice()
-    device.FW = firmware  # type: ignore[assignment]
+    device.fw = firmware  # type: ignore[assignment]
     can_power_cycle = Mock(return_value=True)
     get_fw_variable = Mock()
     set_fw_variable = Mock()
@@ -490,14 +490,14 @@ def test_auto_poweroff_is_unchanged_for_unsupported_firmware(
     can_power_cycle.assert_not_called()
     get_fw_variable.assert_not_called()
     set_fw_variable.assert_not_called()
-    assert device.THREAD_AUTO_POWEROFF_TIME is None
+    assert device.thread_auto_poweroff_time is None
 
 
 def test_auto_poweroff_is_unchanged_when_firmware_setting_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 18}  # type: ignore[typeddict-item]
+    device.fw = {"fw_ver": 18}  # type: ignore[typeddict-item]
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=True))
     get_fw_variable = Mock(return_value=0)
     set_fw_variable = Mock()
@@ -509,14 +509,14 @@ def test_auto_poweroff_is_unchanged_when_firmware_setting_is_disabled(
 
     get_fw_variable.assert_called_once_with("AUTO_POWEROFF_ENABLED")
     set_fw_variable.assert_not_called()
-    assert device.THREAD_AUTO_POWEROFF_TIME is None
+    assert device.thread_auto_poweroff_time is None
 
 
 def test_auto_poweroff_restore_failure_is_logged_without_masking_transfer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 18}  # type: ignore[typeddict-item]
+    device.fw = {"fw_ver": 18}  # type: ignore[typeddict-item]
     monkeypatch.setattr(device, "CanPowerCycleCart", Mock(return_value=True))
     monkeypatch.setattr(
         device,
@@ -540,4 +540,4 @@ def test_auto_poweroff_restore_failure_is_logged_without_masking_transfer(
 
     assert writes == [("AUTO_POWEROFF_TIME", 5000), ("AUTO_POWEROFF_TIME", 30_000)]
     assert diagnostics == [("AUTO_POWEROFF thread leave failed:", "restore failed")]
-    assert device.THREAD_AUTO_POWEROFF_TIME is None
+    assert device.thread_auto_poweroff_time is None

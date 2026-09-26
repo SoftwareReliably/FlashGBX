@@ -16,7 +16,7 @@ class DialogArgs(TypedDict):
 
 
 class UserInputDialog(QtWidgets.QDialog):
-    APP: QtWidgets.QWidget | None = None
+    app: QtWidgets.QWidget | None = None
 
     def _CreateButtonRow(self, grid_layout: QtWidgets.QGridLayout, grid_rows: int) -> None:
         buttons_layout = QtWidgets.QHBoxLayout()
@@ -50,7 +50,7 @@ class UserInputDialog(QtWidgets.QDialog):
             & ~QtCore.Qt.WindowType.WindowContextHelpButtonHint,
         )
 
-        self.APP = app
+        self.app = app
 
         self._CreateIntroAndButtons(args["intro"])
 
@@ -108,5 +108,5 @@ class UserInputDialog(QtWidgets.QDialog):
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
         del event
-        if self.APP is not None:
-            self.APP.activateWindow()
+        if self.app is not None:
+            self.app.activateWindow()

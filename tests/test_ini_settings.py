@@ -19,7 +19,7 @@ def test_ini_settings_accepts_path_and_creates_parent(tmp_path: Path) -> None:
     settings = IniSettings(path=settings_path)
     settings.setValue("Theme", "dark")
 
-    assert settings_path == settings.FILENAME
+    assert settings_path == settings.filename
     assert settings_path.is_file()
     assert IniSettings(path=settings_path).value("Theme") == "dark"
 
@@ -47,7 +47,7 @@ def test_ini_settings_resets_a_malformed_file(
 
     settings = IniSettings(path=settings_path)
 
-    assert settings.FILENAME is None
+    assert settings.filename is None
     assert settings.GetString() == ""
     assert settings_path.read_text(encoding="utf-8") == ""
     assert "Resetting invalid settings file" in capsys.readouterr().out
@@ -65,8 +65,8 @@ def test_ini_settings_reports_an_inaccessible_path(
 
     settings = IniSettings(path=tmp_path / "blocked" / "settings.ini")
 
-    assert settings.FILENAME is None
-    assert settings.SETTINGS is None
+    assert settings.filename is None
+    assert settings.settings is None
     assert "Can't access the configuration directory" in capsys.readouterr().out
 
 
@@ -79,7 +79,7 @@ def test_ini_settings_persists_clear_and_handles_disabled_storage(tmp_path: Path
 
     assert settings_path.read_text(encoding="utf-8") == ""
 
-    settings.SETTINGS = None
+    settings.settings = None
     no_result_callbacks: tuple[Callable[[], object], ...] = (
         settings.Reload,
         lambda: settings.GetValue("Missing"),

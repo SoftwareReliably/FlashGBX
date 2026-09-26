@@ -53,11 +53,11 @@ def install_detection_worker_boundaries(
 ) -> tuple[GbxDevice, dict[str, list[Any]], dict[str, Any], tuple[Any, ...]]:
     """Use the real worker and classifiers with recorded power and I/O calls."""
     device = GbxDevice()
-    device.MODE = mode  # type: ignore[assignment]
-    device.FW = {"fw_ver": firmware_version, "pcb_ver": 6}
-    device.SKIP_POWERCYCLE = skip_power_cycle
-    device.INFO["action"] = "active"
-    device.INFO["last_action"] = 99
+    device.mode = mode  # type: ignore[assignment]
+    device.fw = {"fw_ver": firmware_version, "pcb_ver": 6}
+    device.skip_powercycle = skip_power_cycle
+    device.info["action"] = "active"
+    device.info["last_action"] = 99
     info: dict[str, Any] = {
         "mapper_raw": mapper_raw,
         "3d_memory": False,
@@ -66,7 +66,7 @@ def install_detection_worker_boundaries(
     if info_extra is not None:
         info.update(info_extra)
     profile = {"name": "selected profile"}
-    device.SUPPORTED_CARTS = {
+    device.supported_carts = {
         "DMG": {"retail": {"name": "retail profile"}, "selected": profile},
         "AGB": {"retail": {"name": "retail profile"}, "selected": profile},
     }
@@ -101,7 +101,7 @@ def install_detection_worker_boundaries(
     def backup_restore(*, args: dict[str, Any]) -> bool:
         records["save_reads"].append(args.copy())
         if save_read_result:
-            device.INFO["data"] = bytearray(save_payload)
+            device.info["data"] = bytearray(save_payload)
         return save_read_result
 
     def get_fw_variable(name: str) -> int:
@@ -179,7 +179,7 @@ def test_detection_worker_success_returns_all_fields_and_cleans_up(
     assert len(result) == 11  # type: ignore[arg-type]
     assert records["header_calls"] == [True]
     assert records["flash_calls"] == [True]
-    selected_profile = device.SUPPORTED_CARTS[mode]["selected"]
+    selected_profile = device.supported_carts[mode]["selected"]
     assert records["preparations"] == [(selected_profile, True, info, signal)]
     assert records["save_reads"] == [
         {
@@ -203,8 +203,8 @@ def test_detection_worker_success_returns_all_fields_and_cleans_up(
         ("AUTO_POWEROFF_TIME", 30_000),
     ]
     assert records["device_writes"] == [(device.DEVICE_CMD["DMG_MBC_RESET"], True)]
-    assert device.INFO["last_action"] == 0
-    assert device.INFO["action"] is None
+    assert device.info["last_action"] == 0
+    assert device.info["action"] is None
 
 
 @pytest.mark.parametrize(
@@ -278,8 +278,8 @@ def test_detection_worker_skips_save_read_for_disabled_paths(
         ("AUTO_POWEROFF_TIME", 30_000),
     ]
     assert records["device_writes"] == [(device.DEVICE_CMD["DMG_MBC_RESET"], True)]
-    assert device.INFO["last_action"] == 0
-    assert device.INFO["action"] is None
+    assert device.info["last_action"] == 0
+    assert device.info["action"] is None
 
 
 def test_detection_worker_skips_agb_save_probes_for_3d_memory(

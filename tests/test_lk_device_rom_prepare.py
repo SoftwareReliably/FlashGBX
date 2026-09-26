@@ -109,8 +109,8 @@ def install_preparation_io(
 ) -> PreparationIO:
     """Install recording hardware boundaries for real ROM preparation."""
     records = PreparationIO()
-    device.FW = {"fw_ver": 12, "pcb_name": "Test device"}
-    device.INFO["dump_info"] = {}
+    device.fw = {"fw_ver": 12, "pcb_name": "Test device"}
+    device.info["dump_info"] = {}
 
     def get_firmware_variable(name: str) -> int:
         records.firmware_reads.append(name)
@@ -148,7 +148,7 @@ def test_prepare_rom_read_rejects_unsupported_dmg_mapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     records = install_preparation_io(device, monkeypatch, cart_mode=1)
     supported = Mock(return_value=False)
     full_name = Mock(return_value="Test Reader")
@@ -164,12 +164,12 @@ def test_prepare_rom_read_rejects_unsupported_dmg_mapper(
     supported.assert_called_once_with(0xFE)
     full_name.assert_called_once_with()
     mapper_constructor.assert_not_called()
-    assert device.INFO["dump_info"] == {
+    assert device.info["dump_info"] == {
         "rom_size": 0x8000,
         "mapper_type": 0xFE,
-        "dmg_read_method": device.DMG_READ_METHODS[device.DMG_READ_METHOD],
+        "dmg_read_method": device.DMG_READ_METHODS[device.dmg_read_method],
     }
-    assert device.INFO["mapper_raw"] == 0xFE
+    assert device.info["mapper_raw"] == 0xFE
     assert records.progress[0]["action"] == "ABORT"
     assert records.progress[0]["info_type"] == "msgbox_critical"
     assert records.progress[0]["abortable"] is False
@@ -195,7 +195,7 @@ def test_prepare_rom_read_configures_supported_dmg_mapper(
     use_verification_mapper: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     records = install_preparation_io(device, monkeypatch, cart_mode=cart_mode)
     mapper = PreparationMapper(mapper_name)
     factory = MapperFactory(mapper)
@@ -211,12 +211,12 @@ def test_prepare_rom_read_configures_supported_dmg_mapper(
 
     assert result == (mapper, 0xC000, 3, 0x4000, 0x4000, False)
     supported.assert_called_once_with(0x19)
-    assert device.INFO["dump_info"] == {
+    assert device.info["dump_info"] == {
         "rom_size": 0x8000,
         "mapper_type": 0x19,
-        "dmg_read_method": device.DMG_READ_METHODS[device.DMG_READ_METHOD],
+        "dmg_read_method": device.DMG_READ_METHODS[device.dmg_read_method],
     }
-    assert device.INFO["mapper_raw"] == 0x19
+    assert device.info["mapper_raw"] == 0x19
     assert mapper.requested_rom_sizes == [0x8000]
     if use_verification_mapper:
         mapper_constructor.assert_not_called()
@@ -292,7 +292,7 @@ def test_prepare_rom_read_configures_agb_size_banks_and_mode(
     expected: tuple[int, int, int, int, bool],
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_preparation_io(device, monkeypatch, cart_mode=cart_mode)
     flashcart = PreparationFlashcart() if "flash_bank_size" in cart_type else False
 
@@ -301,10 +301,10 @@ def test_prepare_rom_read_configures_agb_size_banks_and_mode(
     assert result is not None
     assert result.mbc is None
     assert tuple(result[1:]) == expected
-    assert device.INFO["dump_info"]["mapper_type"] is None
-    assert device.INFO["dump_info"]["rom_size"] == expected[0]
-    expected_method = "3D Memory" if expected[-1] else device.AGB_READ_METHODS[device.AGB_READ_METHOD]
-    assert device.INFO["dump_info"]["agb_read_method"] == expected_method
+    assert device.info["dump_info"]["mapper_type"] is None
+    assert device.info["dump_info"]["rom_size"] == expected[0]
+    expected_method = "3D Memory" if expected[-1] else device.AGB_READ_METHODS[device.agb_read_method]
+    assert device.info["dump_info"]["agb_read_method"] == expected_method
     assert records.firmware_reads == ["CART_MODE"]
     if cart_mode == 2:
         assert records.device_writes == []
@@ -320,7 +320,7 @@ def test_prepare_rom_read_configures_gbamp_and_suppresses_verification_reconnect
     verification: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = install_preparation_io(device, monkeypatch, cart_mode=2)
     flashcart = PreparationFlashcart()
     args: dict[str, Any] = {"agb_rom_size": 0x400000}
@@ -331,7 +331,7 @@ def test_prepare_rom_read_configures_gbamp_and_suppresses_verification_reconnect
     result = device._PrepareROMRead("AGB", args, cart_type, flashcart)  # type: ignore[arg-type]
 
     assert result == (None, 0x400000, 2 if verification else 32, 0x20000, 0x4000, False)
-    assert device.INFO["dump_info"]["agb_read_method"] == "GBA Movie Player"
+    assert device.info["dump_info"]["agb_read_method"] == "GBA Movie Player"
     assert flashcart.unlock_calls == 1
     assert records.reconnects == int(not verification)
     assert records.device_writes == []
@@ -344,7 +344,7 @@ def test_reset_rom_read_state_restores_dmg_bank_and_read_method(
     reset_before_bank_change: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = PreparationMapper(reset_banks={0} if reset_before_bank_change else set())
     writes: list[tuple[object, bool]] = []
     set_read_method = Mock()
@@ -375,7 +375,7 @@ def test_reset_rom_read_state_restores_agb_bank_only_for_banked_profile(
     expected_banks: list[int],
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     mapper = PreparationMapper()
     flashcart = PreparationFlashcart()
     set_read_method = Mock()

@@ -73,13 +73,13 @@ def test_load_translation_and_init_language_write_configuration(
     assert isinstance(translation, gettext.GNUTranslations)
 
     monkeypatch.setattr(i18n, "lang", i18n.lang)
-    monkeypatch.setattr(i18n, "CONFIGURED_LANGUAGE", i18n.CONFIGURED_LANGUAGE)
-    monkeypatch.setattr(i18n, "TRANSLATION_AUTHOR", i18n.TRANSLATION_AUTHOR)
+    monkeypatch.setattr(i18n, "configured_language", i18n.configured_language)
+    monkeypatch.setattr(i18n, "translation_author", i18n.translation_author)
     monkeypatch.setattr(i18n, "set_locale", lambda _language: True)
     monkeypatch.setattr(i18n, "LANGUAGES", dict(i18n.LANGUAGES))
     i18n.init_language(tmp_path, override="de")  # type: ignore[arg-type]
 
-    assert i18n.CONFIGURED_LANGUAGE == "de"
+    assert i18n.configured_language == "de"
     assert "de" in i18n.LANGUAGES
     assert (tmp_path / "settings.ini").is_file()  # type: ignore[operator]
 

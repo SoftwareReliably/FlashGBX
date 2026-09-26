@@ -100,7 +100,7 @@ def test_set_flash_voltage_selects_profile_or_override_and_acknowledgement(
     expected: float,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": firmware}
+    device.fw = {"fw_ver": firmware}
     write = Mock()
     monkeypatch.setattr(device, "_write", write)
     cart = DecisionFlashcart(voltage=profile_voltage)
@@ -118,8 +118,8 @@ def test_set_flash_voltage_reports_slot_voltage_for_voltage_locked_devices(
     expected: float,
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode  # type: ignore[assignment]
-    device.FW = {"fw_ver": 12}
+    device.mode = mode  # type: ignore[assignment]
+    device.fw = {"fw_ver": 12}
     write = Mock()
     monkeypatch.setattr(device, "_write", write)
     monkeypatch.setattr(device, "CanSetVoltageByAutoswitch", lambda: True)
@@ -303,9 +303,9 @@ def test_abort_flash_verification_clears_metadata_power_cycles_and_resets_irq(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 12}
-    device.CANCEL_ARGS = {"info_type": "msgbox_warning", "info_msg": "Canceled"}
-    device.ERROR_ARGS = {"stale": True}
+    device.fw = {"fw_ver": 12}
+    device.cancel_args = {"info_type": "msgbox_warning", "info_msg": "Canceled"}
+    device.error_args = {"stale": True}
     progress = Mock()
     power_cycle = Mock()
     set_variable = Mock()
@@ -324,8 +324,8 @@ def test_abort_flash_verification_clears_metadata_power_cycles_and_resets_irq(
             "info_msg": "Canceled",
         },
     )
-    assert device.CANCEL_ARGS == {}
-    assert device.ERROR_ARGS == {}
+    assert device.cancel_args == {}
+    assert device.error_args == {}
     power_cycle.assert_called_once_with()
     set_variable.assert_called_once_with("AGB_IRQ_ENABLED", 0)
 
@@ -334,7 +334,7 @@ def test_abort_flash_verification_avoids_unsupported_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 11}
+    device.fw = {"fw_ver": 11}
     progress = Mock()
     power_cycle = Mock()
     set_variable = Mock()
@@ -373,10 +373,10 @@ def test_verify_flash_write_uses_crc_for_each_agb_sector_and_clears_stale_errors
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"fw_ver": 12}
-    device.POS = 0
-    device.INFO["broken_sectors"] = [[0, 64]]
+    device.mode = "AGB"
+    device.fw = {"fw_ver": 12}
+    device.pos = 0
+    device.info["broken_sectors"] = [[0, 64]]
     cart = DecisionFlashcart()
     mapper = VerificationMapper()
     data = bytearray(range(128))
@@ -406,16 +406,16 @@ def test_verify_flash_write_uses_crc_for_each_agb_sector_and_clears_stale_errors
         call({"action": "UPDATE_POS", "pos": 128}),
         call({"action": "UPDATE_POS", "pos": 128, "force_update": True, "skipping": True}),
     ]
-    assert "broken_sectors" not in device.INFO
+    assert "broken_sectors" not in device.info
 
 
 def test_verify_flash_write_records_sector_when_crc_and_readback_disagree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"fw_ver": 12}
-    device.POS = 0
+    device.mode = "AGB"
+    device.fw = {"fw_ver": 12}
+    device.pos = 0
     cart = DecisionFlashcart()
     mapper = VerificationMapper()
     data = bytearray(range(64))
@@ -445,9 +445,9 @@ def test_verify_flash_write_records_sector_when_crc_and_readback_disagree(
     assert request["verify_from"] == 0
     assert request["verify_len"] == 64
     assert request["rtc_area"] is False
-    assert device.NO_PROG_UPDATE is False
-    assert device.INFO["broken_sectors"] == [sector]
-    assert device.INFO["verify_error_params"] == {"rom_size": 64}
+    assert device.no_prog_update is False
+    assert device.info["broken_sectors"] == [sector]
+    assert device.info["verify_error_params"] == {"rom_size": 64}
     assert progress.call_args_list[-1] == call(
         {"action": "UPDATE_POS", "pos": 64, "force_update": True, "skipping": True},
     )
@@ -470,8 +470,8 @@ def test_verify_flash_write_preserves_readback_outcomes(
     expected_calls: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.FW = {"fw_ver": 9}
+    device.mode = "AGB"
+    device.fw = {"fw_ver": 9}
     data = bytearray(range(64))
     context = verification_context(DecisionFlashcart(), VerificationMapper(), data)._replace(
         args={"verify_write": True},
@@ -496,7 +496,7 @@ def test_verify_flash_write_preserves_readback_outcomes(
 
 def test_store_flash_verification_errors_records_dmg_mapper_metadata() -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     cart = DecisionFlashcart(mbc="manual")
     mapper = VerificationMapper(name="MBC3", maximum_size=0x100000)
     broken = [[0x4000, 0x2000], [0x8000, 0x2000]]
@@ -507,8 +507,8 @@ def test_store_flash_verification_errors_records_dmg_mapper_metadata() -> None:
     )
 
     assert result is True
-    assert device.INFO["broken_sectors"] is broken
-    assert device.INFO["verify_error_params"] == {
+    assert device.info["broken_sectors"] is broken
+    assert device.info["verify_error_params"] == {
         "rom_size": 0x9000,
         "mapper_name": "MBC3",
         "mapper_selection_type": 1,
@@ -518,7 +518,7 @@ def test_store_flash_verification_errors_records_dmg_mapper_metadata() -> None:
 
 def test_store_flash_verification_errors_records_agb_metadata_without_mapper_fields() -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     cart = DecisionFlashcart(mbc=False)
     mapper = VerificationMapper()
     broken = [[0, 4]]
@@ -530,10 +530,10 @@ def test_store_flash_verification_errors_records_agb_metadata_without_mapper_fie
         )
         is True
     )
-    assert device.INFO["broken_sectors"] == broken
-    assert device.INFO["verify_error_params"] == {"rom_size": 6}
+    assert device.info["broken_sectors"] == broken
+    assert device.info["verify_error_params"] == {"rom_size": 6}
 
-    existing_info = device.INFO.copy()
+    existing_info = device.info.copy()
     assert (
         device._StoreFlashVerificationErrors(
             verification_context(cart, mapper, bytearray()),
@@ -541,4 +541,4 @@ def test_store_flash_verification_errors_records_agb_metadata_without_mapper_fie
         )
         is False
     )
-    assert existing_info == device.INFO
+    assert existing_info == device.info

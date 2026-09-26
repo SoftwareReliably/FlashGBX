@@ -158,7 +158,7 @@ class DumpReport:
             ("Software", f"{AppInfo.NAME} {AppInfo.VERSION}"),
             (
                 "OS Platform",
-                f"{AppInfo.os_string()}, {platform.machine()}, {i18n.OS_LANGUAGE}",
+                f"{AppInfo.os_string()}, {platform.machine()}, {i18n.os_language}",
             ),
         ]
         if device.GetName() == "GBxCart RW":
@@ -250,7 +250,7 @@ class DumpReport:
             correct=header["header_checksum_correct"],
         )
 
-        header["rom_checksum_calc"] = device.INFO.get("rom_checksum_calc", header.get("rom_checksum_calc"))
+        header["rom_checksum_calc"] = device.info.get("rom_checksum_calc", header.get("rom_checksum_calc"))
         rom_chk_ok = header["rom_checksum_calc"] == header["rom_checksum"]
         rom_checksum_str: str = (
             f"OK (0x{header['rom_checksum']:04X})"
@@ -297,7 +297,7 @@ class DumpReport:
         if mode not in ("DMG", "AGB"):
             raise NotImplementedError
 
-        keys = list(device.SUPPORTED_CARTS[mode].keys())
+        keys = list(device.supported_carts[mode].keys())
         cart_type_str = keys[di["cart_type"]] if 0 <= di["cart_type"] < len(keys) else f"#{di['cart_type']}"
         file_name: str = Path(di["file_name"]).name if di["file_name"] else ""
         file_size_bytes = di["file_size"]

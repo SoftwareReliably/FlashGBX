@@ -113,7 +113,7 @@ class Flashcart:
             self._default_we = config["write_pin"]
 
     @property
-    def CONFIG(self) -> FlashcartProfile:
+    def config(self) -> FlashcartProfile:
         """Compatibility view for existing callers; prefer typed methods internally."""
         return self._config
 

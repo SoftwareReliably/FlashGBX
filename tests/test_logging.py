@@ -34,7 +34,7 @@ def test_logger_captures_clean_text_and_handles_missing_original_stdout(monkeypa
 
     assert logger.write(message) == len(message)
     assert AppContext.PRINT_LOG == ["failure"]
-    assert logger.LOG_ERROR is True
+    assert logger.log_error is True
     assert output.getvalue() == message
 
     monkeypatch.setattr(logging_module.sys, "__stdout__", None)
@@ -72,8 +72,8 @@ def test_write_debug_log_uses_platform_line_endings(
     monkeypatch.setattr(AppInfo, "os_string", classmethod(lambda _cls: "Test OS"))
     monkeypatch.setattr(logging_module.platform, "machine", lambda: "test-machine")
     monkeypatch.setattr(logging_module.platform, "system", lambda: system)
-    monkeypatch.setattr(logging_module.i18n, "CONFIGURED_LANGUAGE", "en")
-    monkeypatch.setattr(logging_module.i18n, "OS_LANGUAGE", "en")
+    monkeypatch.setattr(logging_module.i18n, "configured_language", "en")
+    monkeypatch.setattr(logging_module.i18n, "os_language", "en")
     AppContext.PRINT_LOG.extend(["print one", "print two"])
     AppContext.DEBUG_LOG.extend(["debug one", "debug two"])
 
@@ -120,7 +120,7 @@ def test_exception_hook_delegates_interrupts_and_records_other_errors(
 
     Logger.exception_hook(ValueError, error, error.__traceback__)
 
-    assert logger.LOG_ERROR is True
+    assert logger.log_error is True
     assert any("EXCEPTION OCCURRED" in message and "bad value" in message for message in AppContext.PRINT_LOG)
 
 

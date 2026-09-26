@@ -64,10 +64,10 @@ def test_file_loading_and_checksum_repair(
     rom = RomFileDMG(rom_path)
     fixed = rom.FixHeader()
 
-    assert len(rom.ROMFILE) == 0x1000
+    assert len(rom.romfile) == 0x1000
     assert len(fixed) == 0x200
-    assert rom.ROMFILE[0x14D] == rom.CalcChecksumHeader()
-    assert int.from_bytes(rom.ROMFILE[0x14E:0x150], "big") == rom.CalcChecksumGlobal()
+    assert rom.romfile[0x14D] == rom.CalcChecksumHeader()
+    assert int.from_bytes(rom.romfile[0x14E:0x150], "big") == rom.CalcChecksumGlobal()
 
 
 def test_short_buffer_has_no_header() -> None:
@@ -263,7 +263,7 @@ def test_database_lookup_handles_match_corruption_and_missing_file(
 ) -> None:
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     rom = RomFileDMG()
-    rom.DATA = {"header_sha1": "header-id"}
+    rom.data = {"header_sha1": "header-id"}
     database_path = tmp_path / "db_DMG.json"
     database_path.write_text(json.dumps({"header-id": {"gc": "DMG-APAE"}}), encoding="utf-8")
 
@@ -284,7 +284,7 @@ def test_database_lookup_preserves_string_and_integer_metadata(
 ) -> None:
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     rom = RomFileDMG()
-    rom.DATA = {"header_sha1": "header-id"}
+    rom.data = {"header_sha1": "header-id"}
     entry = {"gn": "Test Game", "gc": "DMG-TEST", "rc": 0x12345678, "extra": 42}
     (tmp_path / "db_DMG.json").write_text(json.dumps({"header-id": entry}), encoding="utf-8")
 
@@ -297,7 +297,7 @@ def test_database_lookup_returns_none_for_missing_key_and_null_entry(
 ) -> None:
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     rom = RomFileDMG()
-    rom.DATA = {"header_sha1": "header-id"}
+    rom.data = {"header_sha1": "header-id"}
     database_path = tmp_path / "db_DMG.json"
 
     database_path.write_text(json.dumps({"other-id": {"gc": "DMG-OTHER"}}), encoding="utf-8")
@@ -336,7 +336,7 @@ def test_database_lookup_rejects_invalid_json_shapes_and_values(
 ) -> None:
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
     rom = RomFileDMG()
-    rom.DATA = {"header_sha1": "header-id"}
+    rom.data = {"header_sha1": "header-id"}
     (tmp_path / "db_DMG.json").write_text(json.dumps(database), encoding="utf-8")
 
     assert rom.GetDatabaseEntry() is None
@@ -350,7 +350,7 @@ def test_batteryless_sram_database_matches_raw_and_clean_titles(
     database_path = tmp_path / "db_DMG_bl.json"
     database_path.write_text(json.dumps({"POKEMON RED": [0x100, 0x200, 1]}), encoding="utf-8")
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
-    monkeypatch.setattr(RomFileDMG, "BATTERYLESS_SRAM_DB", None)
+    monkeypatch.setattr(RomFileDMG, "batteryless_sram_db", None)
 
     assert RomFileDMG.GetBatterylessSramConfig({"game_title_raw": "POKEMON RED\x00 "}) == {
         "bl_offset": 0x100,
@@ -369,11 +369,11 @@ def test_batteryless_sram_database_failure_is_cached(
     database_path = tmp_path / "db_DMG_bl.json"
     database_path.write_text("not-json", encoding="utf-8")
     monkeypatch.setattr(AppContext, "CONFIG_PATH", str(tmp_path))
-    monkeypatch.setattr(RomFileDMG, "BATTERYLESS_SRAM_DB", None)
+    monkeypatch.setattr(RomFileDMG, "batteryless_sram_db", None)
     monkeypatch.setattr(Path, "exists", lambda path: path == database_path)
 
     assert RomFileDMG.GetBatterylessSramConfig({"game_title_raw": "POKEMON RED"}) is None
-    assert RomFileDMG.BATTERYLESS_SRAM_DB is False
+    assert RomFileDMG.batteryless_sram_db is False
     assert "Could not load" in capsys.readouterr().out
 
 

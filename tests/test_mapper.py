@@ -71,11 +71,11 @@ def test_mapper_runtime_state_is_isolated_between_instances() -> None:
     first = DMG_Mapper(args={"mbc": 0x19})
     second = DMG_Mapper(args={"mbc": 0x01})
 
-    first.CURRENT_ROM_BANK = 7
-    first.RTC_BUFFER = bytearray(b"rtc")
+    first.current_rom_bank = 7
+    first.rtc_buffer = bytearray(b"rtc")
 
     assert second.GetROMBank() == 0
-    assert second.RTC_BUFFER is None
+    assert second.rtc_buffer is None
 
 
 def test_unconfigured_hardware_callback_has_actionable_error() -> None:
@@ -226,7 +226,7 @@ def test_base_mapper_callbacks_banking_and_default_capabilities(
     assert mapper.GetROMSize() == 0x10000
     assert mapper.GetMaxROMSize() == 0x8000
     assert mapper.GetFlashBank() == -1
-    assert mapper.START_BANK == 7
+    assert mapper.start_bank == 7
     assert toggles == [8]
     assert power_cycles == [True]
     assert sleeps == [0.01, 0.01]
@@ -372,7 +372,7 @@ def test_mbc3_rtc_detection_read_and_string_paths_use_mock_callbacks() -> None:
     rtc_buffer[0x08] = 1
     rtc_buffer[0x0C] = 4
     rtc_buffer[0x10] = 0
-    mapper.RTC_BUFFER = rtc_buffer
+    mapper.rtc_buffer = rtc_buffer
     rtc = mapper.GetRTCDict()
     assert rtc.items() >= {"rtc_d": 4, "rtc_h": 1, "rtc_m": 2, "rtc_s": 3, "rtc_valid": True}.items()
     assert mapper.GetRTCString() == rtc["string"]

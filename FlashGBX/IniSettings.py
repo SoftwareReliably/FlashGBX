@@ -19,9 +19,9 @@ class _SettingsParser(configparser.RawConfigParser):
 
 
 class IniSettings:
-    FILENAME: Path | None = None
-    SETTINGS: _SettingsParser | None = None
-    MAIN_SECTION = "General"
+    filename: Path | None = None
+    settings: _SettingsParser | None = None
+    main_section = "General"
 
     def __init__(self, path: str | Path = "", ini: str = "", main_section: str = "General") -> None:
         if path != "":
@@ -32,8 +32,8 @@ class IniSettings:
             except Exception:
                 print(__("Can't access the configuration directory or settings file."))
                 return
-            self.FILENAME = settings_path
-            self.SETTINGS = _SettingsParser()
+            self.filename = settings_path
+            self.settings = _SettingsParser()
             try:
                 self.reload()
             except configparser.MissingSectionHeaderError:
@@ -42,61 +42,61 @@ class IniSettings:
                 path = ""
 
         if path == "":
-            self.FILENAME = None
-            self.SETTINGS = _SettingsParser()
-            self.SETTINGS.preserve_case = False
-            self.SETTINGS.read_string(ini)
-            self.SETTINGS.preserve_case = True
+            self.filename = None
+            self.settings = _SettingsParser()
+            self.settings.preserve_case = False
+            self.settings.read_string(ini)
+            self.settings.preserve_case = True
 
-        self.MAIN_SECTION: str = main_section
+        self.main_section: str = main_section
 
     def reload(self) -> None:
-        if self.SETTINGS is None:
+        if self.settings is None:
             return
-        if self.FILENAME is not None:
-            with self.FILENAME.open(encoding="UTF-8") as f:
-                self.SETTINGS.read_file(f)
-        if not self.SETTINGS.has_section(self.MAIN_SECTION):
-            self.SETTINGS.add_section(self.MAIN_SECTION)
+        if self.filename is not None:
+            with self.filename.open(encoding="UTF-8") as f:
+                self.settings.read_file(f)
+        if not self.settings.has_section(self.main_section):
+            self.settings.add_section(self.main_section)
 
     def value(self, key: str, default: str | None = None) -> str | None:
-        if self.SETTINGS is None:
+        if self.settings is None:
             return None
         self.reload()
-        if key not in self.SETTINGS[self.MAIN_SECTION]:
+        if key not in self.settings[self.main_section]:
             if default is not None:
                 self.setValue(key, default)
             return default
-        return self.SETTINGS[self.MAIN_SECTION][key]
+        return self.settings[self.main_section][key]
 
     def setValue(self, key: str, value: str | None, quiet: bool = False) -> None:
-        if self.SETTINGS is None:
+        if self.settings is None:
             return
         self.reload()
         if value is None:
-            if key in self.SETTINGS[self.MAIN_SECTION]:
-                del self.SETTINGS[self.MAIN_SECTION][key]
+            if key in self.settings[self.main_section]:
+                del self.settings[self.main_section][key]
         else:
-            self.SETTINGS[self.MAIN_SECTION][key] = value
+            self.settings[self.main_section][key] = value
         if not quiet:
             dprint("Updating settings:", key, "=", value)
-        if self.FILENAME is not None:
-            with self.FILENAME.open("w", encoding="UTF-8") as f:
-                self.SETTINGS.write(f)
+        if self.filename is not None:
+            with self.filename.open("w", encoding="UTF-8") as f:
+                self.settings.write(f)
 
     def clear(self) -> None:
-        if self.SETTINGS is None:
+        if self.settings is None:
             return
-        self.SETTINGS.clear()
-        if self.FILENAME is not None:
-            with self.FILENAME.open("w", encoding="UTF-8") as f:
-                self.SETTINGS.write(f)
+        self.settings.clear()
+        if self.filename is not None:
+            with self.filename.open("w", encoding="UTF-8") as f:
+                self.settings.write(f)
 
     def get_string(self) -> str:
-        if self.SETTINGS is None:
+        if self.settings is None:
             return ""
         output = StringIO()
-        self.SETTINGS.write(output)
+        self.settings.write(output)
         return output.getvalue()
 
     # Legacy PascalCase aliases — drop in a follow-up consumer sweep.

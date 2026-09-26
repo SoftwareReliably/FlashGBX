@@ -89,55 +89,55 @@ def _update_unlicensed_mapper_title(data: dict[str, Any], title_bytes: bytearray
 
 
 class RomFileDMG:
-    ROMFILE_PATH: Path | None = None
-    ROMFILE = bytearray()
-    BATTERYLESS_SRAM_DB = None
+    romfile_path: Path | None = None
+    romfile = bytearray()
+    batteryless_sram_db: dict[str, Any] | Literal[False] | None = None
 
     def __init__(self, file: str | Path | bytearray | None = None) -> None:
-        self.DATA: dict[str, Any] = {}
+        self.data: dict[str, Any] = {}
         if isinstance(file, (str, Path)):
             self.Open(file)
         elif isinstance(file, bytearray):
-            self.ROMFILE = file
+            self.romfile = file
 
     def Open(self, file: str | Path) -> None:
-        self.ROMFILE_PATH = Path(file)
+        self.romfile_path = Path(file)
         self.Load()
 
     def Load(self) -> None:
-        if self.ROMFILE_PATH is None:
+        if self.romfile_path is None:
             return
-        with self.ROMFILE_PATH.open("rb") as f:
-            self.ROMFILE = bytearray(f.read(0x1000))
+        with self.romfile_path.open("rb") as f:
+            self.romfile = bytearray(f.read(0x1000))
 
     def CalcChecksumHeader(self, fix: bool = False) -> int:
         checksum = 0
         for i in range(0x134, 0x14D):
-            checksum: int = checksum - self.ROMFILE[i] - 1
+            checksum: int = checksum - self.romfile[i] - 1
         checksum = checksum & 0xFF
 
         if fix:
-            self.ROMFILE[0x14D] = checksum
+            self.romfile[0x14D] = checksum
         return checksum
 
     def CalcChecksumGlobal(self, fix: bool = False) -> int:
-        temp1: int = self.ROMFILE[0x14E]
-        temp2: int = self.ROMFILE[0x14F]
-        self.ROMFILE[0x14E] = 0
-        self.ROMFILE[0x14F] = 0
-        checksum: int = sum(self.ROMFILE) & 0xFFFF
+        temp1: int = self.romfile[0x14E]
+        temp2: int = self.romfile[0x14F]
+        self.romfile[0x14E] = 0
+        self.romfile[0x14F] = 0
+        checksum: int = sum(self.romfile) & 0xFFFF
         if fix:
-            self.ROMFILE[0x14E] = checksum >> 8
-            self.ROMFILE[0x14F] = checksum & 0xFF
+            self.romfile[0x14E] = checksum >> 8
+            self.romfile[0x14F] = checksum & 0xFF
         else:
-            self.ROMFILE[0x14E] = temp1
-            self.ROMFILE[0x14F] = temp2
+            self.romfile[0x14E] = temp1
+            self.romfile[0x14F] = temp2
         return checksum
 
     def FixHeader(self) -> bytearray:
         self.CalcChecksumHeader(fix=True)
         self.CalcChecksumGlobal(fix=True)
-        return self.ROMFILE[0:0x200]
+        return self.romfile[0:0x200]
 
     def LogoToImage(self, data: bytearray, valid: bool = True) -> PILImage | Literal[False]:
         if Image is None:
@@ -643,7 +643,7 @@ class RomFileDMG:
             self._ApplySachenOverride(data, buffer)
 
     def GetHeader(self, unchanged: bool = False) -> dict[str, Any]:
-        buffer: bytearray = self.ROMFILE
+        buffer: bytearray = self.romfile
         if len(buffer) < 0x180:
             return {}
         data = self._ParseHeaderFields(buffer)
@@ -681,12 +681,12 @@ class RomFileDMG:
                 ),
             )
 
-        self.DATA = data
+        self.data = data
         self._ApplyDatabaseMetadata(data)
         return data
 
     def GetDatabaseEntry(self) -> DmgDatabaseEntry | None:
-        data = self.DATA
+        data = self.data
         database_path: Path = Path(AppContext.CONFIG_PATH) / "db_DMG.json"
         if database_path.exists():
             with database_path.open(encoding="UTF-8") as f:
@@ -715,7 +715,7 @@ class RomFileDMG:
 
     @classmethod
     def _load_batteryless_sram_database(cls) -> None:
-        if cls.BATTERYLESS_SRAM_DB is None:
+        if cls.batteryless_sram_db is None:
             config_paths: list[Path] = [Path(__file__).resolve().parent / "config"]
             if AppContext.CONFIG_PATH:
                 config_paths.insert(0, Path(AppContext.CONFIG_PATH))
@@ -725,7 +725,7 @@ class RomFileDMG:
                     continue
                 try:
                     with db_path.open(encoding="UTF-8") as f:
-                        cls.BATTERYLESS_SRAM_DB = json.loads(f.read())
+                        cls.batteryless_sram_db = json.loads(f.read())
                     break
                 except Exception as e:
                     print(
@@ -733,8 +733,8 @@ class RomFileDMG:
                         e,
                         sep="\n",
                     )
-            if cls.BATTERYLESS_SRAM_DB is None:
-                cls.BATTERYLESS_SRAM_DB = False
+            if cls.batteryless_sram_db is None:
+                cls.batteryless_sram_db = False
 
     @classmethod
     def GetBatterylessSramConfig(cls, header: dict[str, Any]) -> dict[str, Any] | None:
@@ -744,7 +744,7 @@ class RomFileDMG:
             return None
 
         cls._load_batteryless_sram_database()
-        db = cls.BATTERYLESS_SRAM_DB
+        db = cls.batteryless_sram_db
         if not db:
             return None
 

@@ -123,15 +123,15 @@ class Progress:
         updater: ProgressCallback,
         waiter: ProgressCallback,
     ) -> None:
-        self.PROGRESS: ProgressState = cast("ProgressState", {})
+        self.progress: ProgressState = cast("ProgressState", {})
         self.UPDATER: ProgressCallback = updater
         self.WAITER: ProgressCallback = waiter
 
     def _active_state(self) -> ProgressState | None:
         """Return the active state, if an operation has been initialized."""
-        if "method" not in self.PROGRESS:
+        if "method" not in self.progress:
             return None
-        return self.PROGRESS
+        return self.progress
 
     def _emit(self, payload: Mapping[str, object]) -> None:
         """Publish a payload through the configured update callback."""
@@ -213,7 +213,7 @@ class Progress:
         if "voltage" in event:
             state["voltage"] = self._float_or_default(event.get("voltage"), 0.0)
 
-        self.PROGRESS = state
+        self.progress = state
         self._emit(state)
 
     def _handle_auxiliary_event(
@@ -353,7 +353,7 @@ class Progress:
             state["verified"] = event["verified"] is True
 
         self._emit(state)
-        self.PROGRESS.pop("method", None)
+        self.progress.pop("method", None)
 
     def SetProgress(self, args: Mapping[str, object]) -> None:
         """Consume one progress event from a transfer worker.
@@ -374,7 +374,7 @@ class Progress:
                 # ``FINISHED`` removes ``method`` but leaves the last state
                 # available for callers that inspect it after completion.
                 # Start subsequent event handling from a clean state.
-                self.PROGRESS = cast("ProgressState", {})
+                self.progress = cast("ProgressState", {})
 
             if action == "USER_ACTION":
                 self.WAITER(args)
@@ -387,7 +387,7 @@ class Progress:
 
             if action == "ABORT":
                 self._emit(args)
-                self.PROGRESS = cast("ProgressState", {})
+                self.progress = cast("ProgressState", {})
                 return
 
             if action in (

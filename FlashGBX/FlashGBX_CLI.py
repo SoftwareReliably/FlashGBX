@@ -88,15 +88,15 @@ class FlashGBX_CLI:
         self.ARGS: CLIConfig = args
         AppContext.APP_PATH = args["app_path"]
         AppContext.CONFIG_PATH = args["config_path"]
-        self.FLASHCARTS: FlashcartMap = args["flashcarts"]
+        self.flashcarts: FlashcartMap = args["flashcarts"]
         # Hardware backends are loaded dynamically and expose a shared runtime
         # interface without inheriting from one concrete device class.
-        self.CONN: Any = None
-        self.DEVICE: tuple[str, Device] | None = None
-        self.PROGRESS = Progress(self.UpdateProgress, self.WaitProgress)
-        self.FWUPD_R = False
-        self.INI: IniSettings | None = None
-        self.RETVAL = 0
+        self.conn: Any = None
+        self.device: tuple[str, Device] | None = None
+        self.progress = Progress(self.UpdateProgress, self.WaitProgress)
+        self.fwupd_r = False
+        self.ini: IniSettings | None = None
+        self.retval = 0
 
         if platform.system() == "Windows":
             self.prog_bar_part_chars = (" ", " ", " ", " ", "▌", "▌", "▌", "▌")
@@ -117,7 +117,7 @@ class FlashGBX_CLI:
 
     @staticmethod
     def _IsGBxCartRWDevice(device: Device) -> bool:
-        return getattr(device, "DEVICE_ID", "") == "gbxcartrw" or getattr(device, "DEVICE_NAME", "") == "GBxCart RW"
+        return getattr(device, "DEVICE_ID", "") == "gbxcartrw" or getattr(device, "device_name", "") == "GBxCart RW"
 
     @staticmethod
     def _GetPlatformName(mode: str) -> str:
@@ -156,7 +156,7 @@ class FlashGBX_CLI:
             supported_modes = cast("Sequence[PlatformMode]", conn.GetSupprtedModes())
         if len(supported_modes) == 1:
             return supported_modes[0]
-        if conn.FW.get("cart_mode_switch"):
+        if conn.fw.get("cart_mode_switch"):
             switch_mode = conn.GetCartModeSwitchState()
             if switch_mode is not False:
                 mode: Literal["AGB", "DMG"] = "AGB" if switch_mode == 1 else "DMG"
@@ -218,7 +218,7 @@ class FlashGBX_CLI:
 
     def _GenerateSaveFilename(self, add_date_time: bool) -> str:
         """Build the save filename, optionally appending the current local time."""
-        path = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
+        path = generate_filename(mode=self.conn.GetMode(), header=self.conn.info, settings=None)
         path = str(Path(path).with_suffix(""))
         if add_date_time:
             timestamp = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S")
@@ -319,12 +319,12 @@ class FlashGBX_CLI:
         if not self.FindDevices(port=args.device_port):
             print(__("No devices found."))
             return False
-        if not self.ConnectDevice() or self.DEVICE is None:
+        if not self.ConnectDevice() or self.device is None:
             print(__("Couldn't connect to the device."))
             return False
 
-        dev = self.DEVICE[1]
-        if dev.FirmwareUpdateAvailable() and dev.FW_UPDATE_REQ is True:
+        dev = self.device[1]
+        if dev.FirmwareUpdateAvailable() and dev.fw_update_req is True:
             print(
                 __(
                     "The current firmware version of your device is not supported.\nPlease update to a supported firmware version first.",
@@ -340,8 +340,8 @@ class FlashGBX_CLI:
                 device_name=dev.GetFullNameExtended(more=builddate != ""),
             ),
         )
-        self.CONN.SetAutoPowerOff(value=1500)
-        self.CONN.SetAGBReadMethod(method=2)
+        self.conn.SetAutoPowerOff(value=1500)
+        self.conn.SetAGBReadMethod(method=2)
         return True
 
     def _RunCartridgeAction(self, args: argparse.Namespace, header: HeaderData) -> int | None:
@@ -513,7 +513,7 @@ class FlashGBX_CLI:
             "agb": __("Game Boy Advance"),
         }.get(platform_mode, __("Game Boy Advance"))
         print(__("Platform: {platform}", platform=platform_name))
-        self.CONN.SetMode("DMG" if platform_mode == "dmg" else "AGB")
+        self.conn.SetMode("DMG" if platform_mode == "dmg" else "AGB")
         # time.sleep(0.2)
 
         return self._run_configured_cartridge_action(args)
@@ -528,7 +528,7 @@ class FlashGBX_CLI:
             self.DisconnectDevice()
             return 0
 
-        header = self.CONN.ReadHeader()
+        header = self.conn.ReadHeader()
         (bad_read, s_header, header) = self.ReadCartridge(header)
         if not self._ValidateCartridgeHeader(
             bad_read,
@@ -543,7 +543,7 @@ class FlashGBX_CLI:
 
         action_result = self._RunCartridgeAction(args, header)
         self.DisconnectDevice()
-        return self.RETVAL if action_result is None else action_result
+        return self.retval if action_result is None else action_result
 
     def _ValidateCartridgeHeader(
         self,
@@ -561,8 +561,8 @@ class FlashGBX_CLI:
             bad_read
             and not ignore_bad_header
             and (
-                self.CONN.GetMode() == "AGB"
-                or (self.CONN.GetMode() == "DMG" and "mapper_raw" in header and header["mapper_raw"] != 0x203)
+                self.conn.GetMode() == "AGB"
+                or (self.conn.GetMode() == "DMG" and "mapper_raw" in header and header["mapper_raw"] != 0x203)
             )
         ):
             print(
@@ -583,8 +583,8 @@ class FlashGBX_CLI:
 
     def _SelectPlatformMode(self) -> PlatformMode | int:
         """Choose a platform mode or return a CLI result when selection stops."""
-        supported_modes: Sequence[PlatformMode] = self.CONN.GetSupprtedModes()
-        auto_mode = self._GetAutoPlatformMode(self.CONN, supported_modes)
+        supported_modes: Sequence[PlatformMode] = self.conn.GetSupprtedModes()
+        auto_mode = self._GetAutoPlatformMode(self.conn, supported_modes)
         if len(supported_modes) == 0:
             print(__("The connected device does not support any platform modes.") + "\n")
             return 1
@@ -593,7 +593,7 @@ class FlashGBX_CLI:
             print(__("Using only supported platform: {platform}", platform=mode) + "\n")
             return mode
         if auto_mode is not None:
-            if self.CONN.FW.get("cart_mode_switch"):
+            if self.conn.fw.get("cart_mode_switch"):
                 message = __(
                     "Using platform mode set by cartridge mode switch: {platform}",
                     platform=self._GetPlatformName(auto_mode),
@@ -653,15 +653,15 @@ class FlashGBX_CLI:
             msg += "\n\n" + __("Press ENTER to continue.") + "\n"
             answer = input(msg).strip().lower()
             if len(answer.strip()) != 0:
-                self.CONN.USER_ANSWER = False
+                self.conn.user_answer = False
             else:
-                self.CONN.USER_ANSWER = True
+                self.conn.user_answer = True
         elif args["user_action"] == "RETRY_5V":
             msg = "\n\n"
             msg += args["msg"]
             msg += "\n\n" + args["title"] + " [y/N] "
             answer = input(msg).strip().lower()
-            self.CONN.USER_ANSWER = answer in ("y", "yes")
+            self.conn.user_answer = answer in ("y", "yes")
 
     def _RenderProgressBar(self, pos: int, size: int, speed: float, elapsed: int, left: int) -> None:
         if size <= 0:
@@ -780,36 +780,36 @@ class FlashGBX_CLI:
         if "info_type" not in args or "info_msg" not in args:
             return
         if args["info_type"] == "msgbox_critical":
-            self.RETVAL = 1
+            self.retval = 1
             print(ANSI.RED + args["info_msg"] + ANSI.RESET)
         elif args["info_type"] in ("msgbox_information", "label"):
-            self.RETVAL = 0
+            self.retval = 0
             print(args["info_msg"])
 
     def _FinishBackupRAM(self) -> None:
-        self.CONN.INFO["last_action"] = 0
+        self.conn.info["last_action"] = 0
         is_camera_save = (
             "debug" not in self.ARGS
-            and self.CONN.GetMode() == "DMG"
-            and self.CONN.INFO["mapper_raw"] == 252
-            and self.CONN.INFO["transferred"] == 0x20000
+            and self.conn.GetMode() == "DMG"
+            and self.conn.info["mapper_raw"] == 252
+            and self.conn.info["transferred"] == 0x20000
         ) or (
-            self.CONN.INFO["transferred"] == 0x100000
-            and "ram_size_raw" in self.CONN.INFO["dump_info"]["header"]
-            and self.CONN.INFO["dump_info"]["header"]["ram_size_raw"] == 0x204
+            self.conn.info["transferred"] == 0x100000
+            and "ram_size_raw" in self.conn.info["dump_info"]["header"]
+            and self.conn.info["dump_info"]["header"]["ram_size_raw"] == 0x204
         )
         if is_camera_save:
             if getattr(self.ARGS["argparsed"], "gbcamera_extract", False):
-                if self.CONN.INFO["transferred"] == 0x100000:
-                    base = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                if self.conn.info["transferred"] == 0x100000:
+                    base = Path(self.conn.info["last_path"]).with_suffix("")
                     if not self._ExtractMultiRollCameraPictures(base):
                         return
                 else:
-                    file = self.CONN.INFO["last_path"]
+                    file = self.conn.info["last_path"]
                     pc = PocketCamera()
                     if pc.LoadFile(file):
                         pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
-                        destination = Path(self.CONN.INFO["last_path"]).with_suffix("")
+                        destination = Path(self.conn.info["last_path"]).with_suffix("")
                         file = destination / "IMG_PC00.png"
                         if destination.is_file():
                             print(
@@ -818,7 +818,7 @@ class FlashGBX_CLI:
                                     path=str(destination.resolve()),
                                 ),
                             )
-                            self.RETVAL = 1
+                            self.retval = 1
                             return
                         destination.mkdir(parents=True, exist_ok=True)
                         for i in range(32):
@@ -838,13 +838,13 @@ class FlashGBX_CLI:
                     path=str(base.resolve()),
                 ),
             )
-            self.RETVAL = 1
+            self.retval = 1
             return False
         base.mkdir(parents=True, exist_ok=True)
         pc = PocketCamera()
         pc.SetPalette(PocketCamera.PALETTE_NAMES.index(self.ARGS["argparsed"].gbcamera_palette))
         for roll in range(1, 9):
-            with Path(self.CONN.INFO["last_path"]).open("rb") as f:
+            with Path(self.conn.info["last_path"]).open("rb") as f:
                 f.seek(0x20000 * (roll - 1))
                 roll_data = bytearray(f.read(0x20000))
             if pc.LoadFile(roll_data):
@@ -860,7 +860,7 @@ class FlashGBX_CLI:
     def _FormatBrokenSectors(self) -> tuple[str, int]:
         sectors = ""
         sector_count = 0
-        for sector in self.CONN.INFO["broken_sectors"]:
+        for sector in self.conn.info["broken_sectors"]:
             sector_count += 1
             if sector_count > 10:
                 sectors += (
@@ -875,10 +875,10 @@ class FlashGBX_CLI:
         return sectors, sector_count
 
     def _FinishFlashROM(self) -> None:
-        self.CONN.INFO["last_action"] = 0
-        if self.PROGRESS.PROGRESS.get("verified"):
+        self.conn.info["last_action"] = 0
+        if self.progress.progress.get("verified"):
             print(ANSI.GREEN + __("The ROM was written and verified successfully!") + ANSI.RESET)
-        elif "broken_sectors" in self.CONN.INFO:
+        elif "broken_sectors" in self.conn.info:
             sectors, sector_count = self._FormatBrokenSectors()
             print(
                 ANSI.RED
@@ -890,7 +890,7 @@ class FlashGBX_CLI:
                 )
                 + ANSI.RESET,
             )
-            self.RETVAL = 1
+            self.retval = 1
         else:
             print(__("ROM writing complete!"))
 
@@ -898,13 +898,13 @@ class FlashGBX_CLI:
         if self.ARGS["argparsed"].generate_dump_report is not True:
             return
         try:
-            dump_report = self.CONN.GetDumpReport()
+            dump_report = self.conn.GetDumpReport()
             if dump_report is False:
                 return
             if time_elapsed is not None and speed is not None:
                 dump_report = dump_report.replace(
                     "%TRANSFER_RATE%",
-                    "{:.2f}".format((self.CONN.INFO["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
+                    "{:.2f}".format((self.conn.info["transferred"] / 1024.0) / time_elapsed) + " KiB/s",
                 )
                 dump_report = dump_report.replace(
                     "%TIME_ELAPSED%",
@@ -913,7 +913,7 @@ class FlashGBX_CLI:
             else:
                 dump_report = dump_report.replace("%TRANSFER_RATE%", "N/A")
                 dump_report = dump_report.replace("%TIME_ELAPSED%", "N/A")
-            dumpinfo_file = Path(self.CONN.INFO["last_path"]).with_suffix(".txt")
+            dumpinfo_file = Path(self.conn.info["last_path"]).with_suffix(".txt")
             with dumpinfo_file.open("wb") as f:
                 f.write(bytearray([0xEF, 0xBB, 0xBF]))  # UTF-8 BOM
                 f.write(dump_report.encode("UTF-8"))
@@ -933,31 +933,31 @@ class FlashGBX_CLI:
         )
 
     def _FinishBackupROM(self, time_elapsed: float | None, speed: str | None) -> None:
-        self.CONN.INFO["last_action"] = 0
+        self.conn.info["last_action"] = 0
         self._WriteDumpReport(time_elapsed, speed)
 
-        if self.CONN.GetMode() == "DMG":
-            print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
-            print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
-            if self.CONN.INFO["rom_checksum"] == self.CONN.INFO["rom_checksum_calc"]:
+        if self.conn.GetMode() == "DMG":
+            print("CRC32: {:08x}".format(self.conn.info["file_crc32"]))
+            print("SHA-1: {:s}\n".format(self.conn.info["file_sha1"]))
+            if self.conn.info["rom_checksum"] == self.conn.info["rom_checksum_calc"]:
                 print(
                     ANSI.GREEN
                     + __("The ROM backup is complete and the checksum was verified successfully!")
                     + ANSI.RESET,
                 )
             elif ("DMG-MMSA-JPN" in self.ARGS["argparsed"].flashcart_type) or (
-                "mapper_raw" in self.CONN.INFO and self.CONN.INFO["mapper_raw"] in (0x105, 0x202)
+                "mapper_raw" in self.conn.info and self.conn.info["mapper_raw"] in (0x105, 0x202)
             ):
                 print(__("The ROM backup is complete!"))
             else:
                 msg = __("The ROM was dumped, but the checksum is not correct.")
-                msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
+                msg += self._GetBackupLoopWarningSuffix(self.conn.info["loop_detected"])
                 print(f"{ANSI.YELLOW:s}{msg:s}{ANSI.RESET:s}")
-        elif self.CONN.GetMode() == "AGB":
-            print("CRC32: {:08x}".format(self.CONN.INFO["file_crc32"]))
-            print("SHA-1: {:s}\n".format(self.CONN.INFO["file_sha1"]))
-            if "db" in self.CONN.INFO and self.CONN.INFO["db"] is not None:
-                if self.CONN.INFO["db"]["rc"] == self.CONN.INFO["file_crc32"]:
+        elif self.conn.GetMode() == "AGB":
+            print("CRC32: {:08x}".format(self.conn.info["file_crc32"]))
+            print("SHA-1: {:s}\n".format(self.conn.info["file_sha1"]))
+            if "db" in self.conn.info and self.conn.info["db"] is not None:
+                if self.conn.info["db"]["rc"] == self.conn.info["file_crc32"]:
                     print(
                         ANSI.GREEN
                         + __("The ROM backup is complete and the checksum was verified successfully!")
@@ -965,55 +965,55 @@ class FlashGBX_CLI:
                     )
                 else:
                     msg = __("The ROM backup is complete, but the checksum doesn't match the known database entry.")
-                    msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
+                    msg += self._GetBackupLoopWarningSuffix(self.conn.info["loop_detected"])
                     print(ANSI.YELLOW + msg + ANSI.RESET)
             else:
                 msg = __(
                     "The ROM backup is complete! As there is no known checksum for this ROM in the database, verification was skipped.",
                 )
-                if self.CONN.INFO["loop_detected"] is not False:
-                    msg += self._GetBackupLoopWarningSuffix(self.CONN.INFO["loop_detected"])
+                if self.conn.info["loop_detected"] is not False:
+                    msg += self._GetBackupLoopWarningSuffix(self.conn.info["loop_detected"])
                 print(ANSI.YELLOW + msg + ANSI.RESET)
 
     def FinishOperation(self) -> None:
         time_elapsed = None
         speed = None
-        if "time_start" in self.PROGRESS.PROGRESS and self.PROGRESS.PROGRESS["time_start"] > 0:
-            time_elapsed = time.time() - self.PROGRESS.PROGRESS["time_start"]
-            speed = format_decimal((self.CONN.INFO["transferred"] / 1024.0) / time_elapsed, precision=2) + __(" KiB/s")
-            self.PROGRESS.PROGRESS["time_start"] = 0
+        if "time_start" in self.progress.progress and self.progress.progress["time_start"] > 0:
+            time_elapsed = time.time() - self.progress.progress["time_start"]
+            speed = format_decimal((self.conn.info["transferred"] / 1024.0) / time_elapsed, precision=2) + __(" KiB/s")
+            self.progress.progress["time_start"] = 0
 
-        if self.CONN.INFO["last_action"] == 4:  # Flash ROM
+        if self.conn.info["last_action"] == 4:  # Flash ROM
             self._FinishFlashROM()
 
-        elif self.CONN.INFO["last_action"] == 1:  # Backup ROM
+        elif self.conn.info["last_action"] == 1:  # Backup ROM
             self._FinishBackupROM(time_elapsed, speed)
 
-        elif self.CONN.INFO["last_action"] == 2:  # Backup RAM
+        elif self.conn.info["last_action"] == 2:  # Backup RAM
             self._FinishBackupRAM()
 
-        elif self.CONN.INFO["last_action"] == 3:  # Restore RAM
-            self.CONN.INFO["last_action"] = 0
-            if self.CONN.INFO.get("save_erase"):
+        elif self.conn.info["last_action"] == 3:  # Restore RAM
+            self.conn.info["last_action"] = 0
+            if self.conn.info.get("save_erase"):
                 print(__("The save data was erased."))
-                del self.CONN.INFO["save_erase"]
+                del self.conn.info["save_erase"]
             else:
                 print(__("The save data was restored!"))
 
         else:
-            self.CONN.INFO["last_action"] = 0
+            self.conn.info["last_action"] = 0
 
     def FindDevices(self, port: str | None = None) -> bool:
-        self.DEVICE = None
+        self.device = None
         for hw_device in HW_DEVICES:
             dev = hw_device.GbxDevice()
             ret = dev.Initialize(
-                self.FLASHCARTS,
+                self.flashcarts,
                 port=port,
                 max_baud=self._GetDeviceMaxBaudRate(dev),
             )
             if ret is False:
-                self.CONN = None
+                self.conn = None
             elif isinstance(ret, list):
                 if len(ret) > 0:
                     print()
@@ -1022,23 +1022,23 @@ class FlashGBX_CLI:
                     msg = re.sub("<[^<]+?>", "", ret[i][1])
                     if status == 3:
                         print(ANSI.RED + msg.replace("\n\n", "\n") + ANSI.RESET)
-                        self.CONN = None
+                        self.conn = None
 
             if dev.IsConnected():
-                self.DEVICE = (dev.GetFullNameExtended(), dev)
+                self.device = (dev.GetFullNameExtended(), dev)
                 dev.Close()
                 break
 
-        return self.DEVICE is not None
+        return self.device is not None
 
     def ConnectDevice(self) -> bool:
-        if self.DEVICE is None:
-            self.CONN = None
+        if self.device is None:
+            self.conn = None
             return False
-        dev = self.DEVICE[1]
+        dev = self.device[1]
         port = dev.GetPort()
         ret = dev.Initialize(
-            self.FLASHCARTS,
+            self.flashcarts,
             port=port,
             max_baud=self._GetDeviceMaxBaudRate(dev),
         )
@@ -1046,7 +1046,7 @@ class FlashGBX_CLI:
         if ret is False:
             print("\n" + ANSI.RED + __("An error occured while trying to connect to the device.") + ANSI.RESET)
             traceback.print_stack()
-            self.CONN = None
+            self.conn = None
             return False
 
         if isinstance(ret, list):
@@ -1061,10 +1061,10 @@ class FlashGBX_CLI:
                     print(ANSI.YELLOW + msg + ANSI.RESET)
                 elif status == 3:
                     print(ANSI.RED + msg + ANSI.RESET)
-                    self.CONN = None
+                    self.conn = None
                     return False
 
-        if dev.FW_UPDATE_REQ:
+        if dev.fw_update_req:
             print(
                 ANSI.RED
                 + __(
@@ -1081,15 +1081,15 @@ class FlashGBX_CLI:
             )
             time.sleep(5)
 
-        self.CONN = dev
+        self.conn = dev
         return True
 
     def InteractiveConsole(self) -> None:
-        self.CONN.SetAutoPowerOff(value=0)
-        self.CONN.CartPowerOn()
+        self.conn.SetAutoPowerOff(value=0)
+        self.conn.CartPowerOn()
 
         im = InteractiveConsole(
-            self.CONN,
+            self.conn,
             on_output=print,
             on_error=lambda text: print(ANSI.RED + text + ANSI.RESET),
         )
@@ -1111,13 +1111,13 @@ class FlashGBX_CLI:
 
     def DisconnectDevice(self) -> None:
         try:
-            devname = self.CONN.GetFullNameExtended()
-            self.CONN.SetAutoPowerOff(value=0)
-            self.CONN.Close(cartPowerOff=True)
+            devname = self.conn.GetFullNameExtended()
+            self.conn.SetAutoPowerOff(value=0)
+            self.conn.Close(cartPowerOff=True)
             print(__("Disconnected from {device_name}", device_name=devname))
         except Exception:
             logger.exception("Failed to disconnect the CLI device")
-        self.CONN = None
+        self.conn = None
 
     @staticmethod
     def _DmgPlatformString(data: HeaderData) -> str:
@@ -1233,13 +1233,13 @@ class FlashGBX_CLI:
         return "\n".join(lines)
 
     def _WarnUnsupportedDmgMapper(self, data: HeaderData) -> None:
-        if data["logo_correct"] and not self.CONN.IsSupportedMbc(data["mapper_raw"]):
+        if data["logo_correct"] and not self.conn.IsSupportedMbc(data["mapper_raw"]):
             print(
                 ANSI.YELLOW
                 + "\n"
                 + __(
                     "Warning: This cartridge uses a mapper that may not be completely supported by FlashGBX using the current firmware version of the {device_name}. Please check for firmware updates.",
-                    device_name=self.CONN.GetFullName(),
+                    device_name=self.conn.GetFullName(),
                 )
                 + ANSI.RESET,
             )
@@ -1273,13 +1273,13 @@ class FlashGBX_CLI:
     ) -> tuple[bool, str, HeaderData]:
         bad_read = False
         rows: list[tuple[str, str | None]] = []
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             # Use (label_with_colon, value) pairs to match existing GUI translation keys
             if data["db"]:
                 rows.append(
                     (
                         __("Game Name:"),
-                        Path(generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)).stem,
+                        Path(generate_filename(mode=self.conn.GetMode(), header=self.conn.info, settings=None)).stem,
                     ),
                 )
 
@@ -1332,12 +1332,12 @@ class FlashGBX_CLI:
 
             self._WarnUnsupportedDmgMapper(data)
 
-        elif self.CONN.GetMode() == "AGB":
+        elif self.conn.GetMode() == "AGB":
             if data["db"]:
                 self._AppendOptionalRow(
                     rows,
                     __("Game Name:"),
-                    Path(generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)).stem,
+                    Path(generate_filename(mode=self.conn.GetMode(), header=self.conn.info, settings=None)).stem,
                 )
 
             rows.append((__("ROM Title:"), Formatter.title(data["game_title"])))
@@ -1380,14 +1380,14 @@ class FlashGBX_CLI:
                 and isinstance(db_agb_entry, dict)
                 and "rs" in db_agb_entry
                 and db_agb_entry["rs"] == 0x4000000
-                and not self.CONN.IsSupported3dMemory()
+                and not self.conn.IsSupported3dMemory()
             ):
                 print(
                     ANSI.YELLOW
                     + "\n"
                     + __(
                         "Warning: This cartridge uses a mapper that may not be completely supported yet. A future version of the {device_name} firmware may add support for it.",
-                        device_name=self.CONN.GetFullName(),
+                        device_name=self.conn.GetFullName(),
                     )
                     + ANSI.RESET,
                 )
@@ -1453,7 +1453,7 @@ class FlashGBX_CLI:
 
     def DetectCartridge(self, limitVoltage: bool = False) -> int | None:
         print(__("Now attempting to auto-detect the flashcart profile..."))
-        if self.CONN.CheckROMStable() is False:
+        if self.conn.CheckROMStable() is False:
             print(
                 ANSI.RED
                 + __(
@@ -1462,8 +1462,8 @@ class FlashGBX_CLI:
                 + ANSI.RESET,
             )
             return -1
-        mode: Literal["DMG", "AGB"] | None = self.CONN.GetMode()
-        if mode is not None and mode in self.FLASHCARTS and len(self.FLASHCARTS[mode]) == 0:
+        mode: Literal["DMG", "AGB"] | None = self.conn.GetMode()
+        if mode is not None and mode in self.flashcarts and len(self.flashcarts[mode]) == 0:
             print(
                 ANSI.RED
                 + __(
@@ -1474,10 +1474,10 @@ class FlashGBX_CLI:
             )
             return -2
 
-        header = self.CONN.ReadHeader()
+        header = self.conn.ReadHeader()
         self.ReadCartridge(header)
-        self.CONN._DetectCartridge(args={"limitVoltage": limitVoltage, "checkSaveType": True})  # noqa: SLF001
-        ret = self.CONN.INFO.get("detect_cart")
+        self.conn._DetectCartridge(args={"limitVoltage": limitVoltage, "checkSaveType": True})  # noqa: SLF001
+        ret = self.conn.info.get("detect_cart")
         if not ret or len(ret) < 11:
             print(ANSI.RED + __("Cartridge detection failed.") + ANSI.RESET)
             return -1
@@ -1498,11 +1498,11 @@ class FlashGBX_CLI:
         # Cart Type
         cart_type = cart_type_id if cart_types else None
         msg_cart_type = ""
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         if mode not in ("DMG", "AGB"):
             raise NotImplementedError
         supp_cart_types = (
-            self.CONN.GetSupportedCartridgesDMG() if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()
+            self.conn.GetSupportedCartridgesDMG() if mode == "DMG" else self.conn.GetSupportedCartridgesAGB()
         )
 
         msg_cart_type = self._FormatCompatibleCartridges(cart_types, cart_type_id, supp_cart_types[0])
@@ -1535,11 +1535,11 @@ class FlashGBX_CLI:
                 size = supp_cart_types[1][cart_type_id]["flash_size"]
                 msg_flash_size_s = __("ROM Size:") + " " + Formatter.file_size(size, as_int=True) + "\n"
 
-            if self.CONN.GetMode() == "DMG":
+            if self.conn.GetMode() == "DMG":
                 msg_flash_mapper_s = self._FormatDetectedDmgFlashMapper(supp_cart_types[1][cart_type_id])
 
         elif (len(flash_id.split("\n")) > 2) and (
-            (self.CONN.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
+            (self.conn.GetMode() == "DMG") or ("dacs_8m" in header and header["dacs_8m"] is not True)
         ):
             msg_cart_type_s = self._UnknownFlashcartMessage(flash_id)
         else:
@@ -1609,8 +1609,8 @@ class FlashGBX_CLI:
         cart_type = 0
         if args.flashcart_type != "autodetect":
             return self._ResolveNamedBackupCartType(args.flashcart_type, rom_size)
-        if self.CONN.GetMode() == "AGB":
-            cart_types = self.CONN.GetSupportedCartridgesAGB()
+        if self.conn.GetMode() == "AGB":
+            cart_types = self.conn.GetSupportedCartridgesAGB()
             if "flash_type" in header:
                 print(
                     __(
@@ -1637,11 +1637,11 @@ class FlashGBX_CLI:
         return cart_type, rom_size
 
     def _ResolveNamedBackupCartType(self, profile_name: str, rom_size: int | None) -> tuple[int, int | None]:
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         if mode == "DMG":
-            carts = self.CONN.GetSupportedCartridgesDMG()[1]
+            carts = self.conn.GetSupportedCartridgesDMG()[1]
         elif mode == "AGB":
-            carts = self.CONN.GetSupportedCartridgesAGB()[1]
+            carts = self.conn.GetSupportedCartridgesAGB()[1]
         else:
             raise NotImplementedError
 
@@ -1720,13 +1720,13 @@ class FlashGBX_CLI:
         mbc = 1
         rom_size = 0
 
-        path: str = generate_filename(mode=self.CONN.GetMode(), header=self.CONN.INFO, settings=None)
-        if self.CONN.GetMode() == "DMG":
+        path: str = generate_filename(mode=self.conn.GetMode(), header=self.conn.info, settings=None)
+        if self.conn.GetMode() == "DMG":
             mbc = self._ResolveDmgBackupMapper(args, header)
 
             rom_size = self._ResolveDmgBackupRomSize(args, header)
 
-        elif self.CONN.GetMode() == "AGB":
+        elif self.conn.GetMode() == "AGB":
             if args.agb_romsize == "auto":
                 rom_size = header["rom_size"]
             else:
@@ -1764,13 +1764,13 @@ class FlashGBX_CLI:
                 path=str(output_path),
             ),
         )
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             self._PrintBackupMapper(mbc)
 
         print()
 
         cart_type, rom_size = self._ResolveBackupCartType(args, header, rom_size)
-        self.CONN.TransferData(
+        self.conn.TransferData(
             args={
                 "mode": 1,
                 "path": path,
@@ -1781,7 +1781,7 @@ class FlashGBX_CLI:
                 "fast_read_mode": True,
                 "cart_type": cart_type,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
 
     def _LoadFlashROMFile(
@@ -1851,7 +1851,7 @@ class FlashGBX_CLI:
     ) -> tuple[float | Literal[False], float | Literal[False], bool]:
         override_voltage: float | Literal[False] = False
         voltage_fallback: float | Literal[False] = False
-        device_voltage_locked: bool = self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode()
+        device_voltage_locked: bool = self.conn.CanSetVoltageByAutoswitch() and not self.conn.CanSetVoltageByCode()
         if device_voltage_locked:
             return override_voltage, voltage_fallback, device_voltage_locked
         if args.force_5v is True:
@@ -1871,7 +1871,7 @@ class FlashGBX_CLI:
         return override_voltage, voltage_fallback, device_voltage_locked
 
     def _PromptBootLogoFix(self, header: Mapping[str, Any], mbc: int) -> bool | bytearray:
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         if header["logo_correct"] or (mode == "DMG" and mbc in (0x203, 0x205)):
             return False
 
@@ -1902,7 +1902,7 @@ class FlashGBX_CLI:
         return bootlogo if answer != "n" else False
 
     def _PromptHeaderChecksumFix(self, header: Mapping[str, Any], mbc: int) -> bool:
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         should_prompt = not header["header_checksum_correct"] and (
             mode == "AGB" or (mode == "DMG" and mbc not in (0x203, 0x205))
         )
@@ -1941,7 +1941,7 @@ class FlashGBX_CLI:
         device_voltage_locked: bool,
     ) -> bool:
         unsafe_voltage = (
-            (voltage == 3.3 or "voltage_variants" in cart) and device_voltage_locked and self.CONN.GetMode() == "DMG"
+            (voltage == 3.3 or "voltage_variants" in cart) and device_voltage_locked and self.conn.GetMode() == "DMG"
         )
         if not unsafe_voltage:
             return True
@@ -2022,10 +2022,10 @@ class FlashGBX_CLI:
         del header
         mbc = 0
 
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         if mode not in ("DMG", "AGB"):
             return
-        carts = self.CONN.GetSupportedCartridgesDMG()[1] if mode == "DMG" else self.CONN.GetSupportedCartridgesAGB()[1]
+        carts = self.conn.GetSupportedCartridgesDMG()[1] if mode == "DMG" else self.conn.GetSupportedCartridgesAGB()[1]
 
         cart_type = self._SelectFlashCartType(args, carts, mode)
         if cart_type is None:
@@ -2053,11 +2053,11 @@ class FlashGBX_CLI:
         compare_sectors = args.compare_sectors is True
 
         fix_bootlogo: bool | bytearray = False
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             hdr = RomFileDMG(buffer).GetHeader()
             mbc = self._ResolveFlashDmgMapper(args, carts[cart_type])
 
-        elif self.CONN.GetMode() == "AGB":
+        elif self.conn.GetMode() == "AGB":
             hdr = RomFileAGB(buffer).GetHeader()
         else:
             raise NotImplementedError
@@ -2075,7 +2075,7 @@ class FlashGBX_CLI:
             + "\n"
             + str(rom_path.resolve()),
         )
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             self._PrintFlashMapper(mbc)
 
         if not self._ConfirmSafeFlashVoltage(v, carts[cart_type], device_voltage_locked=device_voltage_locked):
@@ -2113,7 +2113,7 @@ class FlashGBX_CLI:
                 "compare_sectors": compare_sectors,
                 "voltage_fallback": voltage_fallback,
             }
-        self.CONN.TransferData(signal=self.PROGRESS.SetProgress, args=transfer_args)
+        self.conn.TransferData(signal=self.progress.SetProgress, args=transfer_args)
 
         buffer = None
 
@@ -2235,7 +2235,7 @@ class FlashGBX_CLI:
         header: HeaderData,
     ) -> tuple[int, int, int | None] | None:
         cart_type = 0
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             mbc = self._ResolveDmgSaveMapper(args, header)
 
             save_type = self._ResolveDmgSaveType(args.dmg_savetype, header)
@@ -2254,7 +2254,7 @@ class FlashGBX_CLI:
             if save_type == 0x204:
                 cart_type: int | None = self.DetectCartridge()
 
-        elif self.CONN.GetMode() == "AGB":
+        elif self.conn.GetMode() == "AGB":
             if args.agb_savetype == "auto":
                 save_type = header["save_type"]
             elif args.agb_savetype == "batteryless":
@@ -2307,11 +2307,11 @@ class FlashGBX_CLI:
         args: argparse.Namespace,
         path: str,
     ) -> tuple[bool, bytearray | None]:
-        if self.CONN.GetFWBuildDate() == "":  # Legacy Mode
+        if self.conn.GetFWBuildDate() == "":  # Legacy Mode
             print(__("This cartridge is not supported in Legacy Mode."))
             return False, None
-        self.CONN.ReadHeader()
-        if "ereader_calibration" not in self.CONN.INFO:
+        self.conn.ReadHeader()
+        if "ereader_calibration" not in self.conn.info:
             print(__("Note: No existing e-Reader calibration data found."))
             return True, None
 
@@ -2320,13 +2320,13 @@ class FlashGBX_CLI:
         else:
             with Path(path).open("rb") as file:
                 buffer = bytearray(file.read())
-        if buffer[0xD000:0xF000] == self.CONN.INFO["ereader_calibration"]:
+        if buffer[0xD000:0xF000] == self.conn.info["ereader_calibration"]:
             return True, buffer
         if args.keep_calibration:
             if args.action == "erase-save":
                 args.action = "restore-save"
             print(__("Note: Keeping existing e-Reader calibration data."))
-            buffer[0xD000:0xF000] = self.CONN.INFO["ereader_calibration"]
+            buffer[0xD000:0xF000] = self.conn.info["ereader_calibration"]
         else:
             print(__("Note: Overwriting existing e-Reader calibration data."))
         return True, buffer
@@ -2338,17 +2338,17 @@ class FlashGBX_CLI:
         path: str,
     ) -> tuple[bool, bytearray | None]:
         """Prepare e-Reader calibration data when this save action needs it."""
-        if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.CONN.INFO.get("ereader") is True:
+        if mode == "AGB" and args.action in ("restore-save", "erase-save") and self.conn.info.get("ereader") is True:
             return self._PrepareEReaderCalibration(args, path)
         return True, None
 
     def _PowerCycleForSaveTest(self) -> None:
-        if self.CONN.CanPowerCycleCart():
+        if self.conn.CanPowerCycleCart():
             print("\n" + __("Power cycling."))
             for _ in range(5):
-                self.CONN.CartPowerCycle()
+                self.conn.CartPowerCycle()
                 time.sleep(0.1)
-            self.CONN.ReadHeader(checkRtc=False)
+            self.conn.ReadHeader(checkRtc=False)
 
     def _ReportDebugSaveDifferences(
         self,
@@ -2379,14 +2379,14 @@ class FlashGBX_CLI:
         test4_path: Path = config_path / "test4.bin"
 
         print(__("Making a backup of the original save data."))
-        ret = self.CONN.TransferData(
+        ret = self.conn.TransferData(
             args={
                 "mode": 2,
                 "path": str(test1_path),
                 "mbc": mbc,
                 "save_type": save_type,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
         if ret is False:
             return
@@ -2395,7 +2395,7 @@ class FlashGBX_CLI:
         test2 = bytearray(os.urandom(test1_path.stat().st_size))
         with test2_path.open("wb") as f:
             f.write(test2)
-        self.CONN.TransferData(
+        self.conn.TransferData(
             args={
                 "mode": 3,
                 "path": str(test2_path),
@@ -2403,18 +2403,18 @@ class FlashGBX_CLI:
                 "save_type": save_type,
                 "erase": False,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
         time.sleep(0.1)
         print(__("Reading back and comparing data."))
-        self.CONN.TransferData(
+        self.conn.TransferData(
             args={
                 "mode": 2,
                 "path": str(test3_path),
                 "mbc": mbc,
                 "save_type": save_type,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
         time.sleep(0.1)
         with test3_path.open("rb") as f:
@@ -2422,20 +2422,20 @@ class FlashGBX_CLI:
         self._PowerCycleForSaveTest()
         time.sleep(0.2)
         print("\n" + __("Reading back and comparing data again."))
-        self.CONN.TransferData(
+        self.conn.TransferData(
             args={
                 "mode": 2,
                 "path": str(test4_path),
                 "mbc": mbc,
                 "save_type": save_type,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
         time.sleep(0.1)
         with test4_path.open("rb") as f:
             test4 = bytearray(f.read())
         print(__("Restoring original save data."))
-        self.CONN.TransferData(
+        self.conn.TransferData(
             args={
                 "mode": 3,
                 "path": str(test1_path),
@@ -2443,7 +2443,7 @@ class FlashGBX_CLI:
                 "save_type": save_type,
                 "erase": False,
             },
-            signal=self.PROGRESS.SetProgress,
+            signal=self.progress.SetProgress,
         )
         time.sleep(0.1)
 
@@ -2457,7 +2457,7 @@ class FlashGBX_CLI:
 
         found_offset: int = test2.find(test3[0:512])
         if found_offset < 0:
-            if self.CONN.GetMode() == "AGB":
+            if self.conn.GetMode() == "AGB":
                 print(
                     "\n"
                     + ANSI.RED
@@ -2482,7 +2482,7 @@ class FlashGBX_CLI:
         self._PrintDebugSaveResult(found_length, save_type)
 
     def _PrintDebugSaveResult(self, found_length: int, save_type: int) -> None:
-        if self.CONN.GetMode() == "DMG":
+        if self.conn.GetMode() == "DMG":
             print(
                 "\n"
                 + ANSI.GREEN
@@ -2493,7 +2493,7 @@ class FlashGBX_CLI:
                 )
                 + ANSI.RESET,
             )
-        elif self.CONN.GetMode() == "AGB":
+        elif self.conn.GetMode() == "AGB":
             print(
                 "\n"
                 + ANSI.GREEN
@@ -2549,7 +2549,7 @@ class FlashGBX_CLI:
         if buffer is not None:
             args["buffer"] = buffer
             args["path"] = None
-        self.CONN.TransferData(args=args, signal=self.PROGRESS.SetProgress)
+        self.conn.TransferData(args=args, signal=self.progress.SetProgress)
 
     def BackupRestoreRAM(
         self,
@@ -2574,7 +2574,7 @@ class FlashGBX_CLI:
         # Batteryless SRAM saves are stored inside the ROM flash, so they take a
         # separate code path (BackupROM/FlashROM with bl_offset) instead of the
         # normal SRAM/EEPROM save transfer.
-        if (self.CONN.GetMode() == "DMG" and save_type == 0x205) or (self.CONN.GetMode() == "AGB" and save_type == 9):
+        if (self.conn.GetMode() == "DMG" and save_type == 0x205) or (self.conn.GetMode() == "AGB" and save_type == 9):
             self._BatterylessSRAM(args=args, header=header, mbc=mbc, save_type=save_type, path=path)
             return
 
@@ -2583,9 +2583,9 @@ class FlashGBX_CLI:
         if not self._ConfirmSaveAction(args, target_path):
             return
 
-        self._PrintSaveMapperType(self.CONN.GetMode(), mbc)
+        self._PrintSaveMapperType(self.conn.GetMode(), mbc)
 
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         continue_write, buffer = self._PrepareSaveCalibration(mode, args, path)
         if not continue_write:
             return
@@ -2603,7 +2603,7 @@ class FlashGBX_CLI:
         args, path, mbc, save_type, cart_type, rtc, buffer = request
         print()
         if args.action == "backup-save":
-            self.CONN.TransferData(
+            self.conn.TransferData(
                 args={
                     "mode": 2,
                     "path": path,
@@ -2611,7 +2611,7 @@ class FlashGBX_CLI:
                     "save_type": save_type,
                     "rtc": rtc,
                 },
-                signal=self.PROGRESS.SetProgress,
+                signal=self.progress.SetProgress,
             )
         elif args.action == "restore-save":
             verify_write: bool = args.no_verify_write is False
@@ -2627,7 +2627,7 @@ class FlashGBX_CLI:
             }
             self._StartSaveRestoreTransfer(targs, buffer)
         elif args.action == "erase-save":
-            self.CONN.TransferData(
+            self.conn.TransferData(
                 args={
                     "mode": 3,
                     "path": path,
@@ -2637,7 +2637,7 @@ class FlashGBX_CLI:
                     "rtc": rtc,
                     "cart_type": cart_type,
                 },
-                signal=self.PROGRESS.SetProgress,
+                signal=self.progress.SetProgress,
             )
         elif args.action == "debug-test-save":  # debug
             self._DebugTestSave(mbc, save_type)
@@ -2647,7 +2647,7 @@ class FlashGBX_CLI:
         args: argparse.Namespace,
         header: HeaderData,
     ) -> BatterylessArgs | None:
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         bl_offset = None
         bl_size = None
         bl_layout = None
@@ -2689,8 +2689,8 @@ class FlashGBX_CLI:
         # 2) Previously auto-detected on this connection
         if (
             (bl_offset is None or bl_size is None)
-            and "dump_info" in self.CONN.INFO
-            and "batteryless_sram" in self.CONN.INFO["dump_info"]
+            and "dump_info" in self.conn.info
+            and "batteryless_sram" in self.conn.info["dump_info"]
         ):
             bl_offset, bl_size, bl_layout = self._ApplyDetectedBatterylessConfig(
                 mode,
@@ -2735,7 +2735,7 @@ class FlashGBX_CLI:
         bl_layout: int | None,
     ) -> tuple[int | None, int | None, int | None]:
         """Fill missing batteryless settings with detection from this connection."""
-        detected = self.CONN.INFO["dump_info"]["batteryless_sram"]
+        detected = self.conn.info["dump_info"]["batteryless_sram"]
         if bl_offset is None and "bl_offset" in detected:
             bl_offset = detected["bl_offset"]
         if bl_size is None and "bl_size" in detected:
@@ -2797,8 +2797,8 @@ class FlashGBX_CLI:
 
     def _ConfirmBatterylessWriteVoltage(self, mode: str, cart_type: int) -> bool:
         """Warn before writing a 3.3V profile through a fixed 5V supply."""
-        if mode == "DMG" and self.CONN.CanSetVoltageByAutoswitch() and not self.CONN.CanSetVoltageByCode():
-            bl_carts = self.CONN.GetSupportedCartridgesDMG()[1]
+        if mode == "DMG" and self.conn.CanSetVoltageByAutoswitch() and not self.conn.CanSetVoltageByCode():
+            bl_carts = self.conn.GetSupportedCartridgesDMG()[1]
             if isinstance(bl_carts[cart_type], dict) and (
                 bl_carts[cart_type].get("voltage") == 3.3 or "voltage_variants" in bl_carts[cart_type]
             ):
@@ -2825,7 +2825,7 @@ class FlashGBX_CLI:
         path: str,
     ) -> None:
         del save_type
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
 
         if args.action == "debug-test-save":
             print(ANSI.RED + __("Stress test is not supported for this save type.") + ANSI.RESET)
@@ -2887,7 +2887,7 @@ class FlashGBX_CLI:
         if erase:
             targs["path"] = ""
             targs["buffer"] = bytearray([0xFF] * bl_size)
-        self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
+        self.conn.TransferData(args=targs, signal=self.progress.SetProgress)
 
     def _BackupBatterylessSRAM(
         self,
@@ -2936,14 +2936,14 @@ class FlashGBX_CLI:
             "cart_type": 0,
         }
         targs.update(bl_args)
-        self.CONN.TransferData(args=targs, signal=self.PROGRESS.SetProgress)
+        self.conn.TransferData(args=targs, signal=self.progress.SetProgress)
 
     def _ResolveFlashcartType(self, args: argparse.Namespace) -> int | None:
-        mode = self.CONN.GetMode()
+        mode = self.conn.GetMode()
         if mode == "DMG":
-            carts = self.CONN.GetSupportedCartridgesDMG()[1]
+            carts = self.conn.GetSupportedCartridgesDMG()[1]
         elif mode == "AGB":
-            carts = self.CONN.GetSupportedCartridgesAGB()[1]
+            carts = self.conn.GetSupportedCartridgesAGB()[1]
         else:
             return None
 
@@ -2994,7 +2994,7 @@ class FlashGBX_CLI:
             ini_data = firmware_file.read().decode(encoding="utf-8")
 
         settings = IniSettings(ini=ini_data, main_section="Firmware")
-        self.INI = settings
+        self.ini = settings
         version = settings.GetValue("fw_ver")
         build_timestamp = settings.GetValue("fw_buildts")
         if not isinstance(version, str) or not isinstance(build_timestamp, str):
@@ -3010,10 +3010,10 @@ class FlashGBX_CLI:
     ) -> None:
         del enableUI
         if setProgress is not None:
-            self.FWUPD_R = True
+            self.fwupd_r = True
             print(f"\33[2K\r{text:s} ({int(setProgress):d}%)", flush=True, end="")
         else:
-            if self.FWUPD_R is True:
+            if self.fwupd_r is True:
                 print()
             print(text, flush=True)
 
@@ -3180,8 +3180,8 @@ class FlashGBX_CLI:
                 try:
                     print(__("Using port {port}", port=port) + "\n")
                     FirmwareUpdater = hw_GBFlash.FirmwareUpdater
-                    FWUPD = FirmwareUpdater(port=port)
-                    ret = FWUPD.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
+                    fwupd = FirmwareUpdater(port=port)
+                    ret = fwupd.WriteFirmware(file_name, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
                     port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()
@@ -3219,7 +3219,7 @@ class FlashGBX_CLI:
             with zf.open("fw.ini") as f:
                 ini_file = f.read()
             ini_file = ini_file.decode(encoding="utf-8")
-            self.INI = IniSettings(ini=ini_file, main_section="Firmware")
+            self.ini = IniSettings(ini=ini_file, main_section="Firmware")
 
         print()
         print(
@@ -3258,12 +3258,12 @@ class FlashGBX_CLI:
                 try:
                     print(__("Using port {port}", port=port) + "\n")
                     FirmwareUpdater = hw_JoeyJr.FirmwareUpdater
-                    FWUPD: FirmwareUpdater = FirmwareUpdater(port=port)
+                    fwupd: FirmwareUpdater = FirmwareUpdater(port=port)
                     file_name: Path = Path(AppContext.APP_PATH) / "res" / "fw_JoeyJr.zip"
                     with zipfile.ZipFile(file_name) as archive, archive.open(firmware_member) as firmware_file:
                         fw_data = bytearray(firmware_file.read())
 
-                    ret = FWUPD.WriteFirmware(fw_data, self.UpdateFirmware_PrintText)
+                    ret = fwupd.WriteFirmware(fw_data, self.UpdateFirmware_PrintText)
                     break
                 except SerialException:
                     port = input(__("Couldn't access port {port}.\nEnter new port:", port=port) + " ").strip()

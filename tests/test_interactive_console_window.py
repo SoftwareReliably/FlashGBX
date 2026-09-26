@@ -280,7 +280,7 @@ class ConsoleDevice:
 
 class HostWindow:
     def __init__(self, connection: ConsoleDevice | None) -> None:
-        self.CONN = connection
+        self.conn = connection
         self.restore_count = 0
         self.activate_count = 0
         self.restore_error: Exception | None = None

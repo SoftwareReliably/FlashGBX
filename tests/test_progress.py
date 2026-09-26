@@ -55,8 +55,8 @@ def test_progress_lifecycle_emits_initial_updates_and_completion(
     assert updates[-2]["pos"] == 1000
     assert updates[-1]["action"] == "FINISHED"
     assert updates[-1]["verified"] is True
-    assert progress.PROGRESS["action"] == "FINISHED"
-    assert "method" not in progress.PROGRESS
+    assert progress.progress["action"] == "FINISHED"
+    assert "method" not in progress.progress
     assert waits == []
 
 
@@ -78,7 +78,7 @@ def test_progress_handles_auxiliary_user_and_abort_events(
     assert updates[0]["time_elapsed"] == 1.0
     assert updates[0]["pos"] == 1
     assert updates[1] == {"action": "ABORT", "from_user": True}
-    assert progress.PROGRESS == {}
+    assert progress.progress == {}
 
 
 def test_progress_filters_directional_events_and_throttles_position_updates(

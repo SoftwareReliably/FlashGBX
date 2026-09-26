@@ -88,7 +88,7 @@ def configure_dmg_boundaries(
 ) -> DmgConfigRecords:
     """Inject a mapper and recording device boundaries around real configuration."""
     records = DmgConfigRecords()
-    device.FW = {"fw_ver": firmware, "pcb_name": "Test device"}
+    device.fw = {"fw_ver": firmware, "pcb_name": "Test device"}
 
     def get_instance(_factory: object, **kwargs: object) -> SaveConfigMapper:
         records.factory_kwargs.append(kwargs)
@@ -150,7 +150,7 @@ def configure_agb_boundaries(
     """Record AGB configuration commands with finite fake responses."""
     records = AgbConfigRecords()
     responses = [] if read_responses is None else list(read_responses)
-    device.FW = {"fw_ver": firmware, "pcb_name": "Test device"}
+    device.fw = {"fw_ver": firmware, "pcb_name": "Test device"}
 
     def cart_write(address: int, value: int, **kwargs: object) -> None:
         records.cart_writes.append((address, value, kwargs))
@@ -216,7 +216,7 @@ def prepare_action(
 
 def test_backup_initializes_empty_buffer_and_total_size(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args = {"mode": 2, "save_type": 1}
 
     result, progress = prepare_action(
@@ -229,20 +229,20 @@ def test_backup_initializes_empty_buffer_and_total_size(monkeypatch: pytest.Monk
     )
 
     assert result == (bytearray(), 3, 8)
-    assert device.INFO["action"] == device.ACTIONS["SAVE_READ"]
+    assert device.info["action"] == device.ACTIONS["SAVE_READ"]
     assert progress == [{"action": "INITIALIZE", "method": "SAVE_READ", "size": 24}]
 
 
 def test_verification_only_backup_suppresses_initialization(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
-    device.INFO["action"] = "existing action"
+    device.mode = "AGB"
+    device.info["action"] = "existing action"
     args = {"mode": 2, "save_type": 3, "verify_write": bytearray(b"expected")}
 
     result, progress = prepare_action(device, monkeypatch, args, save_size=8, ram_banks=1, extra_size=4)
 
     assert result == (bytearray(), 1, 8)
-    assert device.INFO["action"] == "existing action"
+    assert device.info["action"] == "existing action"
     assert progress == []
 
 
@@ -261,7 +261,7 @@ def test_restore_accepts_each_bytes_like_source(
     same_object: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args = {"mode": 3, "save_type": 1, "erase": False, "path": None, "buffer": source}
 
     (buffer, ram_banks, save_size), progress = prepare_action(device, monkeypatch, args)
@@ -269,15 +269,15 @@ def test_restore_accepts_each_bytes_like_source(
     assert buffer == bytearray(b"DATA")
     assert (buffer is source) is same_object
     assert (ram_banks, save_size) == (2, 4)
-    assert device.INFO["save_erase"] is False
-    assert device.INFO["action"] == device.ACTIONS["SAVE_WRITE"]
+    assert device.info["save_erase"] is False
+    assert device.info["action"] == device.ACTIONS["SAVE_WRITE"]
     assert progress == [{"action": "INITIALIZE", "method": "SAVE_WRITE", "size": 4}]
 
 
 def test_restore_uses_info_data_when_buffer_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
-    device.INFO["data"] = b"INFO"
+    device.mode = "DMG"
+    device.info["data"] = b"INFO"
     args = {"mode": 3, "save_type": 1, "erase": False, "path": None}
 
     (buffer, _, save_size), _ = prepare_action(device, monkeypatch, args)
@@ -293,7 +293,7 @@ def test_restore_reads_the_selected_file(
     path = tmp_path / "selected.sav"
     path.write_bytes(b"FILE")
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args = {
         "mode": 3,
         "save_type": 1,
@@ -326,7 +326,7 @@ def test_restore_size_handling(
     expected: bytes,
 ) -> None:
     device = GbxDevice()
-    device.MODE = mode
+    device.mode = mode
     args = {"mode": 3, "save_type": save_type, "erase": False, "path": None, "buffer": source}
 
     (buffer, _, reported_size), progress = prepare_action(
@@ -357,7 +357,7 @@ def test_erase_generates_the_mapper_specific_pattern(
     expected: bytearray,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args = {"mode": 3, "save_type": 1, "erase": True, "path": None}
 
     (buffer, _, save_size), progress = prepare_action(
@@ -370,7 +370,7 @@ def test_erase_generates_the_mapper_specific_pattern(
 
     assert buffer == expected
     assert save_size == len(expected)
-    assert device.INFO["save_erase"] is True
+    assert device.info["save_erase"] is True
     assert progress == [{"action": "INITIALIZE", "method": "SAVE_WRITE", "size": 4}]
 
 
@@ -380,13 +380,13 @@ def test_restore_rejects_non_bytes_input(
     source: object,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args = {"mode": 3, "save_type": 1, "erase": False, "path": None, "buffer": source}
 
     with pytest.raises(TypeError, match="bytes-like object"):
         prepare_action(device, monkeypatch, args)
 
-    assert device.INFO["action"] is None
+    assert device.info["action"] is None
 
 
 @pytest.mark.parametrize("source_location", ["buffer", "info", "file"])
@@ -396,12 +396,12 @@ def test_restore_rejects_empty_input_without_looping(
     source_location: str,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     args: dict[str, Any] = {"mode": 3, "save_type": 1, "erase": False, "path": None}
     if source_location == "buffer":
         args["buffer"] = b""
     elif source_location == "info":
-        device.INFO["data"] = bytearray()
+        device.info["data"] = bytearray()
     else:
         path = tmp_path / "empty.sav"
         path.write_bytes(b"")
@@ -410,17 +410,17 @@ def test_restore_rejects_empty_input_without_looping(
     with pytest.raises(ValueError, match="Save data must not be empty"):
         prepare_action(device, monkeypatch, args)
 
-    assert device.INFO["action"] is None
+    assert device.info["action"] is None
 
 
 def test_unsupported_save_transfer_mode_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
 
     with pytest.raises(ValueError, match="Unsupported save transfer mode: 4"):
         prepare_action(device, monkeypatch, {"mode": 4})
 
-    assert device.INFO["action"] is None
+    assert device.info["action"] is None
 
 
 @pytest.mark.parametrize(
@@ -430,17 +430,17 @@ def test_unsupported_save_transfer_mode_is_rejected(monkeypatch: pytest.MonkeyPa
 )
 def test_save_cart_type_returns_none_without_a_selected_profile(args: dict[str, int]) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 12}
-    device.SUPPORTED_CARTS = {"DMG": {}, "AGB": {}}
+    device.fw = {"fw_ver": 12}
+    device.supported_carts = {"DMG": {}, "AGB": {}}
 
     assert device._prepare_save_cart_type(args, "DMG") is None
 
 
 def test_save_cart_type_returns_a_deep_copy(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": 11}
+    device.fw = {"fw_ver": 11}
     original = {"names": ["Selected"], "commands": {"write": [[1, 2]]}}
-    device.SUPPORTED_CARTS = {
+    device.supported_carts = {
         "DMG": {"Placeholder": {"names": ["None"]}, "Selected": original},
         "AGB": {},
     }
@@ -482,9 +482,9 @@ def test_save_cart_type_configures_wr_pullup_only_for_modern_dmg_firmware(
     expected: list[tuple[str, int]],
 ) -> None:
     device = GbxDevice()
-    device.FW = {"fw_ver": firmware}
+    device.fw = {"fw_ver": firmware}
     profile = {"names": ["Selected"], "enable_pullup_wr": profile_pullup}
-    device.SUPPORTED_CARTS = {
+    device.supported_carts = {
         "DMG": {"Placeholder": {"names": ["None"]}, "Selected": profile},
         "AGB": {"Placeholder": {"names": ["None"]}, "Selected": profile},
     }
@@ -606,7 +606,7 @@ def test_dmg_save_configuration_for_mapper_variants(
     expected_mapper_actions: list[tuple[object, ...]],
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveConfigMapper(mapper_name)
     records = configure_dmg_boundaries(device, monkeypatch, mapper)
     args = {
@@ -650,7 +650,7 @@ def test_dmg_save_configuration_for_mapper_variants(
 
 def test_dmg_save_configuration_derives_size_from_save_type(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveConfigMapper(ram_bank_size=0x2000, ram_banks=1)
     configure_dmg_boundaries(device, monkeypatch, mapper, firmware=11)
     args = {"mode": 2, "mbc": 0x13, "save_type": 0x02, "rtc": False}
@@ -666,7 +666,7 @@ def test_dmg_save_configuration_derives_size_from_save_type(monkeypatch: pytest.
 
 def test_dmg_save_configuration_rejects_unresolved_size(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveConfigMapper()
     records = configure_dmg_boundaries(device, monkeypatch, mapper)
     args = {"mode": 2, "mbc": 0x13, "save_type": 0x02, "save_size": None, "rtc": False}
@@ -684,7 +684,7 @@ def test_dmg_save_configuration_rejects_unsupported_mapper_before_enabling_ram(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveConfigMapper()
     records = configure_dmg_boundaries(device, monkeypatch, mapper)
     args = {"mode": 2, "mbc": 0x999, "save_type": 0x02, "rtc": False}
@@ -717,7 +717,7 @@ def test_development_flash_id_controls_audio_pin(
     expected_audio_low: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "DMG"
+    device.mode = "DMG"
     mapper = SaveConfigMapper()
     records = configure_dmg_boundaries(device, monkeypatch, mapper, flash_id=flash_id)
     args = {"mode": 2, "mbc": 0x13, "save_type": 0x02, "save_size": 0x100, "rtc": False}
@@ -783,7 +783,7 @@ def test_agb_save_types_select_exact_transfer_configuration(
     flash_chip: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     flash_id_result = (flash_chip, "Test flash") if flash_chip else None
     records = configure_agb_boundaries(device, monkeypatch, flash_id_result=flash_id_result)
     args = {"mode": transfer_mode, "save_type": save_type, "rtc": rtc}
@@ -830,7 +830,7 @@ def test_agb_flash_chip_controls_buffer_and_write_command(
     command_argument: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(
         device,
         monkeypatch,
@@ -856,7 +856,7 @@ def test_agb_flash_id_failure_stops_before_command_selection(
     detect: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(device, monkeypatch, flash_id_result=False)
     args = {"mode": 3, "save_type": 4, "rtc": False, "detect": detect}
 
@@ -883,7 +883,7 @@ def test_dacs_configuration_encodes_commands_and_acknowledges_modern_firmware(
     firmware: int,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(
         device,
         monkeypatch,
@@ -929,7 +929,7 @@ def test_dacs_unknown_id_is_rejected(
     detect: bool,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(
         device,
         monkeypatch,
@@ -956,7 +956,7 @@ def test_agb_bank_select_profile_captures_sram_byte_before_switching(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(
         device,
         monkeypatch,
@@ -977,7 +977,7 @@ def test_agb_bank_select_profile_stops_when_sram_byte_cannot_be_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(device, monkeypatch, read_responses=[False])
     args = {"mode": 3, "save_type": 3, "rtc": False}
 
@@ -990,7 +990,7 @@ def test_agb_bank_select_profile_stops_when_sram_byte_cannot_be_read(
 
 def test_agb_save_configuration_rejects_unknown_save_size(monkeypatch: pytest.MonkeyPatch) -> None:
     device = GbxDevice()
-    device.MODE = "AGB"
+    device.mode = "AGB"
     records = configure_agb_boundaries(device, monkeypatch)
     args = {"mode": 2, "save_type": 99, "rtc": False}
 

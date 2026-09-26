@@ -237,13 +237,13 @@ def load_window_with_fake_qt(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 def bare_window(**overrides: object) -> SimpleNamespace:
     values: dict[str, object] = {
-        "APP": SimpleNamespace(SETTINGS=FakeSettings()),
-        "CUR_PC": None,
-        "CUR_FILE": None,
-        "CUR_EXPORT_PATH": "",
-        "CUR_INDEX": 0,
-        "CUR_BICUBIC": False,
-        "CUR_PALETTE": 3,
+        "app": SimpleNamespace(settings=FakeSettings()),
+        "cur_pc": None,
+        "cur_file": None,
+        "cur_export_path": "",
+        "cur_index": 0,
+        "cur_bicubic": False,
+        "cur_palette": 3,
         "PHOTO_SAVE_SIZE": PocketCameraWindow.PHOTO_SAVE_SIZE,
         "_palettes": list(PocketCamera.PALETTES),
         "SetColors": Mock(),
@@ -271,7 +271,7 @@ def test_constructor_and_hide_event_with_inert_qt_widgets(monkeypatch: pytest.Mo
             "LastDirPocketCamera": "/exports",
         },
     )
-    app = SimpleNamespace(SETTINGS=settings, activateWindow=Mock())
+    app = SimpleNamespace(settings=settings, activateWindow=Mock())
 
     window = module.PocketCameraWindow(
         app,
@@ -282,8 +282,8 @@ def test_constructor_and_hide_event_with_inert_qt_widgets(monkeypatch: pytest.Mo
 
     assert window.spnZoom.value() == 2
     assert window.chkFrame.isChecked() is True
-    assert window.CUR_EXPORT_PATH == "/exports"
-    assert len(PocketCamera.PALETTES) == window.CUR_PALETTE
+    assert window.cur_export_path == "/exports"
+    assert len(PocketCamera.PALETTES) == window.cur_palette
     assert window.cmbColor.items[-1] == "Custom"
     assert len(window.lblPhoto) == PocketCamera.PHOTO_COUNT
 
@@ -299,7 +299,7 @@ def test_constructor_and_hide_event_with_inert_qt_widgets(monkeypatch: pytest.Mo
     app.activateWindow.assert_called_once_with()
     assert window.hidden_event is event
 
-    window.cmbColor.setCurrentIndex(window.CUR_PALETTE)
+    window.cmbColor.setCurrentIndex(window.cur_palette)
     window.hideEvent(event)
     assert settings.writes[-4] == ("PocketCameraPalette", json.dumps(custom_palette))
 
@@ -309,18 +309,18 @@ def test_constructor_uses_defaults_and_forces_exit_after_failed_initial_file(
 ) -> None:
     module = load_window_with_fake_qt(monkeypatch)
     settings = FakeSettings({"PocketCameraZoom": object()})
-    app = SimpleNamespace(SETTINGS=settings, activateWindow=Mock())
+    app = SimpleNamespace(settings=settings, activateWindow=Mock())
     open_file = Mock(return_value=False)
     monkeypatch.setattr(module.PocketCameraWindow, "OpenFile", open_file)
 
     window = module.PocketCameraWindow(app, file=b"invalid")
 
-    assert window.FORCE_EXIT is True
+    assert window.force_exit is True
     assert window.spnZoom.value() == 2
     open_file.assert_called_once_with(b"invalid")
 
     default_window = module.PocketCameraWindow(app)
-    assert default_window.CUR_EXPORT_PATH == "/mock/documents"
+    assert default_window.cur_export_path == "/mock/documents"
 
 
 def test_palette_parser_rejects_non_strings_and_malformed_json() -> None:
@@ -333,18 +333,18 @@ def test_palette_parser_rejects_non_strings_and_malformed_json() -> None:
 
 
 def test_open_file_loads_bytes_and_path_without_dialogs(tmp_path: Path) -> None:
-    window = bare_window(CUR_EXPORT_PATH="")
+    window = bare_window(cur_export_path="")
 
     assert PocketCameraWindow.OpenFile(window, camera_save()) is True  # type: ignore[arg-type]
-    assert isinstance(window.CUR_PC, PocketCamera)
-    assert window.CUR_INDEX == 0
+    assert isinstance(window.cur_pc, PocketCamera)
+    assert window.cur_index == 0
     window.SetColors.assert_called_once_with()
 
     save_path = tmp_path / "camera.sav"
     save_path.write_bytes(camera_save())
     window.SetColors.reset_mock()
     assert PocketCameraWindow.OpenFile(window, save_path) is True  # type: ignore[arg-type]
-    assert str(tmp_path) == window.CUR_EXPORT_PATH
+    assert str(tmp_path) == window.cur_export_path
     window.SetColors.assert_called_once_with()
 
 
@@ -357,12 +357,12 @@ def test_open_file_handles_photo_roll_cancellation_and_invalid_input(
     cancelled = bare_window(_select_photo_roll=Mock(return_value=None))
 
     assert PocketCameraWindow.OpenFile(cancelled, photo_save) is False  # type: ignore[arg-type]
-    assert cancelled.CUR_PC is None
+    assert cancelled.cur_pc is None
     critical.assert_not_called()
 
     invalid = bare_window()
     assert PocketCameraWindow.OpenFile(invalid, b"short") is False  # type: ignore[arg-type]
-    assert invalid.CUR_PC is None
+    assert invalid.cur_pc is None
     critical.assert_called_once()
 
 
@@ -371,7 +371,7 @@ def test_open_file_loads_selected_photo_roll() -> None:
     window = bare_window(_select_photo_roll=Mock(return_value=selected))
 
     assert PocketCameraWindow.OpenFile(window, bytes(PocketCameraWindow.PHOTO_SAVE_SIZE)) is True  # type: ignore[arg-type]
-    assert selected == window.CUR_FILE
+    assert selected == window.cur_file
     window.SetColors.assert_called_once_with()
 
 
@@ -381,7 +381,7 @@ def test_open_file_reports_filesystem_errors(monkeypatch: pytest.MonkeyPatch, tm
     window = bare_window()
 
     assert PocketCameraWindow.OpenFile(window, tmp_path / "missing.sav") is False  # type: ignore[arg-type]
-    assert window.CUR_PC is None
+    assert window.cur_pc is None
     critical.assert_called_once()
 
 
@@ -427,24 +427,24 @@ def test_palette_and_mouse_actions_update_the_viewer() -> None:
 
     camera = Mock()
     combo = FakeCombo(-1)
-    window = bare_window(CUR_PC=camera, cmbColor=combo)
+    window = bare_window(cur_pc=camera, cmbColor=combo)
 
     PocketCameraWindow.SetColors(window)  # type: ignore[arg-type]
 
-    assert window.CUR_PALETTE == 3
+    assert window.cur_palette == 3
     camera.SetPalette.assert_called_once_with(PocketCamera.PALETTES[3])
     window.BuildPhotoList.assert_called_once_with()
     window.UpdateViewer.assert_called_once_with(0)
 
     window.UpdateViewer.reset_mock()
     PocketCameraWindow.lblPhoto_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.RightButton), 5)  # type: ignore[arg-type]
-    assert window.CUR_INDEX == 0
+    assert window.cur_index == 0
     PocketCameraWindow.lblPhoto_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton), 5)  # type: ignore[arg-type]
-    assert window.CUR_INDEX == 5
+    assert window.cur_index == 5
     window.UpdateViewer.assert_called_once_with(5)
 
     PocketCameraWindow.lblPhotoViewer_Clicked(window, FakeMouseEvent(QtCore.Qt.MouseButton.LeftButton))  # type: ignore[arg-type]
-    assert window.CUR_BICUBIC is True
+    assert window.cur_bicubic is True
     window.UpdateViewer.assert_called_with(5)
 
     window.UpdateViewer.reset_mock()
@@ -460,7 +460,7 @@ def test_palette_and_mouse_actions_update_the_viewer() -> None:
 def test_open_button_and_special_picture_buttons(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     save_path = tmp_path / "camera.sav"
     settings = FakeSettings({"LastDirSaveDataDMG": 42})
-    window = bare_window(APP=SimpleNamespace(SETTINGS=settings), OpenFile=Mock(return_value=True))
+    window = bare_window(app=SimpleNamespace(settings=settings), OpenFile=Mock(return_value=True))
     monkeypatch.setattr(camera_window_module.QtCore.QStandardPaths, "writableLocation", Mock(return_value="docs"))
     monkeypatch.setattr(
         camera_window_module.QtWidgets.QFileDialog,
@@ -474,9 +474,9 @@ def test_open_button_and_special_picture_buttons(monkeypatch: pytest.MonkeyPatch
     assert settings.writes == [("LastDirSaveDataDMG", str(tmp_path))]
 
     PocketCameraWindow.btnShowGameFace_Clicked(window)  # type: ignore[arg-type]
-    assert window.CUR_INDEX == PocketCamera.GAME_FACE_INDEX
+    assert window.cur_index == PocketCamera.GAME_FACE_INDEX
     PocketCameraWindow.btnShowLastSeen_Clicked(window)  # type: ignore[arg-type]
-    assert window.CUR_INDEX == PocketCamera.LAST_SEEN_INDEX
+    assert window.cur_index == PocketCamera.LAST_SEEN_INDEX
     assert window.UpdateViewer.call_args_list[-2:] == [
         call(PocketCamera.GAME_FACE_INDEX),
         call(PocketCamera.LAST_SEEN_INDEX),
@@ -495,7 +495,7 @@ def test_open_button_returns_when_picker_is_cancelled(monkeypatch: pytest.Monkey
 def test_open_button_only_remembers_successful_load(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     save_path = tmp_path / "invalid.sav"
     settings = FakeSettings({"LastDirSaveDataDMG": str(tmp_path)})
-    window = bare_window(APP=SimpleNamespace(SETTINGS=settings), OpenFile=Mock(return_value=False))
+    window = bare_window(app=SimpleNamespace(settings=settings), OpenFile=Mock(return_value=False))
     monkeypatch.setattr(
         camera_window_module.QtWidgets.QFileDialog,
         "getOpenFileName",
@@ -509,7 +509,7 @@ def test_open_button_only_remembers_successful_load(monkeypatch: pytest.MonkeyPa
 
 def test_batch_save_exports_all_images(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     selected = tmp_path / "album.png"
-    window = bare_window(CUR_PC=Mock(), CUR_EXPORT_PATH=str(tmp_path))
+    window = bare_window(cur_pc=Mock(), cur_export_path=str(tmp_path))
     monkeypatch.setattr(
         camera_window_module.QtWidgets.QFileDialog,
         "getSaveFileName",
@@ -518,7 +518,7 @@ def test_batch_save_exports_all_images(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     PocketCameraWindow.btnSaveAll_Clicked(window)  # type: ignore[arg-type]
 
-    assert str(tmp_path) == window.CUR_EXPORT_PATH
+    assert str(tmp_path) == window.cur_export_path
     assert window.SavePicture.call_count == PocketCamera.IMAGE_COUNT
     assert window.SavePicture.call_args_list[0] == call(0, path=tmp_path / "album01.png")
     assert window.SavePicture.call_args_list[-1] == call(31, path=tmp_path / "album32.png")
@@ -527,7 +527,7 @@ def test_batch_save_exports_all_images(monkeypatch: pytest.MonkeyPatch, tmp_path
 def test_batch_save_honors_overwrite_cancellation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     selected = tmp_path / "album.png"
     (tmp_path / "album01.png").write_bytes(b"existing")
-    window = bare_window(CUR_PC=Mock(), CUR_EXPORT_PATH=str(tmp_path))
+    window = bare_window(cur_pc=Mock(), cur_export_path=str(tmp_path))
     monkeypatch.setattr(
         camera_window_module.QtWidgets.QFileDialog,
         "getSaveFileName",
@@ -545,7 +545,7 @@ def test_batch_save_honors_overwrite_cancellation(monkeypatch: pytest.MonkeyPatc
 def test_batch_save_can_confirm_overwrite_and_cancel_picker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     selected = tmp_path / "album.png"
     (tmp_path / "album01.png").write_bytes(b"existing")
-    window = bare_window(CUR_PC=Mock(), CUR_EXPORT_PATH=str(tmp_path))
+    window = bare_window(cur_pc=Mock(), cur_export_path=str(tmp_path))
     picker = Mock(return_value=(str(selected), ""))
     monkeypatch.setattr(camera_window_module.QtWidgets.QFileDialog, "getSaveFileName", picker)
     monkeypatch.setattr(
@@ -564,39 +564,39 @@ def test_batch_save_can_confirm_overwrite_and_cancel_picker(monkeypatch: pytest.
 
 
 def test_save_buttons_and_close_are_guarded_without_a_camera() -> None:
-    window = bare_window(reject=Mock(), FORCE_EXIT=False)
+    window = bare_window(reject=Mock(), force_exit=False)
 
     PocketCameraWindow.btnSaveAll_Clicked(window)  # type: ignore[arg-type]
     PocketCameraWindow.btnSavePhoto_Clicked(window)  # type: ignore[arg-type]
     window.SavePicture.assert_not_called()
 
-    window.CUR_PC = Mock()
-    window.CUR_INDEX = 7
+    window.cur_pc = Mock()
+    window.cur_index = 7
     PocketCameraWindow.btnSavePhoto_Clicked(window)  # type: ignore[arg-type]
     window.SavePicture.assert_called_once_with(7)
 
     PocketCameraWindow.btnClose_Clicked(window)  # type: ignore[arg-type]
-    assert window.FORCE_EXIT is True
+    assert window.force_exit is True
     window.reject.assert_called_once_with()
 
 
 def test_build_photo_list_marks_deleted_images(monkeypatch: pytest.MonkeyPatch) -> None:
-    no_camera = bare_window(CUR_THUMBS=["unchanged"])
+    no_camera = bare_window(cur_thumbs=["unchanged"])
     PocketCameraWindow.BuildPhotoList(no_camera)  # type: ignore[arg-type]
-    assert no_camera.CUR_THUMBS == ["unchanged"]
+    assert no_camera.cur_thumbs == ["unchanged"]
 
     camera = Mock()
     camera.GetPicture.side_effect = lambda _index: Image.new("P", (128, 112))
     camera.IsEmpty.side_effect = lambda index: index != 2
     camera.IsDeleted.side_effect = lambda index: index == 2
     labels = [FakeLabel() for _ in range(PocketCamera.PHOTO_COUNT)]
-    window = bare_window(CUR_PC=camera, CUR_THUMBS=[], lblPhoto=labels)
+    window = bare_window(cur_pc=camera, cur_thumbs=[], lblPhoto=labels)
     monkeypatch.setattr(camera_window_module, "ImageQt", lambda image: image)
     monkeypatch.setattr(camera_window_module.QtGui.QPixmap, "fromImage", Mock(side_effect=lambda image: image))
 
     PocketCameraWindow.BuildPhotoList(window)  # type: ignore[arg-type]
 
-    assert len(window.CUR_THUMBS) == PocketCamera.PHOTO_COUNT
+    assert len(window.cur_thumbs) == PocketCamera.PHOTO_COUNT
     assert "deleted" in labels[2].tooltip
     assert labels[0].tooltip == ""
     assert all(label.pixmap is not None for label in labels)
@@ -622,7 +622,7 @@ def test_update_viewer_selects_resampler_and_highlight(
     labels = [FakeLabel() for _ in range(PocketCamera.PHOTO_COUNT)]
     viewer = FakeLabel()
     pixmap = SimpleNamespace(setDevicePixelRatio=Mock())
-    window = bare_window(CUR_PC=camera, CUR_BICUBIC=bicubic, lblPhoto=labels, lblPhotoViewer=viewer, CUR_PIC=None)
+    window = bare_window(cur_pc=camera, cur_bicubic=bicubic, lblPhoto=labels, lblPhotoViewer=viewer, cur_pic=None)
     monkeypatch.setattr(camera_window_module, "ImageQt", lambda image: image)
     monkeypatch.setattr(camera_window_module.QtGui.QPixmap, "fromImage", Mock(return_value=pixmap))
 
@@ -652,8 +652,8 @@ def test_save_picture_uses_custom_frame_and_disables_it_for_last_seen(
     Image.new("RGB", (160, 144), "white").save(app_path / "res" / "pc_frame.png")
     camera = Mock()
     window = bare_window(
-        CUR_PC=camera,
-        CUR_EXPORT_PATH=str(tmp_path),
+        cur_pc=camera,
+        cur_export_path=str(tmp_path),
         CONFIG_PATH=config_path,
         APP_PATH=app_path,
         chkFrame=SimpleNamespace(isChecked=lambda: True),
@@ -681,8 +681,8 @@ def test_save_picture_uses_custom_frame_and_disables_it_for_last_seen(
 def test_save_picture_returns_after_cancelled_picker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     camera = Mock()
     window = bare_window(
-        CUR_PC=camera,
-        CUR_EXPORT_PATH=str(tmp_path),
+        cur_pc=camera,
+        cur_export_path=str(tmp_path),
         chkFrame=SimpleNamespace(isChecked=lambda: False),
         spnZoom=SimpleNamespace(value=lambda: 2),
     )
@@ -700,7 +700,7 @@ def test_save_picture_guards_missing_camera_and_exports_without_frame(tmp_path: 
     camera = Mock()
     output = tmp_path / "photo.png"
     window = bare_window(
-        CUR_PC=camera,
+        cur_pc=camera,
         chkFrame=SimpleNamespace(isChecked=lambda: False),
         spnZoom=SimpleNamespace(value=lambda: 2),
     )
@@ -710,14 +710,14 @@ def test_save_picture_guards_missing_camera_and_exports_without_frame(tmp_path: 
 
 
 def test_run_handles_force_exit_and_normal_display() -> None:
-    forced = bare_window(FORCE_EXIT=True, reject=Mock())
+    forced = bare_window(force_exit=True, reject=Mock())
     PocketCameraWindow.run(forced)  # type: ignore[arg-type]
     forced.reject.assert_called_once_with()
 
     geometry = SimpleNamespace(moveCenter=Mock(), topLeft=Mock(return_value="top-left"))
     screen = SimpleNamespace(availableGeometry=lambda: SimpleNamespace(center=lambda: "center"))
     normal = bare_window(
-        FORCE_EXIT=False,
+        force_exit=False,
         main_layout=SimpleNamespace(update=Mock(), activate=Mock()),
         screen=Mock(return_value=screen),
         frameGeometry=Mock(return_value=geometry),
@@ -730,7 +730,7 @@ def test_run_handles_force_exit_and_normal_display() -> None:
     normal.show.assert_called_once_with()
 
     no_screen = bare_window(
-        FORCE_EXIT=False,
+        force_exit=False,
         main_layout=SimpleNamespace(update=Mock(), activate=Mock()),
         screen=Mock(return_value=None),
         frameGeometry=Mock(),
